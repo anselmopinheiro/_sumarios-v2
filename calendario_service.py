@@ -80,36 +80,42 @@ def garantir_periodos_basicos_para_turma(turma: Turma) -> None:
             p_anual.data_fim = ano.data_fim_ano
 
     # --- 1.º semestre ---
-    if ano.data_inicio_1_semestre and ano.data_fim_1_semestre:
+    inicio_s1 = ano.data_inicio_ano
+    fim_s1 = getattr(ano, "data_fim_semestre1", None)
+
+    if inicio_s1 and fim_s1:
         p_s1 = _get_periodo("semestre1")
         if not p_s1:
             p_s1 = Periodo(
                 turma_id=turma.id,
                 nome="1.º semestre",
                 tipo="semestre1",
-                data_inicio=ano.data_inicio_1_semestre,
-                data_fim=ano.data_fim_1_semestre,
+                data_inicio=inicio_s1,
+                data_fim=fim_s1,
             )
             db.session.add(p_s1)
         else:
-            p_s1.data_inicio = ano.data_inicio_1_semestre
-            p_s1.data_fim = ano.data_fim_1_semestre
+            p_s1.data_inicio = inicio_s1
+            p_s1.data_fim = fim_s1
 
     # --- 2.º semestre ---
-    if ano.data_inicio_2_semestre and ano.data_fim_2_semestre:
+    inicio_s2 = getattr(ano, "data_inicio_semestre2", None)
+    fim_s2 = ano.data_fim_ano
+
+    if inicio_s2 and fim_s2:
         p_s2 = _get_periodo("semestre2")
         if not p_s2:
             p_s2 = Periodo(
                 turma_id=turma.id,
                 nome="2.º semestre",
                 tipo="semestre2",
-                data_inicio=ano.data_inicio_2_semestre,
-                data_fim=ano.data_fim_2_semestre,
+                data_inicio=inicio_s2,
+                data_fim=fim_s2,
             )
             db.session.add(p_s2)
         else:
-            p_s2.data_inicio = ano.data_inicio_2_semestre
-            p_s2.data_fim = ano.data_fim_2_semestre
+            p_s2.data_inicio = inicio_s2
+            p_s2.data_fim = fim_s2
 
     db.session.commit()
 
