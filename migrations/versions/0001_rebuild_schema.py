@@ -52,6 +52,11 @@ def upgrade():
             "tipo", sa.String(length=20), nullable=False, server_default="regular"
         ),
         sa.Column("ano_letivo_id", sa.Integer(), sa.ForeignKey("anos_letivos.id")),
+        sa.Column("carga_segunda", sa.Float()),
+        sa.Column("carga_terca", sa.Float()),
+        sa.Column("carga_quarta", sa.Float()),
+        sa.Column("carga_quinta", sa.Float()),
+        sa.Column("carga_sexta", sa.Float()),
     )
 
     op.create_table(
