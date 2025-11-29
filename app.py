@@ -38,6 +38,7 @@ from calendario_service import (
     garantir_periodos_basicos_para_turma,
     garantir_modulos_para_turma,
     renumerar_calendario_turma,
+    completar_modulos_profissionais,
 )
 
 
@@ -779,7 +780,16 @@ def create_app():
         db.session.delete(aula)
         db.session.commit()
         renumerar_calendario_turma(turma.id)
-        flash("Linha de calendário apagada.", "success")
+
+        novas = completar_modulos_profissionais(turma.id)
+        if novas:
+            renumerar_calendario_turma(turma.id)
+            flash(
+                f"Linha de calendário apagada e {novas} aula(s) adicionadas para cumprir o total do módulo.",
+                "success",
+            )
+        else:
+            flash("Linha de calendário apagada.", "success")
         return redirect(
             url_for(
                 "turma_calendario",

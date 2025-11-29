@@ -522,3 +522,148 @@ def renumerar_calendario_turma(turma_id: int) -> int:
 
     db.session.commit()
     return len(aulas)
+
+
+def _periodo_para_data(periodos: List[Periodo], data: date) -> Optional[Periodo]:
+    for periodo in periodos:
+        if periodo.data_inicio and periodo.data_fim and periodo.data_inicio <= data <= periodo.data_fim:
+            return periodo
+    return None
+
+
+def _contar_aulas(aula: CalendarioAula) -> int:
+    sumarios = [s.strip() for s in (aula.sumarios or "").split(",") if s.strip()]
+    return len(sumarios) if sumarios else 1
+
+
+def completar_modulos_profissionais(turma_id: int) -> int:
+    """Acrescenta aulas em turmas profissionais até cumprir o total de cada módulo.
+
+    Deve ser usado após remoções manuais de linhas, para evitar que os módulos
+    fiquem com menos aulas do que o total configurado.
+    """
+
+    turma = Turma.query.get(turma_id)
+    if not turma or turma.tipo != "profissional":
+        return 0
+
+    ano = turma.ano_letivo
+    if not ano:
+        return 0
+
+    periodos: List[Periodo] = (
+        Periodo.query.filter_by(turma_id=turma.id)
+        .order_by(Periodo.data_inicio)
+        .all()
+    )
+    periodos_validos = [p for p in periodos if p.data_inicio and p.data_fim]
+    if not periodos_validos:
+        return 0
+
+    modulos = garantir_modulos_para_turma(turma)
+    if not modulos:
+        return 0
+
+    carga_por_dia = _mapa_carga_semana(turma)
+    if not any(carga_por_dia.values()):
+        return 0
+
+    totais_por_modulo: Dict[int, int] = {
+        m.id: max(int(m.total_aulas or 0), 0) for m in modulos
+    }
+
+    progresso_atual: Dict[int, int] = defaultdict(int)
+    aulas_existentes: List[CalendarioAula] = (
+        CalendarioAula.query.filter_by(turma_id=turma.id)
+        .order_by(CalendarioAula.data.asc(), CalendarioAula.id.asc())
+        .all()
+    )
+    for aula in aulas_existentes:
+        if aula.modulo_id:
+            progresso_atual[aula.modulo_id] += _contar_aulas(aula)
+
+    deficit_por_modulo: Dict[int, int] = {}
+    for mod_id, total in totais_por_modulo.items():
+        if total <= 0:
+            continue
+        atuais = progresso_atual.get(mod_id, 0)
+        if atuais < total:
+            deficit_por_modulo[mod_id] = total - atuais
+
+    if not deficit_por_modulo:
+        return 0
+
+    dias_interrupcao, dias_feriados = _build_dias_nao_letivos(ano)
+
+    last_aula = aulas_existentes[-1] if aulas_existentes else None
+    data_inicio = (
+        (last_aula.data + timedelta(days=1))
+        if last_aula and last_aula.data
+        else periodos_validos[0].data_inicio
+    )
+    data_limite = max(p.data_fim for p in periodos_validos if p.data_fim)
+
+    if data_inicio is None or data_limite is None:
+        return 0
+
+    modulos_em_ordem = [m for m in modulos if m.id in deficit_por_modulo]
+    # Se já houve aulas, tenta continuar a partir do último módulo usado;
+    # caso contrário começa pelo primeiro com défice.
+    ultimo_modulo_id = last_aula.modulo_id if last_aula else None
+    idx_corrente = 0
+    if ultimo_modulo_id:
+        for idx, mod in enumerate(modulos_em_ordem):
+            if mod.id == ultimo_modulo_id:
+                idx_corrente = idx
+                break
+
+    total_adicionados = 0
+    data_atual = data_inicio
+    while data_atual <= data_limite and any(v > 0 for v in deficit_por_modulo.values()):
+        if not _e_dia_letivo(data_atual, ano, dias_interrupcao, dias_feriados):
+            data_atual += timedelta(days=1)
+            continue
+
+        carga_dia = int(carga_por_dia.get(data_atual.weekday(), 0) or 0)
+        if carga_dia <= 0:
+            data_atual += timedelta(days=1)
+            continue
+
+        periodo = _periodo_para_data(periodos_validos, data_atual)
+        if not periodo:
+            data_atual += timedelta(days=1)
+            continue
+
+        aulas_hoje = carga_dia
+        while aulas_hoje > 0 and any(v > 0 for v in deficit_por_modulo.values()):
+            modulo = None
+            for offset in range(len(modulos_em_ordem)):
+                candidato = modulos_em_ordem[(idx_corrente + offset) % len(modulos_em_ordem)]
+                if deficit_por_modulo.get(candidato.id, 0) > 0:
+                    modulo = candidato
+                    idx_corrente = (idx_corrente + offset) % len(modulos_em_ordem)
+                    break
+
+            if modulo is None:
+                break
+
+            aula = CalendarioAula(
+                turma_id=turma.id,
+                periodo_id=periodo.id,
+                data=data_atual,
+                weekday=data_atual.weekday(),
+                modulo_id=modulo.id,
+                tipo="normal",
+            )
+            db.session.add(aula)
+            deficit_por_modulo[modulo.id] -= 1
+            total_adicionados += 1
+            aulas_hoje -= 1
+
+            if deficit_por_modulo[modulo.id] <= 0 and idx_corrente < len(modulos_em_ordem) - 1:
+                idx_corrente += 1
+
+        data_atual += timedelta(days=1)
+
+    db.session.commit()
+    return total_adicionados
