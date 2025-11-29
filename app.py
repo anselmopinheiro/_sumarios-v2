@@ -551,6 +551,7 @@ def create_app():
             flash("Ano letivo fechado: não é possível gerar calendário.", "error")
             return redirect(url_for("turma_calendario", turma_id=turma.id))
 
+        
         periodos = (
             Periodo.query.filter_by(turma_id=turma.id)
             .order_by(Periodo.data_inicio)
@@ -578,6 +579,30 @@ def create_app():
                 "Não foi possível gerar aulas: defina a carga horária diária ou os horários da turma.",
                 "warning",
             )
+        return redirect(url_for("turma_calendario", turma_id=turma.id))
+
+    @app.route("/turmas/<int:turma_id>/calendario/reset", methods=["POST"])
+    def turma_calendario_reset(turma_id):
+        turma = Turma.query.get_or_404(turma_id)
+        ano = turma.ano_letivo
+        if ano and ano.fechado:
+            flash("Ano letivo fechado: não é possível editar o calendário.", "error")
+            return redirect(url_for("turma_calendario", turma_id=turma.id))
+
+        total_apagadas = (
+            CalendarioAula.query.filter_by(turma_id=turma.id).delete()
+            or 0
+        )
+        db.session.commit()
+
+        if total_apagadas:
+            flash(
+                f"Calendário limpo: {total_apagadas} linhas removidas.",
+                "success",
+            )
+        else:
+            flash("Calendário já estava vazio para esta turma.", "info")
+
         return redirect(url_for("turma_calendario", turma_id=turma.id))
 
     @app.route("/turmas/<int:turma_id>/calendario/add", methods=["GET", "POST"])
