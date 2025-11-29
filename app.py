@@ -37,6 +37,7 @@ from calendario_service import (
     gerar_calendario_turma,
     garantir_periodos_basicos_para_turma,
     garantir_modulos_para_turma,
+    renumerar_calendario_turma,
 )
 
 
@@ -658,6 +659,7 @@ def create_app():
             )
             db.session.add(aula)
             db.session.commit()
+            renumerar_calendario_turma(turma.id)
             flash("Linha de calendário criada.", "success")
             return redirect(
                 url_for(
@@ -742,6 +744,7 @@ def create_app():
             aula.tipo = tipo
 
             db.session.commit()
+            renumerar_calendario_turma(turma.id)
             flash("Linha de calendário atualizada.", "success")
             return redirect(
                 url_for(
@@ -775,6 +778,7 @@ def create_app():
 
         db.session.delete(aula)
         db.session.commit()
+        renumerar_calendario_turma(turma.id)
         flash("Linha de calendário apagada.", "success")
         return redirect(
             url_for(
