@@ -32,7 +32,7 @@ from models import (
     TurmaDisciplina,
 )
 
-from calendario_service import gerar_calendarios, expand_dates
+from calendario_service import gerar_calendario_turma, expand_dates
 from calendario_service import garantir_periodos_basicos_para_turma
 
 
@@ -233,7 +233,10 @@ def create_app():
                 )
                 return redirect(url_for("livros_detail", livro_id=livro.id))
 
-        gerar_calendarios(livro.id, recalcular_tudo=recalcular_tudo)
+        for turma in livro.turmas:
+            garantir_periodos_basicos_para_turma(turma)
+            gerar_calendario_turma(turma.id, recalcular_tudo=recalcular_tudo)
+
         flash("Calendários gerados/atualizados com sucesso.", "success")
         return redirect(url_for("livros_detail", livro_id=livro.id))
 
@@ -241,8 +244,7 @@ def create_app():
     def livros_delete(livro_id):
         livro = Livro.query.get_or_404(livro_id)
 
-        # Remover calendários e vínculos antes de apagar
-        CalendarioAula.query.filter_by(livro_id=livro.id).delete()
+        # Remover vínculos antes de apagar
         LivroTurma.query.filter_by(livro_id=livro.id).delete()
 
         db.session.delete(livro)
@@ -438,15 +440,24 @@ def create_app():
             flash("Ano letivo fechado: não é possível gerar calendário.", "error")
             return redirect(url_for("turma_calendario", turma_id=turma.id))
 
-        if not turma.livros:
-            flash(
-                "Associa pelo menos um livro/planeamento à turma para gerar o calendário.",
-                "error",
-            )
+        periodos = (
+            Periodo.query.filter_by(turma_id=turma.id)
+            .order_by(Periodo.data_inicio)
+            .all()
+        )
+        modulos = (
+            Modulo.query.filter_by(turma_id=turma.id).order_by(Modulo.id).all()
+        )
+
+        if not periodos:
+            flash("Defina períodos letivos para a turma antes de gerar o calendário.", "error")
             return redirect(url_for("turma_calendario", turma_id=turma.id))
 
-        for livro in turma.livros:
-            gerar_calendarios(livro.id, recalcular_tudo=True)
+        if not modulos:
+            flash("Crie módulos para a turma antes de gerar o calendário.", "error")
+            return redirect(url_for("turma_calendario", turma_id=turma.id))
+
+        gerar_calendario_turma(turma.id, recalcular_tudo=True)
 
         flash("Calendário anual gerado para a turma.", "success")
         return redirect(url_for("turma_calendario", turma_id=turma.id))
@@ -459,23 +470,16 @@ def create_app():
             flash("Ano letivo fechado: não é possível editar o calendário.", "error")
             return redirect(url_for("turma_calendario", turma_id=turma.id))
 
-        livro_id = request.args.get("livro_id", type=int)
         periodo_id = request.args.get("periodo_id", type=int)
 
-        if not livro_id or not periodo_id:
-            flash("É necessário escolher Livro e Período para adicionar linhas.", "error")
+        if not periodo_id:
+            flash("É necessário escolher um período para adicionar linhas.", "error")
             return redirect(url_for("turma_calendario", turma_id=turma.id))
 
-        livro = Livro.query.get_or_404(livro_id)
         periodo = Periodo.query.get_or_404(periodo_id)
 
-        # módulos disponíveis para esta turma + livro
-        modulos = (
-            Modulo.query
-            .filter_by(turma_id=turma.id, livro_id=livro.id)
-            .order_by(Modulo.id)
-            .all()
-        )
+        # módulos disponíveis para esta turma
+        modulos = Modulo.query.filter_by(turma_id=turma.id).order_by(Modulo.id).all()
 
         if request.method == "POST":
             data = _parse_date_form(request.form.get("data"))
@@ -491,14 +495,12 @@ def create_app():
                     "turmas/calendario_form.html",
                     titulo="Nova linha de calendário",
                     turma=turma,
-                    livro=livro,
                     periodo=periodo,
                     modulos=modulos,
                     aula=None,
                 )
 
             aula = CalendarioAula(
-                livro_id=livro.id,
                 turma_id=turma.id,
                 periodo_id=periodo.id,
                 data=data,
@@ -515,7 +517,6 @@ def create_app():
                 url_for(
                     "turma_calendario",
                     turma_id=turma.id,
-                    livro_id=livro.id,
                     periodo_id=periodo.id,
                 )
             )
@@ -524,7 +525,6 @@ def create_app():
             "turmas/calendario_form.html",
             titulo="Nova linha de calendário",
             turma=turma,
-            livro=livro,
             periodo=periodo,
             modulos=modulos,
             aula=None,
@@ -549,47 +549,6 @@ def create_app():
         db.session.commit()
         flash("Turma eliminada.", "success")
         return redirect(url_for("turmas_list"))
-
-
-
-        turma = Turma.query.get_or_404(turma_id)
-
-        livro_id = request.args.get("livro_id", type=int)
-        periodo_id = request.args.get("periodo_id", type=int)
-
-        if not livro_id:
-            livro = turma.livros[0] if turma.livros else None
-            if not livro:
-                flash("Esta turma não tem nenhum livro associado.", "error")
-                return redirect(url_for("turmas_list"))
-            livro_id = livro.id
-
-        if not periodo_id:
-            periodo = (
-                Periodo.query
-                .filter_by(turma_id=turma.id)
-                .order_by(Periodo.data_inicio)
-                .first()
-            )
-            if not periodo:
-                flash("Esta turma não tem períodos configurados.", "error")
-                return redirect(url_for("turmas_list"))
-            periodo_id = periodo.id
-
-        aulas = (
-            CalendarioAula.query
-            .filter_by(livro_id=livro_id, turma_id=turma.id, periodo_id=periodo_id)
-            .order_by(CalendarioAula.data)
-            .all()
-        )
-
-        return render_template(
-            "turmas/calendario.html",
-            turma=turma,
-            aulas=aulas,
-            livro_id=livro_id,
-            periodo_id=periodo_id,
-        )
     @app.route("/turmas/<int:turma_id>/calendario/<int:aula_id>/edit", methods=["GET", "POST"])
     def calendario_edit(turma_id, aula_id):
         turma = Turma.query.get_or_404(turma_id)
@@ -603,15 +562,9 @@ def create_app():
             flash("Linha de calendário não pertence a esta turma.", "error")
             return redirect(url_for("turma_calendario", turma_id=turma.id))
 
-        livro = Livro.query.get_or_404(aula.livro_id)
         periodo = Periodo.query.get_or_404(aula.periodo_id)
 
-        modulos = (
-            Modulo.query
-            .filter_by(turma_id=turma.id, livro_id=livro.id)
-            .order_by(Modulo.id)
-            .all()
-        )
+        modulos = Modulo.query.filter_by(turma_id=turma.id).order_by(Modulo.id).all()
 
         if request.method == "POST":
             data = _parse_date_form(request.form.get("data"))
@@ -627,7 +580,6 @@ def create_app():
                     "turmas/calendario_form.html",
                     titulo="Editar linha de calendário",
                     turma=turma,
-                    livro=livro,
                     periodo=periodo,
                     modulos=modulos,
                     aula=aula,
@@ -646,7 +598,6 @@ def create_app():
                 url_for(
                     "turma_calendario",
                     turma_id=turma.id,
-                    livro_id=livro.id,
                     periodo_id=periodo.id,
                 )
             )
@@ -655,7 +606,6 @@ def create_app():
             "turmas/calendario_form.html",
             titulo="Editar linha de calendário",
             turma=turma,
-            livro=livro,
             periodo=periodo,
             modulos=modulos,
             aula=aula,
@@ -674,9 +624,6 @@ def create_app():
             flash("Linha de calendário não pertence a esta turma.", "error")
             return redirect(url_for("turma_calendario", turma_id=turma.id))
 
-        livro_id = aula.livro_id
-        periodo_id = aula.periodo_id
-
         db.session.delete(aula)
         db.session.commit()
         flash("Linha de calendário apagada.", "success")
@@ -684,8 +631,6 @@ def create_app():
             url_for(
                 "turma_calendario",
                 turma_id=turma.id,
-                livro_id=livro_id,
-                periodo_id=periodo_id,
             )
         )
 

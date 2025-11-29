@@ -279,7 +279,6 @@ class CalendarioAula(db.Model):
     __tablename__ = "calendario_aulas"
     id = db.Column(db.Integer, primary_key=True)
 
-    livro_id = db.Column(db.Integer, db.ForeignKey("livros.id"), nullable=False)
     turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), nullable=False)
     periodo_id = db.Column(db.Integer, db.ForeignKey("periodos.id"), nullable=False)
 
@@ -287,13 +286,14 @@ class CalendarioAula(db.Model):
     # 0=Seg, 1=Ter, ..., 6=Dom
     weekday = db.Column(db.Integer, nullable=False)
 
-    modulo_nome = db.Column(db.String(255))
-    n_aula_modulo = db.Column(db.String(50))
-    total_aulas = db.Column(db.String(50))
-    n_sumario = db.Column(db.String(50))
+    modulo_id = db.Column(db.Integer, db.ForeignKey("modulos.id"))
+    modulo = db.relationship("Modulo")
+    numero_modulo = db.Column(db.Integer)
+    total_geral = db.Column(db.Integer)
+    sumarios = db.Column(db.String(255))
+
+    # normal / greve / servico_oficial / extra
+    tipo = db.Column(db.String(50), default="normal", nullable=False)
 
     observacoes = db.Column(db.Text)
     sumario = db.Column(db.Text)
-
-    # normal / greve / servico_oficial / extra
-    tipo_dia = db.Column(db.String(50))

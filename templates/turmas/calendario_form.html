@@ -5,7 +5,6 @@
 
 <p class="text-muted">
   Turma: {{ turma.nome }}<br>
-  Livro: {{ livro.nome }}<br>
   Período: {{ periodo.nome or (periodo.data_inicio|string + " - " + periodo.data_fim|string) }}
 </p>
 
@@ -64,7 +63,6 @@
   <button type="submit" class="btn btn-success">Guardar</button>
   <a href="{{ url_for('turma_calendario',
                       turma_id=turma.id,
-                      livro_id=livro.id,
                       periodo_id=periodo.id) }}"
      class="btn btn-secondary">
     Cancelar

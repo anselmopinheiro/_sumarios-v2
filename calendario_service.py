@@ -6,7 +6,6 @@ from typing import List, Dict, Set, Tuple, Optional
 
 from models import (
     db,
-    Livro,
     Turma,
     Periodo,
     Modulo,
@@ -36,8 +35,6 @@ MESES_PT = {
     "novembro": 11,
     "dezembro": 12,
 }
-
-from models import db, Turma, Periodo, AnoLetivo
 
 
 def garantir_periodos_basicos_para_turma(turma: Turma) -> None:
@@ -295,140 +292,128 @@ DIAS_PT = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sex
 # Motor principal
 # ----------------------------------------
 
-def gerar_calendarios(livro_id: int, recalcular_tudo: bool = True) -> None:
+def gerar_calendario_turma(turma_id: int, recalcular_tudo: bool = True) -> None:
     """
-    Gera o calendário de aulas para todas as turmas associadas a um Livro.
-
-    Integra:
-      - Ano Letivo (datas início/fim);
-      - Interrupções e Feriados (calendário escolar);
-      - Carga horária semanal da turma (Seg–Sex);
-      - Módulos com número total de aulas (permitindo +2 de margem);
-      - Numeração global de sumários.
-
-    Neste momento o parâmetro `recalcular_tudo` é usado apenas para eventual
-    lógica futura; para já, sempre que é chamado, apaga e recria o calendário
-    das turmas desse livro.
+    Gera o calendário de aulas para uma turma com base no calendário escolar
+    e na configuração de períodos/módulos dessa turma.
     """
-    livro: Optional[Livro] = Livro.query.get(livro_id)
-    if not livro:
-        raise ValueError(f"Livro com id={livro_id} não encontrado.")
 
-    # Para cada turma associada ao livro
-    for turma in livro.turmas:
-        ano: Optional[AnoLetivo] = turma.ano_letivo
-        if not ano:
-            # Sem ano letivo, não podemos cruzar com calendário escolar
-            continue
+    turma: Optional[Turma] = Turma.query.get(turma_id)
+    if not turma:
+        raise ValueError(f"Turma com id={turma_id} não encontrada.")
 
-        dias_interrupcao, dias_feriados = _build_dias_nao_letivos(ano)
+    ano: Optional[AnoLetivo] = turma.ano_letivo
+    if not ano:
+        # Sem ano letivo não há calendário escolar para cruzar
+        return
 
-        # Obter períodos da turma
-        periodos: List[Periodo] = (
-            Periodo.query
-            .filter_by(turma_id=turma.id)
-            .order_by(Periodo.data_inicio)
-            .all()
-        )
-        if not periodos:
-            # Sem períodos, nada para gerar
-            continue
+    dias_interrupcao, dias_feriados = _build_dias_nao_letivos(ano)
 
-        # Obter módulos da turma neste livro
-        # Ajusta os filtros se, no teu modelo, a relação for diferente.
-        modulos: List[Modulo] = (
-            Modulo.query
-            .filter_by(turma_id=turma.id, livro_id=livro.id)
-            .order_by(Modulo.id)
-            .all()
-        )
-        if not modulos:
-            continue
+    periodos: List[Periodo] = (
+        Periodo.query.filter_by(turma_id=turma.id)
+        .order_by(Periodo.data_inicio)
+        .all()
+    )
+    if not periodos:
+        return
 
-        # Progresso em memória: quantas aulas já foram dadas por módulo
-        # (não mexemos nos valores persistidos do modelo).
-        progresso_modulos: Dict[int, int] = {m.id: 0 for m in modulos}
+    modulos: List[Modulo] = (
+        Modulo.query.filter_by(turma_id=turma.id).order_by(Modulo.id).all()
+    )
+    if not modulos:
+        return
 
-        # TOTAL previsto por módulo (ajusta o nome do campo se for diferente)
-        total_por_modulo: Dict[int, int] = {
-            m.id: int(getattr(m, "total_aulas", 0) or 0)  # <--- ajusta se necessário
-            for m in modulos
-        }
+    progresso_modulos: Dict[int, int] = {m.id: 0 for m in modulos}
+    total_por_modulo: Dict[int, int] = {
+        m.id: int(getattr(m, "total_aulas", 0) or 0) for m in modulos
+    }
 
-        # Antes de gerar, limpamos o calendário existente desta turma + livro
-        CalendarioAula.query.filter_by(livro_id=livro.id, turma_id=turma.id).delete()
+    if recalcular_tudo:
+        CalendarioAula.query.filter_by(turma_id=turma.id).delete()
         db.session.commit()
 
-        # Numeração global de sumários (continua ao longo do ano)
-        contador_sumario_global = 0
+    contador_sumario_global = 0
+    idx_modulo = 0
 
-        # Índice do módulo atual
-        idx_modulo = 0
+    for periodo in periodos:
+        if not periodo.data_inicio or not periodo.data_fim:
+            continue
 
-        for periodo in periodos:
-            if not periodo.data_inicio or not periodo.data_fim:
+        data_atual: date = periodo.data_inicio
+        while data_atual <= periodo.data_fim:
+            if not _e_dia_letivo(data_atual, ano, dias_interrupcao, dias_feriados):
+                data_atual += timedelta(days=1)
                 continue
 
-            data_atual: date = periodo.data_inicio
-            while data_atual <= periodo.data_fim:
-                # Verificar se é dia letivo e se a turma tem carga nesse dia
-                if not _e_dia_letivo(data_atual, ano, dias_interrupcao, dias_feriados):
-                    data_atual += timedelta(days=1)
-                    continue
+            carga_dia = _carga_para_dia_semana(turma, data_atual.weekday())
+            if carga_dia <= 0:
+                data_atual += timedelta(days=1)
+                continue
 
-                carga_dia = _carga_para_dia_semana(turma, data_atual.weekday())
-                if carga_dia <= 0:
-                    data_atual += timedelta(days=1)
-                    continue
+            aulas_hoje = int(carga_dia)
+            if aulas_hoje <= 0:
+                data_atual += timedelta(days=1)
+                continue
 
-                aulas_hoje = int(carga_dia)  # assumimos que a carga são "nº de aulas"
-                if aulas_hoje <= 0 or idx_modulo >= len(modulos):
-                    data_atual += timedelta(days=1)
-                    continue
+            sumarios_hoje: List[int] = []
+            numero_modulo_no_fim: Optional[int] = None
+            modulo_usado: Optional[Modulo] = None
 
-                sumarios_hoje: List[int] = []
-                numero_modulo_no_fim: Optional[int] = None
-                modulo_usado: Optional[Modulo] = None
-
-                while aulas_hoje > 0 and idx_modulo < len(modulos):
+            # Seleciona o módulo ativo: se o período tiver módulo dedicado, usa-o;
+            # caso contrário, segue a ordem natural dos módulos.
+            while aulas_hoje > 0:
+                modulo_atual: Optional[Modulo]
+                if periodo.modulo_id:
+                    modulo_atual = next(
+                        (m for m in modulos if m.id == periodo.modulo_id), None
+                    )
+                    idx_para_avancar = None
+                else:
+                    if idx_modulo >= len(modulos):
+                        break
                     modulo_atual = modulos[idx_modulo]
-                    mod_id = modulo_atual.id
-                    total_modulo = total_por_modulo.get(mod_id, 0)
-                    dadas = progresso_modulos.get(mod_id, 0)
+                    idx_para_avancar = idx_modulo
 
-                    # Limite com pequena tolerância (+2 aulas) para casos práticos
-                    limite = total_modulo + 2
+                if modulo_atual is None:
+                    break
 
-                    if dadas >= limite:
+                mod_id = modulo_atual.id
+                total_modulo = total_por_modulo.get(mod_id, 0)
+                dadas = progresso_modulos.get(mod_id, 0)
+                limite = total_modulo + 2
+
+                if dadas >= limite:
+                    if idx_para_avancar is not None:
                         idx_modulo += 1
                         continue
+                    break
 
-                    # Regista uma aula nova neste módulo
-                    dadas += 1
-                    progresso_modulos[mod_id] = dadas
-                    contador_sumario_global += 1
-                    aulas_hoje -= 1
+                dadas += 1
+                progresso_modulos[mod_id] = dadas
+                contador_sumario_global += 1
+                aulas_hoje -= 1
 
-                    sumarios_hoje.append(contador_sumario_global)
-                    numero_modulo_no_fim = dadas
-                    modulo_usado = modulo_atual
+                sumarios_hoje.append(contador_sumario_global)
+                numero_modulo_no_fim = dadas
+                modulo_usado = modulo_atual
 
-                if sumarios_hoje and modulo_usado is not None:
-                    # Cria uma linha de calendário para este dia
-                    # Ajusta nomes de campos se o modelo CalendarioAula for diferente.
-                    aula = CalendarioAula(
-                        livro_id=livro.id,
-                        turma_id=turma.id,
-                        periodo_id=periodo.id,
-                        data=data_atual,
-                        modulo_id=modulo_usado.id,
-                        numero_modulo=numero_modulo_no_fim,
-                        total_geral=contador_sumario_global,
-                        sumarios=",".join(str(n) for n in sumarios_hoje),
-                        tipo="normal",
-                    )
-                    db.session.add(aula)
+                if idx_para_avancar is not None and dadas >= limite:
+                    idx_modulo += 1
 
-                data_atual += timedelta(days=1)
+            if sumarios_hoje and modulo_usado is not None:
+                aula = CalendarioAula(
+                    turma_id=turma.id,
+                    periodo_id=periodo.id,
+                    data=data_atual,
+                    weekday=data_atual.weekday(),
+                    modulo_id=modulo_usado.id,
+                    numero_modulo=numero_modulo_no_fim,
+                    total_geral=contador_sumario_global,
+                    sumarios=",".join(str(n) for n in sumarios_hoje),
+                    tipo="normal",
+                )
+                db.session.add(aula)
 
-        db.session.commit()
+            data_atual += timedelta(days=1)
+
+    db.session.commit()

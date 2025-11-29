@@ -194,9 +194,6 @@ def upgrade():
         "calendario_aulas",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column(
-            "livro_id", sa.Integer(), sa.ForeignKey("livros.id"), nullable=False
-        ),
-        sa.Column(
             "turma_id", sa.Integer(), sa.ForeignKey("turmas.id"), nullable=False
         ),
         sa.Column(
@@ -204,13 +201,15 @@ def upgrade():
         ),
         sa.Column("data", sa.Date(), nullable=False),
         sa.Column("weekday", sa.Integer(), nullable=False),
-        sa.Column("modulo_nome", sa.String(length=255)),
-        sa.Column("n_aula_modulo", sa.String(length=50)),
-        sa.Column("total_aulas", sa.String(length=50)),
-        sa.Column("n_sumario", sa.String(length=50)),
+        sa.Column("modulo_id", sa.Integer(), sa.ForeignKey("modulos.id")),
+        sa.Column("numero_modulo", sa.Integer()),
+        sa.Column("total_geral", sa.Integer()),
+        sa.Column("sumarios", sa.String(length=255)),
+        sa.Column(
+            "tipo", sa.String(length=50), nullable=False, server_default="normal"
+        ),
         sa.Column("observacoes", sa.Text()),
         sa.Column("sumario", sa.Text()),
-        sa.Column("tipo_dia", sa.String(length=50)),
     )
 
 
