@@ -32,8 +32,12 @@ from models import (
     TurmaDisciplina,
 )
 
-from calendario_service import gerar_calendario_turma, expand_dates
-from calendario_service import garantir_periodos_basicos_para_turma
+from calendario_service import (
+    expand_dates,
+    gerar_calendario_turma,
+    garantir_periodos_basicos_para_turma,
+    garantir_modulos_para_turma,
+)
 
 
 # --------------------------------------------
@@ -445,16 +449,17 @@ def create_app():
             .order_by(Periodo.data_inicio)
             .all()
         )
-        modulos = (
-            Modulo.query.filter_by(turma_id=turma.id).order_by(Modulo.id).all()
-        )
+        modulos = garantir_modulos_para_turma(turma)
 
         if not periodos:
             flash("Defina períodos letivos para a turma antes de gerar o calendário.", "error")
             return redirect(url_for("turma_calendario", turma_id=turma.id))
 
         if not modulos:
-            flash("Crie módulos para a turma antes de gerar o calendário.", "error")
+            flash(
+                "Crie módulos com a respetiva carga horária antes de gerar o calendário.",
+                "error",
+            )
             return redirect(url_for("turma_calendario", turma_id=turma.id))
 
         linhas_criadas = gerar_calendario_turma(turma.id, recalcular_tudo=True)
@@ -485,7 +490,10 @@ def create_app():
         periodo = Periodo.query.get_or_404(periodo_id)
 
         # módulos disponíveis para esta turma
-        modulos = Modulo.query.filter_by(turma_id=turma.id).order_by(Modulo.id).all()
+        modulos = garantir_modulos_para_turma(turma)
+        if not modulos:
+            flash("Cria módulos com carga horária antes de adicionar linhas.", "error")
+            return redirect(url_for("turma_calendario", turma_id=turma.id))
 
         if request.method == "POST":
             data = _parse_date_form(request.form.get("data"))
@@ -570,7 +578,10 @@ def create_app():
 
         periodo = Periodo.query.get_or_404(aula.periodo_id)
 
-        modulos = Modulo.query.filter_by(turma_id=turma.id).order_by(Modulo.id).all()
+        modulos = garantir_modulos_para_turma(turma)
+        if not modulos:
+            flash("Cria módulos com carga horária antes de editar linhas.", "error")
+            return redirect(url_for("turma_calendario", turma_id=turma.id))
 
         if request.method == "POST":
             data = _parse_date_form(request.form.get("data"))

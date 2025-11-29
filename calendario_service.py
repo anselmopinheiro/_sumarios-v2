@@ -118,6 +118,36 @@ def garantir_periodos_basicos_para_turma(turma: Turma) -> None:
     db.session.commit()
 
 
+def garantir_modulos_para_turma(turma: Turma) -> List[Modulo]:
+    """
+    Garante que a turma tem pelo menos um módulo configurado.
+
+    - Para turmas do ensino regular, cria automaticamente um módulo
+      "Geral" (não editável) se não existir nenhum.
+    - Para turmas profissionais mantém-se a exigência de módulos
+      explícitos, devolvendo a lista vazia quando não existirem.
+    """
+
+    modulos: List[Modulo] = (
+        Modulo.query.filter_by(turma_id=turma.id).order_by(Modulo.id).all()
+    )
+    if modulos:
+        return modulos
+
+    if turma.tipo != "regular":
+        return []
+
+    modulo_geral = Modulo(
+        turma_id=turma.id,
+        nome="Geral",
+        total_aulas=0,
+        tolerancia=0,
+    )
+    db.session.add(modulo_geral)
+    db.session.commit()
+    return [modulo_geral]
+
+
 def _parse_pt_date(texto: str, fallback_year: int | None = None) -> date:
     """
     Converte texto tipo '22 de dezembro de 2025' numa date.
@@ -329,9 +359,7 @@ def gerar_calendario_turma(turma_id: int, recalcular_tudo: bool = True) -> int:
     if not periodos:
         return 0
 
-    modulos: List[Modulo] = (
-        Modulo.query.filter_by(turma_id=turma.id).order_by(Modulo.id).all()
-    )
+    modulos: List[Modulo] = garantir_modulos_para_turma(turma)
     if not modulos:
         return 0
 
@@ -398,9 +426,9 @@ def gerar_calendario_turma(turma_id: int, recalcular_tudo: bool = True) -> int:
                 mod_id = modulo_atual.id
                 total_modulo = total_por_modulo.get(mod_id, 0)
                 dadas = progresso_modulos.get(mod_id, 0)
-                limite = total_modulo + 2
+                limite = None if total_modulo <= 0 else total_modulo + 2
 
-                if dadas >= limite:
+                if limite is not None and dadas >= limite:
                     if idx_para_avancar is not None:
                         idx_modulo += 1
                         continue
@@ -415,7 +443,7 @@ def gerar_calendario_turma(turma_id: int, recalcular_tudo: bool = True) -> int:
                 numero_modulo_no_fim = dadas
                 modulo_usado = modulo_atual
 
-                if idx_para_avancar is not None and dadas >= limite:
+                if limite is not None and idx_para_avancar is not None and dadas >= limite:
                     idx_modulo += 1
 
             if sumarios_hoje and modulo_usado is not None:
