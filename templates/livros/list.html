@@ -2,6 +2,7 @@
 {% block content %}
 
 <h2>Livros (Disciplinas)</h2>
+<a href="{{ url_for('livros_add') }}">+ Novo livro</a>
 
 {% if ano_atual %}
   <p class="text-muted">Ano letivo atual: {{ ano_atual.nome }}</p>
@@ -36,15 +37,12 @@
             {% endif %}
           </td>
           <td>
-            <a href="{{ url_for('livros_edit', livro_id=livro.id) }}" class="btn btn-sm btn-warning">
-              Editar
-            </a>
-            <form method="post"
-                  action="{{ url_for('livros_delete', livro_id=livro.id) }}"
-                  style="display:inline"
-                  onsubmit="return confirm('Apagar este livro (disciplina)?');">
-              <button type="submit" class="btn btn-sm btn-danger">Apagar</button>
-            </form>
+           <a href="{{ url_for('livros_edit', livro_id=livro.id) }}">Editar</a>
+
+           <form method="post"
+      action="{{ url_for('livros_delete', livro_id=livro.id) }}">
+  <button type="submit">Apagar</button>
+</form>
           </td>
         </tr>
       {% endfor %}
