@@ -9,4 +9,8 @@ opcional com módulos. Para aplicar esta baseline sem conflitos:
 2. Garante que só existe a revisão `0001_rebuild_schema.py` em `migrations/versions`.
 3. Executa `flask db upgrade` para criar o esquema completo.
 
+Se estás a reutilizar uma base de dados criada antes da coluna `modulo_id` em
+`calendario_aulas`, basta correres `flask db upgrade` para aplicares a revisão
+`6f9c5b1af5c5`, que adiciona as colunas em falta sem perder dados.
+
 Isto evita migrações divergentes e deixa a base pronta para novas alterações.
