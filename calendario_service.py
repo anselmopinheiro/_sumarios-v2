@@ -427,7 +427,14 @@ def gerar_calendario_turma(turma_id: int, recalcular_tudo: bool = True) -> int:
                 mod_id = modulo_atual.id
                 total_modulo = total_por_modulo.get(mod_id, 0)
                 dadas = progresso_modulos.get(mod_id, 0)
-                limite = None if total_modulo <= 0 else total_modulo + 2
+
+                # Para turmas profissionais admite-se uma tolerância (se definida),
+                # para regulares respeita-se o total configurado.
+                tolerancia_extra = max(int(getattr(modulo_atual, "tolerancia", 0) or 0), 0)
+                if turma.tipo == "profissional" and total_modulo > 0:
+                    limite = total_modulo + tolerancia_extra
+                else:
+                    limite = None if total_modulo <= 0 else total_modulo
 
                 if limite is not None and dadas >= limite:
                     if idx_para_avancar is not None:
