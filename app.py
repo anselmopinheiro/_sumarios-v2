@@ -139,12 +139,10 @@ def create_app():
     # ----------------------------------------
     @app.route("/")
     def dashboard():
-        livros = Livro.query.order_by(Livro.nome).all()
         turmas = Turma.query.order_by(Turma.nome).all()
         ano_atual = get_ano_letivo_atual()
         return render_template(
             "dashboard.html",
-            livros=livros,
             turmas=turmas,
             ano_atual=ano_atual,
         )
@@ -271,10 +269,14 @@ def create_app():
             return redirect(url_for("turmas_list"))
 
         ano_atual = ano or get_ano_letivo_atual()
+        anos_letivos = (
+            AnoLetivo.query.order_by(AnoLetivo.data_inicio_ano.desc()).all()
+        )
 
         if request.method == "POST":
             nome = (request.form.get("nome") or "").strip()
             tipo = request.form.get("tipo") or turma.tipo
+            ano_id = request.form.get("ano_letivo_id", type=int)
             carga_seg = request.form.get("carga_segunda", type=float)
             carga_ter = request.form.get("carga_terca", type=float)
             carga_qua = request.form.get("carga_quarta", type=float)
@@ -288,10 +290,23 @@ def create_app():
                     titulo="Editar Turma",
                     turma=turma,
                     ano_atual=ano_atual,
+                    anos_letivos=anos_letivos,
+                )
+
+            ano_escolhido = AnoLetivo.query.get(ano_id) if ano_id else None
+            if not ano_escolhido:
+                flash("Seleciona um ano letivo válido.", "error")
+                return render_template(
+                    "turmas/form.html",
+                    titulo="Editar Turma",
+                    turma=turma,
+                    ano_atual=ano_atual,
+                    anos_letivos=anos_letivos,
                 )
 
             turma.nome = nome
             turma.tipo = tipo
+            turma.ano_letivo_id = ano_escolhido.id
             turma.carga_segunda = carga_seg
             turma.carga_terca = carga_ter
             turma.carga_quarta = carga_qua
@@ -308,19 +323,24 @@ def create_app():
             titulo="Editar Turma",
             turma=turma,
             ano_atual=ano_atual,
+            anos_letivos=anos_letivos,
         )
 
     @app.route("/turmas/add", methods=["GET", "POST"])
     def turmas_add():
         # usar sempre o ano letivo atual
         ano_atual = get_ano_letivo_atual()
-        if not ano_atual or ano_atual.fechado:
-            flash("Não há Ano Letivo ativo e aberto para criar turmas.", "error")
+        anos_letivos = (
+            AnoLetivo.query.order_by(AnoLetivo.data_inicio_ano.desc()).all()
+        )
+        if not anos_letivos:
+            flash("Não há anos letivos configurados.", "error")
             return redirect(url_for("anos_letivos_list"))
 
         if request.method == "POST":
             nome = (request.form.get("nome") or "").strip()
             tipo = request.form.get("tipo") or "regular"
+            ano_id = request.form.get("ano_letivo_id", type=int)
             carga_seg = request.form.get("carga_segunda", type=float)
             carga_ter = request.form.get("carga_terca", type=float)
             carga_qua = request.form.get("carga_quarta", type=float)
@@ -334,12 +354,24 @@ def create_app():
                     titulo="Nova Turma",
                     turma=None,
                     ano_atual=ano_atual,
+                    anos_letivos=anos_letivos,
+                )
+
+            ano_escolhido = AnoLetivo.query.get(ano_id) if ano_id else ano_atual
+            if not ano_escolhido or ano_escolhido.fechado:
+                flash("Seleciona um ano letivo aberto.", "error")
+                return render_template(
+                    "turmas/form.html",
+                    titulo="Nova Turma",
+                    turma=None,
+                    ano_atual=ano_atual,
+                    anos_letivos=anos_letivos,
                 )
 
             turma = Turma(
                 nome=nome,
                 tipo=tipo,
-                ano_letivo_id=ano_atual.id,
+                ano_letivo_id=ano_escolhido.id,
                 carga_segunda=carga_seg,
                 carga_terca=carga_ter,
                 carga_quarta=carga_qua,
@@ -352,7 +384,7 @@ def create_app():
             
             # Gera automaticamente Anual / 1.º / 2.º semestre para esta turma
             garantir_periodos_basicos_para_turma(turma)
-            flash(f"Turma criada no ano letivo {ano_atual.nome}.", "success")
+            flash(f"Turma criada no ano letivo {ano_escolhido.nome}.", "success")
             return redirect(url_for("turmas_list"))
 
         return render_template(
@@ -360,6 +392,7 @@ def create_app():
             titulo="Nova Turma",
             turma=None,
             ano_atual=ano_atual,
+            anos_letivos=anos_letivos,
         )
 
     @app.route("/turmas/<int:turma_id>/calendario")
@@ -368,71 +401,6 @@ def create_app():
         ano = turma.ano_letivo
         ano_fechado = bool(ano and ano.fechado)
 
-        livros_disponiveis = turma.livros
-        livro_id = request.args.get("livro_id", type=int)
-        periodo_id = request.args.get("periodo_id", type=int)
-
-        livro_atual = None
-        if livro_id:
-            livro_atual = Livro.query.get(livro_id)
-        elif livros_disponiveis:
-            livro_atual = livros_disponiveis[0]
-
-        periodos_disponiveis = (
-            Periodo.query
-            .filter_by(turma_id=turma.id)
-            .order_by(Periodo.data_inicio)
-            .all()      
-        )
-
-        periodo_atual = None
-        if periodo_id:
-            periodo_atual = Periodo.query.get(periodo_id)
-        elif periodos_disponiveis:
-            periodo_atual = periodos_disponiveis[0]
-
-        aulas = []
-        if livro_atual and periodo_atual:
-            aulas = (
-                CalendarioAula.query
-                .filter_by(
-                    livro_id=livro_atual.id,
-                    turma_id=turma.id,
-                    periodo_id=periodo_atual.id,
-                )
-                .order_by(CalendarioAula.data)
-                .all()
-            )
-
-        return render_template(
-            "turmas/calendario.html",
-            turma=turma,
-            ano=ano,
-            ano_fechado=ano_fechado,
-            aulas=aulas,
-            livro_atual=livro_atual,
-            periodo_atual=periodo_atual,
-            livros_disponiveis=livros_disponiveis,
-            periodos_disponiveis=periodos_disponiveis,
-        )
-
-        turma = Turma.query.get_or_404(turma_id)
-        ano = turma.ano_letivo
-        ano_fechado = bool(ano and ano.fechado)
-
-        # Livros associados à turma
-        livros_disponiveis = turma.livros  # relação many-to-many ou similar
-        livro_id = request.args.get("livro_id", type=int)
-        periodo_id = request.args.get("periodo_id", type=int)
-
-        # Escolher livro atual
-        livro_atual = None
-        if livro_id:
-            livro_atual = Livro.query.get(livro_id)
-        elif livros_disponiveis:
-            livro_atual = livros_disponiveis[0]
-
-        # Periodos da turma
         periodos_disponiveis = (
             Periodo.query
             .filter_by(turma_id=turma.id)
@@ -440,24 +408,17 @@ def create_app():
             .all()
         )
 
+        periodo_id = request.args.get("periodo_id", type=int)
         periodo_atual = None
         if periodo_id:
             periodo_atual = Periodo.query.get(periodo_id)
         elif periodos_disponiveis:
             periodo_atual = periodos_disponiveis[0]
 
-        aulas = []
-        if livro_atual and periodo_atual:
-            aulas = (
-                CalendarioAula.query
-                .filter_by(
-                    livro_id=livro_atual.id,
-                    turma_id=turma.id,
-                    periodo_id=periodo_atual.id,
-                )
-                .order_by(CalendarioAula.data)
-                .all()
-            )
+        query_aulas = CalendarioAula.query.filter_by(turma_id=turma.id)
+        if periodo_atual:
+            query_aulas = query_aulas.filter_by(periodo_id=periodo_atual.id)
+        aulas = query_aulas.order_by(CalendarioAula.data).all()
 
         return render_template(
             "turmas/calendario.html",
@@ -465,11 +426,30 @@ def create_app():
             ano=ano,
             ano_fechado=ano_fechado,
             aulas=aulas,
-            livro_atual=livro_atual,
             periodo_atual=periodo_atual,
-            livros_disponiveis=livros_disponiveis,
             periodos_disponiveis=periodos_disponiveis,
         )
+
+    @app.route("/turmas/<int:turma_id>/calendario/gerar", methods=["POST"])
+    def turma_calendario_gerar(turma_id):
+        turma = Turma.query.get_or_404(turma_id)
+        ano = turma.ano_letivo
+        if ano and ano.fechado:
+            flash("Ano letivo fechado: não é possível gerar calendário.", "error")
+            return redirect(url_for("turma_calendario", turma_id=turma.id))
+
+        if not turma.livros:
+            flash(
+                "Associa pelo menos um livro/planeamento à turma para gerar o calendário.",
+                "error",
+            )
+            return redirect(url_for("turma_calendario", turma_id=turma.id))
+
+        for livro in turma.livros:
+            gerar_calendarios(livro.id, recalcular_tudo=True)
+
+        flash("Calendário anual gerado para a turma.", "success")
+        return redirect(url_for("turma_calendario", turma_id=turma.id))
 
     @app.route("/turmas/<int:turma_id>/calendario/add", methods=["GET", "POST"])
     def calendario_add(turma_id):

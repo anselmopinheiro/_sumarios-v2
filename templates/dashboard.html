@@ -11,17 +11,6 @@
   <a href="{{ url_for('calendario_escolar_gestao') }}">Gerir Calendário Escolar</a>
 </p>
 
-
-
-<h3>Livros</h3>
-<ul>
-  {% for livro in livros %}
-    <li><a href="{{ url_for('livros_detail', livro_id=livro.id) }}">{{ livro.nome }}</a></li>
-  {% else %}
-    <li>(Nenhum livro registado)</li>
-  {% endfor %}
-</ul>
-
 <h3>Turmas</h3>
 <ul>
   {% for turma in turmas %}

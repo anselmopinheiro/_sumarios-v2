@@ -73,16 +73,18 @@
 
   <div class="mb-3">
     <label class="form-label">Ano Letivo</label>
-    <input type="text"
-           class="form-control"
-           value="{% if turma and turma.ano_letivo %}
-                    {{ turma.ano_letivo.nome }}
-                  {% elif ano_atual %}
-                    {{ ano_atual.nome }}
-                  {% else %}
-                    (sem ano letivo)
-                  {% endif %}"
-           disabled>
+    <select name="ano_letivo_id" class="form-control" required>
+      {% for ano in anos_letivos %}
+        <option value="{{ ano.id }}"
+          {% if turma and turma.ano_letivo_id == ano.id %}
+            selected
+          {% elif not turma and ano_atual and ano_atual.id == ano.id %}
+            selected
+          {% endif %}>
+          {{ ano.nome }}
+        </option>
+      {% endfor %}
+    </select>
   </div>
 
   <button type="submit" class="btn btn-success">Guardar</button>
