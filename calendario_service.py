@@ -13,6 +13,7 @@ from models import (
     AnoLetivo,
     InterrupcaoLetiva,
     Feriado,
+    Horario,
 )
 
 
@@ -267,22 +268,33 @@ def _e_dia_letivo(d: date, ano: AnoLetivo, dias_interrupcao: Set[date], dias_fer
 # Helpers de carga horária da Turma
 # ----------------------------------------
 
-def _carga_para_dia_semana(turma: Turma, weekday: int) -> float:
+def _mapa_carga_semana(turma: Turma) -> Dict[int, float]:
     """
-    Devolve a carga horária da turma para o dia da semana dado
-    (0=segunda ... 4=sexta). Fora disso devolve 0.
+    Devolve um mapa weekday->carga horária.
+
+    1) Se a turma tiver as colunas de carga diária preenchidas, usa-as.
+    2) Caso contrário, cai para o somatório dos horários existentes.
+    3) Fora de segunda-sexta, devolve 0.
     """
-    if weekday == 0:
-        return turma.carga_segunda or 0.0
-    if weekday == 1:
-        return turma.carga_terca or 0.0
-    if weekday == 2:
-        return turma.carga_quarta or 0.0
-    if weekday == 3:
-        return turma.carga_quinta or 0.0
-    if weekday == 4:
-        return turma.carga_sexta or 0.0
-    return 0.0
+    carga_por_coluna = {
+        0: turma.carga_segunda,
+        1: turma.carga_terca,
+        2: turma.carga_quarta,
+        3: turma.carga_quinta,
+        4: turma.carga_sexta,
+    }
+
+    if any(v is not None for v in carga_por_coluna.values()):
+        # Já existe carga específica: normaliza para float e devolve
+        return {k: float(v or 0.0) for k, v in carga_por_coluna.items()}
+
+    # Fallback: usar a tabela Horario
+    acumulado = {i: 0.0 for i in range(5)}
+    for h in Horario.query.filter_by(turma_id=turma.id).all():
+        if 0 <= h.weekday <= 4:
+            acumulado[h.weekday] += float(h.horas or 0)
+
+    return acumulado
 
 
 DIAS_PT = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
@@ -327,6 +339,7 @@ def gerar_calendario_turma(turma_id: int, recalcular_tudo: bool = True) -> None:
     total_por_modulo: Dict[int, int] = {
         m.id: int(getattr(m, "total_aulas", 0) or 0) for m in modulos
     }
+    carga_por_dia: Dict[int, float] = _mapa_carga_semana(turma)
 
     if recalcular_tudo:
         CalendarioAula.query.filter_by(turma_id=turma.id).delete()
@@ -345,7 +358,7 @@ def gerar_calendario_turma(turma_id: int, recalcular_tudo: bool = True) -> None:
                 data_atual += timedelta(days=1)
                 continue
 
-            carga_dia = _carga_para_dia_semana(turma, data_atual.weekday())
+            carga_dia = carga_por_dia.get(data_atual.weekday(), 0.0)
             if carga_dia <= 0:
                 data_atual += timedelta(days=1)
                 continue
