@@ -12,6 +12,7 @@ from flask import (
 )
 
 from flask_migrate import Migrate
+from sqlalchemy import func
 
 from config import Config
 from models import (
@@ -156,10 +157,67 @@ def create_app():
         livros = Livro.query.order_by(Livro.nome).all()
         return render_template("livros/list.html", livros=livros)
 
+    @app.route("/livros/novo", methods=["GET", "POST"])
+    def livros_new():
+        if request.method == "POST":
+            nome = (request.form.get("nome") or "").strip()
+
+            if not nome:
+                flash("O nome do livro é obrigatório.", "error")
+                return render_template("livros/form.html", titulo="Novo Livro")
+
+            existente = Livro.query.filter(func.lower(Livro.nome) == nome.lower()).first()
+            if existente:
+                flash("Já existe um livro com esse nome.", "error")
+                return render_template("livros/form.html", titulo="Novo Livro")
+
+            livro = Livro(nome=nome)
+            db.session.add(livro)
+            db.session.commit()
+            flash("Livro criado com sucesso.", "success")
+            return redirect(url_for("livros_detail", livro_id=livro.id))
+
+        return render_template("livros/form.html", titulo="Novo Livro")
+
     @app.route("/livros/<int:livro_id>")
     def livros_detail(livro_id):
         livro = Livro.query.get_or_404(livro_id)
         return render_template("livros/detail.html", livro=livro)
+
+    @app.route("/livros/<int:livro_id>/editar", methods=["GET", "POST"])
+    def livros_edit(livro_id):
+        livro = Livro.query.get_or_404(livro_id)
+
+        if request.method == "POST":
+            nome = (request.form.get("nome") or "").strip()
+
+            if not nome:
+                flash("O nome do livro é obrigatório.", "error")
+                return render_template(
+                    "livros/form.html",
+                    titulo="Editar Livro",
+                    livro=livro,
+                )
+
+            existente = (
+                Livro.query
+                .filter(func.lower(Livro.nome) == nome.lower(), Livro.id != livro.id)
+                .first()
+            )
+            if existente:
+                flash("Já existe outro livro com esse nome.", "error")
+                return render_template(
+                    "livros/form.html",
+                    titulo="Editar Livro",
+                    livro=livro,
+                )
+
+            livro.nome = nome
+            db.session.commit()
+            flash("Livro atualizado com sucesso.", "success")
+            return redirect(url_for("livros_detail", livro_id=livro.id))
+
+        return render_template("livros/form.html", titulo="Editar Livro", livro=livro)
 
     @app.route("/livros/<int:livro_id>/gerar", methods=["POST"])
     def livros_gerar(livro_id):
@@ -180,6 +238,20 @@ def create_app():
         gerar_calendarios(livro.id, recalcular_tudo=recalcular_tudo)
         flash("Calendários gerados/atualizados com sucesso.", "success")
         return redirect(url_for("livros_detail", livro_id=livro.id))
+
+    @app.route("/livros/<int:livro_id>/delete", methods=["POST"])
+    def livros_delete(livro_id):
+        livro = Livro.query.get_or_404(livro_id)
+
+        # Remover calendários e vínculos antes de apagar
+        CalendarioAula.query.filter_by(livro_id=livro.id).delete()
+        LivroTurma.query.filter_by(livro_id=livro.id).delete()
+
+        db.session.delete(livro)
+        db.session.commit()
+
+        flash("Livro removido com sucesso.", "success")
+        return redirect(url_for("livros_list"))
 
     # ----------------------------------------
     # TURMAS

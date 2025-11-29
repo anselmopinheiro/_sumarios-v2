@@ -1,11 +1,41 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>Livros</h2>
-<ul>
-  {% for livro in livros %}
-    <li><a href="{{ url_for('livros_detail', livro_id=livro.id) }}">{{ livro.nome }}</a></li>
-  {% else %}
-    <li>(Nenhum livro registado)</li>
-  {% endfor %}
-</ul>
+<div class="d-flex align-items-center mb-3">
+  <h2 class="mb-0">Livros</h2>
+  <div class="ms-auto">
+    <a class="btn btn-primary" href="{{ url_for('livros_new') }}">Novo Livro</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body p-0">
+    <table class="table mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Nome</th>
+          <th class="text-end">Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for livro in livros %}
+          <tr>
+            <td>
+              <a href="{{ url_for('livros_detail', livro_id=livro.id) }}">{{ livro.nome }}</a>
+            </td>
+            <td class="text-end">
+              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('livros_edit', livro_id=livro.id) }}">Editar</a>
+              <form method="post" action="{{ url_for('livros_delete', livro_id=livro.id) }}" class="d-inline" onsubmit="return confirm('Confirma eliminar este livro?');">
+                <button type="submit" class="btn btn-sm btn-outline-danger">Eliminar</button>
+              </form>
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="2" class="text-center py-3">Nenhum livro registado.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 {% endblock %}

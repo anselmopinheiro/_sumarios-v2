@@ -1,27 +1,55 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>Livro: {{ livro.nome }}</h2>
+<div class="d-flex align-items-center mb-3">
+  <div>
+    <h2 class="mb-0">Livro</h2>
+    <div class="text-muted">{{ livro.nome }}</div>
+  </div>
+  <div class="ms-auto d-flex gap-2">
+    <a class="btn btn-outline-secondary" href="{{ url_for('livros_edit', livro_id=livro.id) }}">Editar</a>
+    <form method="post" action="{{ url_for('livros_delete', livro_id=livro.id) }}" onsubmit="return confirm('Confirma eliminar este livro?');">
+      <button type="submit" class="btn btn-outline-danger">Eliminar</button>
+    </form>
+  </div>
+</div>
 
-<h3>Turmas associadas</h3>
-<ul>
-  {% for turma in livro.turmas %}
-    <li>{{ turma.nome }} ({{ turma.tipo }})</li>
-  {% else %}
-    <li>(Nenhuma turma associada a este livro)</li>
-  {% endfor %}
-</ul>
+<div class="card mb-3">
+  <div class="card-header">Turmas associadas</div>
+  <div class="card-body p-0">
+    <table class="table mb-0">
+      <tbody>
+        {% for turma in livro.turmas %}
+          <tr>
+            <td>{{ turma.nome }}</td>
+            <td class="text-muted">{{ turma.tipo }}</td>
+          </tr>
+        {% else %}
+          <tr>
+            <td class="text-center py-3" colspan="2">Nenhuma turma associada a este livro.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 
-<form method="post" action="{{ url_for('livros_gerar', livro_id=livro.id) }}">
-  <p>
-    <label>
-      <input type="radio" name="modo" value="recalcular" checked>
-      Recalcular todos os calendários
-    </label><br>
-    <label>
-      <input type="radio" name="modo" value="incremental">
-      Atualizar apenas alterações recentes
-    </label>
-  </p>
-  <button type="submit">Gerar / Atualizar calendários</button>
-</form>
+<div class="card">
+  <div class="card-header">Gerar calendários</div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('livros_gerar', livro_id=livro.id) }}">
+      <div class="mb-3">
+        <div class="form-check">
+          <input class="form-check-input" type="radio" name="modo" value="recalcular" id="modo-recalcular" checked>
+          <label class="form-check-label" for="modo-recalcular">Recalcular todos os calendários</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="radio" name="modo" value="incremental" id="modo-incremental">
+          <label class="form-check-label" for="modo-incremental">Atualizar apenas alterações recentes</label>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary">Gerar / Atualizar</button>
+      <a href="{{ url_for('livros_list') }}" class="btn btn-link">Voltar à lista</a>
+    </form>
+  </div>
+</div>
 {% endblock %}
