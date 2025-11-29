@@ -186,8 +186,13 @@ def expand_dates(data_inicial: Optional[date], data_text: Optional[str]) -> List
                 atual += timedelta(days=1)
             return dias
 
-        # Caso uma única data textual
-        return [_parse_pt_date(t)]
+        # Caso uma única data textual (pode não trazer o ano)
+        fallback_year = None
+        if data_inicial:
+            fallback_year = data_inicial.year
+        else:
+            fallback_year = date.today().year
+        return [_parse_pt_date(t, fallback_year=fallback_year)]
 
     # Sem data_text → usa só data_inicial, se existir
     if data_inicial:
