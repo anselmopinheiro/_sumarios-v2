@@ -24,6 +24,11 @@ from models import (
     AnoLetivo,
     InterrupcaoLetiva,
     Feriado,
+    Horario,
+    Exclusao,
+    Extra,
+    LivroTurma,
+    TurmaDisciplina,
 )
 
 from calendario_service import gerar_calendarios, expand_dates
@@ -183,6 +188,55 @@ def create_app():
     def turmas_list():
         turmas = Turma.query.order_by(Turma.nome).all()
         return render_template("turmas/list.html", turmas=turmas)
+
+    @app.route("/turmas/<int:turma_id>/edit", methods=["GET", "POST"])
+    def turmas_edit(turma_id):
+        turma = Turma.query.get_or_404(turma_id)
+        ano = turma.ano_letivo
+
+        if ano and ano.fechado:
+            flash("Ano letivo fechado: não é possível editar esta turma.", "error")
+            return redirect(url_for("turmas_list"))
+
+        ano_atual = ano or get_ano_letivo_atual()
+
+        if request.method == "POST":
+            nome = (request.form.get("nome") or "").strip()
+            tipo = request.form.get("tipo") or turma.tipo
+            carga_seg = request.form.get("carga_segunda", type=float)
+            carga_ter = request.form.get("carga_terca", type=float)
+            carga_qua = request.form.get("carga_quarta", type=float)
+            carga_qui = request.form.get("carga_quinta", type=float)
+            carga_sex = request.form.get("carga_sexta", type=float)
+
+            if not nome:
+                flash("O nome da turma é obrigatório.", "error")
+                return render_template(
+                    "turmas/form.html",
+                    titulo="Editar Turma",
+                    turma=turma,
+                    ano_atual=ano_atual,
+                )
+
+            turma.nome = nome
+            turma.tipo = tipo
+            turma.carga_segunda = carga_seg
+            turma.carga_terca = carga_ter
+            turma.carga_quarta = carga_qua
+            turma.carga_quinta = carga_qui
+            turma.carga_sexta = carga_sex
+
+            db.session.commit()
+            garantir_periodos_basicos_para_turma(turma)
+            flash("Turma atualizada.", "success")
+            return redirect(url_for("turmas_list"))
+
+        return render_template(
+            "turmas/form.html",
+            titulo="Editar Turma",
+            turma=turma,
+            ano_atual=ano_atual,
+        )
 
     @app.route("/turmas/add", methods=["GET", "POST"])
     def turmas_add():
@@ -428,6 +482,17 @@ def create_app():
     @app.route("/turmas/<int:turma_id>/delete", methods=["POST"])
     def turmas_delete(turma_id):
         turma = Turma.query.get_or_404(turma_id)
+
+        # Apaga dependências explícitas antes da turma para evitar violar FKs
+        CalendarioAula.query.filter_by(turma_id=turma.id).delete()
+        Extra.query.filter_by(turma_id=turma.id).delete()
+        Exclusao.query.filter_by(turma_id=turma.id).delete()
+        Horario.query.filter_by(turma_id=turma.id).delete()
+        Periodo.query.filter_by(turma_id=turma.id).delete()
+        Modulo.query.filter_by(turma_id=turma.id).delete()
+        TurmaDisciplina.query.filter_by(turma_id=turma.id).delete()
+        LivroTurma.query.filter_by(turma_id=turma.id).delete()
+
         db.session.delete(turma)
         db.session.commit()
         flash("Turma eliminada.", "success")
