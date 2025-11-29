@@ -457,9 +457,15 @@ def create_app():
             flash("Crie módulos para a turma antes de gerar o calendário.", "error")
             return redirect(url_for("turma_calendario", turma_id=turma.id))
 
-        gerar_calendario_turma(turma.id, recalcular_tudo=True)
+        linhas_criadas = gerar_calendario_turma(turma.id, recalcular_tudo=True)
 
-        flash("Calendário anual gerado para a turma.", "success")
+        if linhas_criadas:
+            flash("Calendário anual gerado para a turma.", "success")
+        else:
+            flash(
+                "Não foi possível gerar aulas: defina a carga horária diária ou os horários da turma.",
+                "warning",
+            )
         return redirect(url_for("turma_calendario", turma_id=turma.id))
 
     @app.route("/turmas/<int:turma_id>/calendario/add", methods=["GET", "POST"])

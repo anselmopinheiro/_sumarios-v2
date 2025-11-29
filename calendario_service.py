@@ -304,7 +304,7 @@ DIAS_PT = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sex
 # Motor principal
 # ----------------------------------------
 
-def gerar_calendario_turma(turma_id: int, recalcular_tudo: bool = True) -> None:
+def gerar_calendario_turma(turma_id: int, recalcular_tudo: bool = True) -> int:
     """
     Gera o calendário de aulas para uma turma com base no calendário escolar
     e na configuração de períodos/módulos dessa turma.
@@ -317,7 +317,7 @@ def gerar_calendario_turma(turma_id: int, recalcular_tudo: bool = True) -> None:
     ano: Optional[AnoLetivo] = turma.ano_letivo
     if not ano:
         # Sem ano letivo não há calendário escolar para cruzar
-        return
+        return 0
 
     dias_interrupcao, dias_feriados = _build_dias_nao_letivos(ano)
 
@@ -327,13 +327,13 @@ def gerar_calendario_turma(turma_id: int, recalcular_tudo: bool = True) -> None:
         .all()
     )
     if not periodos:
-        return
+        return 0
 
     modulos: List[Modulo] = (
         Modulo.query.filter_by(turma_id=turma.id).order_by(Modulo.id).all()
     )
     if not modulos:
-        return
+        return 0
 
     progresso_modulos: Dict[int, int] = {m.id: 0 for m in modulos}
     total_por_modulo: Dict[int, int] = {
@@ -347,6 +347,11 @@ def gerar_calendario_turma(turma_id: int, recalcular_tudo: bool = True) -> None:
 
     contador_sumario_global = 0
     idx_modulo = 0
+    total_criadas = 0
+
+    if not any(carga_por_dia.values()):
+        # Sem carga (nem na turma, nem via horários): não há aulas para gerar.
+        return 0
 
     for periodo in periodos:
         if not periodo.data_inicio or not periodo.data_fim:
@@ -426,7 +431,9 @@ def gerar_calendario_turma(turma_id: int, recalcular_tudo: bool = True) -> None:
                     tipo="normal",
                 )
                 db.session.add(aula)
+                total_criadas += 1
 
             data_atual += timedelta(days=1)
 
     db.session.commit()
+    return total_criadas
