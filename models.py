@@ -1,0 +1,267 @@
+from flask_sqlalchemy import SQLAlchemy
+
+db = SQLAlchemy()
+
+
+class Livro(db.Model):
+    __tablename__ = "livros"
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(255), unique=True, nullable=False)
+
+    turmas = db.relationship("Turma", secondary="livros_turmas", back_populates="livros")
+
+
+class AnoLetivo(db.Model):
+    __tablename__ = "anos_letivos"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    # Ex.: "2025/2026"
+    nome = db.Column(db.String(20), unique=True, nullable=False)
+
+    # Datas principais
+    data_inicio_ano = db.Column(db.Date, nullable=False)
+    data_fim_ano = db.Column(db.Date, nullable=False)
+
+    data_fim_semestre1 = db.Column(db.Date, nullable=False)
+    data_inicio_semestre2 = db.Column(db.Date, nullable=False)
+
+    descricao = db.Column(db.String(255))
+
+    # Ano letivo actualmente em uso (“Corrente”)
+    ativo = db.Column(db.Boolean, nullable=False, default=False)
+
+    # Anos passados que ficam só para consulta/exportação
+    fechado = db.Column(db.Boolean, nullable=False, default=False)
+
+    # Relações opcionais, se as tiveres:
+    # turmas = db.relationship("Turma", back_populates="ano_letivo")
+    # interrupcoes = db.relationship("InterrupcaoLetiva", back_populates="ano_letivo")
+    # feriados = db.relationship("Feriado", back_populates="ano_letivo")
+
+
+
+class Turma(db.Model):
+    __tablename__ = "turmas"
+
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(50), nullable=False)
+    tipo = db.Column(db.String(20), nullable=False, default="regular")
+
+    # deixa como nullable=True para não partir a migração em SQLite
+    ano_letivo_id = db.Column(db.Integer, db.ForeignKey("anos_letivos.id"))
+    ano_letivo = db.relationship("AnoLetivo", backref="turmas")
+
+    # 👉 NOVO: relação com Livro (simétrica do Livro.turmas)
+    livros = db.relationship(
+        "Livro",
+        secondary="livros_turmas",
+        back_populates="turmas",
+    )
+    # NOVO — carga horária por dia da semana
+    carga_segunda = db.Column(db.Float, nullable=True)
+    carga_terca = db.Column(db.Float, nullable=True)
+    carga_quarta = db.Column(db.Float, nullable=True)
+    carga_quinta = db.Column(db.Float, nullable=True)
+    carga_sexta = db.Column(db.Float, nullable=True)
+    # relação many-to-many com disciplina
+    disciplinas = db.relationship(
+        "Disciplina",
+        secondary="turmas_disciplinas",
+        back_populates="turmas",
+    )
+
+    
+    
+
+class Disciplina(db.Model):
+    __tablename__ = "disciplinas"
+
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(100), nullable=False)       # ex.: "Produção Multimédia"
+    sigla = db.Column(db.String(20))                       # ex.: "PM"
+
+    ano_letivo_id = db.Column(db.Integer, db.ForeignKey("anos_letivos.id"), nullable=False)
+    ano_letivo = db.relationship("AnoLetivo", backref="disciplinas")
+
+    turmas = db.relationship(
+        "Turma",
+        secondary="turmas_disciplinas",
+        back_populates="disciplinas",
+    )
+
+class TurmaDisciplina(db.Model):
+    __tablename__ = "turmas_disciplinas"
+
+    id = db.Column(db.Integer, primary_key=True)
+    turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), nullable=False)
+    disciplina_id = db.Column(db.Integer, db.ForeignKey("disciplinas.id"), nullable=False)
+
+    # opcional, mas útil para mais tarde:
+    horas_semanais = db.Column(db.Float)
+
+    __table_args__ = (
+        db.UniqueConstraint("turma_id", "disciplina_id", name="uq_turma_disciplina"),
+    )
+
+
+class LivroTurma(db.Model):
+    __tablename__ = "livros_turmas"
+    livro_id = db.Column(db.Integer, db.ForeignKey("livros.id"), primary_key=True)
+    turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), primary_key=True)
+
+
+class Horario(db.Model):
+    __tablename__ = "horarios"
+    id = db.Column(db.Integer, primary_key=True)
+    turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), nullable=False)
+    # 0=Seg, 1=Ter, ..., 6=Dom
+    weekday = db.Column(db.Integer, nullable=False)
+    horas = db.Column(db.Integer, nullable=False)
+
+
+class Modulo(db.Model):
+    __tablename__ = "modulos"
+    id = db.Column(db.Integer, primary_key=True)
+    turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), nullable=False)
+
+    nome = db.Column(db.String(255), nullable=False)
+    total_aulas = db.Column(db.Integer, nullable=False)
+
+    # tolerância extra para além do total (usado sobretudo em profissional)
+    tolerancia = db.Column(db.Integer, nullable=False, default=2)
+
+
+class Periodo(db.Model):
+    __tablename__ = "periodos"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    # Nome visível (ex.: "Anual", "1.º semestre", "2.º semestre", "Módulo 3")
+    nome = db.Column(db.String(100), nullable=False)
+
+    # NOVO: tipo de período (anual / semestre1 / semestre2 / modular)
+    # podes usar valores normalizados para lógica e o "nome" para mostrar.
+    tipo = db.Column(db.String(20), nullable=False, default="anual")
+    # valores previstos: "anual", "semestre1", "semestre2", "modular"
+
+    data_inicio = db.Column(db.Date, nullable=False)
+    data_fim = db.Column(db.Date, nullable=False)
+
+    turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), nullable=False)
+    turma = db.relationship("Turma", backref="periodos")
+
+    # OPCIONAL (para profissionais): período associado diretamente a um módulo
+    modulo_id = db.Column(db.Integer, db.ForeignKey("modulos.id"), nullable=True)
+    modulo = db.relationship("Modulo", backref="periodos_modulares")
+
+
+
+class Exclusao(db.Model):
+    """
+    Equivalente à folha 'Exclusões' no Sheets:
+    - dia em que não há aulas normais (ou é greve / serviço oficial).
+    """
+
+    __tablename__ = "exclusoes"
+    id = db.Column(db.Integer, primary_key=True)
+    turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), nullable=False)
+
+    data = db.Column(db.Date, nullable=True)
+    # exemplo: "22 de dezembro de 2025 a 2 de janeiro de 2026"
+    data_text = db.Column(db.String(255), nullable=True)
+
+    motivo = db.Column(db.String(255))
+    # normal / greve / servico_oficial
+    tipo = db.Column(db.String(50))
+
+
+class Extra(db.Model):
+    """
+    Equivalente à folha 'Extras' no Sheets:
+    - aulas extra ou serviços oficiais que aparecem no calendário.
+    """
+
+    __tablename__ = "extras"
+    id = db.Column(db.Integer, primary_key=True)
+    turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), nullable=False)
+
+    data = db.Column(db.Date, nullable=True)
+    data_text = db.Column(db.String(255), nullable=True)
+
+    motivo = db.Column(db.String(255))
+    aulas = db.Column(db.Integer, nullable=False)
+    modulo_nome = db.Column(db.String(255))
+    # extra / servico_oficial
+    tipo = db.Column(db.String(50))
+
+
+class InterrupcaoLetiva(db.Model):
+    """
+    Interrupções de Natal, Páscoa, Carnaval, intercalares, etc.
+    Podem ser dadas por datas explícitas ou por expressão textual em PT.
+    """
+
+    __tablename__ = "interrupcoes_letivas"
+    id = db.Column(db.Integer, primary_key=True)
+
+    ano_letivo_id = db.Column(db.Integer, db.ForeignKey("anos_letivos.id"), nullable=False)
+    ano_letivo = db.relationship("AnoLetivo", backref="interrupcoes")
+
+    # tipos: natal, pascoa, carnaval, intercalar1, intercalar2, outros
+    tipo = db.Column(db.String(50), nullable=False)
+
+    data_inicio = db.Column(db.Date, nullable=True)
+    data_fim = db.Column(db.Date, nullable=True)
+
+    # ex.: "22 de dezembro de 2025 a 2 de janeiro de 2026"
+    # ou "16 e 17 de fevereiro de 2026"
+    data_text = db.Column(db.String(255), nullable=True)
+
+    descricao = db.Column(db.String(255), nullable=True)
+
+
+class Feriado(db.Model):
+    """
+    Feriados do ano letivo (nacionais, municipais, dia do agrupamento, etc.)
+    """
+
+    __tablename__ = "feriados"
+    id = db.Column(db.Integer, primary_key=True)
+
+    ano_letivo_id = db.Column(db.Integer, db.ForeignKey("anos_letivos.id"), nullable=False)
+    ano_letivo = db.relationship("AnoLetivo", backref="feriados")
+
+    data = db.Column(db.Date, nullable=True)
+    data_text = db.Column(db.String(255), nullable=True)
+
+    nome = db.Column(db.String(255), nullable=False)
+
+
+class CalendarioAula(db.Model):
+    """
+    Tabela final com o “resultado” da previsão:
+    1 linha por dia de aula (ou greve / serviço oficial / extra).
+    """
+
+    __tablename__ = "calendario_aulas"
+    id = db.Column(db.Integer, primary_key=True)
+
+    livro_id = db.Column(db.Integer, db.ForeignKey("livros.id"), nullable=False)
+    turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), nullable=False)
+    periodo_id = db.Column(db.Integer, db.ForeignKey("periodos.id"), nullable=False)
+
+    data = db.Column(db.Date, nullable=False)
+    # 0=Seg, 1=Ter, ..., 6=Dom
+    weekday = db.Column(db.Integer, nullable=False)
+
+    modulo_nome = db.Column(db.String(255))
+    n_aula_modulo = db.Column(db.String(50))
+    total_aulas = db.Column(db.String(50))
+    n_sumario = db.Column(db.String(50))
+
+    observacoes = db.Column(db.Text)
+    sumario = db.Column(db.Text)
+
+    # normal / greve / servico_oficial / extra
+    tipo_dia = db.Column(db.String(50))

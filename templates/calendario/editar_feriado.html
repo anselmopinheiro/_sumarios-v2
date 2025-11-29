@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Editar Feriado</h2>
+
+<form method="post">
+  <p>
+    <label>Nome:<br>
+      <input type="text" name="nome" size="40" value="{{ feriado.nome }}">
+    </label>
+  </p>
+  <p>
+    <label>Data:
+      <input type="date" name="data"
+             value="{{ feriado.data.strftime('%Y-%m-%d') if feriado.data }}">
+    </label>
+  </p>
+  <p>
+    <label>Expressão de datas (texto):<br>
+      <input type="text" name="data_text" size="60"
+             value="{{ feriado.data_text or '' }}">
+    </label>
+  </p>
+  <button type="submit">Guardar</button>
+  <a href="{{ url_for('calendario_escolar_gestao') }}">Cancelar</a>
+</form>
+{% endblock %}

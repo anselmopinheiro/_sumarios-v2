@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Disciplinas da Turma {{ turma.nome }} – {{ ano.nome }}</h2>
+
+<p>
+  <a href="{{ url_for('turmas_gestao', ano_id=ano.id) }}">Voltar à gestão de turmas</a>
+</p>
+
+{% if not todas_disc %}
+<p>Ainda não há disciplinas definidas para este ano letivo.</p>
+<p><a href="{{ url_for('disciplinas_gestao', ano_id=ano.id) }}">Gerir disciplinas</a></p>
+{% else %}
+<form method="post">
+  <p>Selecione as disciplinas que esta turma frequenta:</p>
+  <ul style="list-style:none; padding-left:0;">
+    {% for d in todas_disc %}
+    <li>
+      <label>
+        <input type="checkbox" name="disciplinas" value="{{ d.id }}"
+               {% if d.id in ids_atual %}checked{% endif %}>
+        {{ d.nome }}{% if d.sigla %} ({{ d.sigla }}){% endif %}
+      </label>
+    </li>
+    {% endfor %}
+  </ul>
+
+  <button type="submit">Guardar Disciplinas da Turma</button>
+</form>
+{% endif %}
+
+{% endblock %}

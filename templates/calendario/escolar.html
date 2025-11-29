@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+
+{% block content %}
+<p>
+  <a href="{{ url_for('calendario_escolar_json') }}">Ver JSON</a> |
+  <a href="{{ url_for('calendario_escolar_json', download=1) }}">Descarregar JSON</a>
+</p>
+
+<p>
+  <a href="{{ url_for('calendario_escolar_gestao') }}">Editar calendário escolar</a>
+</p>
+<p>
+  <a href="{{ url_for('anos_letivos_list') }}">Gerir Anos Letivos</a> |
+  <a href="{{ url_for('calendario_escolar_gestao') }}">Editar interrupções e feriados</a>
+</p>
+
+<h2>Calendário Escolar — {{ ano.nome if ano else "Sem Ano Letivo" }}</h2>
+
+{% if not ano %}
+<p><strong>Não existe ano letivo definido.</strong></p>
+{% else %}
+
+<h3>Datas principais</h3>
+<ul>
+    <li><strong>Início do ano:</strong> {{ ano.data_inicio_ano.strftime("%d/%m/%Y") }}</li>
+    <li><strong>Fim do ano:</strong> {{ ano.data_fim_ano.strftime("%d/%m/%Y") }}</li>
+    <li><strong>Fim do 1.º Semestre:</strong> {{ ano.data_fim_semestre1.strftime("%d/%m/%Y") }}</li>
+    <li><strong>Início do 2.º Semestre:</strong> {{ ano.data_inicio_semestre2.strftime("%d/%m/%Y") }}</li>
+</ul>
+
+<hr>
+
+<h3>Interrupções Letivas</h3>
+{% if interrupcoes %}
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>Tipo</th>
+            <th>Datas</th>
+            <th>Descrição</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for i in interrupcoes %}
+        <tr>
+            <td>{{ i.tipo }}</td>
+            <td>
+                {% if i.data_text %}
+                    {{ i.data_text }}
+                {% else %}
+                    {{ i.data_inicio.strftime("%d/%m/%Y") }} a {{ i.data_fim.strftime("%d/%m/%Y") }}
+                {% endif %}
+            </td>
+            <td>{{ i.descricao or "" }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>Não existem interrupções registadas.</p>
+{% endif %}
+
+<hr>
+
+<h3>Feriados</h3>
+{% if feriados %}
+<table class="table table-bordered">
+    <thead>
+        <tr>
+            <th>Data</th>
+            <th>Nome</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for f in feriados %}
+        <tr>
+            <td>
+                {% if f.data_text %}
+                    {{ f.data_text }}
+                {% else %}
+                    {{ f.data.strftime("%d/%m/%Y") }}
+                {% endif %}
+            </td>
+            <td>{{ f.nome }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>Não existem feriados registados.</p>
+{% endif %}
+
+{% endif %}
+{% endblock %}

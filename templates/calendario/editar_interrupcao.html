@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Editar Interrupção</h2>
+
+<form method="post">
+  <p>
+    <label>Tipo:
+      {% set tipos = ["natal","pascoa","carnaval","intercalar1","intercalar2","outros"] %}
+      <select name="tipo">
+        {% for t in tipos %}
+          <option value="{{ t }}" {% if interrupcao.tipo == t %}selected{% endif %}>
+            {{ t }}
+          </option>
+        {% endfor %}
+      </select>
+    </label>
+  </p>
+  <p>
+    <label>Data início:
+      <input type="date" name="data_inicio"
+             value="{{ interrupcao.data_inicio.strftime('%Y-%m-%d') if interrupcao.data_inicio }}">
+    </label>
+    <label>Data fim:
+      <input type="date" name="data_fim"
+             value="{{ interrupcao.data_fim.strftime('%Y-%m-%d') if interrupcao.data_fim }}">
+    </label>
+  </p>
+  <p>
+    <label>Expressão de datas (texto):<br>
+      <input type="text" name="data_text" size="60"
+             value="{{ interrupcao.data_text or '' }}">
+    </label>
+  </p>
+  <p>
+    <label>Descrição:<br>
+      <input type="text" name="descricao" size="60"
+             value="{{ interrupcao.descricao or '' }}">
+    </label>
+  </p>
+  <button type="submit">Guardar</button>
+  <a href="{{ url_for('calendario_escolar_gestao') }}">Cancelar</a>
+</form>
+{% endblock %}

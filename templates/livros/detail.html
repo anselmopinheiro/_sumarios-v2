@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Livro: {{ livro.nome }}</h2>
+
+<h3>Turmas associadas</h3>
+<ul>
+  {% for turma in livro.turmas %}
+    <li>{{ turma.nome }} ({{ turma.tipo }})</li>
+  {% else %}
+    <li>(Nenhuma turma associada a este livro)</li>
+  {% endfor %}
+</ul>
+
+<form method="post" action="{{ url_for('livros_gerar', livro_id=livro.id) }}">
+  <p>
+    <label>
+      <input type="radio" name="modo" value="recalcular" checked>
+      Recalcular todos os calendários
+    </label><br>
+    <label>
+      <input type="radio" name="modo" value="incremental">
+      Atualizar apenas alterações recentes
+    </label>
+  </p>
+  <button type="submit">Gerar / Atualizar calendários</button>
+</form>
+{% endblock %}

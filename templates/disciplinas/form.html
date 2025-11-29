@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>
+  {% if disciplina %}Editar Disciplina{% else %}Nova Disciplina{% endif %}
+  – {{ ano.nome }}
+</h2>
+
+<form method="post">
+  <p>
+    <label>Nome da Disciplina:<br>
+      <input type="text" name="nome" size="40"
+             value="{{ disciplina.nome if disciplina else '' }}">
+    </label>
+  </p>
+
+  <p>
+    <label>Sigla (ex.: TIC, PM):<br>
+      <input type="text" name="sigla" size="10"
+             value="{{ disciplina.sigla if disciplina and disciplina.sigla else '' }}">
+    </label>
+  </p>
+
+  <button type="submit">Guardar</button>
+  <a href="{{ url_for('disciplinas_gestao', ano_id=ano.id) }}">Cancelar</a>
+</form>
+
+{% endblock %}

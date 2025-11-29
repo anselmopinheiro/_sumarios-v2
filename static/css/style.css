@@ -1,0 +1,24 @@
+body {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    margin: 0;
+    padding: 1rem 2rem;
+}
+header h1 {
+    margin-bottom: 0.2rem;
+}
+nav a {
+    margin-right: 0.5rem;
+}
+.flashes {
+    list-style: none;
+    padding: 0;
+}
+.flashes li {
+    padding: 0.3rem 0.5rem;
+    margin-bottom: 0.3rem;
+    border-radius: 4px;
+}
+.flashes li.success {
+    background: #e6ffec;
+    border: 1px solid #52c41a;
+}

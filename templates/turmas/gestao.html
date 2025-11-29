@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Turmas – {{ ano.nome }}</h2>
+
+<p>
+  <a href="{{ url_for('anos_letivos_list') }}">Voltar aos Anos Letivos</a> |
+  <a href="{{ url_for('turmas_add', ano_id=ano.id) }}">+ Nova Turma</a>
+</p>
+
+{% if turmas %}
+<table border="1" cellpadding="4" cellspacing="0">
+  <tr>
+    <th>Nome</th>
+    <th>Tipo</th>
+    <th>Ações</th>
+  </tr>
+  {% for t in turmas %}
+  <tr>
+    <td>{{ t.nome }}</td>
+    <td>{{ t.tipo }}</td>
+    <td>
+      <a href="{{ url_for('turmas_edit', turma_id=t.id) }}">Editar</a>
+      <form method="post"
+            action="{{ url_for('turmas_delete', turma_id=t.id) }}"
+            style="display:inline"
+            onsubmit="return confirm('Apagar esta turma?');">
+        <button type="submit">Apagar</button>
+      </form>
+      |
+      <a href="{{ url_for('turma_calendario', turma_id=t.id) }}">Ver calendário</a>
+      |
+      <a href="{{ url_for('turma_disciplinas', turma_id=t.id) }}">Disciplinas</a>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p>(sem turmas registadas para este ano)</p>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Anos Letivos</h2>
+
+<p>
+  <a href="{{ url_for('anos_letivos_add') }}">+ Novo Ano Letivo</a> |
+  <a href="{{ url_for('calendario_escolar') }}">Ver calendário escolar (ano atual)</a>
+</p>
+
+{% if anos %}
+<table border="1" cellpadding="4" cellspacing="0">
+  <tr>
+    <th>Nome</th>
+    <th>Início</th>
+    <th>Fim</th>
+    <th>1.º Semestre (fim)</th>
+    <th>2.º Semestre (início)</th>
+    <th>Estado</th>
+    <th>Ações</th>
+  </tr>
+  {% for a in anos %}
+  <tr>
+    <td>{{ a.nome }}</td>
+    <td>{{ a.data_inicio_ano.strftime("%d/%m/%Y") if a.data_inicio_ano }}</td>
+    <td>{{ a.data_fim_ano.strftime("%d/%m/%Y") if a.data_fim_ano }}</td>
+    <td>{{ a.data_fim_semestre1.strftime("%d/%m/%Y") if a.data_fim_semestre1 }}</td>
+    <td>{{ a.data_inicio_semestre2.strftime("%d/%m/%Y") if a.data_inicio_semestre2 }}</td>
+    <td>
+      {% if a.ativo %}
+        <strong>[Ativo]</strong><br>
+      {% else %}
+        [Inativo]<br>
+      {% endif %}
+
+      {% if a.fechado %}
+        <span style="color:red;">[Fechado]</span>
+      {% else %}
+        <span style="color:green;">[Aberto]</span>
+      {% endif %}
+    </td>
+    <td>
+      <!-- Ativar / Inativar -->
+      {% if not a.ativo %}
+        <form method="post"
+              action="{{ url_for('anos_letivos_set_ativo', ano_id=a.id) }}"
+              style="display:inline">
+          <button type="submit">Tornar ativo</button>
+        </form>
+      {% else %}
+        <span>Já é o ano ativo</span>
+      {% endif %}
+      <br>
+
+      <!-- Fechar / Reabrir -->
+      {% if a.fechado %}
+        <form method="post"
+              action="{{ url_for('anos_letivos_abrir', ano_id=a.id) }}"
+              style="display:inline">
+          <button type="submit">Reabrir</button>
+        </form>
+      {% else %}
+        <form method="post"
+              action="{{ url_for('anos_letivos_fechar', ano_id=a.id) }}"
+              style="display:inline">
+          <button type="submit">Fechar</button>
+        </form>
+      {% endif %}
+      <br>
+
+      <!-- Editar / Apagar -->
+      <a href="{{ url_for('anos_letivos_edit', ano_id=a.id) }}">Editar</a>
+      <form method="post"
+            action="{{ url_for('anos_letivos_delete', ano_id=a.id) }}"
+            style="display:inline"
+            onsubmit="return confirm('Apagar este ano letivo?');">
+        <button type="submit">Apagar</button>
+      </form>
+      <br>
+
+      <!-- Calendário Escolar e JSON para este ano -->
+      <a href="{{ url_for('calendario_escolar', ano_id=a.id) }}">Ver calendário</a> |
+      <a href="{{ url_for('calendario_escolar_gestao', ano_id=a.id) }}">Gerir calendário</a> |
+      <a href="{{ url_for('calendario_escolar_json', ano_id=a.id) }}">JSON</a>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p>(sem anos letivos registados)</p>
+{% endif %}
+
+{% endblock %}

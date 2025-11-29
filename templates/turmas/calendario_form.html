@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>{{ titulo }}</h2>
+
+<p class="text-muted">
+  Turma: {{ turma.nome }}<br>
+  Livro: {{ livro.nome }}<br>
+  Período: {{ periodo.nome or (periodo.data_inicio|string + " - " + periodo.data_fim|string) }}
+</p>
+
+<form method="post">
+
+  <div class="mb-3">
+    <label class="form-label">Data</label>
+    <input type="date" name="data" class="form-control"
+           value="{{ aula.data.isoformat() if aula and aula.data }}">
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Módulo</label>
+    <select name="modulo_id" class="form-select" required>
+      <option value="">-- escolher --</option>
+      {% for m in modulos %}
+        <option value="{{ m.id }}"
+          {% if aula and aula.modulo_id == m.id %}selected{% endif %}>
+          {{ m.nome }}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="row">
+    <div class="col-md-4 mb-3">
+      <label class="form-label">Nº Aula no Módulo</label>
+      <input type="number" name="numero_modulo" class="form-control"
+             value="{{ aula.numero_modulo if aula and aula.numero_modulo is not none else '' }}">
+    </div>
+
+    <div class="col-md-4 mb-3">
+      <label class="form-label">Total Global até aqui</label>
+      <input type="number" name="total_geral" class="form-control"
+             value="{{ aula.total_geral if aula and aula.total_geral is not none else '' }}">
+    </div>
+
+    <div class="col-md-4 mb-3">
+      <label class="form-label">Tipo</label>
+      <select name="tipo" class="form-select">
+        {% set valor_tipo = aula.tipo if aula else "normal" %}
+        <option value="normal" {% if valor_tipo == "normal" %}selected{% endif %}>Normal</option>
+        <option value="greve" {% if valor_tipo == "greve" %}selected{% endif %}>Greve</option>
+        <option value="servico_oficial" {% if valor_tipo == "servico_oficial" %}selected{% endif %}>Serviço oficial</option>
+        <option value="extra" {% if valor_tipo == "extra" %}selected{% endif %}>Extra</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Sumário(s) (lista de números, ex.: 1,2,3)</label>
+    <input type="text" name="sumarios" class="form-control"
+           value="{{ aula.sumarios if aula and aula.sumarios else '' }}">
+  </div>
+
+  <button type="submit" class="btn btn-success">Guardar</button>
+  <a href="{{ url_for('turma_calendario',
+                      turma_id=turma.id,
+                      livro_id=livro.id,
+                      periodo_id=periodo.id) }}"
+     class="btn btn-secondary">
+    Cancelar
+  </a>
+</form>
+
+{% endblock %}
