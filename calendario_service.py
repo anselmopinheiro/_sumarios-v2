@@ -401,9 +401,10 @@ def gerar_calendario_turma(turma_id: int, recalcular_tudo: bool = True) -> int:
                 data_atual += timedelta(days=1)
                 continue
 
-            sumarios_hoje: List[int] = []
-            numero_modulo_no_fim: Optional[int] = None
-            modulo_usado: Optional[Modulo] = None
+            sumarios_por_modulo: List[Tuple[Modulo, List[int], int]] = []
+            modulo_corrente: Optional[Modulo] = None
+            sumarios_correntes: List[int] = []
+            numero_final_corrente: Optional[int] = None
 
             # Seleciona o módulo ativo: se o período tiver módulo dedicado, usa-o;
             # caso contrário, segue a ordem natural dos módulos.
@@ -439,14 +440,27 @@ def gerar_calendario_turma(turma_id: int, recalcular_tudo: bool = True) -> int:
                 contador_sumario_global += 1
                 aulas_hoje -= 1
 
-                sumarios_hoje.append(contador_sumario_global)
-                numero_modulo_no_fim = dadas
-                modulo_usado = modulo_atual
+                # Se o módulo mudou, guardar a sequência anterior.
+                if modulo_corrente and modulo_corrente.id != modulo_atual.id:
+                    sumarios_por_modulo.append(
+                        (modulo_corrente, sumarios_correntes, numero_final_corrente or 0)
+                    )
+                    sumarios_correntes = []
+                    numero_final_corrente = None
+
+                modulo_corrente = modulo_atual
+                sumarios_correntes.append(contador_sumario_global)
+                numero_final_corrente = dadas
 
                 if limite is not None and idx_para_avancar is not None and dadas >= limite:
                     idx_modulo += 1
 
-            if sumarios_hoje and modulo_usado is not None:
+            if modulo_corrente and sumarios_correntes:
+                sumarios_por_modulo.append(
+                    (modulo_corrente, sumarios_correntes, numero_final_corrente or 0)
+                )
+
+            for modulo_usado, sumarios_hoje, numero_modulo_no_fim in sumarios_por_modulo:
                 aula = CalendarioAula(
                     turma_id=turma.id,
                     periodo_id=periodo.id,
@@ -454,7 +468,7 @@ def gerar_calendario_turma(turma_id: int, recalcular_tudo: bool = True) -> int:
                     weekday=data_atual.weekday(),
                     modulo_id=modulo_usado.id,
                     numero_modulo=numero_modulo_no_fim,
-                    total_geral=contador_sumario_global,
+                    total_geral=sumarios_hoje[-1],
                     sumarios=",".join(str(n) for n in sumarios_hoje),
                     tipo="normal",
                 )
