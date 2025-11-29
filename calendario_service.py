@@ -80,49 +80,57 @@ def garantir_periodos_basicos_para_turma(turma: Turma) -> None:
             p_anual.data_fim = ano.data_fim_ano
 
     # --- 1.º semestre ---
-    if ano.data_inicio_1_semestre and ano.data_fim_1_semestre:
+    inicio_s1 = ano.data_inicio_ano
+    fim_s1 = getattr(ano, "data_fim_semestre1", None)
+
+    if inicio_s1 and fim_s1:
         p_s1 = _get_periodo("semestre1")
         if not p_s1:
             p_s1 = Periodo(
                 turma_id=turma.id,
                 nome="1.º semestre",
                 tipo="semestre1",
-                data_inicio=ano.data_inicio_1_semestre,
-                data_fim=ano.data_fim_1_semestre,
+                data_inicio=inicio_s1,
+                data_fim=fim_s1,
             )
             db.session.add(p_s1)
         else:
-            p_s1.data_inicio = ano.data_inicio_1_semestre
-            p_s1.data_fim = ano.data_fim_1_semestre
+            p_s1.data_inicio = inicio_s1
+            p_s1.data_fim = fim_s1
 
     # --- 2.º semestre ---
-    if ano.data_inicio_2_semestre and ano.data_fim_2_semestre:
+    inicio_s2 = getattr(ano, "data_inicio_semestre2", None)
+    fim_s2 = ano.data_fim_ano
+
+    if inicio_s2 and fim_s2:
         p_s2 = _get_periodo("semestre2")
         if not p_s2:
             p_s2 = Periodo(
                 turma_id=turma.id,
                 nome="2.º semestre",
                 tipo="semestre2",
-                data_inicio=ano.data_inicio_2_semestre,
-                data_fim=ano.data_fim_2_semestre,
+                data_inicio=inicio_s2,
+                data_fim=fim_s2,
             )
             db.session.add(p_s2)
         else:
-            p_s2.data_inicio = ano.data_inicio_2_semestre
-            p_s2.data_fim = ano.data_fim_2_semestre
+            p_s2.data_inicio = inicio_s2
+            p_s2.data_fim = fim_s2
 
     db.session.commit()
 
 
-def _parse_pt_date(texto: str) -> date:
+def _parse_pt_date(texto: str, fallback_year: int | None = None) -> date:
     """
     Converte texto tipo '22 de dezembro de 2025' numa date.
+    Aceita também '22 de dezembro' se for fornecido fallback_year.
+
     Lança ValueError se não conseguir.
     """
     t = texto.strip().lower()
-    # Ex.: "22 de dezembro de 2025"
+    # Ex.: "22 de dezembro de 2025" ou "22 de dezembro"
     m = re.match(
-        r"^(\d{1,2})\s+de\s+([a-zçãéô]+)\s+de\s+(\d{4})$",
+        r"^(\d{1,2})\s+de\s+([a-zçãéô]+)(?:\s+de\s+(\d{4}))?$",
         t,
         flags=re.IGNORECASE,
     )
@@ -131,7 +139,10 @@ def _parse_pt_date(texto: str) -> date:
 
     dia = int(m.group(1))
     mes_nome = m.group(2)
-    ano = int(m.group(3))
+    ano_str = m.group(3)
+    ano = int(ano_str) if ano_str else fallback_year
+    if not ano:
+        raise ValueError(f"Formato de data PT não reconhecido: {texto!r}")
     mes = MESES_PT.get(mes_nome)
     if not mes:
         raise ValueError(f"Mês PT não reconhecido: {mes_nome!r}")
@@ -170,8 +181,8 @@ def expand_dates(data_inicial: Optional[date], data_text: Optional[str]) -> List
         # Caso intervalo "22 de dezembro de 2025 a 2 de janeiro de 2026"
         if " a " in t:
             esquerda, direita = t.split(" a ", 1)
-            d1 = _parse_pt_date(esquerda)
             d2 = _parse_pt_date(direita)
+            d1 = _parse_pt_date(esquerda, fallback_year=d2.year)
             if d2 < d1:
                 d1, d2 = d2, d1
             dias = []
@@ -181,8 +192,13 @@ def expand_dates(data_inicial: Optional[date], data_text: Optional[str]) -> List
                 atual += timedelta(days=1)
             return dias
 
-        # Caso uma única data textual
-        return [_parse_pt_date(t)]
+        # Caso uma única data textual (pode não trazer o ano)
+        fallback_year = None
+        if data_inicial:
+            fallback_year = data_inicial.year
+        else:
+            fallback_year = date.today().year
+        return [_parse_pt_date(t, fallback_year=fallback_year)]
 
     # Sem data_text → usa só data_inicial, se existir
     if data_inicial:

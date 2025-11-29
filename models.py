@@ -3,12 +3,19 @@ from flask_sqlalchemy import SQLAlchemy
 db = SQLAlchemy()
 
 
+livros_turmas = db.Table(
+    "livros_turmas",
+    db.Column("livro_id", db.Integer, db.ForeignKey("livros.id"), primary_key=True),
+    db.Column("turma_id", db.Integer, db.ForeignKey("turmas.id"), primary_key=True),
+)
+
+
 class Livro(db.Model):
     __tablename__ = "livros"
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(255), unique=True, nullable=False)
 
-    turmas = db.relationship("Turma", secondary="livros_turmas", back_populates="livros")
+    turmas = db.relationship("Turma", secondary=livros_turmas, back_populates="livros")
 
 
 class AnoLetivo(db.Model):
@@ -55,7 +62,7 @@ class Turma(db.Model):
     # 👉 NOVO: relação com Livro (simétrica do Livro.turmas)
     livros = db.relationship(
         "Livro",
-        secondary="livros_turmas",
+        secondary=livros_turmas,
         back_populates="turmas",
     )
     # NOVO — carga horária por dia da semana
@@ -103,12 +110,6 @@ class TurmaDisciplina(db.Model):
     __table_args__ = (
         db.UniqueConstraint("turma_id", "disciplina_id", name="uq_turma_disciplina"),
     )
-
-
-class LivroTurma(db.Model):
-    __tablename__ = "livros_turmas"
-    livro_id = db.Column(db.Integer, db.ForeignKey("livros.id"), primary_key=True)
-    turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), primary_key=True)
 
 
 class Horario(db.Model):
