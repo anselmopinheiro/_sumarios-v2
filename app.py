@@ -24,6 +24,11 @@ from models import (
     AnoLetivo,
     InterrupcaoLetiva,
     Feriado,
+    Horario,
+    Exclusao,
+    Extra,
+    TurmaDisciplina,
+    LivroTurma,
 )
 
 from calendario_service import gerar_calendarios, expand_dates
@@ -477,6 +482,17 @@ def create_app():
     @app.route("/turmas/<int:turma_id>/delete", methods=["POST"])
     def turmas_delete(turma_id):
         turma = Turma.query.get_or_404(turma_id)
+
+        # Apaga dependências explícitas antes da turma para evitar violar FKs
+        CalendarioAula.query.filter_by(turma_id=turma.id).delete()
+        Extra.query.filter_by(turma_id=turma.id).delete()
+        Exclusao.query.filter_by(turma_id=turma.id).delete()
+        Horario.query.filter_by(turma_id=turma.id).delete()
+        Periodo.query.filter_by(turma_id=turma.id).delete()
+        Modulo.query.filter_by(turma_id=turma.id).delete()
+        TurmaDisciplina.query.filter_by(turma_id=turma.id).delete()
+        LivroTurma.query.filter_by(turma_id=turma.id).delete()
+
         db.session.delete(turma)
         db.session.commit()
         flash("Turma eliminada.", "success")
