@@ -428,13 +428,11 @@ def gerar_calendario_turma(turma_id: int, recalcular_tudo: bool = True) -> int:
                 total_modulo = total_por_modulo.get(mod_id, 0)
                 dadas = progresso_modulos.get(mod_id, 0)
 
-                # Para turmas profissionais admite-se uma tolerância (se definida),
-                # para regulares respeita-se o total configurado.
-                tolerancia_extra = max(int(getattr(modulo_atual, "tolerancia", 0) or 0), 0)
-                if turma.tipo == "profissional" and total_modulo > 0:
-                    limite = total_modulo + tolerancia_extra
-                else:
-                    limite = None if total_modulo <= 0 else total_modulo
+                # No cálculo inicial do calendário respeitamos sempre o total
+                # configurado do módulo. A tolerância, quando existir em turmas
+                # profissionais, só deve ser considerada em acréscimos manuais,
+                # não durante a geração automática.
+                limite = None if total_modulo <= 0 else total_modulo
 
                 if limite is not None and dadas >= limite:
                     if idx_para_avancar is not None:
