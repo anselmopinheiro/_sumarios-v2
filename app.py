@@ -153,8 +153,41 @@ def create_app():
     # ----------------------------------------
     @app.route("/livros")
     def livros_list():
-        livros = Livro.query.order_by(Livro.nome).all()
-        return render_template("livros/list.html", livros=livros)
+        # Se quiseres filtrar por ano letivo ativo:
+        ano_atual = AnoLetivo.query.filter_by(ativo=True).first()
+        if ano_atual:
+            livros = Livro.query.filter(
+                (Livro.ano_letivo_id == None) | (Livro.ano_letivo_id == ano_atual.id)
+            ).order_by(Livro.nome).all()
+        else:
+            livros = Livro.query.order_by(Livro.nome).all()
+
+        return render_template("livros/list.html", livros=livros, ano_atual=ano_atual)
+
+    @app.route("/livros/add", methods=["GET", "POST"])
+    def livros_add():
+        ano_atual = AnoLetivo.query.filter_by(ativo=True).first()
+
+        if request.method == "POST":
+            nome = (request.form.get("nome") or "").strip()
+            sigla = (request.form.get("sigla") or "").strip()
+
+            if not nome:
+                flash("O nome da disciplina é obrigatório.", "error")
+                return render_template("livros/form.html", titulo="Novo livro (disciplina)", ano_atual=ano_atual)
+
+            livro = Livro(
+                nome=nome,
+                sigla=sigla or None,
+                ano_letivo_id=ano_atual.id if ano_atual else None,
+            )
+            db.session.add(livro)
+            db.session.commit()
+
+            flash("Livro (disciplina) criado com sucesso.", "success")
+            return redirect(url_for("livros_list"))
+
+        return render_template("livros/form.html", titulo="Novo livro (disciplina)", ano_atual=ano_atual)
 
     @app.route("/livros/<int:livro_id>")
     def livros_detail(livro_id):
@@ -180,6 +213,70 @@ def create_app():
         gerar_calendarios(livro.id, recalcular_tudo=recalcular_tudo)
         flash("Calendários gerados/atualizados com sucesso.", "success")
         return redirect(url_for("livros_detail", livro_id=livro.id))
+    @app.route("/livros/<int:livro_id>/edit", methods=["GET", "POST"])
+    def livros_edit(livro_id):
+        livro = Livro.query.get_or_404(livro_id)
+        ano_atual = AnoLetivo.query.filter_by(ativo=True).first()
+
+        # Turmas disponíveis para associação (por ano letivo atual, se existir)
+        if ano_atual:
+            turmas_disponiveis = Turma.query.filter_by(ano_letivo_id=ano_atual.id).order_by(Turma.nome).all()
+        else:
+            turmas_disponiveis = Turma.query.order_by(Turma.nome).all()
+
+        if request.method == "POST":
+            nome = (request.form.get("nome") or "").strip()
+            sigla = (request.form.get("sigla") or "").strip()
+            turmas_ids = request.form.getlist("turmas")  # lista de ids em string
+
+            if not nome:
+                flash("O nome da disciplina é obrigatório.", "error")
+                return render_template(
+                    "livros/form.html",
+                    titulo="Editar livro (disciplina)",
+                    livro=livro,
+                    ano_atual=ano_atual,
+                    turmas_disponiveis=turmas_disponiveis,
+                )
+
+            livro.nome = nome
+            livro.sigla = sigla or None
+            if ano_atual:
+                livro.ano_letivo_id = ano_atual.id
+
+            # atualizar associação às turmas
+            novas_turmas = []
+            for tid in turmas_ids:
+                t = Turma.query.get(int(tid))
+                if t:
+                    novas_turmas.append(t)
+            livro.turmas = novas_turmas
+
+            db.session.commit()
+            flash("Livro (disciplina) atualizado com sucesso.", "success")
+            return redirect(url_for("livros_list"))
+
+        return render_template(
+            "livros/form.html",
+            titulo="Editar livro (disciplina)",
+            livro=livro,
+            ano_atual=ano_atual,
+            turmas_disponiveis=turmas_disponiveis,
+        )
+    @app.route("/livros/<int:livro_id>/delete", methods=["POST"])
+    def livros_delete(livro_id):
+        livro = Livro.query.get_or_404(livro_id)
+
+        # Opcional: impedir apagamento se já tiver calendários gerados
+        calendarios = CalendarioAula.query.filter_by(livro_id=livro.id).first()
+        if calendarios:
+            flash("Não é possível apagar este livro: já existem calendários associados.", "error")
+            return redirect(url_for("livros_list"))
+
+        db.session.delete(livro)
+        db.session.commit()
+        flash("Livro (disciplina) apagado.", "success")
+        return redirect(url_for("livros_list"))
 
     # ----------------------------------------
     # TURMAS

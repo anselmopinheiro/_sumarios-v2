@@ -3,41 +3,48 @@ from flask_sqlalchemy import SQLAlchemy
 db = SQLAlchemy()
 
 
+# Tabela de associação Livro <-> Turma
+livros_turmas = db.Table(
+    "livros_turmas",
+    db.Column("livro_id", db.Integer, db.ForeignKey("livros.id"), primary_key=True),
+    db.Column("turma_id", db.Integer, db.ForeignKey("turmas.id"), primary_key=True),
+)
+
 class Livro(db.Model):
     __tablename__ = "livros"
-    id = db.Column(db.Integer, primary_key=True)
-    nome = db.Column(db.String(255), unique=True, nullable=False)
 
-    turmas = db.relationship("Turma", secondary="livros_turmas", back_populates="livros")
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(120), nullable=False)      # nome da disciplina
+    sigla = db.Column(db.String(30), nullable=True)       # ex: TIC, PM, JC
+
+    ano_letivo_id = db.Column(db.Integer, db.ForeignKey("anos_letivos.id"), nullable=True)
+    ano_letivo = db.relationship("AnoLetivo", backref="livros")
+
+    # relação inversa com Turma
+    turmas = db.relationship(
+        "Turma",
+        secondary=livros_turmas,
+        back_populates="livros",
+    )
 
 
 class AnoLetivo(db.Model):
     __tablename__ = "anos_letivos"
 
     id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(50), nullable=False)
 
-    # Ex.: "2025/2026"
-    nome = db.Column(db.String(20), unique=True, nullable=False)
-
-    # Datas principais
     data_inicio_ano = db.Column(db.Date, nullable=False)
     data_fim_ano = db.Column(db.Date, nullable=False)
 
-    data_fim_semestre1 = db.Column(db.Date, nullable=False)
-    data_inicio_semestre2 = db.Column(db.Date, nullable=False)
+    data_inicio_1_semestre = db.Column(db.Date, nullable=True)
+    data_fim_1_semestre = db.Column(db.Date, nullable=True)
 
-    descricao = db.Column(db.String(255))
+    data_inicio_2_semestre = db.Column(db.Date, nullable=True)
+    data_fim_2_semestre = db.Column(db.Date, nullable=True)
 
-    # Ano letivo actualmente em uso (“Corrente”)
-    ativo = db.Column(db.Boolean, nullable=False, default=False)
-
-    # Anos passados que ficam só para consulta/exportação
-    fechado = db.Column(db.Boolean, nullable=False, default=False)
-
-    # Relações opcionais, se as tiveres:
-    # turmas = db.relationship("Turma", back_populates="ano_letivo")
-    # interrupcoes = db.relationship("InterrupcaoLetiva", back_populates="ano_letivo")
-    # feriados = db.relationship("Feriado", back_populates="ano_letivo")
+    ativo = db.Column(db.Boolean, default=False)
+    fechado = db.Column(db.Boolean, default=False)
 
 
 
@@ -48,28 +55,23 @@ class Turma(db.Model):
     nome = db.Column(db.String(50), nullable=False)
     tipo = db.Column(db.String(20), nullable=False, default="regular")
 
-    # deixa como nullable=True para não partir a migração em SQLite
-    ano_letivo_id = db.Column(db.Integer, db.ForeignKey("anos_letivos.id"))
+    ano_letivo_id = db.Column(db.Integer, db.ForeignKey("anos_letivos.id"), nullable=False)
     ano_letivo = db.relationship("AnoLetivo", backref="turmas")
 
-    # 👉 NOVO: relação com Livro (simétrica do Livro.turmas)
+    # cargas horárias por dia (se já estiveres a usar)
+    carga_segunda = db.Column(db.Integer, nullable=True)
+    carga_terca = db.Column(db.Integer, nullable=True)
+    carga_quarta = db.Column(db.Integer, nullable=True)
+    carga_quinta = db.Column(db.Integer, nullable=True)
+    carga_sexta = db.Column(db.Integer, nullable=True)
+
+    # relação many-to-many com Livro
     livros = db.relationship(
         "Livro",
-        secondary="livros_turmas",
+        secondary=livros_turmas,
         back_populates="turmas",
     )
-    # NOVO — carga horária por dia da semana
-    carga_segunda = db.Column(db.Float, nullable=True)
-    carga_terca = db.Column(db.Float, nullable=True)
-    carga_quarta = db.Column(db.Float, nullable=True)
-    carga_quinta = db.Column(db.Float, nullable=True)
-    carga_sexta = db.Column(db.Float, nullable=True)
-    # relação many-to-many com disciplina
-    disciplinas = db.relationship(
-        "Disciplina",
-        secondary="turmas_disciplinas",
-        back_populates="turmas",
-    )
+
 
     
     
