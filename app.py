@@ -62,6 +62,35 @@ def _easter_sunday(year: int) -> date:
     return date(year, month, day)
 
 
+def _ler_modulos_form():
+    nomes = request.form.getlist("modulo_nome")
+    totais = request.form.getlist("modulo_total")
+    ids = request.form.getlist("modulo_id")
+
+    modulos = []
+    for idx, nome in enumerate(nomes):
+        nome_limpo = (nome or "").strip()
+        total_txt = totais[idx] if idx < len(totais) else ""
+        try:
+            total = int(total_txt) if total_txt not in (None, "") else 0
+        except ValueError:
+            total = 0
+
+        mod_id_txt = ids[idx] if idx < len(ids) else None
+        mod_id = int(mod_id_txt) if mod_id_txt else None
+
+        if not nome_limpo and total == 0:
+            continue
+
+        modulos.append({
+            "id": mod_id,
+            "nome": nome_limpo,
+            "total": total,
+        })
+
+    return modulos
+
+
 def criar_periodo_modular_para_modulo(modulo: Modulo) -> Periodo:
     """
     Cria (ou devolve) um período do tipo 'modular' associado a um módulo
@@ -288,6 +317,7 @@ def create_app():
             carga_qua = request.form.get("carga_quarta", type=float)
             carga_qui = request.form.get("carga_quinta", type=float)
             carga_sex = request.form.get("carga_sexta", type=float)
+            modulos_form = _ler_modulos_form()
 
             if not nome:
                 flash("O nome da turma é obrigatório.", "error")
@@ -297,6 +327,7 @@ def create_app():
                     turma=turma,
                     ano_atual=ano_atual,
                     anos_letivos=anos_letivos,
+                    modulos=modulos_form,
                 )
 
             ano_escolhido = AnoLetivo.query.get(ano_id) if ano_id else None
@@ -308,7 +339,25 @@ def create_app():
                     turma=turma,
                     ano_atual=ano_atual,
                     anos_letivos=anos_letivos,
+                    modulos=modulos_form,
                 )
+
+            if tipo == "profissional":
+                modulos_validos = [m for m in modulos_form if m.get("nome")]
+                if not modulos_validos or any(m["total"] <= 0 for m in modulos_validos):
+                    flash(
+                        "Adiciona módulos com carga horária positiva para turmas profissionais.",
+                        "error",
+                    )
+                    return render_template(
+                        "turmas/form.html",
+                        titulo="Editar Turma",
+                        turma=turma,
+                        ano_atual=ano_atual,
+                        anos_letivos=anos_letivos,
+                        modulos=modulos_form,
+                    )
+                modulos_form = modulos_validos
 
             turma.nome = nome
             turma.tipo = tipo
@@ -318,6 +367,32 @@ def create_app():
             turma.carga_quarta = carga_qua
             turma.carga_quinta = carga_qui
             turma.carga_sexta = carga_sex
+
+            modulos_existentes = {
+                m.id: m for m in Modulo.query.filter_by(turma_id=turma.id).all()
+            }
+            usados = set()
+            if tipo == "profissional":
+                for mod_data in modulos_form:
+                    mid = mod_data.get("id")
+                    if mid and mid in modulos_existentes:
+                        mod = modulos_existentes[mid]
+                        mod.nome = mod_data["nome"] or mod.nome
+                        mod.total_aulas = mod_data["total"]
+                        usados.add(mid)
+                    else:
+                        novo = Modulo(
+                            turma_id=turma.id,
+                            nome=mod_data["nome"],
+                            total_aulas=mod_data["total"],
+                        )
+                        db.session.add(novo)
+            else:
+                usados = set(modulos_existentes.keys())
+
+            for mid, mod in modulos_existentes.items():
+                if mid not in usados and tipo == "profissional":
+                    db.session.delete(mod)
 
             db.session.commit()
             garantir_periodos_basicos_para_turma(turma)
@@ -330,6 +405,7 @@ def create_app():
             turma=turma,
             ano_atual=ano_atual,
             anos_letivos=anos_letivos,
+            modulos=Modulo.query.filter_by(turma_id=turma.id).order_by(Modulo.id).all(),
         )
 
     @app.route("/turmas/add", methods=["GET", "POST"])
@@ -352,6 +428,7 @@ def create_app():
             carga_qua = request.form.get("carga_quarta", type=float)
             carga_qui = request.form.get("carga_quinta", type=float)
             carga_sex = request.form.get("carga_sexta", type=float)
+            modulos_form = _ler_modulos_form()
 
             if not nome:
                 flash("O nome da turma é obrigatório.", "error")
@@ -361,6 +438,7 @@ def create_app():
                     turma=None,
                     ano_atual=ano_atual,
                     anos_letivos=anos_letivos,
+                    modulos=modulos_form,
                 )
 
             ano_escolhido = AnoLetivo.query.get(ano_id) if ano_id else ano_atual
@@ -372,7 +450,25 @@ def create_app():
                     turma=None,
                     ano_atual=ano_atual,
                     anos_letivos=anos_letivos,
+                    modulos=modulos_form,
                 )
+
+            if tipo == "profissional":
+                modulos_validos = [m for m in modulos_form if m.get("nome")]
+                if not modulos_validos or any(m["total"] <= 0 for m in modulos_validos):
+                    flash(
+                        "Adiciona módulos com carga horária positiva para turmas profissionais.",
+                        "error",
+                    )
+                    return render_template(
+                        "turmas/form.html",
+                        titulo="Nova Turma",
+                        turma=None,
+                        ano_atual=ano_atual,
+                        anos_letivos=anos_letivos,
+                        modulos=modulos_form,
+                    )
+                modulos_form = modulos_validos
 
             turma = Turma(
                 nome=nome,
@@ -387,7 +483,17 @@ def create_app():
 
             db.session.add(turma)
             db.session.commit()
-            
+
+            if tipo == "profissional":
+                for mod_data in modulos_form:
+                    novo = Modulo(
+                        turma_id=turma.id,
+                        nome=mod_data["nome"],
+                        total_aulas=mod_data["total"],
+                    )
+                    db.session.add(novo)
+                db.session.commit()
+
             # Gera automaticamente Anual / 1.º / 2.º semestre para esta turma
             garantir_periodos_basicos_para_turma(turma)
             flash(f"Turma criada no ano letivo {ano_escolhido.nome}.", "success")
@@ -399,6 +505,7 @@ def create_app():
             turma=None,
             ano_atual=ano_atual,
             anos_letivos=anos_letivos,
+            modulos=None,
         )
 
     @app.route("/turmas/<int:turma_id>/calendario")
