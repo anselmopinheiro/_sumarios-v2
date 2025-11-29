@@ -1,1 +1,12 @@
-Single-database configuration for Flask.
+Este diretório está configurado para um único banco de dados Flask-Migrate.
+
+A pilha de migrations foi reinicializada numa única revisão que já inclui
+carga horária diária por dia da semana, tipos de período e o vínculo
+opcional com módulos. Para aplicar esta baseline sem conflitos:
+
+1. Apaga o ficheiro de base de dados antigo (por exemplo, `gestor_lectivo.db`) ou
+   remove a tabela `alembic_version` se estiveres a reutilizar o mesmo ficheiro.
+2. Garante que só existe a revisão `0001_rebuild_schema.py` em `migrations/versions`.
+3. Executa `flask db upgrade` para criar o esquema completo.
+
+Isto evita migrações divergentes e deixa a base pronta para novas alterações.

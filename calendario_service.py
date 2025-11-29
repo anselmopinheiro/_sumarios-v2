@@ -114,15 +114,17 @@ def garantir_periodos_basicos_para_turma(turma: Turma) -> None:
     db.session.commit()
 
 
-def _parse_pt_date(texto: str) -> date:
+def _parse_pt_date(texto: str, fallback_year: int | None = None) -> date:
     """
     Converte texto tipo '22 de dezembro de 2025' numa date.
+    Aceita também '22 de dezembro' se for fornecido fallback_year.
+
     Lança ValueError se não conseguir.
     """
     t = texto.strip().lower()
-    # Ex.: "22 de dezembro de 2025"
+    # Ex.: "22 de dezembro de 2025" ou "22 de dezembro"
     m = re.match(
-        r"^(\d{1,2})\s+de\s+([a-zçãéô]+)\s+de\s+(\d{4})$",
+        r"^(\d{1,2})\s+de\s+([a-zçãéô]+)(?:\s+de\s+(\d{4}))?$",
         t,
         flags=re.IGNORECASE,
     )
@@ -131,7 +133,10 @@ def _parse_pt_date(texto: str) -> date:
 
     dia = int(m.group(1))
     mes_nome = m.group(2)
-    ano = int(m.group(3))
+    ano_str = m.group(3)
+    ano = int(ano_str) if ano_str else fallback_year
+    if not ano:
+        raise ValueError(f"Formato de data PT não reconhecido: {texto!r}")
     mes = MESES_PT.get(mes_nome)
     if not mes:
         raise ValueError(f"Mês PT não reconhecido: {mes_nome!r}")
@@ -170,8 +175,8 @@ def expand_dates(data_inicial: Optional[date], data_text: Optional[str]) -> List
         # Caso intervalo "22 de dezembro de 2025 a 2 de janeiro de 2026"
         if " a " in t:
             esquerda, direita = t.split(" a ", 1)
-            d1 = _parse_pt_date(esquerda)
             d2 = _parse_pt_date(direita)
+            d1 = _parse_pt_date(esquerda, fallback_year=d2.year)
             if d2 < d1:
                 d1, d2 = d2, d1
             dias = []
