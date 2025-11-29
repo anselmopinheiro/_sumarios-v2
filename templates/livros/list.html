@@ -1,11 +1,56 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>Livros</h2>
-<ul>
-  {% for livro in livros %}
-    <li><a href="{{ url_for('livros_detail', livro_id=livro.id) }}">{{ livro.nome }}</a></li>
-  {% else %}
-    <li>(Nenhum livro registado)</li>
-  {% endfor %}
-</ul>
+<a href="{{ url_for('livros_add') }}">+ Novo livro</a>
+
+<h2>Livros (Disciplinas)</h2>
+
+{% if ano_atual %}
+  <p class="text-muted">Ano letivo atual: {{ ano_atual.nome }}</p>
+{% endif %}
+
+<div class="mb-3">
+  <a href="{{ url_for('livros_add') }}" class="btn btn-primary">+ Novo livro (disciplina)</a>
+</div>
+
+{% if livros %}
+  <table class="table table-striped table-bordered">
+    <thead class="table-dark">
+      <tr>
+        <th>Nome</th>
+        <th>Sigla</th>
+        <th>Ano letivo</th>
+        <th>Turmas associadas</th>
+        <th style="width: 160px;">Ações</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for livro in livros %}
+        <tr>
+          <td>{{ livro.nome }}</td>
+          <td>{{ livro.sigla or "" }}</td>
+          <td>{{ livro.ano_letivo.nome if livro.ano_letivo else "-" }}</td>
+          <td>
+            {% if livro.turmas %}
+              {{ livro.turmas|map(attribute='nome')|join(', ') }}
+            {% else %}
+              <span class="text-muted">Nenhuma</span>
+            {% endif %}
+          </td>
+          <td>
+           <a href="{{ url_for('livros_edit', livro_id=livro.id) }}">Editar</a>
+
+            <form method="post"
+      action="{{ url_for('livros_delete', livro_id=livro.id) }}">
+  <button type="submit">Apagar</button>
+</form>
+
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <p>Não existem livros (disciplinas) registados.</p>
+{% endif %}
+
 {% endblock %}

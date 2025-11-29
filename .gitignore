@@ -1,2 +1,5 @@
 *.rbc
 *.fyc
+*.pyc
+/__pycache__
+*.pyc
