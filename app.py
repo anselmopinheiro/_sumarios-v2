@@ -782,7 +782,9 @@ def create_app():
         db.session.commit()
         renumerar_calendario_turma(turma.id)
 
-        novas = completar_modulos_profissionais(turma.id, data_removida)
+        novas = completar_modulos_profissionais(
+            turma.id, data_removida=data_removida, modulo_removido_id=aula.modulo_id
+        )
         if novas:
             renumerar_calendario_turma(turma.id)
             flash(

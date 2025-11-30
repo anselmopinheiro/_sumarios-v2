@@ -536,7 +536,11 @@ def _contar_aulas(aula: CalendarioAula) -> int:
     return len(sumarios) if sumarios else 1
 
 
-def completar_modulos_profissionais(turma_id: int, data_removida: Optional[date] = None) -> int:
+def completar_modulos_profissionais(
+    turma_id: int,
+    data_removida: Optional[date] = None,
+    modulo_removido_id: Optional[int] = None,
+) -> int:
     """Acrescenta aulas em turmas profissionais até cumprir o total de cada módulo.
 
     Deve ser usado após remoções manuais de linhas, para evitar que os módulos
@@ -623,19 +627,27 @@ def completar_modulos_profissionais(turma_id: int, data_removida: Optional[date]
         if ultima_aula_modulo and ultima_aula_modulo.data:
             data_inicio = ultima_aula_modulo.data + timedelta(days=1)
 
-        if data_removida:
+        data_corte = None
+        if data_removida and modulo_removido_id and modulo.id == modulo_removido_id:
+            data_corte = data_removida
             data_inicio = max(
+                (data_corte + timedelta(days=1)) if data_corte else data_inicio,
                 periodos_validos[0].data_inicio or data_inicio,
-                min(data_inicio, data_removida),
             )
 
         if not data_inicio:
             continue
 
-        # Tudo o que vem depois da última aula deste módulo será empurrado
-        # para a frente, após inserirmos as aulas em falta.
+        # Tudo o que vem depois da última aula (ou da data removida, se for
+        # deste módulo) será empurrado para a frente, após inserirmos as aulas
+        # em falta.
         fila_trabalho: List[CalendarioAula | str] = []
-        if ultima_aula_modulo:
+
+        if data_corte:
+            fila_trabalho.extend(
+                [a for a in aulas_existentes if a.data and a.data >= data_corte]
+            )
+        elif ultima_aula_modulo:
             try:
                 idx = aulas_existentes.index(ultima_aula_modulo)
                 fila_trabalho.extend(aulas_existentes[idx + 1 :])
