@@ -24,6 +24,21 @@
       {% endfor %}
     </select>
   </div>
+
+  <div class="col-md-4 d-flex align-items-end">
+    <div class="form-check">
+      <input class="form-check-input"
+             type="checkbox"
+             id="mostrar_apagadas"
+             name="mostrar_apagadas"
+             value="1"
+             onchange="this.form.submit()"
+             {% if mostrar_apagadas %}checked{% endif %}>
+      <label class="form-check-label" for="mostrar_apagadas">
+        Mostrar linhas apagadas
+      </label>
+    </div>
+  </div>
 </form>
 
 <div class="mb-3">
@@ -64,7 +79,7 @@
     </thead>
     <tbody>
       {% for a in aulas %}
-        <tr>
+        <tr class="{% if a.apagado %}table-secondary text-muted{% endif %}">
           <td>{{ a.data.strftime("%d/%m/%Y") if a.data }}</td>
           <td>
             {% if a.data %}
@@ -75,21 +90,30 @@
           <td>{{ a.numero_modulo }}</td>
           <td>{{ a.total_geral }}</td>
           <td>{{ a.sumarios }}</td>
-          <td>{{ a.tipo }}</td>
+          <td>
+            {{ a.tipo }}
+            {% if a.apagado %}
+              <span class="badge bg-secondary ms-1">Apagada</span>
+            {% endif %}
+          </td>
 
           {% if not ano_fechado %}
             <td>
-              <a href="{{ url_for('calendario_edit', turma_id=turma.id, aula_id=a.id) }}"
-                class="btn btn-sm btn-warning">
-                Editar
-              </a>
+              {% if a.apagado %}
+                <span class="text-muted">(sem ações)</span>
+              {% else %}
+                <a href="{{ url_for('calendario_edit', turma_id=turma.id, aula_id=a.id) }}"
+                  class="btn btn-sm btn-warning">
+                  Editar
+                </a>
 
-              <form method="post"
-                    action="{{ url_for('calendario_delete', turma_id=turma.id, aula_id=a.id) }}"
-                    style="display:inline"
-                    onsubmit="return confirm('Apagar esta linha de calendário?');">
-                <button type="submit" class="btn btn-sm btn-danger">Apagar</button>
-              </form>
+                <form method="post"
+                      action="{{ url_for('calendario_delete', turma_id=turma.id, aula_id=a.id) }}"
+                      style="display:inline"
+                      onsubmit="return confirm('Apagar esta linha de calendário?');">
+                  <button type="submit" class="btn btn-sm btn-danger">Apagar</button>
+                </form>
+              {% endif %}
             </td>
           {% endif %}
         </tr>

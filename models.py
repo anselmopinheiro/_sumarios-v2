@@ -297,3 +297,6 @@ class CalendarioAula(db.Model):
 
     observacoes = db.Column(db.Text)
     sumario = db.Column(db.Text)
+
+    # Soft delete para manter histórico de linhas removidas
+    apagado = db.Column(db.Boolean, nullable=False, default=False)

@@ -496,7 +496,7 @@ def renumerar_calendario_turma(turma_id: int) -> int:
     """
 
     aulas = (
-        CalendarioAula.query.filter_by(turma_id=turma_id)
+        CalendarioAula.query.filter_by(turma_id=turma_id, apagado=False)
         .order_by(CalendarioAula.data.asc(), CalendarioAula.id.asc())
         .all()
     )
@@ -578,7 +578,7 @@ def completar_modulos_profissionais(
 
     progresso_atual: Dict[int, int] = defaultdict(int)
     aulas_existentes: List[CalendarioAula] = (
-        CalendarioAula.query.filter_by(turma_id=turma.id)
+        CalendarioAula.query.filter_by(turma_id=turma.id, apagado=False)
         .order_by(CalendarioAula.data.asc(), CalendarioAula.id.asc())
         .all()
     )
@@ -612,7 +612,7 @@ def completar_modulos_profissionais(
             continue
 
         aulas_existentes = (
-            CalendarioAula.query.filter_by(turma_id=turma.id)
+            CalendarioAula.query.filter_by(turma_id=turma.id, apagado=False)
             .order_by(CalendarioAula.data.asc(), CalendarioAula.id.asc())
             .all()
         )

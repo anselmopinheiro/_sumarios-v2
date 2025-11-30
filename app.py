@@ -530,9 +530,13 @@ def create_app():
         elif periodos_disponiveis:
             periodo_atual = periodos_disponiveis[0]
 
+        mostrar_apagadas = bool(request.args.get("mostrar_apagadas"))
+
         query_aulas = CalendarioAula.query.filter_by(turma_id=turma.id)
         if periodo_atual:
             query_aulas = query_aulas.filter_by(periodo_id=periodo_atual.id)
+        if not mostrar_apagadas:
+            query_aulas = query_aulas.filter_by(apagado=False)
         aulas = query_aulas.order_by(CalendarioAula.data).all()
 
         return render_template(
@@ -543,6 +547,7 @@ def create_app():
             aulas=aulas,
             periodo_atual=periodo_atual,
             periodos_disponiveis=periodos_disponiveis,
+            mostrar_apagadas=mostrar_apagadas,
         )
 
     @app.route("/turmas/<int:turma_id>/calendario/gerar", methods=["POST"])
@@ -777,8 +782,12 @@ def create_app():
             flash("Linha de calendário não pertence a esta turma.", "error")
             return redirect(url_for("turma_calendario", turma_id=turma.id))
 
+        if aula.apagado:
+            flash("Linha de calendário já estava marcada como removida.", "info")
+            return redirect(url_for("turma_calendario", turma_id=turma.id))
+
         data_removida = aula.data
-        db.session.delete(aula)
+        aula.apagado = True
         db.session.commit()
         renumerar_calendario_turma(turma.id)
 
