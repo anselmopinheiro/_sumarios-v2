@@ -659,24 +659,41 @@ def completar_modulos_profissionais(turma_id: int) -> int:
 
             aulas_agendadas = 0
             while aulas_agendadas < carga_dia and fila_trabalho:
-                item = fila_trabalho.pop(0)
+                capacidade_restante = carga_dia - aulas_agendadas
+                item = fila_trabalho[0]
+
                 if isinstance(item, CalendarioAula):
+                    consumo = max(1, _contar_aulas(item))
+                    if consumo > capacidade_restante:
+                        break
+
+                    fila_trabalho.pop(0)
                     item.data = data_atual
                     item.periodo_id = periodo.id
                     item.weekday = data_atual.weekday()
+                    aulas_agendadas += consumo
                 else:
+                    placeholders_no_dia = 0
+                    while (
+                        placeholders_no_dia < capacidade_restante
+                        and fila_trabalho
+                        and not isinstance(fila_trabalho[0], CalendarioAula)
+                    ):
+                        fila_trabalho.pop(0)
+                        placeholders_no_dia += 1
+
                     nova = CalendarioAula(
                         turma_id=turma.id,
                         periodo_id=periodo.id,
                         data=data_atual,
                         weekday=data_atual.weekday(),
                         modulo_id=modulo.id,
+                        sumarios=",".join("?" for _ in range(placeholders_no_dia)),
                         tipo="normal",
                     )
                     db.session.add(nova)
-                    total_adicionados += 1
-
-                aulas_agendadas += 1
+                    total_adicionados += placeholders_no_dia
+                    aulas_agendadas += placeholders_no_dia
 
             data_atual += timedelta(days=1)
 
