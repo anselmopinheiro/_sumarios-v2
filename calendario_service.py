@@ -536,7 +536,7 @@ def _contar_aulas(aula: CalendarioAula) -> int:
     return len(sumarios) if sumarios else 1
 
 
-def completar_modulos_profissionais(turma_id: int) -> int:
+def completar_modulos_profissionais(turma_id: int, data_removida: Optional[date] = None) -> int:
     """Acrescenta aulas em turmas profissionais até cumprir o total de cada módulo.
 
     Deve ser usado após remoções manuais de linhas, para evitar que os módulos
@@ -622,6 +622,12 @@ def completar_modulos_profissionais(turma_id: int) -> int:
         data_inicio = periodos_validos[0].data_inicio
         if ultima_aula_modulo and ultima_aula_modulo.data:
             data_inicio = ultima_aula_modulo.data + timedelta(days=1)
+
+        if data_removida:
+            data_inicio = max(
+                periodos_validos[0].data_inicio or data_inicio,
+                min(data_inicio, data_removida),
+            )
 
         if not data_inicio:
             continue

@@ -777,11 +777,12 @@ def create_app():
             flash("Linha de calendário não pertence a esta turma.", "error")
             return redirect(url_for("turma_calendario", turma_id=turma.id))
 
+        data_removida = aula.data
         db.session.delete(aula)
         db.session.commit()
         renumerar_calendario_turma(turma.id)
 
-        novas = completar_modulos_profissionais(turma.id)
+        novas = completar_modulos_profissionais(turma.id, data_removida)
         if novas:
             renumerar_calendario_turma(turma.id)
             flash(
