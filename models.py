@@ -8,7 +8,16 @@ class Livro(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(255), unique=True, nullable=False)
 
-    turmas = db.relationship("Turma", secondary="livros_turmas", back_populates="livros")
+    livros_turmas = db.relationship(
+        "LivroTurma",
+        back_populates="livro",
+        cascade="all, delete-orphan",
+    )
+    turmas = db.relationship(
+        "Turma",
+        secondary=lambda: LivroTurma.__table__,
+        back_populates="livros",
+    )
 
 
 class AnoLetivo(db.Model):
@@ -53,9 +62,14 @@ class Turma(db.Model):
     ano_letivo = db.relationship("AnoLetivo", backref="turmas")
 
     # 👉 NOVO: relação com Livro (simétrica do Livro.turmas)
+    livros_turmas = db.relationship(
+        "LivroTurma",
+        back_populates="turma",
+        cascade="all, delete-orphan",
+    )
     livros = db.relationship(
         "Livro",
-        secondary="livros_turmas",
+        secondary=lambda: LivroTurma.__table__,
         back_populates="turmas",
     )
     # NOVO — carga horária por dia da semana
@@ -65,9 +79,14 @@ class Turma(db.Model):
     carga_quinta = db.Column(db.Float, nullable=True)
     carga_sexta = db.Column(db.Float, nullable=True)
     # relação many-to-many com disciplina
+    turmas_disciplinas = db.relationship(
+        "TurmaDisciplina",
+        back_populates="turma",
+        cascade="all, delete-orphan",
+    )
     disciplinas = db.relationship(
         "Disciplina",
-        secondary="turmas_disciplinas",
+        secondary=lambda: TurmaDisciplina.__table__,
         back_populates="turmas",
     )
 
@@ -84,11 +103,27 @@ class Disciplina(db.Model):
     ano_letivo_id = db.Column(db.Integer, db.ForeignKey("anos_letivos.id"), nullable=False)
     ano_letivo = db.relationship("AnoLetivo", backref="disciplinas")
 
+    turmas_disciplinas = db.relationship(
+        "TurmaDisciplina",
+        back_populates="disciplina",
+        cascade="all, delete-orphan",
+    )
     turmas = db.relationship(
         "Turma",
-        secondary="turmas_disciplinas",
+        secondary=lambda: TurmaDisciplina.__table__,
         back_populates="disciplinas",
     )
+
+
+class LivroTurma(db.Model):
+    __tablename__ = "livros_turmas"
+
+    livro_id = db.Column(db.Integer, db.ForeignKey("livros.id"), primary_key=True)
+    turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), primary_key=True)
+
+    livro = db.relationship("Livro", back_populates="livros_turmas")
+    turma = db.relationship("Turma", back_populates="livros_turmas")
+
 
 class TurmaDisciplina(db.Model):
     __tablename__ = "turmas_disciplinas"
@@ -97,18 +132,15 @@ class TurmaDisciplina(db.Model):
     turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), nullable=False)
     disciplina_id = db.Column(db.Integer, db.ForeignKey("disciplinas.id"), nullable=False)
 
+    turma = db.relationship("Turma", back_populates="turmas_disciplinas")
+    disciplina = db.relationship("Disciplina", back_populates="turmas_disciplinas")
+
     # opcional, mas útil para mais tarde:
     horas_semanais = db.Column(db.Float)
 
     __table_args__ = (
         db.UniqueConstraint("turma_id", "disciplina_id", name="uq_turma_disciplina"),
     )
-
-
-class LivroTurma(db.Model):
-    __tablename__ = "livros_turmas"
-    livro_id = db.Column(db.Integer, db.ForeignKey("livros.id"), primary_key=True)
-    turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), primary_key=True)
 
 
 class Horario(db.Model):
@@ -247,7 +279,6 @@ class CalendarioAula(db.Model):
     __tablename__ = "calendario_aulas"
     id = db.Column(db.Integer, primary_key=True)
 
-    livro_id = db.Column(db.Integer, db.ForeignKey("livros.id"), nullable=False)
     turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), nullable=False)
     periodo_id = db.Column(db.Integer, db.ForeignKey("periodos.id"), nullable=False)
 
@@ -255,13 +286,16 @@ class CalendarioAula(db.Model):
     # 0=Seg, 1=Ter, ..., 6=Dom
     weekday = db.Column(db.Integer, nullable=False)
 
-    modulo_nome = db.Column(db.String(255))
-    n_aula_modulo = db.Column(db.String(50))
-    total_aulas = db.Column(db.String(50))
-    n_sumario = db.Column(db.String(50))
+    modulo_id = db.Column(db.Integer, db.ForeignKey("modulos.id"))
+    modulo = db.relationship("Modulo")
+    numero_modulo = db.Column(db.Integer)
+    total_geral = db.Column(db.Integer)
+    sumarios = db.Column(db.String(255))
+
+    # normal / greve / servico_oficial / extra / faltei
+    tipo = db.Column(db.String(50), default="normal", nullable=False)
 
     observacoes = db.Column(db.Text)
     sumario = db.Column(db.Text)
 
-    # normal / greve / servico_oficial / extra
-    tipo_dia = db.Column(db.String(50))
+    deleted = db.Column(db.Boolean, nullable=False, default=False)

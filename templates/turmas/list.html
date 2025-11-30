@@ -3,7 +3,6 @@
 
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h2>Turmas</h2>
-    <a href="/turmas/add" class="btn btn-primary">+ Nova Turma</a>
     <a href="{{ url_for('turmas_add') }}" class="btn btn-primary">+ Nova Turma</a>
 
 </div>
@@ -31,12 +30,14 @@
                 {{ turma.carga_quinta or 0 }} /
                 {{ turma.carga_sexta or 0 }}</th>
             <td>
-                <a href="/turmas/{{ turma.id }}/calendario" class="btn btn-sm btn-info">Calendário</a>
-                <a href="/turmas/{{ turma.id }}/edit" class="btn btn-sm btn-warning">Editar</a>
-                <a href="/turmas/{{ turma.id }}/delete" class="btn btn-sm btn-danger"
-                   onclick="return confirm('Eliminar turma?')">
-                    Eliminar
-                </a>
+                <a href="{{ url_for('turma_calendario', turma_id=turma.id) }}" class="btn btn-sm btn-info">Calendário</a>
+                <a href="{{ url_for('turmas_edit', turma_id=turma.id) }}" class="btn btn-sm btn-warning">Editar</a>
+                <form method="post"
+                      action="{{ url_for('turmas_delete', turma_id=turma.id) }}"
+                      style="display:inline"
+                      onsubmit="return confirm('Eliminar turma?')">
+                    <button type="submit" class="btn btn-sm btn-danger">Eliminar</button>
+                </form>
             </td>
         </tr>
 

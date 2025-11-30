@@ -5,7 +5,6 @@
 
 <p class="text-muted">
   Turma: {{ turma.nome }}<br>
-  Livro: {{ livro.nome }}<br>
   Período: {{ periodo.nome or (periodo.data_inicio|string + " - " + periodo.data_fim|string) }}
 </p>
 
@@ -45,30 +44,55 @@
 
     <div class="col-md-4 mb-3">
       <label class="form-label">Tipo</label>
-      <select name="tipo" class="form-select">
+      <select name="tipo" class="form-select" id="tipo-aula">
         {% set valor_tipo = aula.tipo if aula else "normal" %}
         <option value="normal" {% if valor_tipo == "normal" %}selected{% endif %}>Normal</option>
         <option value="greve" {% if valor_tipo == "greve" %}selected{% endif %}>Greve</option>
         <option value="servico_oficial" {% if valor_tipo == "servico_oficial" %}selected{% endif %}>Serviço oficial</option>
         <option value="extra" {% if valor_tipo == "extra" %}selected{% endif %}>Extra</option>
+        <option value="faltei" {% if valor_tipo == "faltei" %}selected{% endif %}>Faltei</option>
+        <option value="outros" {% if valor_tipo == "outros" %}selected{% endif %}>Outros</option>
       </select>
     </div>
   </div>
 
   <div class="mb-3">
     <label class="form-label">Sumário(s) (lista de números, ex.: 1,2,3)</label>
-    <input type="text" name="sumarios" class="form-control"
-           value="{{ aula.sumarios if aula and aula.sumarios else '' }}">
+    <input type="text" name="sumarios" class="form-control" id="sumarios-campo"
+           value="{{ aula.sumarios if aula and aula.sumarios else '' }}"
+           placeholder="Ex.: 1,2,3">
+    <div class="form-text">"Greve", "Serviço oficial", "Extra", "Faltei" e "Outros" não contam para a numeração.</div>
   </div>
 
   <button type="submit" class="btn btn-success">Guardar</button>
   <a href="{{ url_for('turma_calendario',
                       turma_id=turma.id,
-                      livro_id=livro.id,
                       periodo_id=periodo.id) }}"
      class="btn btn-secondary">
     Cancelar
   </a>
 </form>
+
+<script>
+  (function() {
+    const selectTipo = document.getElementById('tipo-aula');
+    const inputSumarios = document.getElementById('sumarios-campo');
+
+    function atualizarEstadoSumarios() {
+      if (!selectTipo || !inputSumarios) return;
+      const valor = selectTipo.value;
+      const bloquear = valor === 'faltei';
+      inputSumarios.readOnly = bloquear;
+      if (bloquear) {
+        inputSumarios.value = '';
+      }
+    }
+
+    if (selectTipo) {
+      selectTipo.addEventListener('change', atualizarEstadoSumarios);
+      atualizarEstadoSumarios();
+    }
+  })();
+</script>
 
 {% endblock %}

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex align-items-center mb-3">
+  <h2 class="mb-0">{{ titulo or "Livro" }}</h2>
+  <div class="ms-auto">
+    <a href="{{ url_for('livros_list') }}" class="btn btn-link">Voltar</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <form method="post">
+      <div class="mb-3">
+        <label for="nome" class="form-label">Nome</label>
+        <input type="text" name="nome" id="nome" class="form-control" value="{{ livro.nome if livro else '' }}" required>
+      </div>
+      <button type="submit" class="btn btn-primary">Guardar</button>
+      <a href="{{ url_for('livros_list') }}" class="btn btn-outline-secondary">Cancelar</a>
+    </form>
+  </div>
+</div>
+{% endblock %}
