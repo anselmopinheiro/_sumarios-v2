@@ -487,6 +487,9 @@ def gerar_calendario_turma(turma_id: int, recalcular_tudo: bool = True) -> int:
     return total_criadas
 
 
+TIPOS_SEM_CONTAGEM = {"greve", "servico_oficial", "faltei", "outros"}
+
+
 def renumerar_calendario_turma(turma_id: int) -> int:
     """Reatribui a numeração global e por módulo após edições/remoções.
 
@@ -505,20 +508,26 @@ def renumerar_calendario_turma(turma_id: int) -> int:
     progresso_modulo: Dict[int, int] = defaultdict(int)
 
     for aula in aulas:
+        conta_para_total = aula.tipo not in TIPOS_SEM_CONTAGEM
         sumarios_originais = [s.strip() for s in (aula.sumarios or "").split(",") if s.strip()]
         quantidade = len(sumarios_originais) if sumarios_originais else 1
 
-        novos_sumarios = list(range(total_global + 1, total_global + quantidade + 1))
-        total_global += quantidade
+        if conta_para_total:
+            novos_sumarios = list(range(total_global + 1, total_global + quantidade + 1))
+            total_global += quantidade
 
-        aula.sumarios = ",".join(str(n) for n in novos_sumarios)
-        aula.total_geral = total_global
+            aula.sumarios = ",".join(str(n) for n in novos_sumarios)
+            aula.total_geral = total_global
 
-        if aula.modulo_id:
-            progresso_modulo[aula.modulo_id] += quantidade
-            aula.numero_modulo = progresso_modulo[aula.modulo_id]
+            if aula.modulo_id:
+                progresso_modulo[aula.modulo_id] += quantidade
+                aula.numero_modulo = progresso_modulo[aula.modulo_id]
+            else:
+                aula.numero_modulo = None
         else:
-            aula.numero_modulo = None
+            aula.sumarios = None
+            aula.total_geral = total_global
+            aula.numero_modulo = None if not aula.modulo_id else progresso_modulo.get(aula.modulo_id) or None
 
     db.session.commit()
     return len(aulas)
@@ -532,6 +541,8 @@ def _periodo_para_data(periodos: List[Periodo], data: date) -> Optional[Periodo]
 
 
 def _contar_aulas(aula: CalendarioAula) -> int:
+    if aula.tipo in TIPOS_SEM_CONTAGEM:
+        return 0
     sumarios = [s.strip() for s in (aula.sumarios or "").split(",") if s.strip()]
     return len(sumarios) if sumarios else 1
 
