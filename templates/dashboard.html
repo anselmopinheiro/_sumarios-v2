@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Dashboard</h2>
+<a class="btn btn-secondary" href="/calendario-escolar">
+    Ver Calendário Escolar
+</a>
+
+<p>
+  <a href="{{ url_for('anos_letivos_list') }}">Gerir Anos Letivos</a> |
+  <a href="{{ url_for('calendario_escolar') }}">Ver Calendário Escolar</a> |
+  <a href="{{ url_for('calendario_escolar_gestao') }}">Gerir Calendário Escolar</a>
+</p>
+
+<h3>Turmas</h3>
+<ul>
+  {% for turma in turmas %}
+    <li>{{ turma.nome }} ({{ turma.tipo }})</li>
+  {% else %}
+    <li>(Nenhuma turma registada)</li>
+  {% endfor %}
+</ul>
+{% endblock %}

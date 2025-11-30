@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Disciplinas – {{ ano.nome }}</h2>
+
+<p>
+  <a href="{{ url_for('anos_letivos_list') }}">Voltar aos Anos Letivos</a> |
+  <a href="{{ url_for('disciplinas_add', ano_id=ano.id) }}">+ Nova Disciplina</a>
+</p>
+
+{% if disciplinas %}
+<table border="1" cellpadding="4" cellspacing="0">
+  <tr>
+    <th>Nome</th>
+    <th>Sigla</th>
+    <th>Ações</th>
+  </tr>
+  {% for d in disciplinas %}
+  <tr>
+    <td>{{ d.nome }}</td>
+    <td>{{ d.sigla or "" }}</td>
+    <td>
+      <a href="{{ url_for('disciplinas_edit', disc_id=d.id) }}">Editar</a>
+      <form method="post"
+            action="{{ url_for('disciplinas_delete', disc_id=d.id) }}"
+            style="display:inline"
+            onsubmit="return confirm('Apagar esta disciplina?');">
+        <button type="submit">Apagar</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p>(sem disciplinas registadas para este ano)</p>
+{% endif %}
+
+{% endblock %}

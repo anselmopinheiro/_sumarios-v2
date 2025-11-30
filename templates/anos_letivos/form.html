@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>
+  {% if ano %}Editar Ano Letivo{% else %}Novo Ano Letivo{% endif %}
+</h2>
+
+<form method="post">
+  <p>
+    <label>Nome (ex.: 2025/2026):<br>
+      <input type="text" name="nome" size="20"
+             value="{{ ano.nome if ano else '' }}">
+    </label>
+  </p>
+
+  <p>
+    <label>Início do ano letivo:
+      <input type="date" name="data_inicio_ano"
+             value="{{ ano.data_inicio_ano.strftime('%Y-%m-%d') if ano and ano.data_inicio_ano }}">
+    </label>
+  </p>
+
+  <p>
+    <label>Fim do ano letivo:
+      <input type="date" name="data_fim_ano"
+             value="{{ ano.data_fim_ano.strftime('%Y-%m-%d') if ano and ano.data_fim_ano }}">
+    </label>
+  </p>
+
+  <p>
+    <label>Fim do 1.º Semestre:
+      <input type="date" name="data_fim_semestre1"
+             value="{{ ano.data_fim_semestre1.strftime('%Y-%m-%d') if ano and ano.data_fim_semestre1 }}">
+    </label>
+  </p>
+
+  <p>
+    <label>Início do 2.º Semestre:
+      <input type="date" name="data_inicio_semestre2"
+             value="{{ ano.data_inicio_semestre2.strftime('%Y-%m-%d') if ano and ano.data_inicio_semestre2 }}">
+    </label>
+  </p>
+
+  <p>
+    <label>Descrição (opcional):<br>
+      <input type="text" name="descricao" size="50"
+             value="{{ ano.descricao if ano and ano.descricao else '' }}">
+    </label>
+  </p>
+
+  <button type="submit">Guardar</button>
+  <a href="{{ url_for('anos_letivos_list') }}">Cancelar</a>
+</form>
+
+{% endblock %}

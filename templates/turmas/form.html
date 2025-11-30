@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>{{ titulo }}</h2>
+
+<form method="post">
+
+  <div class="mb-3">
+    <label class="form-label">Nome da Turma</label>
+    <input type="text"
+           name="nome"
+           class="form-control"
+           value="{{ turma.nome if turma else '' }}"
+           required>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Tipo de Turma</label>
+    <select name="tipo" class="form-control">
+      <option value="regular"
+        {% if (turma and turma.tipo == "regular") or not turma %}selected{% endif %}>
+        Regular
+      </option>
+      <option value="profissional"
+        {% if turma and turma.tipo == "profissional" %}selected{% endif %}>
+        Profissional
+      </option>
+    </select>
+  </div>
+
+  <div id="modulos-profissionais" class="mb-4" style="display: none;">
+    <h5 class="mt-4">Módulos (ensino profissional)</h5>
+    <p class="text-muted small">Indica o nome do módulo e a respetiva carga horária total.</p>
+
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead>
+          <tr>
+            <th style="width: 45%;">Nome do módulo</th>
+            <th style="width: 25%;">Carga horária total</th>
+            <th style="width: 10%;"></th>
+          </tr>
+        </thead>
+        <tbody id="linhas-modulos">
+          {% if modulos %}
+            {% for modulo in modulos %}
+              <tr>
+                <td>
+                  <input type="hidden" name="modulo_id" value="{{ modulo.id }}">
+                  <input type="text" name="modulo_nome" class="form-control" value="{{ modulo.nome }}" required>
+                </td>
+                <td>
+                  <input type="number" name="modulo_total" class="form-control" min="0" step="1" value="{{ modulo.total_aulas }}" required>
+                </td>
+                <td class="text-end">
+                  <button type="button" class="btn btn-outline-danger btn-sm" onclick="removerLinhaModulo(this)">Remover</button>
+                </td>
+              </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td>
+                <input type="text" name="modulo_nome" class="form-control" placeholder="Ex.: Módulo 1" required>
+              </td>
+              <td>
+                <input type="number" name="modulo_total" class="form-control" min="0" step="1" placeholder="Total de horas" required>
+              </td>
+              <td class="text-end">
+                <button type="button" class="btn btn-outline-danger btn-sm" onclick="removerLinhaModulo(this)">Remover</button>
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    <button type="button" class="btn btn-outline-primary btn-sm" onclick="adicionarLinhaModulo()">Adicionar módulo</button>
+  </div>
+
+  <div class="mb-3">
+   <h5 class="mt-4">Carga horária semanal</h5>
+<p class="text-muted small">(em horas ou blocos; opcional)</p>
+
+<div class="row">
+  <div class="col-md-2">
+    <label>Segunda</label>
+    <input type="number" step="0.5" min="0" class="form-control"
+           name="carga_segunda"
+           value="{{ turma.carga_segunda if turma else '' }}">
+  </div>
+
+  <div class="col-md-2">
+    <label>Terça</label>
+    <input type="number" step="0.5" min="0" class="form-control"
+           name="carga_terca"
+           value="{{ turma.carga_terca if turma else '' }}">
+  </div>
+
+  <div class="col-md-2">
+    <label>Quarta</label>
+    <input type="number" step="0.5" min="0" class="form-control"
+           name="carga_quarta"
+           value="{{ turma.carga_quarta if turma else '' }}">
+  </div>
+
+  <div class="col-md-2">
+    <label>Quinta</label>
+    <input type="number" step="0.5" min="0" class="form-control"
+           name="carga_quinta"
+           value="{{ turma.carga_quinta if turma else '' }}">
+  </div>
+
+  <div class="col-md-2">
+    <label>Sexta</label>
+    <input type="number" step="0.5" min="0" class="form-control"
+           name="carga_sexta"
+           value="{{ turma.carga_sexta if turma else '' }}">
+  </div>
+</div>
+
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Ano Letivo</label>
+    <select name="ano_letivo_id" class="form-control" required>
+      {% for ano in anos_letivos %}
+        <option value="{{ ano.id }}"
+          {% if turma and turma.ano_letivo_id == ano.id %}
+            selected
+          {% elif not turma and ano_atual and ano_atual.id == ano.id %}
+            selected
+          {% endif %}>
+          {{ ano.nome }}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <button type="submit" class="btn btn-success">Guardar</button>
+  <a href="{{ url_for('turmas_list') }}" class="btn btn-secondary">Cancelar</a>
+</form>
+
+<script>
+  const seletorTipo = document.querySelector('select[name="tipo"]');
+  const secaoModulos = document.getElementById('modulos-profissionais');
+  const corpoModulos = document.getElementById('linhas-modulos');
+
+  function atualizarVisibilidadeModulos() {
+    if (seletorTipo.value === 'profissional') {
+      secaoModulos.style.display = '';
+    } else {
+      secaoModulos.style.display = 'none';
+    }
+  }
+
+  function adicionarLinhaModulo() {
+    const linha = document.createElement('tr');
+    linha.innerHTML = `
+      <td><input type="text" name="modulo_nome" class="form-control" placeholder="Ex.: Módulo" required></td>
+      <td><input type="number" name="modulo_total" class="form-control" min="0" step="1" placeholder="Total de horas" required></td>
+      <td class="text-end">
+        <button type="button" class="btn btn-outline-danger btn-sm" onclick="removerLinhaModulo(this)">Remover</button>
+      </td>
+    `;
+    corpoModulos.appendChild(linha);
+  }
+
+  function removerLinhaModulo(botao) {
+    const linha = botao.closest('tr');
+    if (corpoModulos.children.length > 1) {
+      linha.remove();
+    } else {
+      linha.querySelectorAll('input').forEach((input) => input.value = '');
+    }
+  }
+
+  seletorTipo.addEventListener('change', atualizarVisibilidadeModulos);
+  atualizarVisibilidadeModulos();
+</script>
+
+{% endblock %}

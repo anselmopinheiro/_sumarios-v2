@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Gestão do Calendário Escolar — {{ ano.nome }}</h2>
+
+<p>
+  <a href="{{ url_for('calendario_escolar') }}">⟵ Ver calendário escolar</a>
+</p>
+
+<hr>
+
+<h3>Nova Interrupção</h3>
+<form method="post" action="{{ url_for('interrupcao_add') }}">
+  <p>
+    <label>Tipo:
+      <select name="tipo">
+        <option value="natal">Natal</option>
+        <option value="pascoa">Páscoa</option>
+        <option value="carnaval">Carnaval</option>
+        <option value="intercalar1">Intercalar 1</option>
+        <option value="intercalar2">Intercalar 2</option>
+        <option value="outros">Outros</option>
+      </select>
+    </label>
+  </p>
+  <p>
+    <label>Data início:
+      <input type="date" name="data_inicio">
+    </label>
+    <label>Data fim:
+      <input type="date" name="data_fim">
+    </label>
+  </p>
+  <p>
+    <label>Ou expressão de datas (texto):<br>
+      <input type="text" name="data_text" size="60"
+             placeholder="22 de dezembro de 2025 a 2 de janeiro de 2026">
+    </label>
+  </p>
+  <p>
+    <label>Descrição:<br>
+      <input type="text" name="descricao" size="60">
+    </label>
+  </p>
+  <button type="submit">Guardar interrupção</button>
+</form>
+
+<h4>Interrupções existentes</h4>
+{% if interrupcoes %}
+<table border="1" cellpadding="4" cellspacing="0">
+  <tr>
+    <th>Tipo</th>
+    <th>Datas</th>
+    <th>Descrição</th>
+    <th>Ações</th>
+  </tr>
+  {% for i in interrupcoes %}
+  <tr>
+    <td>{{ i.tipo }}</td>
+    <td>
+      {% if i.data_text %}
+        {{ i.data_text }}
+      {% elif i.data_inicio and i.data_fim %}
+        {{ i.data_inicio.strftime("%d/%m/%Y") }} a {{ i.data_fim.strftime("%d/%m/%Y") }}
+      {% elif i.data_inicio %}
+        {{ i.data_inicio.strftime("%d/%m/%Y") }}
+      {% endif %}
+    </td>
+    <td>{{ i.descricao or "" }}</td>
+    <td>
+      <a href="{{ url_for('interrupcao_edit', intr_id=i.id) }}">Editar</a>
+      <form method="post"
+            action="{{ url_for('interrupcao_delete', intr_id=i.id) }}"
+            style="display:inline"
+            onsubmit="return confirm('Apagar esta interrupção?');">
+        <button type="submit">Apagar</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p>(sem interrupções registadas)</p>
+{% endif %}
+
+<hr>
+
+<h3>Novo Feriado</h3>
+<form method="post" action="{{ url_for('feriado_add') }}">
+  <p>
+    <label>Nome:<br>
+      <input type="text" name="nome" size="40" placeholder="1 de dezembro">
+    </label>
+  </p>
+  <p>
+    <label>Data:
+      <input type="date" name="data">
+    </label>
+  </p>
+  <p>
+    <label>Ou expressão de datas (texto):<br>
+      <input type="text" name="data_text" size="60"
+             placeholder="16 e 17 de fevereiro de 2026">
+    </label>
+  </p>
+  <button type="submit">Guardar feriado</button>
+</form>
+
+<h4>Feriados existentes</h4>
+{% if feriados %}
+<table border="1" cellpadding="4" cellspacing="0">
+  <tr>
+    <th>Data(s)</th>
+    <th>Nome</th>
+    <th>Ações</th>
+  </tr>
+  {% for f in feriados %}
+  <tr>
+    <td>
+      {% if f.data_text %}
+        {{ f.data_text }}
+      {% elif f.data %}
+        {{ f.data.strftime("%d/%m/%Y") }}
+      {% endif %}
+    </td>
+    <td>{{ f.nome }}</td>
+    <td>
+      <a href="{{ url_for('feriado_edit', fer_id=f.id) }}">Editar</a>
+      <form method="post"
+            action="{{ url_for('feriado_delete', fer_id=f.id) }}"
+            style="display:inline"
+            onsubmit="return confirm('Apagar este feriado?');">
+        <button type="submit">Apagar</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+
+
+{% else %}
+<p>(sem feriados registados)</p>
+<form method="post" action="{{ url_for('feriados_add_nacionais') }}" style="margin-top: 1em;">
+  <button type="submit">Adicionar feriados nacionais automaticamente</button>
+</form>
+{% endif %}
+
+{% endblock %}
