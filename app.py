@@ -753,7 +753,21 @@ def create_app():
 
             db.session.commit()
             renumerar_calendario_turma(turma.id)
-            flash("Linha de calendário atualizada.", "success")
+
+            novas = completar_modulos_profissionais(
+                turma.id,
+                data_removida=aula.data,
+                modulo_removido_id=aula.modulo_id,
+            )
+            if novas:
+                renumerar_calendario_turma(turma.id)
+                flash(
+                    "Linha de calendário atualizada e módulo reajustado "
+                    f"com {novas} aula(s) adicionada(s).",
+                    "success",
+                )
+            else:
+                flash("Linha de calendário atualizada.", "success")
             return redirect(
                 url_for(
                     "turma_calendario",
