@@ -19,7 +19,11 @@ def upgrade():
             "calendario_aulas",
             sa.Column("apagado", sa.Boolean(), nullable=False, server_default=sa.text("0")),
         )
-        op.alter_column("calendario_aulas", "apagado", server_default=None)
+
+        # SQLite does not support dropping a default with ALTER TABLE, so only try to
+        # clear it on dialects that can handle the operation.
+        if bind.dialect.name != "sqlite":
+            op.alter_column("calendario_aulas", "apagado", server_default=None)
 
 
 def downgrade():
