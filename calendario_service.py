@@ -554,6 +554,7 @@ def completar_modulos_profissionais(
     turma_id: int,
     data_removida: Optional[date] = None,
     modulo_removido_id: Optional[int] = None,
+    preservar_datas: bool = False,
 ) -> int:
     """Acrescenta aulas em turmas profissionais até cumprir o total de cada módulo.
 
@@ -596,9 +597,13 @@ def completar_modulos_profissionais(
         .order_by(CalendarioAula.data.asc(), CalendarioAula.id.asc())
         .all()
     )
+    aulas_por_data: Dict[date, List[CalendarioAula]] = defaultdict(list)
+
     for aula in aulas_existentes:
         if aula.modulo_id:
             progresso_atual[aula.modulo_id] += _contar_aulas(aula)
+        if aula.data:
+            aulas_por_data[aula.data].append(aula)
 
     deficit_por_modulo: Dict[int, int] = {}
     for mod_id, total in totais_por_modulo.items():
@@ -633,7 +638,7 @@ def completar_modulos_profissionais(
 
         ultima_aula_modulo: Optional[CalendarioAula] = None
         for a in reversed(aulas_existentes):
-            if a.modulo_id == modulo.id and a.data:
+            if a.modulo_id == modulo.id and a.data and _contar_aulas(a) > 0:
                 ultima_aula_modulo = a
                 break
 
@@ -652,28 +657,44 @@ def completar_modulos_profissionais(
         if not data_inicio:
             continue
 
-        # Tudo o que vem depois da última aula (ou da data removida, se for
-        # deste módulo) será empurrado para a frente, após inserirmos as aulas
-        # em falta.
-        fila_trabalho: List[CalendarioAula | str] = []
-
-        if data_corte:
-            fila_trabalho.extend(
-                [a for a in aulas_existentes if a.data and a.data >= data_corte]
-            )
-        elif ultima_aula_modulo:
-            try:
-                idx = aulas_existentes.index(ultima_aula_modulo)
-                fila_trabalho.extend(aulas_existentes[idx + 1 :])
-            except ValueError:
-                fila_trabalho.extend(aulas_existentes)
-        else:
-            fila_trabalho.extend(aulas_existentes)
-
         placeholders = [f"novo-{i}" for i in range(deficit)]
-        fila_trabalho = placeholders + fila_trabalho
 
         data_atual = data_inicio
+        fila_trabalho: List[CalendarioAula | str] = []
+
+        if not preservar_datas:
+            fila_trabalho = placeholders + []
+            if data_corte:
+                fila_trabalho.extend(
+                    [
+                        a
+                        for a in aulas_existentes
+                        if a.data
+                        and a.data >= data_corte
+                        and a.tipo not in NAO_CONTABILIZA_TIPO
+                    ]
+                )
+            elif ultima_aula_modulo:
+                try:
+                    idx = aulas_existentes.index(ultima_aula_modulo)
+                    fila_trabalho.extend(
+                        [
+                            a
+                            for a in aulas_existentes[idx + 1 :]
+                            if a.tipo not in NAO_CONTABILIZA_TIPO
+                        ]
+                    )
+                except ValueError:
+                    fila_trabalho.extend(
+                        [a for a in aulas_existentes if a.tipo not in NAO_CONTABILIZA_TIPO]
+                    )
+            else:
+                fila_trabalho.extend(
+                    [a for a in aulas_existentes if a.tipo not in NAO_CONTABILIZA_TIPO]
+                )
+        else:
+            fila_trabalho = placeholders
+
         while data_atual <= data_limite and fila_trabalho:
             if not _e_dia_letivo(data_atual, ano, dias_interrupcao, dias_feriados):
                 data_atual += timedelta(days=1)
@@ -689,7 +710,9 @@ def completar_modulos_profissionais(
                 data_atual += timedelta(days=1)
                 continue
 
-            aulas_agendadas = 0
+            consumo_existente = sum(_contar_aulas(a) for a in aulas_por_data.get(data_atual, []))
+            aulas_agendadas = consumo_existente
+
             while aulas_agendadas < carga_dia and fila_trabalho:
                 capacidade_restante = carga_dia - aulas_agendadas
                 item = fila_trabalho[0]
@@ -704,6 +727,7 @@ def completar_modulos_profissionais(
                     item.periodo_id = periodo.id
                     item.weekday = data_atual.weekday()
                     aulas_agendadas += consumo
+                    aulas_por_data[data_atual].append(item)
                 else:
                     placeholders_no_dia = 0
                     while (
@@ -713,6 +737,9 @@ def completar_modulos_profissionais(
                     ):
                         fila_trabalho.pop(0)
                         placeholders_no_dia += 1
+
+                    if placeholders_no_dia <= 0:
+                        break
 
                     nova = CalendarioAula(
                         turma_id=turma.id,
@@ -724,6 +751,7 @@ def completar_modulos_profissionais(
                         tipo="normal",
                     )
                     db.session.add(nova)
+                    aulas_por_data[data_atual].append(nova)
                     total_adicionados += placeholders_no_dia
                     aulas_agendadas += placeholders_no_dia
 

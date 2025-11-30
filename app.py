@@ -672,6 +672,7 @@ def create_app():
                     turma.id,
                     data_removida=aula.data,
                     modulo_removido_id=aula.modulo_id,
+                    preservar_datas=True,
                 )
                 if novas:
                     renumerar_calendario_turma(turma.id)
@@ -785,6 +786,7 @@ def create_app():
                     turma.id,
                     data_removida=data_referencia,
                     modulo_removido_id=aula.modulo_id,
+                    preservar_datas=True,
                 )
             elif tipo_original in NAO_CONTABILIZA_TIPO:
                 removidas = remover_excedentes_profissionais(
