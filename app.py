@@ -532,7 +532,11 @@ def create_app():
         elif periodos_disponiveis:
             periodo_atual = periodos_disponiveis[0]
 
-        query_aulas = CalendarioAula.query.filter_by(turma_id=turma.id, deleted=False)
+        show_deleted = bool(request.args.get("show_deleted"))
+
+        query_aulas = CalendarioAula.query.filter_by(turma_id=turma.id)
+        if not show_deleted:
+            query_aulas = query_aulas.filter_by(deleted=False)
         if periodo_atual:
             query_aulas = query_aulas.filter_by(periodo_id=periodo_atual.id)
         aulas = query_aulas.order_by(CalendarioAula.data).all()
@@ -545,6 +549,7 @@ def create_app():
             aulas=aulas,
             periodo_atual=periodo_atual,
             periodos_disponiveis=periodos_disponiveis,
+            show_deleted=show_deleted,
         )
 
     @app.route("/turmas/<int:turma_id>/calendario/gerar", methods=["POST"])

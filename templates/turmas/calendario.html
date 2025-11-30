@@ -12,7 +12,7 @@
   </p>
 {% endif %}
 
-<form method="get" class="row g-3 mb-3">
+<form method="get" class="row g-3 mb-3 align-items-end">
   <div class="col-md-4">
     <label class="form-label">Período</label>
     <select name="periodo_id" class="form-select" onchange="this.form.submit()">
@@ -23,6 +23,17 @@
         </option>
       {% endfor %}
     </select>
+  </div>
+
+  <div class="col-md-3">
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" value="1" id="show_deleted"
+             name="show_deleted" {% if show_deleted %}checked{% endif %}
+             onchange="this.form.submit()">
+      <label class="form-check-label" for="show_deleted">
+        Mostrar aulas apagadas (soft delete)
+      </label>
+    </div>
   </div>
 </form>
 
@@ -64,7 +75,7 @@
     </thead>
     <tbody>
       {% for a in aulas %}
-        <tr>
+        <tr class="{% if a.deleted %}table-secondary text-muted{% endif %}">
           <td>{{ a.data.strftime("%d/%m/%Y") if a.data }}</td>
           <td>
             {% if a.data %}
@@ -75,7 +86,12 @@
           <td>{{ a.numero_modulo }}</td>
           <td>{{ a.total_geral }}</td>
           <td>{{ a.sumarios }}</td>
-          <td>{{ a.tipo }}</td>
+          <td>
+            {{ a.tipo }}
+            {% if a.deleted %}
+              <span class="badge bg-secondary">Apagada</span>
+            {% endif %}
+          </td>
 
           {% if not ano_fechado %}
             <td>
