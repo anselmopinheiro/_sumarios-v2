@@ -732,3 +732,57 @@ def completar_modulos_profissionais(
         db.session.commit()
 
     return total_adicionados
+
+
+def remover_excedentes_profissionais(
+    turma_id: int, data_referencia: Optional[date] = None
+) -> int:
+    """Marca como apagadas as aulas que excedem o total configurado por módulo.
+
+    Útil quando uma linha deixa de ser de tipo não contabilizado, fazendo com
+    que o módulo passe a ter aulas a mais. Apenas remove aulas a partir da data
+    de referência (inclusive) para preservar o histórico anterior.
+    """
+
+    turma = Turma.query.get(turma_id)
+    if not turma or turma.tipo != "profissional":
+        return 0
+
+    modulos = garantir_modulos_para_turma(turma)
+    if not modulos:
+        return 0
+
+    totais_por_modulo: Dict[int, int] = {
+        m.id: max(int(m.total_aulas or 0), 0) for m in modulos
+    }
+
+    aulas = (
+        CalendarioAula.query.filter_by(turma_id=turma.id, deleted=False)
+        .order_by(CalendarioAula.data.asc(), CalendarioAula.id.asc())
+        .all()
+    )
+
+    progresso: Dict[int, int] = defaultdict(int)
+    removidas = 0
+
+    for aula in aulas:
+        if aula.deleted or aula.tipo in NAO_CONTABILIZA_TIPO:
+            continue
+
+        conta = _contar_aulas(aula)
+        if not aula.modulo_id:
+            continue
+
+        progresso[aula.modulo_id] += conta
+        total_modulo = totais_por_modulo.get(aula.modulo_id, 0)
+
+        if total_modulo > 0 and progresso[aula.modulo_id] > total_modulo:
+            if not data_referencia or (aula.data and aula.data >= data_referencia):
+                aula.deleted = True
+                removidas += 1
+                progresso[aula.modulo_id] -= conta
+
+    if removidas:
+        db.session.commit()
+
+    return removidas

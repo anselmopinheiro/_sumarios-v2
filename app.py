@@ -39,6 +39,7 @@ from calendario_service import (
     garantir_modulos_para_turma,
     renumerar_calendario_turma,
     completar_modulos_profissionais,
+    remover_excedentes_profissionais,
     NAO_CONTABILIZA_TIPO,
 )
 
@@ -735,6 +736,8 @@ def create_app():
             return redirect(url_for("turma_calendario", turma_id=turma.id))
 
         periodo = Periodo.query.get_or_404(aula.periodo_id)
+        tipo_original = aula.tipo
+        data_original = aula.data
 
         modulos = garantir_modulos_para_turma(turma)
         if not modulos:
@@ -768,19 +771,45 @@ def create_app():
             aula.tipo = tipo
 
             db.session.commit()
+
+            data_referencia = data_original or aula.data
+            if aula.data and data_original:
+                data_referencia = min(aula.data, data_original)
+
             renumerar_calendario_turma(turma.id)
 
             novas = 0
+            removidas = 0
             if tipo in NAO_CONTABILIZA_TIPO:
                 novas = completar_modulos_profissionais(
                     turma.id,
-                    data_removida=aula.data,
+                    data_removida=data_referencia,
                     modulo_removido_id=aula.modulo_id,
                 )
-                if novas:
-                    renumerar_calendario_turma(turma.id)
+            elif tipo_original in NAO_CONTABILIZA_TIPO:
+                removidas = remover_excedentes_profissionais(
+                    turma.id, data_referencia=data_referencia
+                )
+                novas = completar_modulos_profissionais(
+                    turma.id,
+                    data_removida=data_referencia,
+                    modulo_removido_id=aula.modulo_id,
+                )
 
-            if novas:
+            if removidas or novas:
+                renumerar_calendario_turma(turma.id)
+
+            if removidas and novas:
+                flash(
+                    "Linha atualizada, aulas excedentes removidas e calendário refeito para cumprir o total do módulo.",
+                    "success",
+                )
+            elif removidas:
+                flash(
+                    "Linha atualizada e aulas excedentes removidas para respeitar o total do módulo.",
+                    "success",
+                )
+            elif novas:
                 flash(
                     "Linha de calendário atualizada e calendário refeito para cumprir o total do módulo.",
                     "success",
