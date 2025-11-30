@@ -39,6 +39,7 @@ from calendario_service import (
     garantir_modulos_para_turma,
     renumerar_calendario_turma,
     completar_modulos_profissionais,
+    NAO_CONTABILIZA_TIPO,
 )
 
 
