@@ -594,76 +594,92 @@ def completar_modulos_profissionais(turma_id: int) -> int:
         return 0
 
     dias_interrupcao, dias_feriados = _build_dias_nao_letivos(ano)
-
-    last_aula = aulas_existentes[-1] if aulas_existentes else None
-    data_inicio = (
-        (last_aula.data + timedelta(days=1))
-        if last_aula and last_aula.data
-        else periodos_validos[0].data_inicio
-    )
     data_limite = max(p.data_fim for p in periodos_validos if p.data_fim)
-
-    if data_inicio is None or data_limite is None:
+    if data_limite is None:
         return 0
 
-    modulos_em_ordem = [m for m in modulos if m.id in deficit_por_modulo]
-    # Se já houve aulas, tenta continuar a partir do último módulo usado;
-    # caso contrário começa pelo primeiro com défice.
-    ultimo_modulo_id = last_aula.modulo_id if last_aula else None
-    idx_corrente = 0
-    if ultimo_modulo_id:
-        for idx, mod in enumerate(modulos_em_ordem):
-            if mod.id == ultimo_modulo_id:
-                idx_corrente = idx
-                break
-
     total_adicionados = 0
-    data_atual = data_inicio
-    while data_atual <= data_limite and any(v > 0 for v in deficit_por_modulo.values()):
-        if not _e_dia_letivo(data_atual, ano, dias_interrupcao, dias_feriados):
-            data_atual += timedelta(days=1)
+
+    # Processa os módulos em ordem, inserindo as aulas em falta logo após o
+    # último dia do módulo e reajustando o que vem a seguir.
+    for modulo in modulos:
+        deficit = deficit_por_modulo.get(modulo.id, 0)
+        if deficit <= 0:
             continue
 
-        carga_dia = int(carga_por_dia.get(data_atual.weekday(), 0) or 0)
-        if carga_dia <= 0:
-            data_atual += timedelta(days=1)
-            continue
+        aulas_existentes = (
+            CalendarioAula.query.filter_by(turma_id=turma.id)
+            .order_by(CalendarioAula.data.asc(), CalendarioAula.id.asc())
+            .all()
+        )
 
-        periodo = _periodo_para_data(periodos_validos, data_atual)
-        if not periodo:
-            data_atual += timedelta(days=1)
-            continue
-
-        aulas_hoje = carga_dia
-        while aulas_hoje > 0 and any(v > 0 for v in deficit_por_modulo.values()):
-            modulo = None
-            for offset in range(len(modulos_em_ordem)):
-                candidato = modulos_em_ordem[(idx_corrente + offset) % len(modulos_em_ordem)]
-                if deficit_por_modulo.get(candidato.id, 0) > 0:
-                    modulo = candidato
-                    idx_corrente = (idx_corrente + offset) % len(modulos_em_ordem)
-                    break
-
-            if modulo is None:
+        ultima_aula_modulo: Optional[CalendarioAula] = None
+        for a in reversed(aulas_existentes):
+            if a.modulo_id == modulo.id and a.data:
+                ultima_aula_modulo = a
                 break
 
-            aula = CalendarioAula(
-                turma_id=turma.id,
-                periodo_id=periodo.id,
-                data=data_atual,
-                weekday=data_atual.weekday(),
-                modulo_id=modulo.id,
-                tipo="normal",
-            )
-            db.session.add(aula)
-            deficit_por_modulo[modulo.id] -= 1
-            total_adicionados += 1
-            aulas_hoje -= 1
+        data_inicio = periodos_validos[0].data_inicio
+        if ultima_aula_modulo and ultima_aula_modulo.data:
+            data_inicio = ultima_aula_modulo.data + timedelta(days=1)
 
-            if deficit_por_modulo[modulo.id] <= 0 and idx_corrente < len(modulos_em_ordem) - 1:
-                idx_corrente += 1
+        if not data_inicio:
+            continue
 
-        data_atual += timedelta(days=1)
+        # Tudo o que vem depois da última aula deste módulo será empurrado
+        # para a frente, após inserirmos as aulas em falta.
+        fila_trabalho: List[CalendarioAula | str] = []
+        if ultima_aula_modulo:
+            try:
+                idx = aulas_existentes.index(ultima_aula_modulo)
+                fila_trabalho.extend(aulas_existentes[idx + 1 :])
+            except ValueError:
+                fila_trabalho.extend(aulas_existentes)
+        else:
+            fila_trabalho.extend(aulas_existentes)
 
-    db.session.commit()
+        placeholders = [f"novo-{i}" for i in range(deficit)]
+        fila_trabalho = placeholders + fila_trabalho
+
+        data_atual = data_inicio
+        while data_atual <= data_limite and fila_trabalho:
+            if not _e_dia_letivo(data_atual, ano, dias_interrupcao, dias_feriados):
+                data_atual += timedelta(days=1)
+                continue
+
+            carga_dia = int(carga_por_dia.get(data_atual.weekday(), 0) or 0)
+            if carga_dia <= 0:
+                data_atual += timedelta(days=1)
+                continue
+
+            periodo = _periodo_para_data(periodos_validos, data_atual)
+            if not periodo:
+                data_atual += timedelta(days=1)
+                continue
+
+            aulas_agendadas = 0
+            while aulas_agendadas < carga_dia and fila_trabalho:
+                item = fila_trabalho.pop(0)
+                if isinstance(item, CalendarioAula):
+                    item.data = data_atual
+                    item.periodo_id = periodo.id
+                    item.weekday = data_atual.weekday()
+                else:
+                    nova = CalendarioAula(
+                        turma_id=turma.id,
+                        periodo_id=periodo.id,
+                        data=data_atual,
+                        weekday=data_atual.weekday(),
+                        modulo_id=modulo.id,
+                        tipo="normal",
+                    )
+                    db.session.add(nova)
+                    total_adicionados += 1
+
+                aulas_agendadas += 1
+
+            data_atual += timedelta(days=1)
+
+        db.session.commit()
+
     return total_adicionados
