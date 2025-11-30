@@ -17,6 +17,7 @@ from models import (
     Horario,
 )
 
+TIPOS_IGNORADOS_PARA_CONTAGEM = {"greve", "servico_oficial", "faltei", "outros"}
 
 # ----------------------------------------
 # Helpers de datas em PT
@@ -505,6 +506,12 @@ def renumerar_calendario_turma(turma_id: int) -> int:
     progresso_modulo: Dict[int, int] = defaultdict(int)
 
     for aula in aulas:
+        if aula.tipo in TIPOS_IGNORADOS_PARA_CONTAGEM:
+            aula.sumarios = ""
+            aula.total_geral = None
+            aula.numero_modulo = None
+            continue
+
         sumarios_originais = [s.strip() for s in (aula.sumarios or "").split(",") if s.strip()]
         quantidade = len(sumarios_originais) if sumarios_originais else 1
 
@@ -532,6 +539,8 @@ def _periodo_para_data(periodos: List[Periodo], data: date) -> Optional[Periodo]
 
 
 def _contar_aulas(aula: CalendarioAula) -> int:
+    if aula.tipo in TIPOS_IGNORADOS_PARA_CONTAGEM:
+        return 0
     sumarios = [s.strip() for s in (aula.sumarios or "").split(",") if s.strip()]
     return len(sumarios) if sumarios else 1
 

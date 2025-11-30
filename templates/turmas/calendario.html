@@ -79,7 +79,7 @@
     </thead>
     <tbody>
       {% for a in aulas %}
-        <tr class="{% if a.apagado %}table-secondary text-muted{% endif %}">
+        <tr class="{% if a.apagado or a.tipo in tipos_sem_contagem %}table-secondary text-muted{% endif %}">
           <td>{{ a.data.strftime("%d/%m/%Y") if a.data }}</td>
           <td>
             {% if a.data %}
@@ -94,6 +94,8 @@
             {{ a.tipo }}
             {% if a.apagado %}
               <span class="badge bg-secondary ms-1">Apagada</span>
+            {% elif a.tipo in tipos_sem_contagem %}
+              <span class="badge bg-info text-dark ms-1">Não conta</span>
             {% endif %}
           </td>
 

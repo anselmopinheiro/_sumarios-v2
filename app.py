@@ -39,6 +39,7 @@ from calendario_service import (
     garantir_modulos_para_turma,
     renumerar_calendario_turma,
     completar_modulos_profissionais,
+    TIPOS_IGNORADOS_PARA_CONTAGEM,
 )
 
 
@@ -548,6 +549,7 @@ def create_app():
             periodo_atual=periodo_atual,
             periodos_disponiveis=periodos_disponiveis,
             mostrar_apagadas=mostrar_apagadas,
+            tipos_sem_contagem=TIPOS_IGNORADOS_PARA_CONTAGEM,
         )
 
     @app.route("/turmas/<int:turma_id>/calendario/gerar", methods=["POST"])
