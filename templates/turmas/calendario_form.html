@@ -51,6 +51,7 @@
         <option value="servico_oficial" {% if valor_tipo == "servico_oficial" %}selected{% endif %}>Serviço oficial</option>
         <option value="extra" {% if valor_tipo == "extra" %}selected{% endif %}>Extra</option>
         <option value="faltei" {% if valor_tipo == "faltei" %}selected{% endif %}>Faltei</option>
+        <option value="outros" {% if valor_tipo == "outros" %}selected{% endif %}>Outros</option>
       </select>
     </div>
   </div>
@@ -60,7 +61,7 @@
     <input type="text" name="sumarios" class="form-control" id="sumarios-campo"
            value="{{ aula.sumarios if aula and aula.sumarios else '' }}"
            placeholder="Ex.: 1,2,3">
-    <div class="form-text">"Greve", "Serviço oficial" e "Faltei" não contam para a numeração.</div>
+    <div class="form-text">"Greve", "Serviço oficial", "Extra", "Faltei" e "Outros" não contam para a numeração.</div>
   </div>
 
   <button type="submit" class="btn btn-success">Guardar</button>

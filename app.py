@@ -661,8 +661,26 @@ def create_app():
             )
             db.session.add(aula)
             db.session.commit()
+
             renumerar_calendario_turma(turma.id)
-            flash("Linha de calendário criada.", "success")
+
+            novas = 0
+            if tipo in NAO_CONTABILIZA_TIPO:
+                novas = completar_modulos_profissionais(
+                    turma.id,
+                    data_removida=aula.data,
+                    modulo_removido_id=aula.modulo_id,
+                )
+                if novas:
+                    renumerar_calendario_turma(turma.id)
+
+            if novas:
+                flash(
+                    "Linha de calendário criada e calendário refeito para cumprir o total do módulo.",
+                    "success",
+                )
+            else:
+                flash("Linha de calendário criada.", "success")
             return redirect(
                 url_for(
                     "turma_calendario",
@@ -750,7 +768,24 @@ def create_app():
 
             db.session.commit()
             renumerar_calendario_turma(turma.id)
-            flash("Linha de calendário atualizada.", "success")
+
+            novas = 0
+            if tipo in NAO_CONTABILIZA_TIPO:
+                novas = completar_modulos_profissionais(
+                    turma.id,
+                    data_removida=aula.data,
+                    modulo_removido_id=aula.modulo_id,
+                )
+                if novas:
+                    renumerar_calendario_turma(turma.id)
+
+            if novas:
+                flash(
+                    "Linha de calendário atualizada e calendário refeito para cumprir o total do módulo.",
+                    "success",
+                )
+            else:
+                flash("Linha de calendário atualizada.", "success")
             return redirect(
                 url_for(
                     "turma_calendario",

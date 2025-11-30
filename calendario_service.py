@@ -330,7 +330,7 @@ def _mapa_carga_semana(turma: Turma) -> Dict[int, float]:
 
 DIAS_PT = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
 
-NAO_CONTABILIZA_TIPO = {"greve", "servico_oficial", "faltei"}
+NAO_CONTABILIZA_TIPO = {"greve", "servico_oficial", "faltei", "extra", "outros"}
 
 
 # ----------------------------------------
