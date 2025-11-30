@@ -37,6 +37,7 @@ from calendario_service import (
     gerar_calendario_turma,
     garantir_periodos_basicos_para_turma,
     garantir_modulos_para_turma,
+    TIPOS_SEM_CONTAGEM,
     renumerar_calendario_turma,
     completar_modulos_profissionais,
 )
@@ -713,6 +714,9 @@ def create_app():
 
         periodo = Periodo.query.get_or_404(aula.periodo_id)
 
+        tipo_original = aula.tipo
+        modulo_original_id = aula.modulo_id
+
         modulos = garantir_modulos_para_turma(turma)
         if not modulos:
             flash("Cria módulos com carga horária antes de editar linhas.", "error")
@@ -746,7 +750,30 @@ def create_app():
 
             db.session.commit()
             renumerar_calendario_turma(turma.id)
-            flash("Linha de calendário atualizada.", "success")
+
+            novas = 0
+            passou_a_nao_contar = (
+                tipo_original not in TIPOS_SEM_CONTAGEM and tipo in TIPOS_SEM_CONTAGEM
+            )
+
+            if passou_a_nao_contar and turma.tipo == "profissional":
+                novas = completar_modulos_profissionais(
+                    turma.id,
+                    data_removida=data,
+                    modulo_removido_id=modulo_original_id or modulo_id,
+                )
+
+                if novas:
+                    renumerar_calendario_turma(turma.id)
+
+            if novas:
+                flash(
+                    "Linha de calendário atualizada; "
+                    f"{novas} aula(s) adicionadas para cumprir o total do módulo.",
+                    "success",
+                )
+            else:
+                flash("Linha de calendário atualizada.", "success")
             return redirect(
                 url_for(
                     "turma_calendario",
