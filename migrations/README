@@ -9,15 +9,15 @@ opcional com módulos e as colunas `modulo_id`/`numero_modulo` do
    remove a tabela `alembic_version` se estiveres a reutilizar o mesmo ficheiro.
 2. Garante que só existem as revisões `0001_rebuild_schema.py` (baseline),
    `6f9c5b1af5c5_add_modulo_fields_to_calendario_aulas.py` (mantida
-   apenas para bases antigas) e
-   `1d4f9c0e9c2d_add_carga_horaria_columns_to_turmas.py` (para bases que
-   ainda não têm a carga diária por dia da semana) em
-   `migrations/versions`.
+   apenas para bases antigas), `1d4f9c0e9c2d_add_carga_horaria_columns_to_turmas.py`
+   (para bases que ainda não têm a carga diária por dia da semana) e
+   `7bd4f0a7c5b1_add_soft_delete_and_faltei.py` (para ativar soft delete nas
+   aulas) em `migrations/versions`.
 3. Executa `flask db upgrade` para criar o esquema completo.
 
 Se estás a reutilizar uma base de dados criada antes da coluna `modulo_id` em
 `calendario_aulas` ou antes das colunas de carga diária em `turmas`, basta
 correres `flask db upgrade` para aplicares as revisões que adicionam as
-colunas em falta sem perder dados.
+colunas em falta (incluindo o soft delete no calendário) sem perder dados.
 
 Isto evita migrações divergentes e deixa a base pronta para novas alterações.

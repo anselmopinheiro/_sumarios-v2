@@ -530,7 +530,7 @@ def create_app():
         elif periodos_disponiveis:
             periodo_atual = periodos_disponiveis[0]
 
-        query_aulas = CalendarioAula.query.filter_by(turma_id=turma.id)
+        query_aulas = CalendarioAula.query.filter_by(turma_id=turma.id, deleted=False)
         if periodo_atual:
             query_aulas = query_aulas.filter_by(periodo_id=periodo_atual.id)
         aulas = query_aulas.order_by(CalendarioAula.data).all()
@@ -592,7 +592,8 @@ def create_app():
             return redirect(url_for("turma_calendario", turma_id=turma.id))
 
         total_apagadas = (
-            CalendarioAula.query.filter_by(turma_id=turma.id).delete()
+            CalendarioAula.query.filter_by(turma_id=turma.id, deleted=False)
+            .update({"deleted": True})
             or 0
         )
         db.session.commit()
@@ -655,7 +656,7 @@ def create_app():
                 modulo_id=modulo_id,
                 numero_modulo=numero_modulo,
                 total_geral=total_geral,
-                sumarios=sumarios_txt,
+                sumarios=sumarios_txt if tipo != "faltei" else "",
                 tipo=tipo,
             )
             db.session.add(aula)
@@ -710,6 +711,9 @@ def create_app():
         if aula.turma_id != turma.id:
             flash("Linha de calendário não pertence a esta turma.", "error")
             return redirect(url_for("turma_calendario", turma_id=turma.id))
+        if aula.deleted:
+            flash("Esta linha de calendário já foi apagada.", "info")
+            return redirect(url_for("turma_calendario", turma_id=turma.id))
 
         periodo = Periodo.query.get_or_404(aula.periodo_id)
 
@@ -741,7 +745,7 @@ def create_app():
             aula.modulo_id = modulo_id
             aula.numero_modulo = numero_modulo
             aula.total_geral = total_geral
-            aula.sumarios = sumarios_txt
+            aula.sumarios = sumarios_txt if tipo != "faltei" else ""
             aula.tipo = tipo
 
             db.session.commit()
@@ -777,8 +781,12 @@ def create_app():
             flash("Linha de calendário não pertence a esta turma.", "error")
             return redirect(url_for("turma_calendario", turma_id=turma.id))
 
+        if aula.deleted:
+            flash("Linha de calendário já estava apagada.", "info")
+            return redirect(url_for("turma_calendario", turma_id=turma.id))
+
         data_removida = aula.data
-        db.session.delete(aula)
+        aula.deleted = True
         db.session.commit()
         renumerar_calendario_turma(turma.id)
 

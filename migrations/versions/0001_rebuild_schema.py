@@ -215,6 +215,7 @@ def upgrade():
         ),
         sa.Column("observacoes", sa.Text()),
         sa.Column("sumario", sa.Text()),
+        sa.Column("deleted", sa.Boolean(), nullable=False, server_default=sa.false()),
     )
 
 

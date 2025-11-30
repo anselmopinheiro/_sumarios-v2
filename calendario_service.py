@@ -330,6 +330,8 @@ def _mapa_carga_semana(turma: Turma) -> Dict[int, float]:
 
 DIAS_PT = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
 
+NAO_CONTABILIZA_TIPO = {"greve", "servico_oficial", "faltei"}
+
 
 # ----------------------------------------
 # Motor principal
@@ -371,7 +373,9 @@ def gerar_calendario_turma(turma_id: int, recalcular_tudo: bool = True) -> int:
     carga_por_dia: Dict[int, float] = _mapa_carga_semana(turma)
 
     if recalcular_tudo:
-        CalendarioAula.query.filter_by(turma_id=turma.id).delete()
+        CalendarioAula.query.filter_by(turma_id=turma.id, deleted=False).update(
+            {"deleted": True}
+        )
         db.session.commit()
 
     contador_sumario_global = 0
@@ -496,7 +500,7 @@ def renumerar_calendario_turma(turma_id: int) -> int:
     """
 
     aulas = (
-        CalendarioAula.query.filter_by(turma_id=turma_id)
+        CalendarioAula.query.filter_by(turma_id=turma_id, deleted=False)
         .order_by(CalendarioAula.data.asc(), CalendarioAula.id.asc())
         .all()
     )
@@ -505,6 +509,14 @@ def renumerar_calendario_turma(turma_id: int) -> int:
     progresso_modulo: Dict[int, int] = defaultdict(int)
 
     for aula in aulas:
+        if aula.tipo in NAO_CONTABILIZA_TIPO:
+            aula.sumarios = ""
+            aula.total_geral = total_global
+            aula.numero_modulo = (
+                progresso_modulo.get(aula.modulo_id, 0) if aula.modulo_id else None
+            )
+            continue
+
         sumarios_originais = [s.strip() for s in (aula.sumarios or "").split(",") if s.strip()]
         quantidade = len(sumarios_originais) if sumarios_originais else 1
 
@@ -532,6 +544,8 @@ def _periodo_para_data(periodos: List[Periodo], data: date) -> Optional[Periodo]
 
 
 def _contar_aulas(aula: CalendarioAula) -> int:
+    if aula.deleted or aula.tipo in NAO_CONTABILIZA_TIPO:
+        return 0
     sumarios = [s.strip() for s in (aula.sumarios or "").split(",") if s.strip()]
     return len(sumarios) if sumarios else 1
 
@@ -578,7 +592,7 @@ def completar_modulos_profissionais(
 
     progresso_atual: Dict[int, int] = defaultdict(int)
     aulas_existentes: List[CalendarioAula] = (
-        CalendarioAula.query.filter_by(turma_id=turma.id)
+        CalendarioAula.query.filter_by(turma_id=turma.id, deleted=False)
         .order_by(CalendarioAula.data.asc(), CalendarioAula.id.asc())
         .all()
     )
@@ -612,7 +626,7 @@ def completar_modulos_profissionais(
             continue
 
         aulas_existentes = (
-            CalendarioAula.query.filter_by(turma_id=turma.id)
+            CalendarioAula.query.filter_by(turma_id=turma.id, deleted=False)
             .order_by(CalendarioAula.data.asc(), CalendarioAula.id.asc())
             .all()
         )

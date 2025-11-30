@@ -292,8 +292,10 @@ class CalendarioAula(db.Model):
     total_geral = db.Column(db.Integer)
     sumarios = db.Column(db.String(255))
 
-    # normal / greve / servico_oficial / extra
+    # normal / greve / servico_oficial / extra / faltei
     tipo = db.Column(db.String(50), default="normal", nullable=False)
 
     observacoes = db.Column(db.Text)
     sumario = db.Column(db.Text)
+
+    deleted = db.Column(db.Boolean, nullable=False, default=False)
