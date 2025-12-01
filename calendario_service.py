@@ -635,6 +635,12 @@ def completar_modulos_profissionais(
             .order_by(CalendarioAula.data.asc(), CalendarioAula.id.asc())
             .all()
         )
+        dias_sem_aula = {
+            a.data for a in aulas_existentes if a.tipo in DEFAULT_TIPOS_SEM_AULA and a.data
+        }
+        aulas_reagendar = [
+            a for a in aulas_existentes if a.tipo not in DEFAULT_TIPOS_SEM_AULA
+        ]
 
         ultima_aula_modulo: Optional[CalendarioAula] = None
         for a in reversed(aulas_existentes):
@@ -664,22 +670,35 @@ def completar_modulos_profissionais(
 
         if data_corte:
             fila_trabalho.extend(
-                [a for a in aulas_existentes if a.data and a.data >= data_corte]
+                [a for a in aulas_reagendar if a.data and a.data >= data_corte]
             )
         elif ultima_aula_modulo:
-            try:
-                idx = aulas_existentes.index(ultima_aula_modulo)
-                fila_trabalho.extend(aulas_existentes[idx + 1 :])
-            except ValueError:
-                fila_trabalho.extend(aulas_existentes)
+            fila_trabalho.extend(
+                [
+                    a
+                    for a in aulas_reagendar
+                    if a.data
+                    and (
+                        a.data > ultima_aula_modulo.data
+                        or (
+                            a.data == ultima_aula_modulo.data
+                            and a.id > ultima_aula_modulo.id
+                        )
+                    )
+                ]
+            )
         else:
-            fila_trabalho.extend(aulas_existentes)
+            fila_trabalho.extend(aulas_reagendar)
 
         placeholders = [f"novo-{i}" for i in range(deficit)]
         fila_trabalho = placeholders + fila_trabalho
 
         data_atual = data_inicio
         while data_atual <= data_limite and fila_trabalho:
+            if data_atual in dias_sem_aula:
+                data_atual += timedelta(days=1)
+                continue
+
             if not _e_dia_letivo(data_atual, ano, dias_interrupcao, dias_feriados):
                 data_atual += timedelta(days=1)
                 continue
