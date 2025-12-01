@@ -52,10 +52,8 @@
       <tr>
         <th>Data</th>
         <th>Módulo</th>
-        <th>Nº Aula Módulo</th>
-        <th>Total Global</th>
         <th>Nº Sumário(s)</th>
-        <th>Sumário</th>
+        <th style="width: 40%;">Sumário</th>
         <th>Tipo</th>
         {% if not ano_fechado %}
           <th style="width: 160px;">Ações</th>
@@ -72,11 +70,17 @@
               <small class="text-muted">{{ ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"][a.data.weekday()] }}</small>
             {% endif %}
           </td>
-          <td>{{ a.modulo.nome if a.modulo }}</td>
-          <td>{% if sem_aula %}—{% else %}{{ a.numero_modulo }}{% endif %}</td>
-          <td>{% if sem_aula %}—{% else %}{{ a.total_geral }}{% endif %}</td>
+          <td class="text-nowrap">
+            {% if a.modulo %}
+              <div>{{ a.modulo.nome }}</div>
+            {% else %}
+              <div>—</div>
+            {% endif %}
+            <div class="text-muted small">Aula {% if sem_aula %}—{% else %}{{ a.numero_modulo }}{% endif %}</div>
+            <div class="text-muted small">Total {% if sem_aula %}—{% else %}{{ a.total_geral }}{% endif %}</div>
+          </td>
           <td>{% if sem_aula %}—{% else %}{{ a.sumarios }}{% endif %}</td>
-          <td>
+          <td class="w-50">
             {% if ano_fechado %}
               {{ a.sumario }}
             {% else %}
