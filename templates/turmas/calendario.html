@@ -64,6 +64,7 @@
     </thead>
     <tbody>
       {% for a in aulas %}
+        {% set sem_aula = a.tipo in tipos_sem_aula %}
         <tr>
           <td>{{ a.data.strftime("%d/%m/%Y") if a.data }}</td>
           <td>
@@ -72,9 +73,9 @@
             {% endif %}
           </td>
           <td>{{ a.modulo.nome if a.modulo }}</td>
-          <td>{{ a.numero_modulo }}</td>
-          <td>{{ a.total_geral }}</td>
-          <td>{{ a.sumarios }}</td>
+          <td>{% if sem_aula %}—{% else %}{{ a.numero_modulo }}{% endif %}</td>
+          <td>{% if sem_aula %}—{% else %}{{ a.total_geral }}{% endif %}</td>
+          <td>{% if sem_aula %}—{% else %}{{ a.sumarios }}{% endif %}</td>
           <td>{{ a.tipo }}</td>
 
           {% if not ano_fechado %}
