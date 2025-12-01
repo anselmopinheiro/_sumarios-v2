@@ -487,6 +487,9 @@ def gerar_calendario_turma(turma_id: int, recalcular_tudo: bool = True) -> int:
     return total_criadas
 
 
+DEFAULT_TIPOS_SEM_AULA: Set[str] = {"greve", "servico_oficial", "faltei", "outros"}
+
+
 def renumerar_calendario_turma(
     turma_id: int, tipos_sem_aula: Optional[Set[str]] | None = None
 ) -> int:
@@ -499,11 +502,7 @@ def renumerar_calendario_turma(
     falta, serviço oficial).
     """
 
-    tipos_sem_aula = (
-        set(tipos_sem_aula)
-        if tipos_sem_aula is not None
-        else {"greve", "servico_oficial", "faltei", "outros"}
-    )
+    tipos_sem_aula = set(tipos_sem_aula) if tipos_sem_aula is not None else DEFAULT_TIPOS_SEM_AULA
 
     aulas = (
         CalendarioAula.query.filter_by(turma_id=turma_id)
@@ -548,6 +547,9 @@ def _periodo_para_data(periodos: List[Periodo], data: date) -> Optional[Periodo]
 
 
 def _contar_aulas(aula: CalendarioAula) -> int:
+    if aula.tipo in DEFAULT_TIPOS_SEM_AULA:
+        return 0
+
     sumarios = [s.strip() for s in (aula.sumarios or "").split(",") if s.strip()]
     return len(sumarios) if sumarios else 1
 
