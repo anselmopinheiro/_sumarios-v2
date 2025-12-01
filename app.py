@@ -15,6 +15,7 @@ from flask import (
 
 from flask_migrate import Migrate
 from sqlalchemy import func
+from sqlalchemy.orm import joinedload
 
 from config import Config
 from models import (
@@ -583,13 +584,28 @@ def create_app():
         except ValueError:
             data_atual = hoje
 
-        query = CalendarioAula.query.filter_by(apagado=False).filter(
-            CalendarioAula.data == data_atual
+        query = (
+            CalendarioAula.query.options(
+                joinedload(CalendarioAula.turma).joinedload(Turma.ano_letivo),
+                joinedload(CalendarioAula.modulo),
+            )
+            .filter_by(apagado=False)
+            .filter(CalendarioAula.data == data_atual)
+            .join(Turma)
         )
         if turma_selecionada:
-            query = query.filter_by(turma_id=turma_selecionada.id)
+            query = query.filter(CalendarioAula.turma_id == turma_selecionada.id)
 
-        aulas = query.order_by(CalendarioAula.data, CalendarioAula.id).all()
+        aulas = (
+            query.order_by(
+                Turma.nome.asc(),
+                CalendarioAula.data.asc(),
+                CalendarioAula.numero_modulo.asc().nulls_last(),
+                CalendarioAula.total_geral.asc().nulls_last(),
+                CalendarioAula.id.asc(),
+            )
+            .all()
+        )
 
         anos_fechados = {
             a.turma_id: bool(a.turma and a.turma.ano_letivo and a.turma.ano_letivo.fechado)
