@@ -570,9 +570,17 @@ def create_app():
         periodo_id = request.args.get("periodo_id", type=int)
 
         dados = exportar_sumarios_json(turma.id, periodo_id=periodo_id)
-        payload = json.dumps(dados, ensure_ascii=False, indent=2)
+        payload = json.dumps(
+            {
+                "turma": {"id": turma.id, "nome": turma.nome},
+                "aulas": dados,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
 
-        filename = f"calendario_{turma.nome}_sumarios.json"
+        data_export = date.today().isoformat()
+        filename = f"calendario_{turma.nome}_sumarios_{data_export}.json"
         response = Response(payload, mimetype="application/json; charset=utf-8")
         response.headers["Content-Disposition"] = f"attachment; filename={filename}"
         return response
@@ -607,8 +615,9 @@ def create_app():
                 ]
             )
 
-        payload = buf.getvalue()
-        filename = f"calendario_{turma.nome}_sumarios.csv"
+        payload = "\ufeff" + buf.getvalue()
+        data_export = date.today().isoformat()
+        filename = f"calendario_{turma.nome}_sumarios_{data_export}.csv"
         response = Response(payload, mimetype="text/csv; charset=utf-8")
         response.headers["Content-Disposition"] = f"attachment; filename={filename}"
         return response
