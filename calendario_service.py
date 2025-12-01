@@ -487,13 +487,23 @@ def gerar_calendario_turma(turma_id: int, recalcular_tudo: bool = True) -> int:
     return total_criadas
 
 
-def renumerar_calendario_turma(turma_id: int) -> int:
+def renumerar_calendario_turma(
+    turma_id: int, tipos_sem_aula: Optional[Set[str]] | None = None
+) -> int:
     """Reatribui a numeração global e por módulo após edições/remoções.
 
     Retorna o total de linhas processadas. Cada linha tem o seu conjunto de
     sumários refeito para uma sequência contínua e os contadores globais e do
-    módulo são atualizados de acordo com a ordem cronológica.
+    módulo são atualizados de acordo com a ordem cronológica. Permite
+    parametrizar os tipos de aula que não devem contar para o total (ex. greve,
+    falta, serviço oficial).
     """
+
+    tipos_sem_aula = (
+        set(tipos_sem_aula)
+        if tipos_sem_aula is not None
+        else {"greve", "servico_oficial", "faltei", "outros"}
+    )
 
     aulas = (
         CalendarioAula.query.filter_by(turma_id=turma_id)
@@ -505,17 +515,19 @@ def renumerar_calendario_turma(turma_id: int) -> int:
     progresso_modulo: Dict[int, int] = defaultdict(int)
 
     for aula in aulas:
+        sem_aula = aula.tipo in tipos_sem_aula
         sumarios_originais = [s.strip() for s in (aula.sumarios or "").split(",") if s.strip()]
         quantidade = len(sumarios_originais) if sumarios_originais else 1
 
-        novos_sumarios = list(range(total_global + 1, total_global + quantidade + 1))
-        total_global += quantidade
+        if not sem_aula:
+            novos_sumarios = list(range(total_global + 1, total_global + quantidade + 1))
+            total_global += quantidade
+            aula.sumarios = ",".join(str(n) for n in novos_sumarios)
 
-        aula.sumarios = ",".join(str(n) for n in novos_sumarios)
         aula.total_geral = total_global
 
         if aula.modulo_id:
-            progresso_modulo[aula.modulo_id] += quantidade
+            progresso_modulo[aula.modulo_id] += 0 if sem_aula else quantidade
             aula.numero_modulo = progresso_modulo[aula.modulo_id]
         else:
             aula.numero_modulo = None
