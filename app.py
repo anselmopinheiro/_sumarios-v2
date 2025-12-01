@@ -569,9 +569,12 @@ def create_app():
     def turma_calendario_dia(turma_id=None):
         todas_turmas = Turma.query.order_by(Turma.nome).all()
 
-        turma = Turma.query.get_or_404(turma_id) if turma_id else None
-        ano = turma.ano_letivo if turma else None
-        ano_fechado = bool(ano and ano.fechado)
+        turma_id_param = request.args.get("turma_id", type=int)
+        turma_selecionada = None
+        if turma_id_param:
+            turma_selecionada = Turma.query.get(turma_id_param)
+        elif turma_id:
+            turma_selecionada = Turma.query.get_or_404(turma_id)
 
         data_txt = request.args.get("data")
         hoje = date.today()
@@ -580,20 +583,23 @@ def create_app():
         except ValueError:
             data_atual = hoje
 
-        aulas = []
-        if turma:
-            aulas = (
-                CalendarioAula.query.filter_by(turma_id=turma.id, apagado=False)
-                .filter(CalendarioAula.data == data_atual)
-                .order_by(CalendarioAula.data, CalendarioAula.id)
-                .all()
-            )
+        query = CalendarioAula.query.filter_by(apagado=False).filter(
+            CalendarioAula.data == data_atual
+        )
+        if turma_selecionada:
+            query = query.filter_by(turma_id=turma_selecionada.id)
+
+        aulas = query.order_by(CalendarioAula.data, CalendarioAula.id).all()
+
+        anos_fechados = {
+            a.turma_id: bool(a.turma and a.turma.ano_letivo and a.turma.ano_letivo.fechado)
+            for a in aulas
+            if a.turma_id
+        }
 
         return render_template(
             "turmas/calendario_diario.html",
-            turma=turma,
-            ano=ano,
-            ano_fechado=ano_fechado,
+            turma=turma_selecionada,
             aulas=aulas,
             data_atual=data_atual,
             dia_anterior=data_atual - timedelta(days=1),
@@ -601,6 +607,7 @@ def create_app():
             tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
             tipos_aula=TIPOS_AULA,
             turmas=todas_turmas,
+            anos_fechados=anos_fechados,
         )
 
     @app.route("/turmas/<int:turma_id>/calendario/export/json")
