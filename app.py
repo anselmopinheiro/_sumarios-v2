@@ -661,7 +661,20 @@ def create_app():
             db.session.add(aula)
             db.session.commit()
             renumerar_calendario_turma(turma.id)
-            flash("Linha de calendário criada.", "success")
+            novas = completar_modulos_profissionais(
+                turma.id,
+                data_removida=data,
+                modulo_removido_id=modulo_id,
+            )
+            if novas:
+                renumerar_calendario_turma(turma.id)
+                flash(
+                    "Linha de calendário criada e "
+                    f"{novas} aula(s) adicionadas para cumprir o total do módulo.",
+                    "success",
+                )
+            else:
+                flash("Linha de calendário criada.", "success")
             return redirect(
                 url_for(
                     "turma_calendario",
@@ -746,7 +759,20 @@ def create_app():
 
             db.session.commit()
             renumerar_calendario_turma(turma.id)
-            flash("Linha de calendário atualizada.", "success")
+            novas = completar_modulos_profissionais(
+                turma.id,
+                data_removida=data,
+                modulo_removido_id=modulo_id,
+            )
+            if novas:
+                renumerar_calendario_turma(turma.id)
+                flash(
+                    "Linha de calendário atualizada e "
+                    f"{novas} aula(s) adicionadas para cumprir o total do módulo.",
+                    "success",
+                )
+            else:
+                flash("Linha de calendário atualizada.", "success")
             return redirect(
                 url_for(
                     "turma_calendario",
