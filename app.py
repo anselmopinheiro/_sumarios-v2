@@ -584,6 +584,19 @@ def create_app():
         except ValueError:
             data_atual = hoje
 
+        duplicados = (
+            db.session.query(CalendarioAula.turma_id)
+            .filter(
+                CalendarioAula.apagado == False,  # noqa: E712
+                CalendarioAula.data == data_atual,
+            )
+            .group_by(CalendarioAula.turma_id)
+            .having(func.count(CalendarioAula.id) > 1)
+            .all()
+        )
+        for (turma_dup_id,) in duplicados:
+            renumerar_calendario_turma(turma_dup_id)
+
         query = (
             CalendarioAula.query.options(
                 joinedload(CalendarioAula.turma).joinedload(Turma.ano_letivo),

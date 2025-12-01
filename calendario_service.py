@@ -370,9 +370,17 @@ def gerar_calendario_turma(turma_id: int, recalcular_tudo: bool = True) -> int:
     }
     carga_por_dia: Dict[int, float] = _mapa_carga_semana(turma)
 
+    datas_existentes: Set[date] = set()
+
     if recalcular_tudo:
         CalendarioAula.query.filter_by(turma_id=turma.id).delete()
         db.session.commit()
+    else:
+        datas_existentes = {
+            a.data
+            for a in CalendarioAula.query.filter_by(turma_id=turma.id, apagado=False).all()
+            if a.data
+        }
 
     contador_sumario_global = 0
     idx_modulo = 0
@@ -388,6 +396,10 @@ def gerar_calendario_turma(turma_id: int, recalcular_tudo: bool = True) -> int:
 
         data_atual: date = periodo.data_inicio
         while data_atual <= periodo.data_fim:
+            if data_atual in datas_existentes:
+                data_atual += timedelta(days=1)
+                continue
+
             if not _e_dia_letivo(data_atual, ano, dias_interrupcao, dias_feriados):
                 data_atual += timedelta(days=1)
                 continue
@@ -481,9 +493,15 @@ def gerar_calendario_turma(turma_id: int, recalcular_tudo: bool = True) -> int:
                 db.session.add(aula)
                 total_criadas += 1
 
+                datas_existentes.add(data_atual)
+
             data_atual += timedelta(days=1)
 
     db.session.commit()
+
+    # Garante que não ficam duplicados antigos e que a numeração se mantém contínua.
+    renumerar_calendario_turma(turma.id)
+
     return total_criadas
 
 
@@ -693,6 +711,8 @@ def renumerar_calendario_turma(
 
     tipos_sem_aula = set(tipos_sem_aula) if tipos_sem_aula is not None else DEFAULT_TIPOS_SEM_AULA
 
+    deduplicar_calendario_turma(turma_id)
+
     aulas = (
         CalendarioAula.query.filter_by(turma_id=turma_id, apagado=False)
         .order_by(CalendarioAula.data.asc(), CalendarioAula.id.asc())
@@ -727,6 +747,45 @@ def renumerar_calendario_turma(
 
     db.session.commit()
     return len(aulas)
+
+
+def deduplicar_calendario_turma(turma_id: int, commit: bool = True) -> int:
+    """Marca como apagadas as linhas duplicadas por data dentro da mesma turma."""
+
+    aulas = (
+        CalendarioAula.query.filter_by(turma_id=turma_id, apagado=False)
+        .order_by(CalendarioAula.data.asc(), CalendarioAula.id.asc())
+        .all()
+    )
+
+    vistos: Dict[date, CalendarioAula] = {}
+    duplicados: List[CalendarioAula] = []
+
+    for aula in aulas:
+        if not aula.data:
+            continue
+
+        existente = vistos.get(aula.data)
+        if not existente:
+            vistos[aula.data] = aula
+            continue
+
+        # Preferir manter a linha com mais conteúdo de sumário
+        atual_tem_sumario = bool((aula.sumario or "").strip())
+        existente_tem_sumario = bool((existente.sumario or "").strip())
+        if atual_tem_sumario and not existente_tem_sumario:
+            duplicados.append(existente)
+            vistos[aula.data] = aula
+        else:
+            duplicados.append(aula)
+
+    for dup in duplicados:
+        dup.apagado = True
+
+    if commit:
+        db.session.commit()
+
+    return len(duplicados)
 
 
 def _periodo_para_data(periodos: List[Periodo], data: date) -> Optional[Periodo]:
