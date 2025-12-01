@@ -66,6 +66,9 @@
           </td>
           <td>{% if sem_aula %}—{% else %}{{ a.sumarios or '' }}{% endif %}</td>
           <td class="w-50">
+            <div class="mb-2">
+              <span class="badge bg-info text-dark">{{ turma.nome }}</span>
+            </div>
             {% if ano_fechado %}
               {{ a.sumario or '' }}
             {% else %}
