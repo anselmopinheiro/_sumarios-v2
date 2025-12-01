@@ -75,7 +75,24 @@
           <td>{{ a.modulo.nome if a.modulo }}</td>
           <td>{% if sem_aula %}—{% else %}{{ a.numero_modulo }}{% endif %}</td>
           <td>{% if sem_aula %}—{% else %}{{ a.total_geral }}{% endif %}</td>
-          <td>{% if sem_aula %}—{% else %}{{ a.sumarios }}{% endif %}</td>
+          <td>
+            {% if ano_fechado %}
+              {{ a.sumarios }}
+            {% else %}
+              <form method="post"
+                    action="{{ url_for('calendario_update_sumario', turma_id=turma.id, aula_id=a.id) }}"
+                    class="d-flex align-items-start gap-2">
+                {% if periodo_atual %}
+                  <input type="hidden" name="periodo_id" value="{{ periodo_atual.id }}">
+                {% endif %}
+                <textarea name="sumarios"
+                          class="form-control form-control-sm"
+                          rows="2"
+                          placeholder="Escrever sumário...">{{ a.sumarios }}</textarea>
+                <button type="submit" class="btn btn-sm btn-primary">Guardar</button>
+              </form>
+            {% endif %}
+          </td>
           <td>{{ a.tipo }}</td>
 
           {% if not ano_fechado %}

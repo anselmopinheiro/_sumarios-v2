@@ -837,6 +837,38 @@ def create_app():
         )
 
     # ----------------------------------------
+    # CALENDÁRIO – SUMÁRIOS EM LINHA
+    # ----------------------------------------
+    @app.route(
+        "/turmas/<int:turma_id>/calendario/<int:aula_id>/sumario",
+        methods=["POST"],
+    )
+    def calendario_update_sumario(turma_id, aula_id):
+        turma = Turma.query.get_or_404(turma_id)
+        ano = turma.ano_letivo
+        if ano and ano.fechado:
+            flash("Ano letivo fechado: não é possível editar o calendário.", "error")
+            return redirect(url_for("turma_calendario", turma_id=turma.id))
+
+        aula = (
+            CalendarioAula.query.filter_by(id=aula_id, apagado=False)
+            .first_or_404()
+        )
+        if aula.turma_id != turma.id:
+            flash("Linha de calendário não pertence a esta turma.", "error")
+            return redirect(url_for("turma_calendario", turma_id=turma.id))
+
+        aula.sumarios = (request.form.get("sumarios") or "").strip()
+        db.session.commit()
+
+        flash("Sumário atualizado.", "success")
+
+        periodo_id = request.form.get("periodo_id", type=int)
+        return redirect(
+            url_for("turma_calendario", turma_id=turma.id, periodo_id=periodo_id)
+        )
+
+    # ----------------------------------------
     # ANOS LETIVOS – CRUD
     # ----------------------------------------
     @app.route("/anos-letivos")
