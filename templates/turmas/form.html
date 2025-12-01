@@ -47,10 +47,10 @@
               <tr>
                 <td>
                   <input type="hidden" name="modulo_id" value="{{ modulo.id }}">
-                  <input type="text" name="modulo_nome" class="form-control" value="{{ modulo.nome }}" required>
+                  <input type="text" name="modulo_nome" class="form-control" value="{{ modulo.nome }}">
                 </td>
                 <td>
-                  <input type="number" name="modulo_total" class="form-control" min="0" step="1" value="{{ modulo.total_aulas }}" required>
+                  <input type="number" name="modulo_total" class="form-control" min="0" step="1" value="{{ modulo.total_aulas }}">
                 </td>
                 <td class="text-end">
                   <button type="button" class="btn btn-outline-danger btn-sm" onclick="removerLinhaModulo(this)">Remover</button>
@@ -60,10 +60,10 @@
           {% else %}
             <tr>
               <td>
-                <input type="text" name="modulo_nome" class="form-control" placeholder="Ex.: Módulo 1" required>
+                <input type="text" name="modulo_nome" class="form-control" placeholder="Ex.: Módulo 1">
               </td>
               <td>
-                <input type="number" name="modulo_total" class="form-control" min="0" step="1" placeholder="Total de horas" required>
+                <input type="number" name="modulo_total" class="form-control" min="0" step="1" placeholder="Total de horas">
               </td>
               <td class="text-end">
                 <button type="button" class="btn btn-outline-danger btn-sm" onclick="removerLinhaModulo(this)">Remover</button>
@@ -146,23 +146,27 @@
   const corpoModulos = document.getElementById('linhas-modulos');
 
   function atualizarVisibilidadeModulos() {
-    if (seletorTipo.value === 'profissional') {
-      secaoModulos.style.display = '';
-    } else {
-      secaoModulos.style.display = 'none';
-    }
+    const profissional = seletorTipo.value === 'profissional';
+
+    secaoModulos.style.display = profissional ? '' : 'none';
+
+    corpoModulos.querySelectorAll('input').forEach((input) => {
+      input.required = profissional;
+      input.disabled = !profissional;
+    });
   }
 
   function adicionarLinhaModulo() {
     const linha = document.createElement('tr');
     linha.innerHTML = `
-      <td><input type="text" name="modulo_nome" class="form-control" placeholder="Ex.: Módulo" required></td>
-      <td><input type="number" name="modulo_total" class="form-control" min="0" step="1" placeholder="Total de horas" required></td>
+      <td><input type="text" name="modulo_nome" class="form-control" placeholder="Ex.: Módulo"></td>
+      <td><input type="number" name="modulo_total" class="form-control" min="0" step="1" placeholder="Total de horas"></td>
       <td class="text-end">
         <button type="button" class="btn btn-outline-danger btn-sm" onclick="removerLinhaModulo(this)">Remover</button>
       </td>
     `;
     corpoModulos.appendChild(linha);
+    atualizarVisibilidadeModulos();
   }
 
   function removerLinhaModulo(botao) {
