@@ -521,7 +521,8 @@ def renumerar_calendario_turma(
         quantidade = 0 if sem_aula else (len(sumarios_originais) if sumarios_originais else 1)
 
         if sem_aula:
-            aula.sumarios = ""
+            # Mantém o sumário preenchido nesse dia, mas sem contar para os totais.
+            aula.sumarios = aula.sumarios or ""
         else:
             novos_sumarios = list(range(total_global + 1, total_global + quantidade + 1))
             total_global += quantidade
