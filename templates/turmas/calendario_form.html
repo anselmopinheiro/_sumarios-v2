@@ -56,10 +56,18 @@
     </div>
   </div>
 
-  <div class="mb-3">
-    <label class="form-label">Sumário(s) (lista de números, ex.: 1,2,3)</label>
-    <input type="text" name="sumarios" class="form-control"
-           value="{{ aula.sumarios if aula and aula.sumarios else '' }}">
+  <div class="row">
+    <div class="col-md-6 mb-3">
+      <label class="form-label">Nº Sumário(s) (lista de números, ex.: 1,2,3)</label>
+      <input type="text" name="sumarios" class="form-control"
+             value="{{ aula.sumarios if aula and aula.sumarios else '' }}">
+    </div>
+
+    <div class="col-md-6 mb-3">
+      <label class="form-label">Sumário (descrição da aula)</label>
+      <textarea name="sumario" class="form-control" rows="3"
+                placeholder="Breve descrição da aula">{{ aula.sumario if aula and aula.sumario else '' }}</textarea>
+    </div>
   </div>
 
   <button type="submit" class="btn btn-success">Guardar</button>

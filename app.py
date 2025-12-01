@@ -639,6 +639,7 @@ def create_app():
             numero_modulo = request.form.get("numero_modulo", type=int)
             total_geral = request.form.get("total_geral", type=int)
             sumarios_txt = (request.form.get("sumarios") or "").strip()
+            sumario_txt = (request.form.get("sumario") or "").strip()
             tipo = request.form.get("tipo") or "normal"
 
             if not data or not modulo_id:
@@ -660,6 +661,7 @@ def create_app():
                 numero_modulo=numero_modulo,
                 total_geral=total_geral,
                 sumarios=sumarios_txt,
+                sumario=sumario_txt,
                 tipo=tipo,
             )
             db.session.add(aula)
@@ -744,6 +746,7 @@ def create_app():
             numero_modulo = request.form.get("numero_modulo", type=int)
             total_geral = request.form.get("total_geral", type=int)
             sumarios_txt = (request.form.get("sumarios") or "").strip()
+            sumario_txt = (request.form.get("sumario") or "").strip()
             tipo = request.form.get("tipo") or "normal"
 
             if not data or not modulo_id:
@@ -762,6 +765,7 @@ def create_app():
             aula.numero_modulo = numero_modulo
             aula.total_geral = total_geral
             aula.sumarios = sumarios_txt
+            aula.sumario = sumario_txt
             aula.tipo = tipo
 
             db.session.commit()
@@ -858,7 +862,7 @@ def create_app():
             flash("Linha de calendário não pertence a esta turma.", "error")
             return redirect(url_for("turma_calendario", turma_id=turma.id))
 
-        aula.sumarios = (request.form.get("sumarios") or "").strip()
+        aula.sumario = (request.form.get("sumario") or "").strip()
         db.session.commit()
 
         flash("Sumário atualizado.", "success")
