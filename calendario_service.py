@@ -487,16 +487,25 @@ def gerar_calendario_turma(turma_id: int, recalcular_tudo: bool = True) -> int:
     return total_criadas
 
 
-def renumerar_calendario_turma(turma_id: int) -> int:
+DEFAULT_TIPOS_SEM_AULA: Set[str] = {"greve", "servico_oficial", "faltei", "outros"}
+
+
+def renumerar_calendario_turma(
+    turma_id: int, tipos_sem_aula: Optional[Set[str]] | None = None
+) -> int:
     """Reatribui a numeração global e por módulo após edições/remoções.
 
     Retorna o total de linhas processadas. Cada linha tem o seu conjunto de
     sumários refeito para uma sequência contínua e os contadores globais e do
-    módulo são atualizados de acordo com a ordem cronológica.
+    módulo são atualizados de acordo com a ordem cronológica. Permite
+    parametrizar os tipos de aula que não devem contar para o total (ex. greve,
+    falta, serviço oficial).
     """
 
+    tipos_sem_aula = set(tipos_sem_aula) if tipos_sem_aula is not None else DEFAULT_TIPOS_SEM_AULA
+
     aulas = (
-        CalendarioAula.query.filter_by(turma_id=turma_id)
+        CalendarioAula.query.filter_by(turma_id=turma_id, apagado=False)
         .order_by(CalendarioAula.data.asc(), CalendarioAula.id.asc())
         .all()
     )
@@ -505,13 +514,19 @@ def renumerar_calendario_turma(turma_id: int) -> int:
     progresso_modulo: Dict[int, int] = defaultdict(int)
 
     for aula in aulas:
-        sumarios_originais = [s.strip() for s in (aula.sumarios or "").split(",") if s.strip()]
-        quantidade = len(sumarios_originais) if sumarios_originais else 1
+        sem_aula = aula.tipo in tipos_sem_aula
+        sumarios_originais = [
+            s.strip() for s in (aula.sumarios or "").split(",") if s.strip()
+        ]
+        quantidade = 0 if sem_aula else (len(sumarios_originais) if sumarios_originais else 1)
 
-        novos_sumarios = list(range(total_global + 1, total_global + quantidade + 1))
-        total_global += quantidade
+        if sem_aula:
+            aula.sumarios = ""
+        else:
+            novos_sumarios = list(range(total_global + 1, total_global + quantidade + 1))
+            total_global += quantidade
+            aula.sumarios = ",".join(str(n) for n in novos_sumarios)
 
-        aula.sumarios = ",".join(str(n) for n in novos_sumarios)
         aula.total_geral = total_global
 
         if aula.modulo_id:
@@ -532,6 +547,9 @@ def _periodo_para_data(periodos: List[Periodo], data: date) -> Optional[Periodo]
 
 
 def _contar_aulas(aula: CalendarioAula) -> int:
+    if aula.tipo in DEFAULT_TIPOS_SEM_AULA:
+        return 0
+
     sumarios = [s.strip() for s in (aula.sumarios or "").split(",") if s.strip()]
     return len(sumarios) if sumarios else 1
 
@@ -578,7 +596,7 @@ def completar_modulos_profissionais(
 
     progresso_atual: Dict[int, int] = defaultdict(int)
     aulas_existentes: List[CalendarioAula] = (
-        CalendarioAula.query.filter_by(turma_id=turma.id)
+        CalendarioAula.query.filter_by(turma_id=turma.id, apagado=False)
         .order_by(CalendarioAula.data.asc(), CalendarioAula.id.asc())
         .all()
     )
@@ -612,7 +630,7 @@ def completar_modulos_profissionais(
             continue
 
         aulas_existentes = (
-            CalendarioAula.query.filter_by(turma_id=turma.id)
+            CalendarioAula.query.filter_by(turma_id=turma.id, apagado=False)
             .order_by(CalendarioAula.data.asc(), CalendarioAula.id.asc())
             .all()
         )

@@ -530,7 +530,9 @@ def create_app():
         elif periodos_disponiveis:
             periodo_atual = periodos_disponiveis[0]
 
-        query_aulas = CalendarioAula.query.filter_by(turma_id=turma.id)
+        query_aulas = CalendarioAula.query.filter_by(
+            turma_id=turma.id, apagado=False
+        )
         if periodo_atual:
             query_aulas = query_aulas.filter_by(periodo_id=periodo_atual.id)
         aulas = query_aulas.order_by(CalendarioAula.data).all()
@@ -661,7 +663,20 @@ def create_app():
             db.session.add(aula)
             db.session.commit()
             renumerar_calendario_turma(turma.id)
-            flash("Linha de calendário criada.", "success")
+            novas = completar_modulos_profissionais(
+                turma.id,
+                data_removida=data,
+                modulo_removido_id=modulo_id,
+            )
+            if novas:
+                renumerar_calendario_turma(turma.id)
+                flash(
+                    "Linha de calendário criada e "
+                    f"{novas} aula(s) adicionadas para cumprir o total do módulo.",
+                    "success",
+                )
+            else:
+                flash("Linha de calendário criada.", "success")
             return redirect(
                 url_for(
                     "turma_calendario",
@@ -706,7 +721,10 @@ def create_app():
             flash("Ano letivo fechado: não é possível editar o calendário.", "error")
             return redirect(url_for("turma_calendario", turma_id=turma.id))
 
-        aula = CalendarioAula.query.get_or_404(aula_id)
+        aula = (
+            CalendarioAula.query.filter_by(id=aula_id, apagado=False)
+            .first_or_404()
+        )
         if aula.turma_id != turma.id:
             flash("Linha de calendário não pertence a esta turma.", "error")
             return redirect(url_for("turma_calendario", turma_id=turma.id))
@@ -746,7 +764,20 @@ def create_app():
 
             db.session.commit()
             renumerar_calendario_turma(turma.id)
-            flash("Linha de calendário atualizada.", "success")
+            novas = completar_modulos_profissionais(
+                turma.id,
+                data_removida=data,
+                modulo_removido_id=modulo_id,
+            )
+            if novas:
+                renumerar_calendario_turma(turma.id)
+                flash(
+                    "Linha de calendário atualizada e "
+                    f"{novas} aula(s) adicionadas para cumprir o total do módulo.",
+                    "success",
+                )
+            else:
+                flash("Linha de calendário atualizada.", "success")
             return redirect(
                 url_for(
                     "turma_calendario",
@@ -772,13 +803,16 @@ def create_app():
             flash("Ano letivo fechado: não é possível editar o calendário.", "error")
             return redirect(url_for("turma_calendario", turma_id=turma.id))
 
-        aula = CalendarioAula.query.get_or_404(aula_id)
+        aula = (
+            CalendarioAula.query.filter_by(id=aula_id, apagado=False)
+            .first_or_404()
+        )
         if aula.turma_id != turma.id:
             flash("Linha de calendário não pertence a esta turma.", "error")
             return redirect(url_for("turma_calendario", turma_id=turma.id))
 
         data_removida = aula.data
-        db.session.delete(aula)
+        aula.apagado = True
         db.session.commit()
         renumerar_calendario_turma(turma.id)
 

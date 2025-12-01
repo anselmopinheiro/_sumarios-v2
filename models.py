@@ -295,5 +295,7 @@ class CalendarioAula(db.Model):
     # normal / greve / servico_oficial / extra
     tipo = db.Column(db.String(50), default="normal", nullable=False)
 
+    apagado = db.Column(db.Boolean, default=False, nullable=False)
+
     observacoes = db.Column(db.Text)
     sumario = db.Column(db.Text)
