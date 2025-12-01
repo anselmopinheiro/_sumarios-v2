@@ -109,6 +109,9 @@
           <td class="w-100">
             <div class="d-flex flex-wrap gap-1 mb-2">
               <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">Turma {{ turma.nome }}</span>
+              <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
+                Nº Sumário {% if sem_aula %}—{% else %}{{ a.sumarios or '—' }}{% endif %}
+              </span>
               {% if a.data %}
                 <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
                   {{ a.data.strftime("%d/%m/%Y") }}
@@ -123,9 +126,6 @@
               </span>
               <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
                 Total {% if sem_aula %}—{% else %}{{ a.total_geral or '—' }}{% endif %}
-              </span>
-              <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
-                Nº Sumário {% if sem_aula %}—{% else %}{{ a.sumarios or '—' }}{% endif %}
               </span>
             </div>
 

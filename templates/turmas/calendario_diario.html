@@ -82,8 +82,26 @@
           </td>
           <td>{% if sem_aula %}—{% else %}{{ a.sumarios or '' }}{% endif %}</td>
           <td class="w-50">
-            <div class="mb-2">
-              <span class="badge bg-info text-dark">{{ a.turma.nome if a.turma else (turma.nome if turma else '') }}</span>
+            <div class="d-flex flex-wrap gap-1 mb-2">
+              <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">Turma {{ a.turma.nome if a.turma else (turma.nome if turma else '') }}</span>
+              <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
+                Nº Sumário {% if sem_aula %}—{% else %}{{ a.sumarios or '—' }}{% endif %}
+              </span>
+              {% if a.data %}
+                <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
+                  {{ a.data.strftime("%d/%m/%Y") }}
+                  <small class="text-muted ms-1">{{ ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"][a.data.weekday()] }}</small>
+                </span>
+              {% endif %}
+              <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
+                {% if a.modulo %}{{ a.modulo.nome }}{% else %}Sem módulo{% endif %}
+              </span>
+              <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
+                Aula {% if sem_aula %}—{% else %}{{ a.numero_modulo }}{% endif %}
+              </span>
+              <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
+                Total {% if sem_aula %}—{% else %}{{ a.total_geral }}{% endif %}
+              </span>
             </div>
             {% if turma_fechada %}
               {{ a.sumario or '' }}
