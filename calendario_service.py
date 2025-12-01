@@ -516,10 +516,14 @@ def renumerar_calendario_turma(
 
     for aula in aulas:
         sem_aula = aula.tipo in tipos_sem_aula
-        sumarios_originais = [s.strip() for s in (aula.sumarios or "").split(",") if s.strip()]
-        quantidade = len(sumarios_originais) if sumarios_originais else 1
+        sumarios_originais = [
+            s.strip() for s in (aula.sumarios or "").split(",") if s.strip()
+        ]
+        quantidade = 0 if sem_aula else (len(sumarios_originais) if sumarios_originais else 1)
 
-        if not sem_aula:
+        if sem_aula:
+            aula.sumarios = ""
+        else:
             novos_sumarios = list(range(total_global + 1, total_global + quantidade + 1))
             total_global += quantidade
             aula.sumarios = ",".join(str(n) for n in novos_sumarios)
@@ -527,7 +531,7 @@ def renumerar_calendario_turma(
         aula.total_geral = total_global
 
         if aula.modulo_id:
-            progresso_modulo[aula.modulo_id] += 0 if sem_aula else quantidade
+            progresso_modulo[aula.modulo_id] += quantidade
             aula.numero_modulo = progresso_modulo[aula.modulo_id]
         else:
             aula.numero_modulo = None
