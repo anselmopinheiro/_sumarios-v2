@@ -564,10 +564,13 @@ def create_app():
             tipos_aula=TIPOS_AULA,
         )
 
+    @app.route("/calendario/dia")
     @app.route("/turmas/<int:turma_id>/calendario/dia")
-    def turma_calendario_dia(turma_id):
-        turma = Turma.query.get_or_404(turma_id)
-        ano = turma.ano_letivo
+    def turma_calendario_dia(turma_id=None):
+        todas_turmas = Turma.query.order_by(Turma.nome).all()
+
+        turma = Turma.query.get_or_404(turma_id) if turma_id else None
+        ano = turma.ano_letivo if turma else None
         ano_fechado = bool(ano and ano.fechado)
 
         data_txt = request.args.get("data")
@@ -577,12 +580,14 @@ def create_app():
         except ValueError:
             data_atual = hoje
 
-        aulas = (
-            CalendarioAula.query.filter_by(turma_id=turma.id, apagado=False)
-            .filter(CalendarioAula.data == data_atual)
-            .order_by(CalendarioAula.data, CalendarioAula.id)
-            .all()
-        )
+        aulas = []
+        if turma:
+            aulas = (
+                CalendarioAula.query.filter_by(turma_id=turma.id, apagado=False)
+                .filter(CalendarioAula.data == data_atual)
+                .order_by(CalendarioAula.data, CalendarioAula.id)
+                .all()
+            )
 
         return render_template(
             "turmas/calendario_diario.html",
@@ -595,6 +600,7 @@ def create_app():
             dia_seguinte=data_atual + timedelta(days=1),
             tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
             tipos_aula=TIPOS_AULA,
+            turmas=todas_turmas,
         )
 
     @app.route("/turmas/<int:turma_id>/calendario/export/json")
