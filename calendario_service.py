@@ -490,6 +490,195 @@ def gerar_calendario_turma(turma_id: int, recalcular_tudo: bool = True) -> int:
 DEFAULT_TIPOS_SEM_AULA: Set[str] = {"greve", "servico_oficial", "faltei", "outros"}
 
 
+# ----------------------------------------
+# Export / import de sumários
+# ----------------------------------------
+
+
+def _periodo_para_data(turma: Turma, data: date) -> Periodo | None:
+    """Encontra um período que abrange a data dada para a turma."""
+
+    return (
+        Periodo.query.filter(
+            Periodo.turma_id == turma.id,
+            Periodo.data_inicio <= data,
+            Periodo.data_fim >= data,
+        )
+        .order_by(Periodo.data_inicio)
+        .first()
+    )
+
+
+def _periodo_padrao_import(turma: Turma, datas: List[date]) -> Periodo | None:
+    """
+    Garante um período para associar linhas importadas.
+
+    Se existirem períodos, devolve o primeiro; caso contrário cria um período
+    "Importado" que cobre o intervalo mínimo/máximo das datas fornecidas.
+    """
+
+    existente = (
+        Periodo.query.filter_by(turma_id=turma.id)
+        .order_by(Periodo.data_inicio)
+        .first()
+    )
+    if existente:
+        return existente
+
+    if not datas:
+        return None
+
+    inicio = min(datas)
+    fim = max(datas)
+    periodo = Periodo(
+        turma_id=turma.id,
+        nome="Importado",
+        tipo="anual",
+        data_inicio=inicio,
+        data_fim=fim,
+    )
+    db.session.add(periodo)
+    db.session.commit()
+    return periodo
+
+
+def exportar_sumarios_json(
+    turma_id: int, periodo_id: int | None = None
+) -> List[Dict[str, object]]:
+    """Devolve um backup dos sumários da turma (opcionalmente filtrado por período)."""
+
+    query = CalendarioAula.query.filter_by(turma_id=turma_id, apagado=False)
+    if periodo_id:
+        query = query.filter_by(periodo_id=periodo_id)
+
+    aulas = query.order_by(CalendarioAula.data).all()
+
+    resultado: List[Dict[str, object]] = []
+    for aula in aulas:
+        resultado.append(
+            {
+                "data": aula.data.isoformat() if aula.data else None,
+                "weekday": aula.weekday,
+                "modulo_id": aula.modulo_id,
+                "modulo_nome": aula.modulo.nome if aula.modulo else None,
+                "numero_modulo": aula.numero_modulo,
+                "total_geral": aula.total_geral,
+                "sumarios": aula.sumarios,
+                "sumario": aula.sumario,
+                "tipo": aula.tipo,
+                "periodo_id": aula.periodo_id,
+            }
+        )
+
+    return resultado
+
+
+def importar_sumarios_json(turma: Turma, linhas: List[Dict[str, object]]) -> Dict[str, int]:
+    """
+    Importa ou atualiza linhas do calendário a partir de um backup.
+
+    - Cria módulos em falta (por nome) se necessário.
+    - Cria um período "Importado" se a turma não tiver períodos definidos.
+    """
+
+    datas: List[date] = []
+    for linha in linhas:
+        data_txt = linha.get("data")
+        if data_txt:
+            try:
+                datas.append(date.fromisoformat(str(data_txt)))
+            except ValueError:
+                continue
+
+    periodo_padrao = _periodo_padrao_import(turma, datas)
+
+    modulos_existentes: Dict[int, Modulo] = {
+        m.id: m for m in Modulo.query.filter_by(turma_id=turma.id).all()
+    }
+    modulos_por_nome = {
+        (m.nome or "").strip().lower(): m for m in modulos_existentes.values()
+    }
+
+    contadores = {"criados": 0, "atualizados": 0, "ignorados": 0}
+
+    for linha in linhas:
+        data_txt = linha.get("data")
+        try:
+            data_linha = date.fromisoformat(str(data_txt)) if data_txt else None
+        except ValueError:
+            contadores["ignorados"] += 1
+            continue
+
+        modulo_id = linha.get("modulo_id")
+        modulo_nome = (linha.get("modulo_nome") or "").strip()
+        modulo: Modulo | None = None
+
+        if modulo_id and modulo_id in modulos_existentes:
+            modulo = modulos_existentes[modulo_id]
+        elif modulo_nome:
+            modulo = modulos_por_nome.get(modulo_nome.lower())
+            if not modulo:
+                modulo = Modulo(
+                    turma_id=turma.id,
+                    nome=modulo_nome,
+                    total_aulas=linha.get("total_geral") or 0,
+                )
+                db.session.add(modulo)
+                db.session.flush()
+                modulos_existentes[modulo.id] = modulo
+                modulos_por_nome[modulo_nome.lower()] = modulo
+
+        periodo: Periodo | None = None
+        periodo_id = linha.get("periodo_id")
+        if periodo_id:
+            periodo = Periodo.query.filter_by(id=periodo_id, turma_id=turma.id).first()
+
+        if not periodo and data_linha:
+            periodo = _periodo_para_data(turma, data_linha)
+
+        if not periodo:
+            periodo = periodo_padrao
+
+        if not periodo or not data_linha:
+            contadores["ignorados"] += 1
+            continue
+
+        existente = (
+            CalendarioAula.query.filter_by(
+                turma_id=turma.id, data=data_linha, apagado=False
+            )
+            .order_by(CalendarioAula.id)
+            .first()
+        )
+
+        campos = {
+            "periodo_id": periodo.id,
+            "data": data_linha,
+            "weekday": data_linha.weekday(),
+            "modulo_id": modulo.id if modulo else None,
+            "numero_modulo": linha.get("numero_modulo"),
+            "total_geral": linha.get("total_geral"),
+            "sumarios": linha.get("sumarios"),
+            "sumario": linha.get("sumario"),
+            "tipo": linha.get("tipo") or "normal",
+        }
+
+        if existente:
+            for k, v in campos.items():
+                setattr(existente, k, v)
+            contadores["atualizados"] += 1
+        else:
+            nova = CalendarioAula(
+                turma_id=turma.id,
+                **campos,
+            )
+            db.session.add(nova)
+            contadores["criados"] += 1
+
+    db.session.commit()
+    return contadores
+
+
 def renumerar_calendario_turma(
     turma_id: int, tipos_sem_aula: Optional[Set[str]] | None = None
 ) -> int:

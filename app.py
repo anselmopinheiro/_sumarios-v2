@@ -1,3 +1,5 @@
+import csv
+import io
 import json
 from datetime import datetime, date, timedelta
 
@@ -40,6 +42,8 @@ from calendario_service import (
     renumerar_calendario_turma,
     completar_modulos_profissionais,
     DEFAULT_TIPOS_SEM_AULA,
+    exportar_sumarios_json,
+    importar_sumarios_json,
 )
 
 
@@ -559,6 +563,103 @@ def create_app():
             tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
             tipos_aula=TIPOS_AULA,
         )
+
+    @app.route("/turmas/<int:turma_id>/calendario/export/json")
+    def turma_calendario_export_json(turma_id):
+        turma = Turma.query.get_or_404(turma_id)
+        periodo_id = request.args.get("periodo_id", type=int)
+
+        dados = exportar_sumarios_json(turma.id, periodo_id=periodo_id)
+        payload = json.dumps(dados, ensure_ascii=False, indent=2)
+
+        filename = f"calendario_{turma.nome}_sumarios.json"
+        response = Response(payload, mimetype="application/json; charset=utf-8")
+        response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+        return response
+
+    @app.route("/turmas/<int:turma_id>/calendario/export/csv")
+    def turma_calendario_export_csv(turma_id):
+        turma = Turma.query.get_or_404(turma_id)
+        periodo_id = request.args.get("periodo_id", type=int)
+
+        dados = exportar_sumarios_json(turma.id, periodo_id=periodo_id)
+        linhas_validas = [
+            linha for linha in dados if (linha.get("tipo") or "").lower() in {"normal", "extra"}
+        ]
+
+        buf = io.StringIO()
+        writer = csv.writer(buf, delimiter=";")
+        writer.writerow(["DATA", "MÓDULO", "N.º Sumário", "Sumário"])
+        for linha in linhas_validas:
+            data_txt = linha.get("data")
+            data_legivel = ""
+            try:
+                data_legivel = datetime.fromisoformat(data_txt).strftime("%d/%m/%Y") if data_txt else ""
+            except ValueError:
+                data_legivel = data_txt or ""
+
+            writer.writerow(
+                [
+                    data_legivel,
+                    linha.get("modulo_nome") or "",
+                    linha.get("sumarios") or "",
+                    linha.get("sumario") or "",
+                ]
+            )
+
+        payload = buf.getvalue()
+        filename = f"calendario_{turma.nome}_sumarios.csv"
+        response = Response(payload, mimetype="text/csv; charset=utf-8")
+        response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+        return response
+
+    @app.route("/turmas/<int:turma_id>/calendario/import/json", methods=["POST"])
+    def turma_calendario_import_json(turma_id):
+        turma = Turma.query.get_or_404(turma_id)
+        ano = turma.ano_letivo
+        if ano and ano.fechado:
+            flash("Ano letivo fechado: não é possível editar o calendário.", "error")
+            return redirect(url_for("turma_calendario", turma_id=turma.id))
+
+        ficheiro = request.files.get("ficheiro")
+        conteudo = request.form.get("conteudo")
+        bruto: str | None = None
+
+        if ficheiro and ficheiro.filename:
+            bruto = ficheiro.read().decode("utf-8", errors="ignore")
+        elif conteudo:
+            bruto = conteudo
+
+        if not bruto:
+            flash("Seleciona um ficheiro JSON para importar.", "error")
+            return redirect(url_for("turma_calendario", turma_id=turma.id))
+
+        try:
+            payload = json.loads(bruto)
+        except ValueError:
+            flash("Ficheiro JSON inválido.", "error")
+            return redirect(url_for("turma_calendario", turma_id=turma.id))
+
+        if isinstance(payload, dict) and "aulas" in payload:
+            linhas = payload.get("aulas") or []
+        elif isinstance(payload, list):
+            linhas = payload
+        else:
+            flash("Formato de backup desconhecido: esperado array JSON de aulas.", "error")
+            return redirect(url_for("turma_calendario", turma_id=turma.id))
+
+        contadores = importar_sumarios_json(turma, linhas)
+        renumerar_calendario_turma(turma.id)
+
+        flash(
+            "Importação concluída: "
+            f"{contadores['criados']} criadas, "
+            f"{contadores['atualizados']} atualizadas, "
+            f"{contadores['ignorados']} ignoradas.",
+            "success",
+        )
+
+        return redirect(url_for("turma_calendario", turma_id=turma.id))
 
     @app.route("/turmas/<int:turma_id>/calendario/gerar", methods=["POST"])
     def turma_calendario_gerar(turma_id):
