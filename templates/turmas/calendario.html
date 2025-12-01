@@ -51,7 +51,6 @@
     <thead class="table-dark">
       <tr>
         <th>Data</th>
-        <th>Dia</th>
         <th>Módulo</th>
         <th>Nº Aula Módulo</th>
         <th>Total Global</th>
@@ -67,10 +66,10 @@
       {% for a in aulas %}
         {% set sem_aula = a.tipo in tipos_sem_aula %}
         <tr>
-          <td>{{ a.data.strftime("%d/%m/%Y") if a.data }}</td>
           <td>
             {% if a.data %}
-              {{ ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"][a.data.weekday()] }}
+              {{ a.data.strftime("%d/%m/%Y") }}<br>
+              <small class="text-muted">{{ ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"][a.data.weekday()] }}</small>
             {% endif %}
           </td>
           <td>{{ a.modulo.nome if a.modulo }}</td>
@@ -81,9 +80,11 @@
             {% if ano_fechado %}
               {{ a.sumario }}
             {% else %}
+              {% set form_id = "sumario-form-" ~ a.id %}
               <form method="post"
+                    id="{{ form_id }}"
                     action="{{ url_for('calendario_update_sumario', turma_id=turma.id, aula_id=a.id) }}"
-                    class="d-flex align-items-start gap-2">
+                    class="d-flex flex-column gap-2">
                 {% if periodo_atual %}
                   <input type="hidden" name="periodo_id" value="{{ periodo_atual.id }}">
                 {% endif %}
@@ -91,11 +92,25 @@
                           class="form-control form-control-sm"
                           rows="2"
                           placeholder="Escrever sumário...">{{ a.sumario }}</textarea>
-                <button type="submit" class="btn btn-sm btn-primary">Guardar</button>
               </form>
             {% endif %}
           </td>
-          <td>{{ a.tipo }}</td>
+          <td>
+            {% if ano_fechado %}
+              {{ a.tipo }}
+            {% else %}
+              <div class="d-flex align-items-start gap-2">
+                <select name="tipo"
+                        form="{{ form_id }}"
+                        class="form-select form-select-sm">
+                  {% for valor, label in tipos_aula %}
+                    <option value="{{ valor }}" {% if a.tipo == valor %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+                <button type="submit" form="{{ form_id }}" class="btn btn-sm btn-primary">Guardar</button>
+              </div>
+            {% endif %}
+          </td>
 
           {% if not ano_fechado %}
             <td>

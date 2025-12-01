@@ -46,12 +46,9 @@
       <label class="form-label">Tipo</label>
       <select name="tipo" class="form-select">
         {% set valor_tipo = aula.tipo if aula else "normal" %}
-        <option value="normal" {% if valor_tipo == "normal" %}selected{% endif %}>Normal</option>
-        <option value="greve" {% if valor_tipo == "greve" %}selected{% endif %}>Greve</option>
-        <option value="faltei" {% if valor_tipo == "faltei" %}selected{% endif %}>Faltei</option>
-        <option value="servico_oficial" {% if valor_tipo == "servico_oficial" %}selected{% endif %}>Serviço oficial</option>
-        <option value="outros" {% if valor_tipo == "outros" %}selected{% endif %}>Outros</option>
-        <option value="extra" {% if valor_tipo == "extra" %}selected{% endif %}>Extra</option>
+        {% for valor, label in tipos_aula %}
+          <option value="{{ valor }}" {% if valor_tipo == valor %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
       </select>
     </div>
   </div>

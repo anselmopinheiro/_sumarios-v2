@@ -43,6 +43,16 @@ from calendario_service import (
 )
 
 
+TIPOS_AULA = [
+    ("normal", "Normal"),
+    ("greve", "Greve"),
+    ("faltei", "Faltei"),
+    ("servico_oficial", "Serviço oficial"),
+    ("outros", "Outros"),
+    ("extra", "Extra"),
+]
+
+
 # --------------------------------------------
 # Funções auxiliares fora da factory
 # --------------------------------------------
@@ -547,6 +557,7 @@ def create_app():
             periodo_atual=periodo_atual,
             periodos_disponiveis=periodos_disponiveis,
             tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
+            tipos_aula=TIPOS_AULA,
         )
 
     @app.route("/turmas/<int:turma_id>/calendario/gerar", methods=["POST"])
@@ -651,6 +662,7 @@ def create_app():
                     periodo=periodo,
                     modulos=modulos,
                     aula=None,
+                    tipos_aula=TIPOS_AULA,
                 )
 
             aula = CalendarioAula(
@@ -696,6 +708,7 @@ def create_app():
             periodo=periodo,
             modulos=modulos,
             aula=None,
+            tipos_aula=TIPOS_AULA,
         )
 
 
@@ -758,6 +771,7 @@ def create_app():
                     periodo=periodo,
                     modulos=modulos,
                     aula=aula,
+                    tipos_aula=TIPOS_AULA,
                 )
 
             aula.data = data
@@ -799,6 +813,7 @@ def create_app():
             periodo=periodo,
             modulos=modulos,
             aula=aula,
+            tipos_aula=TIPOS_AULA,
         )
 
     @app.route("/turmas/<int:turma_id>/calendario/<int:aula_id>/delete", methods=["POST"])
@@ -862,10 +877,37 @@ def create_app():
             flash("Linha de calendário não pertence a esta turma.", "error")
             return redirect(url_for("turma_calendario", turma_id=turma.id))
 
-        aula.sumario = (request.form.get("sumario") or "").strip()
+        sumario_txt = request.form.get("sumario")
+        if sumario_txt is not None:
+            aula.sumario = sumario_txt.strip()
+
+        tipo_original = aula.tipo
+        novo_tipo_raw = request.form.get("tipo")
+        novo_tipo = (novo_tipo_raw if novo_tipo_raw is not None else aula.tipo) or "normal"
+        if isinstance(novo_tipo, str):
+            novo_tipo = novo_tipo.strip()
+        aula.tipo = novo_tipo
+
         db.session.commit()
 
-        flash("Sumário atualizado.", "success")
+        if novo_tipo != tipo_original:
+            renumerar_calendario_turma(turma.id)
+            novas = completar_modulos_profissionais(
+                turma.id,
+                data_removida=aula.data,
+                modulo_removido_id=aula.modulo_id,
+            )
+            if novas:
+                renumerar_calendario_turma(turma.id)
+                flash(
+                    "Tipo de aula atualizado e "
+                    f"{novas} aula(s) adicionadas para cumprir o total do módulo.",
+                    "success",
+                )
+            else:
+                flash("Sumário e tipo atualizados.", "success")
+        else:
+            flash("Sumário atualizado.", "success")
 
         periodo_id = request.form.get("periodo_id", type=int)
         return redirect(
