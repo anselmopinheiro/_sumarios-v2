@@ -29,6 +29,10 @@
 <div class="mb-3">
   <a href="{{ url_for('turmas_list') }}" class="btn btn-secondary">← Voltar às turmas</a>
 
+  <a href="{{ url_for('turma_calendario_dia', turma_id=turma.id) }}" class="btn btn-outline-secondary ms-1">
+    Ver por dia
+  </a>
+
   {% if not ano_fechado %}
     <form method="post"
           action="{{ url_for('turma_calendario_gerar', turma_id=turma.id) }}"
@@ -120,10 +124,10 @@
             <div class="text-muted small">Aula {% if sem_aula %}—{% else %}{{ a.numero_modulo }}{% endif %}</div>
             <div class="text-muted small">Total {% if sem_aula %}—{% else %}{{ a.total_geral }}{% endif %}</div>
           </td>
-          <td>{% if sem_aula %}—{% else %}{{ a.sumarios }}{% endif %}</td>
+          <td>{% if sem_aula %}—{% else %}{{ a.sumarios or '' }}{% endif %}</td>
           <td class="w-50">
             {% if ano_fechado %}
-              {{ a.sumario }}
+              {{ a.sumario or '' }}
             {% else %}
               {% set form_id = "sumario-form-" ~ a.id %}
               <form method="post"
@@ -136,7 +140,7 @@
                 <textarea name="sumario"
                           class="form-control form-control-sm"
                           rows="2"
-                          placeholder="Escrever sumário...">{{ a.sumario }}</textarea>
+                          placeholder="Escrever sumário...">{{ a.sumario or '' }}</textarea>
               </form>
             {% endif %}
           </td>

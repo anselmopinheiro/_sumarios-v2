@@ -564,6 +564,39 @@ def create_app():
             tipos_aula=TIPOS_AULA,
         )
 
+    @app.route("/turmas/<int:turma_id>/calendario/dia")
+    def turma_calendario_dia(turma_id):
+        turma = Turma.query.get_or_404(turma_id)
+        ano = turma.ano_letivo
+        ano_fechado = bool(ano and ano.fechado)
+
+        data_txt = request.args.get("data")
+        hoje = date.today()
+        try:
+            data_atual = date.fromisoformat(data_txt) if data_txt else hoje
+        except ValueError:
+            data_atual = hoje
+
+        aulas = (
+            CalendarioAula.query.filter_by(turma_id=turma.id, apagado=False)
+            .filter(CalendarioAula.data == data_atual)
+            .order_by(CalendarioAula.data, CalendarioAula.id)
+            .all()
+        )
+
+        return render_template(
+            "turmas/calendario_diario.html",
+            turma=turma,
+            ano=ano,
+            ano_fechado=ano_fechado,
+            aulas=aulas,
+            data_atual=data_atual,
+            dia_anterior=data_atual - timedelta(days=1),
+            dia_seguinte=data_atual + timedelta(days=1),
+            tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
+            tipos_aula=TIPOS_AULA,
+        )
+
     @app.route("/turmas/<int:turma_id>/calendario/export/json")
     def turma_calendario_export_json(turma_id):
         turma = Turma.query.get_or_404(turma_id)
@@ -857,6 +890,8 @@ def create_app():
             return redirect(url_for("turma_calendario", turma_id=turma.id))
 
         periodo = Periodo.query.get_or_404(aula.periodo_id)
+        redirect_view = request.values.get("view")
+        data_ref = request.values.get("data_ref")
 
         modulos = garantir_modulos_para_turma(turma)
         if not modulos:
@@ -881,6 +916,8 @@ def create_app():
                     periodo=periodo,
                     modulos=modulos,
                     aula=aula,
+                    redirect_view=redirect_view,
+                    data_ref=data_ref,
                     tipos_aula=TIPOS_AULA,
                 )
 
@@ -908,6 +945,10 @@ def create_app():
                 )
             else:
                 flash("Linha de calendário atualizada.", "success")
+            if redirect_view == "dia" and data_ref:
+                return redirect(
+                    url_for("turma_calendario_dia", turma_id=turma.id, data=data_ref)
+                )
             return redirect(
                 url_for(
                     "turma_calendario",
@@ -923,6 +964,8 @@ def create_app():
             periodo=periodo,
             modulos=modulos,
             aula=aula,
+            redirect_view=redirect_view,
+            data_ref=data_ref,
             tipos_aula=TIPOS_AULA,
         )
 
@@ -958,12 +1001,12 @@ def create_app():
             )
         else:
             flash("Linha de calendário apagada.", "success")
-        return redirect(
-            url_for(
-                "turma_calendario",
-                turma_id=turma.id,
-            )
-        )
+        view = request.form.get("view")
+        data_ref = request.form.get("data_ref")
+        if view == "dia" and data_ref:
+            return redirect(url_for("turma_calendario_dia", turma_id=turma.id, data=data_ref))
+
+        return redirect(url_for("turma_calendario", turma_id=turma.id))
 
     # ----------------------------------------
     # CALENDÁRIO – SUMÁRIOS EM LINHA
@@ -1020,6 +1063,14 @@ def create_app():
             flash("Sumário atualizado.", "success")
 
         periodo_id = request.form.get("periodo_id", type=int)
+        redirect_view = request.form.get("view")
+        data_ref = request.form.get("data_ref")
+
+        if redirect_view == "dia" and data_ref:
+            return redirect(
+                url_for("turma_calendario_dia", turma_id=turma.id, data=data_ref)
+            )
+
         return redirect(
             url_for("turma_calendario", turma_id=turma.id, periodo_id=periodo_id)
         )
