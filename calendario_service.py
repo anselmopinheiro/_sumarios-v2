@@ -827,7 +827,7 @@ def deduplicar_calendario_turma(turma_id: int, commit: bool = True) -> int:
     return len(duplicados)
 
 
-def _periodo_para_data(periodos: List[Periodo], data: date) -> Optional[Periodo]:
+def _periodo_para_data_periodos(periodos: List[Periodo], data: date) -> Optional[Periodo]:
     for periodo in periodos:
         if periodo.data_inicio and periodo.data_fim and periodo.data_inicio <= data <= periodo.data_fim:
             return periodo
@@ -995,7 +995,7 @@ def completar_modulos_profissionais(
                 data_atual += timedelta(days=1)
                 continue
 
-            periodo = _periodo_para_data(periodos_validos, data_atual)
+            periodo = _periodo_para_data_periodos(periodos_validos, data_atual)
             if not periodo:
                 data_atual += timedelta(days=1)
                 continue
