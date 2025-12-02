@@ -122,12 +122,13 @@
                                {% if not pode_editar_tempos %}readonly{% endif %}>
                       </div>
                     </div>
-                    <textarea name="previsao"
-                              class="form-control form-control-sm js-autoresize"
-                              rows="2"
-                              placeholder="Previsão da aula (planeamento)...">{{ a.previsao or '' }}</textarea>
-                  </form>
-                {% endif %}
+                <textarea name="previsao"
+                          class="form-control form-control-sm js-autoresize"
+                          rows="2"
+                          placeholder="Previsão da aula (planeamento)...">{{ a.previsao or '' }}</textarea>
+                <button type="button" class="btn btn-link btn-sm ps-0 js-copy-previsao">Copiar previsão para sumário</button>
+              </form>
+            {% endif %}
               </td>
             <td>
               {% if turma_fechada %}

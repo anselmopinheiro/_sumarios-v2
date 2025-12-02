@@ -66,6 +66,37 @@
     } else {
       autos();
     }
+
+    const copiarPrevisao = (btn) => {
+      if (!btn) return;
+      const form = btn.closest('form');
+      if (!form) return;
+      const previsao = form.querySelector('textarea[name="previsao"]');
+      const sumario = form.querySelector('textarea[name="sumario"]');
+      if (!previsao || !sumario) return;
+
+      sumario.value = previsao.value || '';
+      sumario.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+
+    const bindCopias = () => {
+      document.removeEventListener('click', document._copiaPrevisaoHandler || (() => {}));
+      const handler = (ev) => {
+        const target = ev.target.closest('.js-copy-previsao');
+        if (target) {
+          ev.preventDefault();
+          copiarPrevisao(target);
+        }
+      };
+      document._copiaPrevisaoHandler = handler;
+      document.addEventListener('click', handler);
+    };
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', bindCopias);
+    } else {
+      bindCopias();
+    }
   })();
 </script>
 

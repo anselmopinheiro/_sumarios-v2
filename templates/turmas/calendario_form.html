@@ -90,9 +90,10 @@
     </div>
     <div class="col-md-6 mb-3">
       <label class="form-label">Previsão (planeamento)</label>
-      <textarea name="previsao" class="form-control js-autoresize" rows="3"
-                placeholder="Plano para a aula">{{ aula.previsao if aula and aula.previsao else '' }}</textarea>
-    </div>
+  <textarea name="previsao" class="form-control js-autoresize" rows="3"
+            placeholder="Plano para a aula">{{ aula.previsao if aula and aula.previsao else '' }}</textarea>
+  <button type="button" class="btn btn-link btn-sm ps-0 js-copy-previsao">Copiar previsão para sumário</button>
+</div>
   </div>
 
   <button type="submit" class="btn btn-success">Guardar</button>
