@@ -14,7 +14,7 @@ from flask import (
 )
 
 from flask_migrate import Migrate
-from sqlalchemy import func
+from sqlalchemy import func, inspect
 from sqlalchemy.orm import joinedload
 
 from config import Config
@@ -195,6 +195,21 @@ def create_app():
 
     db.init_app(app)
     Migrate(app, db)
+
+    # Garantir que a coluna "tempos_sem_aula" existe em instalações que ainda não
+    # aplicaram a migração correspondente (evita erros em bases de dados antigas
+    # carregadas a partir de ficheiro).
+    def _ensure_tempos_sem_aula_column():
+        insp = inspect(db.engine)
+        colunas = {col["name"] for col in insp.get_columns("calendario_aulas")}
+        if "tempos_sem_aula" not in colunas:
+            db.session.execute(
+                "ALTER TABLE calendario_aulas ADD COLUMN tempos_sem_aula INTEGER DEFAULT 0"
+            )
+            db.session.commit()
+
+    with app.app_context():
+        _ensure_tempos_sem_aula_column()
 
     # ----------------------------------------
     # Helpers internos à app
