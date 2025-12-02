@@ -560,6 +560,45 @@ def _periodo_padrao_import(turma: Turma, datas: List[date]) -> Periodo | None:
     return periodo
 
 
+def criar_aula_extra(
+    turma: Turma,
+    data: date,
+    *,
+    sumario: str | None = None,
+    observacoes: str | None = None,
+) -> CalendarioAula:
+    """Cria uma aula do tipo "extra" para a turma e data indicadas.
+
+    Garante um período e um módulo associados (criando se necessário) para que a
+    linha possa ser renumerada posteriormente sem perder dados existentes.
+    """
+
+    periodo = _periodo_para_data(turma, data)
+    if not periodo:
+        periodo = _periodo_padrao_import(turma, [data])
+
+    if not periodo:
+        raise ValueError("Não foi possível determinar um período para a data.")
+
+    modulos = garantir_modulos_para_turma(turma)
+    modulo_id = modulos[0].id if modulos else None
+
+    aula = CalendarioAula(
+        turma_id=turma.id,
+        periodo_id=periodo.id,
+        data=data,
+        weekday=data.weekday(),
+        modulo_id=modulo_id,
+        tipo="extra",
+        sumario=(sumario or "").strip() or None,
+        observacoes=(observacoes or "").strip() or None,
+    )
+    db.session.add(aula)
+    db.session.commit()
+
+    return aula
+
+
 def exportar_sumarios_json(
     turma_id: int, periodo_id: int | None = None
 ) -> List[Dict[str, object]]:

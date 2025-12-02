@@ -42,6 +42,7 @@ from calendario_service import (
     garantir_modulos_para_turma,
     renumerar_calendario_turma,
     completar_modulos_profissionais,
+    criar_aula_extra,
     DEFAULT_TIPOS_SEM_AULA,
     exportar_sumarios_json,
     importar_sumarios_json,
@@ -695,6 +696,50 @@ def create_app():
             data_fim=data_fim,
             turmas=turmas,
         )
+
+    @app.route("/calendario/outras-datas/add", methods=["POST"])
+    def calendario_outras_datas_add():
+        turma_id = request.form.get("turma_id", type=int)
+        data_txt = request.form.get("data")
+        data_aula = _parse_date_form(data_txt)
+        sumario_txt = request.form.get("sumario")
+        observacoes_txt = request.form.get("observacoes")
+
+        filtros = {
+            "tipo": request.form.get("tipo_filtro") or None,
+            "turma_id": request.form.get("turma_filtro", type=int) or turma_id,
+            "data_inicio": request.form.get("data_inicio") or None,
+            "data_fim": request.form.get("data_fim") or None,
+        }
+        filtros_limpos = {k: v for k, v in filtros.items() if v}
+
+        if not turma_id:
+            flash("Seleciona a turma para adicionar a aula extra.", "error")
+            return redirect(url_for("calendario_outras_datas", **filtros_limpos))
+
+        turma = Turma.query.get_or_404(turma_id)
+        ano = turma.ano_letivo
+        if ano and ano.fechado:
+            flash("Ano letivo fechado: não é possível editar o calendário desta turma.", "error")
+            return redirect(url_for("calendario_outras_datas", **filtros_limpos))
+
+        if not data_aula:
+            flash("Indica a data para a aula extra.", "error")
+            return redirect(url_for("calendario_outras_datas", **filtros_limpos))
+
+        try:
+            criar_aula_extra(
+                turma,
+                data_aula,
+                sumario=sumario_txt,
+                observacoes=observacoes_txt,
+            )
+            renumerar_calendario_turma(turma.id)
+            flash("Aula extra adicionada e numeração recalculada.", "success")
+        except ValueError as exc:
+            flash(str(exc), "error")
+
+        return redirect(url_for("calendario_outras_datas", **filtros_limpos))
 
     @app.route("/turmas/<int:turma_id>/calendario/export/json")
     def turma_calendario_export_json(turma_id):

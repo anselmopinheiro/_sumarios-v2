@@ -38,6 +38,44 @@
   </div>
 </form>
 
+<div class="card mb-4">
+  <div class="card-body">
+    <h5 class="card-title">Adicionar aula extra</h5>
+    <form method="post" action="{{ url_for('calendario_outras_datas_add') }}" class="row g-3">
+      <div class="col-12 col-lg-3">
+        <label class="form-label">Turma</label>
+        <select name="turma_id" class="form-select" required>
+          <option value="">Seleciona uma turma</option>
+          {% for t in turmas %}
+            <option value="{{ t.id }}">{{ t.nome }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-lg-3">
+        <label class="form-label">Data</label>
+        <input type="date" name="data" class="form-control" required>
+      </div>
+      <div class="col-12 col-lg-6">
+        <label class="form-label">Sumário</label>
+        <textarea name="sumario" class="form-control" rows="2" placeholder="Descrição da aula"></textarea>
+      </div>
+      <div class="col-12">
+        <label class="form-label">Observações</label>
+        <textarea name="observacoes" class="form-control" rows="2" placeholder="Observações adicionais"></textarea>
+      </div>
+
+      <input type="hidden" name="tipo_filtro" value="{{ filtro_tipo or '' }}" />
+      <input type="hidden" name="turma_filtro" value="{{ filtro_turma_id or '' }}" />
+      <input type="hidden" name="data_inicio" value="{{ data_inicio.isoformat() if data_inicio else '' }}" />
+      <input type="hidden" name="data_fim" value="{{ data_fim.isoformat() if data_fim else '' }}" />
+
+      <div class="col-12 d-flex justify-content-end">
+        <button type="submit" class="btn btn-success">Adicionar aula extra</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 {% if aulas %}
       <div class="table-responsive">
         <table class="table table-striped table-bordered align-middle">
