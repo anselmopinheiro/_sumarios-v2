@@ -743,6 +743,79 @@ def create_app():
 
         return redirect(url_for("calendario_outras_datas", **filtros_limpos))
 
+    @app.route("/calendario/outras-datas/mudar-tipo", methods=["POST"])
+    def calendario_outras_datas_mudar_tipo():
+        data_txt = request.form.get("data")
+        novo_tipo = request.form.get("novo_tipo")
+
+        filtros = {
+            "tipo": request.form.get("tipo_filtro") or None,
+            "turma_id": request.form.get("turma_filtro", type=int) or None,
+            "data_inicio": request.form.get("data_inicio") or None,
+            "data_fim": request.form.get("data_fim") or None,
+        }
+        filtros_limpos = {k: v for k, v in filtros.items() if v}
+
+        data_alvo = _parse_date_form(data_txt)
+        tipos_validos = {valor for valor, _ in TIPOS_AULA if valor != "extra"}
+
+        if not data_alvo:
+            flash("Indica a data para alterar o tipo das aulas.", "error")
+            return redirect(url_for("calendario_outras_datas", **filtros_limpos))
+
+        if novo_tipo not in tipos_validos:
+            flash("Seleciona um tipo de aula válido (exceto Extra).", "error")
+            return redirect(url_for("calendario_outras_datas", **filtros_limpos))
+
+        aulas = (
+            CalendarioAula.query.options(joinedload(CalendarioAula.turma))
+            .filter(CalendarioAula.apagado == False)  # noqa: E712
+            .filter(CalendarioAula.data == data_alvo)
+            .filter(CalendarioAula.tipo != "extra")
+            .join(Turma)
+            .all()
+        )
+
+        if not aulas:
+            flash("Não há aulas para essa data que possam ser atualizadas.", "info")
+            return redirect(url_for("calendario_outras_datas", **filtros_limpos))
+
+        turmas_bloqueadas = []
+        turmas_para_renumerar = set()
+        alteracoes = 0
+
+        for aula in aulas:
+            ano = aula.turma.ano_letivo if aula.turma else None
+            if ano and ano.fechado:
+                turmas_bloqueadas.append(aula.turma.nome)
+                continue
+
+            if aula.tipo == novo_tipo:
+                continue
+
+            aula.tipo = novo_tipo
+            turmas_para_renumerar.add(aula.turma_id)
+            alteracoes += 1
+
+        if alteracoes == 0:
+            msg = "Não foram feitas alterações porque as aulas já tinham esse tipo."
+            if turmas_bloqueadas:
+                msg += f" Turmas bloqueadas: {', '.join(sorted(set(turmas_bloqueadas)))}."
+            flash(msg, "info")
+            return redirect(url_for("calendario_outras_datas", **filtros_limpos))
+
+        db.session.commit()
+
+        for turma_id in turmas_para_renumerar:
+            renumerar_calendario_turma(turma_id)
+
+        msg_sucesso = "Tipos de aula atualizados e numeração recalculada."
+        if turmas_bloqueadas:
+            msg_sucesso += f" Turmas bloqueadas: {', '.join(sorted(set(turmas_bloqueadas)))}."
+        flash(msg_sucesso, "success")
+
+        return redirect(url_for("calendario_outras_datas", **filtros_limpos))
+
     @app.route("/turmas/<int:turma_id>/calendario/export/json")
     def turma_calendario_export_json(turma_id):
         turma = Turma.query.get_or_404(turma_id)
