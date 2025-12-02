@@ -127,7 +127,7 @@
       </div>
       <div class="col-12 col-md-4 col-lg-3">
         <label class="form-label">Novo tipo</label>
-        <select name="novo_tipo" class="form-select" required>
+        <select name="novo_tipo" class="form-select" required id="novo-tipo-outras">
           <option value="">Seleciona</option>
           {% for valor, label in tipos_aula %}
             {% if valor != 'extra' %}
@@ -138,7 +138,13 @@
       </div>
       <div class="col-12 col-md-4 col-lg-3">
         <label class="form-label">Tempos sem aula</label>
-        <input type="number" name="tempos_sem_aula" class="form-control" min="0" placeholder="opcional">
+        <input type="number"
+               name="tempos_sem_aula"
+               id="tempos-sem-aula-outras"
+               class="form-control"
+               min="0"
+               value="0"
+               placeholder="opcional">
         <div class="form-text">Usado quando o novo tipo for Faltei/Serviço oficial/Outros.</div>
       </div>
 
@@ -214,5 +220,31 @@
 {% else %}
   <div class="alert alert-info">Não foram encontradas aulas com os tipos selecionados.</div>
 {% endif %}
+
+<script>
+  (() => {
+    const tiposSemAula = {{ tipos_sem_aula|list|tojson }};
+    const selectTipo = document.getElementById('novo-tipo-outras');
+    const temposInput = document.getElementById('tempos-sem-aula-outras');
+
+    function sincronizarTemposBulk() {
+      if (!selectTipo || !temposInput) return;
+      const isSemAula = tiposSemAula.includes(selectTipo.value);
+      if (isSemAula) {
+        temposInput.readOnly = false;
+        temposInput.classList.remove('bg-light', 'text-muted');
+      } else {
+        temposInput.value = 0;
+        temposInput.readOnly = true;
+        temposInput.classList.add('bg-light', 'text-muted');
+      }
+    }
+
+    sincronizarTemposBulk();
+    if (selectTipo) {
+      selectTipo.addEventListener('change', sincronizarTemposBulk);
+    }
+  })();
+</script>
 
 {% endblock %}

@@ -154,12 +154,16 @@
                           placeholder="Escrever sumário...">{{ a.sumario or '' }}</textarea>
                   <div class="d-flex flex-column" style="width: 120px;">
                     <label class="form-label form-label-sm mb-1">Tempos (sem aula)</label>
+                    {% set pode_editar_tempos = a.tipo in tipos_sem_aula %}
                     <input type="number"
                            name="tempos_sem_aula"
                            form="{{ form_id }}"
-                           class="form-control form-control-sm"
+                           class="form-control form-control-sm {% if not pode_editar_tempos %}bg-light text-muted{% endif %}"
                            min="0"
-                           value="{{ faltas if sem_aula else total_previsto }}">
+                           value="{{ faltas if sem_aula else 0 }}"
+                           data-total-previsto="{{ total_previsto }}"
+                           data-tempos-atual="{{ faltas if sem_aula else 0 }}"
+                           {% if not pode_editar_tempos %}readonly{% endif %}>
                   </div>
                 </div>
               </form>
@@ -206,3 +210,34 @@
 {% endif %}
 
 {% endblock %}
+
+<script>
+  (() => {
+    const tiposSemAula = {{ tipos_sem_aula|list|tojson }};
+
+    function sincronizarTempos(select) {
+      const form = select.closest('form');
+      const input = form ? form.querySelector('input[name="tempos_sem_aula"]') : null;
+      if (!input) return;
+
+      const isSemAula = tiposSemAula.includes(select.value);
+      if (isSemAula) {
+        input.readOnly = false;
+        input.classList.remove('bg-light', 'text-muted');
+        if (!input.value) {
+          const fallback = input.dataset.temposAtual || input.dataset.totalPrevisto || '0';
+          input.value = fallback;
+        }
+      } else {
+        input.value = 0;
+        input.readOnly = true;
+        input.classList.add('bg-light', 'text-muted');
+      }
+    }
+
+    document.querySelectorAll('select[name="tipo"]').forEach((select) => {
+      sincronizarTempos(select);
+      select.addEventListener('change', () => sincronizarTempos(select));
+    });
+  })();
+</script>

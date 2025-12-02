@@ -1542,6 +1542,7 @@ def create_app():
             aula.observacoes = observacoes_txt.strip()
 
         tipo_original = aula.tipo
+        tempos_originais = aula.tempos_sem_aula or 0
         novo_tipo_raw = request.form.get("tipo")
         novo_tipo = (novo_tipo_raw if novo_tipo_raw is not None else aula.tipo) or "normal"
         if isinstance(novo_tipo, str):
@@ -1560,11 +1561,15 @@ def create_app():
         if tempos_sem_aula is None:
             tempos_sem_aula = total_previsto if novo_tipo in DEFAULT_TIPOS_SEM_AULA else 0
         tempos_sem_aula = max(0, min(tempos_sem_aula, total_previsto))
-        aula.tempos_sem_aula = tempos_sem_aula if novo_tipo in DEFAULT_TIPOS_SEM_AULA else 0
+        aula.tempos_sem_aula = (
+            tempos_sem_aula if novo_tipo in DEFAULT_TIPOS_SEM_AULA else 0
+        )
+
+        mudou_tempos = aula.tempos_sem_aula != tempos_originais
 
         db.session.commit()
 
-        if novo_tipo != tipo_original:
+        if novo_tipo != tipo_original or mudou_tempos:
             renumerar_calendario_turma(turma.id)
             novas = completar_modulos_profissionais(
                 turma.id,
@@ -1579,7 +1584,7 @@ def create_app():
                     "success",
                 )
             else:
-                flash("Sumário e tipo atualizados.", "success")
+                flash("Sumário e contagens atualizados.", "success")
         else:
             flash("Sumário atualizado.", "success")
 

@@ -52,7 +52,7 @@
 
     <div class="col-md-3 mb-3">
       <label class="form-label">Tipo</label>
-      <select name="tipo" class="form-select">
+      <select name="tipo" class="form-select" id="tipo-select">
         {% set valor_tipo = aula.tipo if aula else "normal" %}
         {% for valor, label in tipos_aula %}
           <option value="{{ valor }}" {% if valor_tipo == valor %}selected{% endif %}>{{ label }}</option>
@@ -64,7 +64,14 @@
       {% set total_previsto = sumarios_limpos|length if sumarios_limpos|length > 0 else 1 %}
       {% set tempos_default = aula.tempos_sem_aula if aula and aula.tempos_sem_aula is not none else (total_previsto if aula and aula.tipo in tipos_sem_aula else 0) %}
       <label class="form-label">Tempos sem aula</label>
-      <input type="number" name="tempos_sem_aula" class="form-control" min="0" value="{{ tempos_default or 0 }}">
+      <input type="number"
+             name="tempos_sem_aula"
+             id="tempos-sem-aula"
+             class="form-control"
+             min="0"
+             value="{{ tempos_default or 0 }}"
+             data-total-previsto="{{ total_previsto }}"
+             data-tempos-atual="{{ tempos_default or 0 }}">
       <div class="form-text">Usado em faltei/serviço oficial/outros para indicar quantos tempos não contam.</div>
     </div>
   </div>
@@ -104,5 +111,36 @@
     </a>
   {% endif %}
 </form>
+
+<script>
+  (() => {
+    const tiposSemAula = {{ tipos_sem_aula|list|tojson }};
+    const select = document.getElementById('tipo-select');
+    const temposInput = document.getElementById('tempos-sem-aula');
+
+    function sincronizarTemposForm() {
+      if (!select || !temposInput) return;
+      const isSemAula = tiposSemAula.includes(select.value);
+
+      if (isSemAula) {
+        temposInput.readOnly = false;
+        temposInput.classList.remove('bg-light', 'text-muted');
+        if (!temposInput.value) {
+          const fallback = temposInput.dataset.temposAtual || temposInput.dataset.totalPrevisto || '0';
+          temposInput.value = fallback;
+        }
+      } else {
+        temposInput.value = 0;
+        temposInput.readOnly = true;
+        temposInput.classList.add('bg-light', 'text-muted');
+      }
+    }
+
+    sincronizarTemposForm();
+    if (select) {
+      select.addEventListener('change', sincronizarTemposForm);
+    }
+  })();
+</script>
 
 {% endblock %}
