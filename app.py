@@ -692,6 +692,90 @@ def create_app():
             anos_fechados=anos_fechados,
         )
 
+    @app.route("/calendario/semana")
+    def calendario_semana():
+        todas_turmas = Turma.query.order_by(Turma.nome).all()
+
+        turma_id_param = request.args.get("turma_id", type=int)
+        turma_selecionada = Turma.query.get(turma_id_param) if turma_id_param else None
+
+        data_txt = request.args.get("data")
+        hoje = date.today()
+        try:
+            data_base = date.fromisoformat(data_txt) if data_txt else hoje
+        except ValueError:
+            data_base = hoje
+
+        semana_inicio = data_base - timedelta(days=data_base.weekday())
+        dias_semana = [semana_inicio + timedelta(days=i) for i in range(5)]
+        semana_fim = dias_semana[-1]
+
+        duplicados = (
+            db.session.query(CalendarioAula.turma_id, CalendarioAula.data)
+            .filter(
+                CalendarioAula.apagado == False,  # noqa: E712
+                CalendarioAula.data >= semana_inicio,
+                CalendarioAula.data <= semana_fim,
+            )
+            .group_by(CalendarioAula.turma_id, CalendarioAula.data)
+            .having(func.count(CalendarioAula.id) > 1)
+            .all()
+        )
+        for turma_dup_id, _ in duplicados:
+            renumerar_calendario_turma(turma_dup_id)
+
+        query = (
+            CalendarioAula.query.options(
+                joinedload(CalendarioAula.turma).joinedload(Turma.ano_letivo),
+                joinedload(CalendarioAula.modulo),
+            )
+            .filter_by(apagado=False)
+            .filter(
+                CalendarioAula.data >= semana_inicio,
+                CalendarioAula.data <= semana_fim,
+            )
+            .join(Turma)
+        )
+        if turma_selecionada:
+            query = query.filter(CalendarioAula.turma_id == turma_selecionada.id)
+
+        aulas = (
+            query.order_by(
+                CalendarioAula.data.asc(),
+                Turma.nome.asc(),
+                CalendarioAula.numero_modulo.asc().nulls_last(),
+                CalendarioAula.total_geral.asc().nulls_last(),
+                CalendarioAula.id.asc(),
+            )
+            .all()
+        )
+
+        aulas_por_data = {}
+        for aula in aulas:
+            aulas_por_data.setdefault(aula.data, []).append(aula)
+
+        anos_fechados = {
+            a.turma_id: bool(a.turma and a.turma.ano_letivo and a.turma.ano_letivo.fechado)
+            for a in aulas
+            if a.turma_id
+        }
+
+        return render_template(
+            "turmas/calendario_semanal.html",
+            turmas=todas_turmas,
+            turma=turma_selecionada,
+            data_base=data_base,
+            semana_inicio=semana_inicio,
+            semana_fim=semana_fim,
+            dias_semana=dias_semana,
+            semana_anterior=semana_inicio - timedelta(days=7),
+            semana_seguinte=semana_inicio + timedelta(days=7),
+            aulas_por_data=aulas_por_data,
+            tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
+            tipos_aula=TIPOS_AULA,
+            anos_fechados=anos_fechados,
+        )
+
     @app.route("/calendario/outras-datas")
     def calendario_outras_datas():
         tipo_filtro, turma_filtro, data_inicio, data_fim = _extrair_filtros_outras_datas(
@@ -1351,6 +1435,14 @@ def create_app():
                 return redirect(
                     url_for("turma_calendario_dia", turma_id=turma.id, data=data_ref)
                 )
+            if redirect_view == "semana":
+                filtros = {}
+                if data_ref:
+                    filtros["data"] = data_ref
+                turma_filtro = request.form.get("turma_id", type=int)
+                if turma_filtro:
+                    filtros["turma_id"] = turma_filtro
+                return redirect(url_for("calendario_semana", **filtros))
             return redirect(
                 url_for(
                     "turma_calendario",
@@ -1408,6 +1500,14 @@ def create_app():
         data_ref = request.form.get("data_ref")
         if view == "dia" and data_ref:
             return redirect(url_for("turma_calendario_dia", turma_id=turma.id, data=data_ref))
+        if view == "semana":
+            filtros = {}
+            if data_ref:
+                filtros["data"] = data_ref
+            turma_filtro = request.form.get("turma_id", type=int)
+            if turma_filtro:
+                filtros["turma_id"] = turma_filtro
+            return redirect(url_for("calendario_semana", **filtros))
 
         return redirect(url_for("turma_calendario", turma_id=turma.id))
 
@@ -1501,6 +1601,14 @@ def create_app():
             return redirect(
                 url_for("turma_calendario_dia", turma_id=turma.id, data=data_ref)
             )
+        if redirect_view == "semana":
+            filtros = {}
+            if data_ref:
+                filtros["data"] = data_ref
+            turma_filtro = request.form.get("turma_id", type=int)
+            if turma_filtro:
+                filtros["turma_id"] = turma_filtro
+            return redirect(url_for("calendario_semana", **filtros))
 
         return redirect(
             url_for("turma_calendario", turma_id=turma.id, periodo_id=periodo_id)

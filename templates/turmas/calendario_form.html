@@ -9,9 +9,13 @@
 </p>
 
 <form method="post">
-  {% if redirect_view == 'dia' and data_ref %}
+  {% if redirect_view in ['dia', 'semana'] and data_ref %}
     <input type="hidden" name="view" value="{{ redirect_view }}">
     <input type="hidden" name="data_ref" value="{{ data_ref }}">
+    {% set turma_hidden = request.values.get('turma_id') or request.values.get('turma_filtro') %}
+    {% if turma_hidden %}
+      <input type="hidden" name="turma_id" value="{{ turma_hidden }}">
+    {% endif %}
   {% endif %}
 
   <div class="mb-3">
@@ -82,6 +86,12 @@
   <button type="submit" class="btn btn-success">Guardar</button>
   {% if redirect_view == 'dia' and data_ref %}
     <a href="{{ url_for('turma_calendario_dia', turma_id=turma.id, data=data_ref) }}"
+       class="btn btn-secondary">
+      Cancelar
+    </a>
+  {% elif redirect_view == 'semana' %}
+    {% set turma_hidden = request.values.get('turma_id') or request.values.get('turma_filtro') %}
+    <a href="{{ url_for('calendario_semana', data=data_ref, turma_id=turma_hidden) }}"
        class="btn btn-secondary">
       Cancelar
     </a>
