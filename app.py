@@ -1204,6 +1204,7 @@ def create_app():
                 sumarios=sumarios_txt,
                 sumario=sumario_txt,
                 tipo=tipo,
+                tempos_sem_aula=tempos_sem_aula if tipo in DEFAULT_TIPOS_SEM_AULA else 0,
             )
             db.session.add(aula)
             db.session.commit()
@@ -1292,6 +1293,19 @@ def create_app():
             sumarios_txt = (request.form.get("sumarios") or "").strip()
             sumario_txt = (request.form.get("sumario") or "").strip()
             tipo = request.form.get("tipo") or "normal"
+            tempos_sem_aula = request.form.get("tempos_sem_aula", type=int)
+
+            sumarios_originais = [s.strip() for s in sumarios_txt.split(",") if s.strip()]
+            total_previsto = len(sumarios_originais) if sumarios_originais else 1
+            if tempos_sem_aula is None:
+                tempos_sem_aula = (
+                    aula.tempos_sem_aula if tipo in DEFAULT_TIPOS_SEM_AULA else 0
+                )
+            if tempos_sem_aula is None:
+                tempos_sem_aula = (
+                    total_previsto if tipo in DEFAULT_TIPOS_SEM_AULA else 0
+                )
+            tempos_sem_aula = max(0, min(tempos_sem_aula, total_previsto))
 
             if not data or not modulo_id:
                 flash("Data e Módulo são obrigatórios.", "error")
