@@ -1133,6 +1133,10 @@ def create_app():
         if sumario_txt is not None:
             aula.sumario = sumario_txt.strip()
 
+        observacoes_txt = request.form.get("observacoes")
+        if observacoes_txt is not None:
+            aula.observacoes = observacoes_txt.strip()
+
         tipo_original = aula.tipo
         novo_tipo_raw = request.form.get("tipo")
         novo_tipo = (novo_tipo_raw if novo_tipo_raw is not None else aula.tipo) or "normal"
@@ -1164,6 +1168,16 @@ def create_app():
         periodo_id = request.form.get("periodo_id", type=int)
         redirect_view = request.form.get("view")
         data_ref = request.form.get("data_ref")
+
+        if redirect_view == "aulas_especiais":
+            filtros = {
+                "tipo": request.form.get("tipo_filtro") or None,
+                "turma_id": request.form.get("turma_filtro", type=int),
+                "data_inicio": request.form.get("data_inicio") or None,
+                "data_fim": request.form.get("data_fim") or None,
+            }
+            filtros_limpos = {k: v for k, v in filtros.items() if v}
+            return redirect(url_for("calendario_aulas_especiais", **filtros_limpos))
 
         if redirect_view == "dia" and data_ref:
             return redirect(

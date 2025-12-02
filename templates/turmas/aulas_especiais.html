@@ -39,22 +39,20 @@
 </form>
 
 {% if aulas %}
-  <div class="table-responsive">
-    <table class="table table-striped table-bordered align-middle">
-      <thead class="table-dark">
-        <tr>
-          <th>Turma</th>
-          <th>Data</th>
-          <th>Tipo</th>
-          <th>Módulo</th>
-          <th>N.º Sumário(s)</th>
-          <th>Aula / Total</th>
-          <th style="width: 35%;">Sumário</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for a in aulas %}
-          {% set sem_aula = a.tipo in tipos_sem_aula %}
+      <div class="table-responsive">
+        <table class="table table-striped table-bordered align-middle">
+          <thead class="table-dark">
+            <tr>
+              <th>Turma</th>
+              <th>Data</th>
+              <th>Tipo</th>
+              <th style="width: 35%;">Sumário</th>
+              <th style="width: 25%;">Observações</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in aulas %}
+              {% set sem_aula = a.tipo in tipos_sem_aula %}
           <tr>
             <td class="fw-semibold">{{ a.turma.nome if a.turma else '—' }}</td>
             <td class="text-nowrap">
@@ -66,13 +64,27 @@
             <td>
               <span class="badge bg-secondary text-light">{{ tipo_labels.get(a.tipo, a.tipo) }}</span>
             </td>
-            <td>{{ a.modulo.nome if a.modulo else '—' }}</td>
-            <td>{% if sem_aula %}—{% else %}{{ a.sumarios or '' }}{% endif %}</td>
-            <td>
-              <div>Aula {% if sem_aula %}—{% else %}{{ a.numero_modulo or '' }}{% endif %}</div>
-              <div class="text-muted">Total {% if sem_aula %}—{% else %}{{ a.total_geral or '' }}{% endif %}</div>
-            </td>
             <td>{{ a.sumario or '' }}</td>
+            <td>
+              <form
+                method="post"
+                action="{{ url_for('calendario_update_sumario', turma_id=a.turma.id, aula_id=a.id) }}"
+                class="d-flex flex-column gap-2"
+              >
+                <input type="hidden" name="view" value="aulas_especiais" />
+                <input type="hidden" name="tipo_filtro" value="{{ filtro_tipo or '' }}" />
+                <input type="hidden" name="turma_filtro" value="{{ filtro_turma_id or '' }}" />
+                <input type="hidden" name="data_inicio" value="{{ data_inicio.isoformat() if data_inicio else '' }}" />
+                <input type="hidden" name="data_fim" value="{{ data_fim.isoformat() if data_fim else '' }}" />
+                <textarea
+                  name="observacoes"
+                  class="form-control"
+                  rows="2"
+                  placeholder="Observações"
+                >{{ a.observacoes or '' }}</textarea>
+                <button type="submit" class="btn btn-sm btn-primary align-self-start">Guardar</button>
+              </form>
+            </td>
           </tr>
         {% endfor %}
       </tbody>
