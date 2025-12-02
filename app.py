@@ -57,6 +57,8 @@ TIPOS_AULA = [
     ("extra", "Extra"),
 ]
 
+TIPOS_ESPECIAIS = ["greve", "servico_oficial", "outros", "extra", "faltei"]
+
 
 # --------------------------------------------
 # Funções auxiliares fora da factory
@@ -637,6 +639,61 @@ def create_app():
             tipos_aula=TIPOS_AULA,
             turmas=todas_turmas,
             anos_fechados=anos_fechados,
+        )
+
+    @app.route("/calendario/aulas-especiais")
+    def calendario_aulas_especiais():
+        tipo_filtro = request.args.get("tipo") or None
+        turma_filtro = request.args.get("turma_id", type=int)
+        data_inicio = _parse_date_form(request.args.get("data_inicio"))
+        data_fim = _parse_date_form(request.args.get("data_fim"))
+
+        tipos_validos = set(TIPOS_ESPECIAIS)
+        if tipo_filtro not in tipos_validos:
+            tipo_filtro = None
+
+        turmas = Turma.query.order_by(Turma.nome).all()
+
+        query = (
+            CalendarioAula.query.options(
+                joinedload(CalendarioAula.turma),
+                joinedload(CalendarioAula.modulo),
+            )
+            .filter(CalendarioAula.apagado == False)  # noqa: E712
+            .filter(CalendarioAula.tipo.in_(TIPOS_ESPECIAIS))
+            .join(Turma)
+        )
+
+        if turma_filtro:
+            query = query.filter(CalendarioAula.turma_id == turma_filtro)
+        if tipo_filtro:
+            query = query.filter(CalendarioAula.tipo == tipo_filtro)
+        if data_inicio:
+            query = query.filter(CalendarioAula.data >= data_inicio)
+        if data_fim:
+            query = query.filter(CalendarioAula.data <= data_fim)
+
+        aulas = (
+            query.order_by(
+                CalendarioAula.data.desc(),
+                Turma.nome.asc(),
+                CalendarioAula.id.desc(),
+            )
+            .all()
+        )
+
+        return render_template(
+            "turmas/aulas_especiais.html",
+            aulas=aulas,
+            tipos_aula=TIPOS_AULA,
+            tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
+            tipo_labels=dict(TIPOS_AULA),
+            tipos_especiais=TIPOS_ESPECIAIS,
+            filtro_tipo=tipo_filtro,
+            filtro_turma_id=turma_filtro,
+            data_inicio=data_inicio,
+            data_fim=data_fim,
+            turmas=turmas,
         )
 
     @app.route("/turmas/<int:turma_id>/calendario/export/json")
