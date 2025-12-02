@@ -214,7 +214,15 @@ def expand_dates(data_inicial: Optional[date], data_text: Optional[str]) -> List
         if " a " in t:
             esquerda, direita = t.split(" a ", 1)
             d2 = _parse_pt_date(direita)
-            d1 = _parse_pt_date(esquerda, fallback_year=d2.year)
+            try:
+                d1 = _parse_pt_date(esquerda, fallback_year=d2.year)
+            except ValueError:
+                # Caso "22 a 28 de janeiro de 2026" ou "10 a 11 de novembro de 2025"
+                # em que o mês/ano só aparecem à direita, reutilizamos os de d2.
+                apenas_dia = re.match(r"^\s*(\d{1,2})\s*$", esquerda)
+                if not apenas_dia:
+                    raise
+                d1 = date(d2.year, d2.month, int(apenas_dia.group(1)))
             if d2 < d1:
                 d1, d2 = d2, d1
             dias = []
