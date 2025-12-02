@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 
-<h2>Aulas especiais</h2>
+<h2>Outras datas</h2>
 <p class="text-muted">Visualização de greves, serviço oficial, faltei, outros e extras em todas as turmas.</p>
 
 <form method="get" class="row g-3 align-items-end mb-4">
@@ -71,7 +71,7 @@
                 action="{{ url_for('calendario_update_sumario', turma_id=a.turma.id, aula_id=a.id) }}"
                 class="d-flex flex-column gap-2"
               >
-                <input type="hidden" name="view" value="aulas_especiais" />
+                <input type="hidden" name="view" value="outras_datas" />
                 <input type="hidden" name="tipo_filtro" value="{{ filtro_tipo or '' }}" />
                 <input type="hidden" name="turma_filtro" value="{{ filtro_turma_id or '' }}" />
                 <input type="hidden" name="data_inicio" value="{{ data_inicio.isoformat() if data_inicio else '' }}" />

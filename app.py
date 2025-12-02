@@ -641,8 +641,8 @@ def create_app():
             anos_fechados=anos_fechados,
         )
 
-    @app.route("/calendario/aulas-especiais")
-    def calendario_aulas_especiais():
+    @app.route("/calendario/outras-datas")
+    def calendario_outras_datas():
         tipo_filtro = request.args.get("tipo") or None
         turma_filtro = request.args.get("turma_id", type=int)
         data_inicio = _parse_date_form(request.args.get("data_inicio"))
@@ -683,7 +683,7 @@ def create_app():
         )
 
         return render_template(
-            "turmas/aulas_especiais.html",
+            "turmas/outras_datas.html",
             aulas=aulas,
             tipos_aula=TIPOS_AULA,
             tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
@@ -1169,7 +1169,7 @@ def create_app():
         redirect_view = request.form.get("view")
         data_ref = request.form.get("data_ref")
 
-        if redirect_view == "aulas_especiais":
+        if redirect_view == "outras_datas":
             filtros = {
                 "tipo": request.form.get("tipo_filtro") or None,
                 "turma_id": request.form.get("turma_filtro", type=int),
@@ -1177,7 +1177,7 @@ def create_app():
                 "data_fim": request.form.get("data_fim") or None,
             }
             filtros_limpos = {k: v for k, v in filtros.items() if v}
-            return redirect(url_for("calendario_aulas_especiais", **filtros_limpos))
+            return redirect(url_for("calendario_outras_datas", **filtros_limpos))
 
         if redirect_view == "dia" and data_ref:
             return redirect(
