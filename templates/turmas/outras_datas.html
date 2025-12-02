@@ -136,6 +136,11 @@
           {% endfor %}
         </select>
       </div>
+      <div class="col-12 col-md-4 col-lg-3">
+        <label class="form-label">Tempos sem aula</label>
+        <input type="number" name="tempos_sem_aula" class="form-control" min="0" placeholder="opcional">
+        <div class="form-text">Usado quando o novo tipo for Faltei/Serviço oficial/Outros.</div>
+      </div>
 
       <input type="hidden" name="tipo_filtro" value="{{ filtro_tipo or '' }}" />
       <input type="hidden" name="turma_filtro" value="{{ filtro_turma_id or '' }}" />

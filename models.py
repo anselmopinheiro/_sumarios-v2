@@ -297,6 +297,9 @@ class CalendarioAula(db.Model):
 
     apagado = db.Column(db.Boolean, default=False, nullable=False)
 
+    # Número de tempos que não contam para a numeração (aplicável em faltas, serviço oficial, etc.)
+    tempos_sem_aula = db.Column(db.Integer, default=0)
+
     observacoes = db.Column(db.Text)
     sumario = db.Column(db.Text)
 

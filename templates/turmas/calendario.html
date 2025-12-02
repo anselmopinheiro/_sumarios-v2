@@ -104,7 +104,14 @@
     </thead>
     <tbody>
       {% for a in aulas %}
+        {% set sumarios_limpos = (a.sumarios or '').split(',')|map('trim')|reject('equalto','')|list %}
+        {% set total_previsto = sumarios_limpos|length if sumarios_limpos|length > 0 else 1 %}
+        {% set faltas = a.tempos_sem_aula if a.tempos_sem_aula is not none else (total_previsto if a.tipo in tipos_sem_aula else 0) %}
+        {% set faltas = [faltas, total_previsto]|min %}
+        {% set faltas = [faltas, 0]|max %}
         {% set sem_aula = a.tipo in tipos_sem_aula %}
+        {% set sem_aula_total = sem_aula and faltas >= total_previsto %}
+        {% set aulas_contam = total_previsto - faltas if sem_aula else total_previsto %}
         <tr>
           <td class="w-100">
             <div class="d-flex flex-wrap gap-1 mb-2">
@@ -122,10 +129,10 @@
                 {% if a.modulo %}{{ a.modulo.nome }}{% else %}Sem módulo{% endif %}
               </span>
               <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
-                Aula {% if sem_aula %}—{% else %}{{ a.numero_modulo or '—' }}{% endif %}
+                Aula {% if sem_aula_total %}—{% else %}{{ a.numero_modulo or '—' }}{% endif %}
               </span>
               <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
-                Total {% if sem_aula %}—{% else %}{{ a.total_geral or '—' }}{% endif %}
+                Total {% if sem_aula_total %}—{% else %}{{ a.total_geral or '—' }}{% endif %}
               </span>
             </div>
 
@@ -140,10 +147,21 @@
                 {% if periodo_atual %}
                   <input type="hidden" name="periodo_id" value="{{ periodo_atual.id }}">
                 {% endif %}
+                <div class="d-flex align-items-start gap-2">
                 <textarea name="sumario"
                           class="form-control form-control-sm"
                           rows="2"
                           placeholder="Escrever sumário...">{{ a.sumario or '' }}</textarea>
+                  <div class="d-flex flex-column" style="width: 120px;">
+                    <label class="form-label form-label-sm mb-1">Tempos (sem aula)</label>
+                    <input type="number"
+                           name="tempos_sem_aula"
+                           form="{{ form_id }}"
+                           class="form-control form-control-sm"
+                           min="0"
+                           value="{{ faltas if sem_aula else total_previsto }}">
+                  </div>
+                </div>
               </form>
             {% endif %}
           </td>

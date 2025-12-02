@@ -46,7 +46,7 @@
              value="{{ aula.total_geral if aula and aula.total_geral is not none else '' }}">
     </div>
 
-    <div class="col-md-4 mb-3">
+    <div class="col-md-3 mb-3">
       <label class="form-label">Tipo</label>
       <select name="tipo" class="form-select">
         {% set valor_tipo = aula.tipo if aula else "normal" %}
@@ -54,6 +54,14 @@
           <option value="{{ valor }}" {% if valor_tipo == valor %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
+    </div>
+    <div class="col-md-3 mb-3">
+      {% set sumarios_limpos = (aula.sumarios or '').split(',')|map('trim')|reject('equalto','')|list if aula else [] %}
+      {% set total_previsto = sumarios_limpos|length if sumarios_limpos|length > 0 else 1 %}
+      {% set tempos_default = aula.tempos_sem_aula if aula and aula.tempos_sem_aula is not none else (total_previsto if aula and aula.tipo in tipos_sem_aula else 0) %}
+      <label class="form-label">Tempos sem aula</label>
+      <input type="number" name="tempos_sem_aula" class="form-control" min="0" value="{{ tempos_default or 0 }}">
+      <div class="form-text">Usado em faltei/serviço oficial/outros para indicar quantos tempos não contam.</div>
     </div>
   </div>
 

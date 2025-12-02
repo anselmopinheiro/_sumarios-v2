@@ -603,6 +603,7 @@ def criar_aula_extra(
         tipo="extra",
         sumarios=sumarios_placeholder,
         sumario=(sumario or "").strip() or None,
+        tempos_sem_aula=0,
         observacoes=(observacoes or "").strip() or None,
     )
     db.session.add(aula)
@@ -637,6 +638,7 @@ def exportar_sumarios_json(
                 "observacoes": aula.observacoes,
                 "tipo": aula.tipo,
                 "periodo_id": aula.periodo_id,
+                "tempos_sem_aula": aula.tempos_sem_aula,
             }
         )
 
@@ -704,6 +706,7 @@ def exportar_outras_datas_json(
                 "observacoes": aula.observacoes,
                 "tipo": aula.tipo,
                 "periodo_id": aula.periodo_id,
+                "tempos_sem_aula": aula.tempos_sem_aula,
             }
         )
 
@@ -863,6 +866,7 @@ def importar_sumarios_json(turma: Turma, linhas: List[Dict[str, object]]) -> Dic
             "sumario": linha.get("sumario"),
             "observacoes": linha.get("observacoes"),
             "tipo": linha.get("tipo") or "normal",
+            "tempos_sem_aula": linha.get("tempos_sem_aula"),
         }
 
         if existente:
@@ -907,19 +911,23 @@ def renumerar_calendario_turma(
     progresso_modulo: Dict[int, int] = defaultdict(int)
 
     for aula in aulas:
+        total_previsto = _total_previsto_para_aula(aula)
         sem_aula = aula.tipo in tipos_sem_aula
-        sumarios_originais = [
-            s.strip() for s in (aula.sumarios or "").split(",") if s.strip()
-        ]
-        quantidade = 0 if sem_aula else (len(sumarios_originais) if sumarios_originais else 1)
+        faltas = aula.tempos_sem_aula if aula.tempos_sem_aula is not None else (
+            total_previsto if sem_aula else 0
+        )
+        faltas = max(0, min(faltas, total_previsto))
+        aula.tempos_sem_aula = faltas if sem_aula else 0
 
-        if sem_aula:
-            # Mantém o sumário preenchido nesse dia, mas sem contar para os totais.
-            aula.sumarios = aula.sumarios or ""
-        else:
+        quantidade = total_previsto - faltas if sem_aula else total_previsto
+
+        if quantidade > 0:
             novos_sumarios = list(range(total_global + 1, total_global + quantidade + 1))
             total_global += quantidade
             aula.sumarios = ",".join(str(n) for n in novos_sumarios)
+        else:
+            # Mantém o sumário preenchido nesse dia, mas sem contar para os totais.
+            aula.sumarios = aula.sumarios or ""
 
         aula.total_geral = total_global
 
@@ -980,9 +988,17 @@ def _periodo_para_data_periodos(periodos: List[Periodo], data: date) -> Optional
 
 
 def _contar_aulas(aula: CalendarioAula) -> int:
-    if aula.tipo in DEFAULT_TIPOS_SEM_AULA:
-        return 0
+    total_previsto = _total_previsto_para_aula(aula)
 
+    if aula.tipo in DEFAULT_TIPOS_SEM_AULA:
+        faltas = aula.tempos_sem_aula if aula.tempos_sem_aula is not None else total_previsto
+        faltas = max(0, min(faltas, total_previsto))
+        return max(total_previsto - faltas, 0)
+
+    return total_previsto
+
+
+def _total_previsto_para_aula(aula: CalendarioAula) -> int:
     sumarios = [s.strip() for s in (aula.sumarios or "").split(",") if s.strip()]
     return len(sumarios) if sumarios else 1
 

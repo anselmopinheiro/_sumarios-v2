@@ -754,6 +754,7 @@ def create_app():
         filtros_limpos = _filtros_outras_datas_redirect(
             tipo_filtro, turma_filtro, data_inicio, data_fim
         )
+        tempos_sem_aula = request.form.get("tempos_sem_aula", type=int)
 
         data_alvo = _parse_date_form(data_txt)
         tipos_validos = {valor for valor, _ in TIPOS_AULA if valor != "extra"}
@@ -793,6 +794,20 @@ def create_app():
                 continue
 
             aula.tipo = novo_tipo
+            sumarios_originais = [
+                s.strip() for s in (aula.sumarios or "").split(",") if s.strip()
+            ]
+            total_previsto = len(sumarios_originais) if sumarios_originais else 1
+            if novo_tipo in DEFAULT_TIPOS_SEM_AULA:
+                valor_tempos = tempos_sem_aula
+                if valor_tempos is None:
+                    valor_tempos = aula.tempos_sem_aula
+                if valor_tempos is None:
+                    valor_tempos = total_previsto
+                aula.tempos_sem_aula = max(0, min(valor_tempos, total_previsto))
+            else:
+                aula.tempos_sem_aula = 0
+
             turmas_para_renumerar.add(aula.turma_id)
             alteracoes += 1
 
@@ -1136,6 +1151,19 @@ def create_app():
             sumarios_txt = (request.form.get("sumarios") or "").strip()
             sumario_txt = (request.form.get("sumario") or "").strip()
             tipo = request.form.get("tipo") or "normal"
+            tempos_sem_aula = request.form.get("tempos_sem_aula", type=int)
+
+            sumarios_originais = [s.strip() for s in sumarios_txt.split(",") if s.strip()]
+            total_previsto = len(sumarios_originais) if sumarios_originais else 1
+            if tempos_sem_aula is None:
+                tempos_sem_aula = (
+                    aula.tempos_sem_aula if tipo in DEFAULT_TIPOS_SEM_AULA else 0
+                )
+            if tempos_sem_aula is None:
+                tempos_sem_aula = (
+                    total_previsto if tipo in DEFAULT_TIPOS_SEM_AULA else 0
+                )
+            tempos_sem_aula = max(0, min(tempos_sem_aula, total_previsto))
 
             if not data or not modulo_id:
                 flash("Data e Módulo são obrigatórios.", "error")
@@ -1260,6 +1288,7 @@ def create_app():
                     redirect_view=redirect_view,
                     data_ref=data_ref,
                     tipos_aula=TIPOS_AULA,
+                    tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
                 )
 
             aula.data = data
@@ -1269,6 +1298,7 @@ def create_app():
             aula.sumarios = sumarios_txt
             aula.sumario = sumario_txt
             aula.tipo = tipo
+            aula.tempos_sem_aula = tempos_sem_aula if tipo in DEFAULT_TIPOS_SEM_AULA else 0
 
             db.session.commit()
             renumerar_calendario_turma(turma.id)
@@ -1308,6 +1338,7 @@ def create_app():
             redirect_view=redirect_view,
             data_ref=data_ref,
             tipos_aula=TIPOS_AULA,
+            tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
         )
 
     @app.route("/turmas/<int:turma_id>/calendario/<int:aula_id>/delete", methods=["POST"])
@@ -1385,6 +1416,20 @@ def create_app():
         if isinstance(novo_tipo, str):
             novo_tipo = novo_tipo.strip()
         aula.tipo = novo_tipo
+
+        tempos_sem_aula = request.form.get("tempos_sem_aula", type=int)
+        sumarios_originais = [
+            s.strip() for s in (aula.sumarios or "").split(",") if s.strip()
+        ]
+        total_previsto = len(sumarios_originais) if sumarios_originais else 1
+        if tempos_sem_aula is None:
+            tempos_sem_aula = (
+                aula.tempos_sem_aula if novo_tipo in DEFAULT_TIPOS_SEM_AULA else 0
+            )
+        if tempos_sem_aula is None:
+            tempos_sem_aula = total_previsto if novo_tipo in DEFAULT_TIPOS_SEM_AULA else 0
+        tempos_sem_aula = max(0, min(tempos_sem_aula, total_previsto))
+        aula.tempos_sem_aula = tempos_sem_aula if novo_tipo in DEFAULT_TIPOS_SEM_AULA else 0
 
         db.session.commit()
 
