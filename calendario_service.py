@@ -5,6 +5,8 @@ from datetime import date, timedelta
 from typing import List, Dict, Set, Tuple, Optional
 from collections import defaultdict
 
+from sqlalchemy import func
+
 from models import (
     db,
     Turma,
@@ -506,6 +508,7 @@ def gerar_calendario_turma(turma_id: int, recalcular_tudo: bool = True) -> int:
 
 
 DEFAULT_TIPOS_SEM_AULA: Set[str] = {"greve", "servico_oficial", "faltei", "outros"}
+TIPOS_ESPECIAIS: Set[str] = {"greve", "servico_oficial", "outros", "extra", "faltei"}
 
 
 # ----------------------------------------
@@ -630,12 +633,144 @@ def exportar_sumarios_json(
                 "total_geral": aula.total_geral,
                 "sumarios": aula.sumarios,
                 "sumario": aula.sumario,
+                "observacoes": aula.observacoes,
                 "tipo": aula.tipo,
                 "periodo_id": aula.periodo_id,
             }
         )
 
     return resultado
+
+
+def listar_aulas_especiais(
+    turma_id: int | None = None,
+    tipo: str | None = None,
+    data_inicio: date | None = None,
+    data_fim: date | None = None,
+):
+    tipos_validos = set(TIPOS_ESPECIAIS)
+    query = (
+        CalendarioAula.query.options(
+            joinedload(CalendarioAula.turma),
+            joinedload(CalendarioAula.modulo),
+        )
+        .filter(CalendarioAula.apagado == False)  # noqa: E712
+        .filter(CalendarioAula.tipo.in_(TIPOS_ESPECIAIS))
+    )
+
+    if turma_id:
+        query = query.filter(CalendarioAula.turma_id == turma_id)
+    if tipo in tipos_validos:
+        query = query.filter(CalendarioAula.tipo == tipo)
+    if data_inicio:
+        query = query.filter(CalendarioAula.data >= data_inicio)
+    if data_fim:
+        query = query.filter(CalendarioAula.data <= data_fim)
+
+    return (
+        query.order_by(
+            CalendarioAula.data.desc(),
+            Turma.nome.asc(),
+            CalendarioAula.id.desc(),
+        )
+        .join(Turma)
+        .all()
+    )
+
+
+def exportar_outras_datas_json(
+    turma_id: int | None = None,
+    tipo: str | None = None,
+    data_inicio: date | None = None,
+    data_fim: date | None = None,
+) -> List[Dict[str, object]]:
+    aulas = listar_aulas_especiais(turma_id, tipo, data_inicio, data_fim)
+
+    resultado: List[Dict[str, object]] = []
+    for aula in aulas:
+        resultado.append(
+            {
+                "turma_id": aula.turma_id,
+                "turma_nome": aula.turma.nome if aula.turma else None,
+                "data": aula.data.isoformat() if aula.data else None,
+                "weekday": aula.weekday,
+                "modulo_id": aula.modulo_id,
+                "modulo_nome": aula.modulo.nome if aula.modulo else None,
+                "numero_modulo": aula.numero_modulo,
+                "total_geral": aula.total_geral,
+                "sumarios": aula.sumarios,
+                "sumario": aula.sumario,
+                "observacoes": aula.observacoes,
+                "tipo": aula.tipo,
+                "periodo_id": aula.periodo_id,
+            }
+        )
+
+    return resultado
+
+
+def importar_outras_datas_json(
+    linhas: List[Dict[str, object]],
+) -> tuple[Dict[str, int], list[str], list[str], set[int]]:
+    contadores = {"criados": 0, "atualizados": 0, "ignorados": 0}
+    turmas_fechadas: list[str] = []
+    turmas_inexistentes: list[str] = []
+    turmas_para_renumerar: set[int] = set()
+
+    linhas_por_turma: Dict[int, List[Dict[str, object]]] = defaultdict(list)
+
+    for linha in linhas:
+        tipo = (linha.get("tipo") or "").strip() or "normal"
+        if tipo not in TIPOS_ESPECIAIS:
+            contadores["ignorados"] += 1
+            continue
+
+        turma_id = linha.get("turma_id") or None
+        turma_nome = None
+        turma_payload = linha.get("turma") if isinstance(linha.get("turma"), dict) else None
+        if turma_payload:
+            turma_nome = turma_payload.get("nome")
+            turma_id = turma_id or turma_payload.get("id")
+        if not turma_id:
+            turma_nome = turma_nome or linha.get("turma_nome")
+
+        turma: Turma | None = None
+        if turma_id:
+            turma = Turma.query.get(turma_id)
+        if not turma and turma_nome:
+            turma = Turma.query.filter(func.lower(Turma.nome) == str(turma_nome).lower()).first()
+
+        if not turma:
+            contadores["ignorados"] += 1
+            if turma_nome:
+                turmas_inexistentes.append(str(turma_nome))
+            continue
+
+        ano = turma.ano_letivo
+        if ano and ano.fechado:
+            contadores["ignorados"] += 1
+            turmas_fechadas.append(turma.nome)
+            continue
+
+        linha = dict(linha)
+        linha["tipo"] = tipo
+        linhas_por_turma[turma.id].append(linha)
+
+    for turma_id, linhas_turma in linhas_por_turma.items():
+        turma = Turma.query.get(turma_id)
+        if not turma:
+            continue
+
+        resultado = importar_sumarios_json(turma, linhas_turma)
+        contadores["criados"] += resultado.get("criados", 0)
+        contadores["atualizados"] += resultado.get("atualizados", 0)
+        contadores["ignorados"] += resultado.get("ignorados", 0)
+        turmas_para_renumerar.add(turma_id)
+
+    for turma_id in turmas_para_renumerar:
+        renumerar_calendario_turma(turma_id)
+
+    return contadores, turmas_fechadas, turmas_inexistentes, turmas_para_renumerar
 
 
 def importar_sumarios_json(turma: Turma, linhas: List[Dict[str, object]]) -> Dict[str, int]:
@@ -725,6 +860,7 @@ def importar_sumarios_json(turma: Turma, linhas: List[Dict[str, object]]) -> Dic
             "total_geral": linha.get("total_geral"),
             "sumarios": linha.get("sumarios"),
             "sumario": linha.get("sumario"),
+            "observacoes": linha.get("observacoes"),
             "tipo": linha.get("tipo") or "normal",
         }
 

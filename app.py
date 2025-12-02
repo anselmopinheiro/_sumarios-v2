@@ -46,6 +46,9 @@ from calendario_service import (
     DEFAULT_TIPOS_SEM_AULA,
     exportar_sumarios_json,
     importar_sumarios_json,
+    exportar_outras_datas_json,
+    importar_outras_datas_json,
+    listar_aulas_especiais,
 )
 
 
@@ -110,6 +113,35 @@ def _ler_modulos_form():
         })
 
     return modulos
+
+
+def _extrair_filtros_outras_datas(origem):
+    tipo_bruto = origem.get("tipo") or origem.get("tipo_filtro")
+    tipo_filtro = tipo_bruto if tipo_bruto in TIPOS_ESPECIAIS else None
+
+    turma_raw = origem.get("turma_id") or origem.get("turma_filtro")
+    try:
+        turma_filtro = int(turma_raw) if turma_raw else None
+    except (TypeError, ValueError):
+        turma_filtro = None
+
+    data_inicio = _parse_date_form(origem.get("data_inicio"))
+    data_fim = _parse_date_form(origem.get("data_fim"))
+
+    return tipo_filtro, turma_filtro, data_inicio, data_fim
+
+
+def _filtros_outras_datas_redirect(tipo, turma_id, data_inicio, data_fim):
+    filtros = {}
+    if tipo:
+        filtros["tipo"] = tipo
+    if turma_id:
+        filtros["turma_id"] = turma_id
+    if data_inicio:
+        filtros["data_inicio"] = data_inicio.isoformat()
+    if data_fim:
+        filtros["data_fim"] = data_fim.isoformat()
+    return filtros
 
 
 def criar_periodo_modular_para_modulo(modulo: Modulo) -> Periodo:
@@ -644,44 +676,12 @@ def create_app():
 
     @app.route("/calendario/outras-datas")
     def calendario_outras_datas():
-        tipo_filtro = request.args.get("tipo") or None
-        turma_filtro = request.args.get("turma_id", type=int)
-        data_inicio = _parse_date_form(request.args.get("data_inicio"))
-        data_fim = _parse_date_form(request.args.get("data_fim"))
-
-        tipos_validos = set(TIPOS_ESPECIAIS)
-        if tipo_filtro not in tipos_validos:
-            tipo_filtro = None
+        tipo_filtro, turma_filtro, data_inicio, data_fim = _extrair_filtros_outras_datas(
+            request.args
+        )
 
         turmas = Turma.query.order_by(Turma.nome).all()
-
-        query = (
-            CalendarioAula.query.options(
-                joinedload(CalendarioAula.turma),
-                joinedload(CalendarioAula.modulo),
-            )
-            .filter(CalendarioAula.apagado == False)  # noqa: E712
-            .filter(CalendarioAula.tipo.in_(TIPOS_ESPECIAIS))
-            .join(Turma)
-        )
-
-        if turma_filtro:
-            query = query.filter(CalendarioAula.turma_id == turma_filtro)
-        if tipo_filtro:
-            query = query.filter(CalendarioAula.tipo == tipo_filtro)
-        if data_inicio:
-            query = query.filter(CalendarioAula.data >= data_inicio)
-        if data_fim:
-            query = query.filter(CalendarioAula.data <= data_fim)
-
-        aulas = (
-            query.order_by(
-                CalendarioAula.data.desc(),
-                Turma.nome.asc(),
-                CalendarioAula.id.desc(),
-            )
-            .all()
-        )
+        aulas = listar_aulas_especiais(turma_filtro, tipo_filtro, data_inicio, data_fim)
 
         return render_template(
             "turmas/outras_datas.html",
@@ -699,6 +699,9 @@ def create_app():
 
     @app.route("/calendario/outras-datas/add", methods=["POST"])
     def calendario_outras_datas_add():
+        tipo_filtro, turma_filtro, data_inicio, data_fim = _extrair_filtros_outras_datas(
+            request.form
+        )
         turma_id = request.form.get("turma_id", type=int)
         data_txt = request.form.get("data")
         data_aula = _parse_date_form(data_txt)
@@ -706,13 +709,9 @@ def create_app():
         sumario_txt = request.form.get("sumario")
         observacoes_txt = request.form.get("observacoes")
 
-        filtros = {
-            "tipo": request.form.get("tipo_filtro") or None,
-            "turma_id": request.form.get("turma_filtro", type=int) or turma_id,
-            "data_inicio": request.form.get("data_inicio") or None,
-            "data_fim": request.form.get("data_fim") or None,
-        }
-        filtros_limpos = {k: v for k, v in filtros.items() if v}
+        filtros_limpos = _filtros_outras_datas_redirect(
+            tipo_filtro, turma_filtro or turma_id, data_inicio, data_fim
+        )
 
         if not turma_id:
             flash("Seleciona a turma para adicionar a aula extra.", "error")
@@ -748,13 +747,12 @@ def create_app():
         data_txt = request.form.get("data")
         novo_tipo = request.form.get("novo_tipo")
 
-        filtros = {
-            "tipo": request.form.get("tipo_filtro") or None,
-            "turma_id": request.form.get("turma_filtro", type=int) or None,
-            "data_inicio": request.form.get("data_inicio") or None,
-            "data_fim": request.form.get("data_fim") or None,
-        }
-        filtros_limpos = {k: v for k, v in filtros.items() if v}
+        tipo_filtro, turma_filtro, data_inicio, data_fim = _extrair_filtros_outras_datas(
+            request.form
+        )
+        filtros_limpos = _filtros_outras_datas_redirect(
+            tipo_filtro, turma_filtro, data_inicio, data_fim
+        )
 
         data_alvo = _parse_date_form(data_txt)
         tipos_validos = {valor for valor, _ in TIPOS_AULA if valor != "extra"}
@@ -814,6 +812,129 @@ def create_app():
             msg_sucesso += f" Turmas bloqueadas: {', '.join(sorted(set(turmas_bloqueadas)))}."
         flash(msg_sucesso, "success")
 
+        return redirect(url_for("calendario_outras_datas", **filtros_limpos))
+
+    @app.route("/calendario/outras-datas/export/json")
+    def calendario_outras_datas_export_json():
+        tipo_filtro, turma_filtro, data_inicio, data_fim = _extrair_filtros_outras_datas(
+            request.args
+        )
+
+        dados = exportar_outras_datas_json(turma_filtro, tipo_filtro, data_inicio, data_fim)
+        filtros_meta = _filtros_outras_datas_redirect(
+            tipo_filtro, turma_filtro, data_inicio, data_fim
+        )
+
+        turma_info = None
+        if turma_filtro:
+            turma = Turma.query.get(turma_filtro)
+            if turma:
+                turma_info = {"id": turma.id, "nome": turma.nome}
+
+        payload = json.dumps(
+            {
+                "exportado_em": date.today().isoformat(),
+                "turma": turma_info,
+                "filtros": filtros_meta,
+                "aulas": dados,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+
+        filename = f"outras_datas_{date.today().isoformat()}.json"
+        response = Response(payload, mimetype="application/json; charset=utf-8")
+        response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+        return response
+
+    @app.route("/calendario/outras-datas/export/csv")
+    def calendario_outras_datas_export_csv():
+        tipo_filtro, turma_filtro, data_inicio, data_fim = _extrair_filtros_outras_datas(
+            request.args
+        )
+
+        dados = exportar_outras_datas_json(turma_filtro, tipo_filtro, data_inicio, data_fim)
+
+        buf = io.StringIO()
+        writer = csv.writer(buf, delimiter=";")
+        writer.writerow(["Turma", "Data", "Tipo", "N.º Sumário", "Sumário", "Observações"])
+        for linha in dados:
+            data_txt = linha.get("data")
+            data_legivel = ""
+            try:
+                data_legivel = datetime.fromisoformat(data_txt).strftime("%d/%m/%Y") if data_txt else ""
+            except ValueError:
+                data_legivel = data_txt or ""
+
+            writer.writerow(
+                [
+                    linha.get("turma_nome") or "",
+                    data_legivel,
+                    dict(TIPOS_AULA).get(linha.get("tipo"), linha.get("tipo")),
+                    linha.get("sumarios") or "",
+                    linha.get("sumario") or "",
+                    linha.get("observacoes") or "",
+                ]
+            )
+
+        payload = "\ufeff" + buf.getvalue()
+        filename = f"outras_datas_{date.today().isoformat()}.csv"
+        response = Response(payload, mimetype="text/csv; charset=utf-8")
+        response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+        return response
+
+    @app.route("/calendario/outras-datas/import/json", methods=["POST"])
+    def calendario_outras_datas_import_json():
+        tipo_filtro, turma_filtro, data_inicio, data_fim = _extrair_filtros_outras_datas(
+            request.form
+        )
+        filtros_limpos = _filtros_outras_datas_redirect(
+            tipo_filtro, turma_filtro, data_inicio, data_fim
+        )
+
+        ficheiro = request.files.get("ficheiro")
+        conteudo = request.form.get("conteudo")
+        bruto: str | None = None
+
+        if ficheiro and ficheiro.filename:
+            bruto = ficheiro.read().decode("utf-8", errors="ignore")
+        elif conteudo:
+            bruto = conteudo
+
+        if not bruto:
+            flash("Seleciona um ficheiro JSON para importar.", "error")
+            return redirect(url_for("calendario_outras_datas", **filtros_limpos))
+
+        try:
+            payload = json.loads(bruto)
+        except ValueError:
+            flash("Ficheiro JSON inválido.", "error")
+            return redirect(url_for("calendario_outras_datas", **filtros_limpos))
+
+        if isinstance(payload, dict) and "aulas" in payload:
+            linhas = payload.get("aulas") or []
+        elif isinstance(payload, list):
+            linhas = payload
+        else:
+            flash("Formato de backup desconhecido: esperado array JSON de aulas.", "error")
+            return redirect(url_for("calendario_outras_datas", **filtros_limpos))
+
+        contadores, turmas_fechadas, turmas_inexistentes, _ = importar_outras_datas_json(
+            linhas
+        )
+
+        msg = (
+            "Importação concluída: "
+            f"{contadores['criados']} criadas, "
+            f"{contadores['atualizados']} atualizadas, "
+            f"{contadores['ignorados']} ignoradas."
+        )
+        if turmas_fechadas:
+            msg += f" Turmas bloqueadas: {', '.join(sorted(set(turmas_fechadas)))}."
+        if turmas_inexistentes:
+            msg += f" Turmas não encontradas: {', '.join(sorted(set(turmas_inexistentes)))}."
+
+        flash(msg, "success")
         return redirect(url_for("calendario_outras_datas", **filtros_limpos))
 
     @app.route("/turmas/<int:turma_id>/calendario/export/json")
