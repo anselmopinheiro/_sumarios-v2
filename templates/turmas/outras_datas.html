@@ -178,7 +178,12 @@
               {% endif %}
             </td>
             <td>
-              <span class="badge bg-secondary text-light">{{ tipo_labels.get(a.tipo, a.tipo) }}</span>
+              <div class="d-flex flex-column gap-1">
+                <span class="badge bg-secondary text-light">{{ tipo_labels.get(a.tipo, a.tipo) }}</span>
+                {% if a.tempos_sem_aula is not none %}
+                  <span class="badge bg-light text-dark">Tempos sem aula: {{ a.tempos_sem_aula }}</span>
+                {% endif %}
+              </div>
             </td>
             <td>{{ a.sumario or '' }}</td>
             <td>
