@@ -51,11 +51,15 @@
           {% endfor %}
         </select>
       </div>
-      <div class="col-12 col-lg-3">
+      <div class="col-12 col-lg-2">
         <label class="form-label">Data</label>
         <input type="date" name="data" class="form-control" required>
       </div>
-      <div class="col-12 col-lg-6">
+      <div class="col-12 col-lg-2">
+        <label class="form-label">N.º de aulas</label>
+        <input type="number" name="numero_aulas" class="form-control" min="1" value="1" required>
+      </div>
+      <div class="col-12 col-lg-5">
         <label class="form-label">Sumário</label>
         <textarea name="sumario" class="form-control" rows="2" placeholder="Descrição da aula"></textarea>
       </div>

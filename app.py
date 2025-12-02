@@ -702,6 +702,7 @@ def create_app():
         turma_id = request.form.get("turma_id", type=int)
         data_txt = request.form.get("data")
         data_aula = _parse_date_form(data_txt)
+        numero_aulas = request.form.get("numero_aulas", type=int) or 1
         sumario_txt = request.form.get("sumario")
         observacoes_txt = request.form.get("observacoes")
 
@@ -731,6 +732,7 @@ def create_app():
             criar_aula_extra(
                 turma,
                 data_aula,
+                numero_aulas=numero_aulas,
                 sumario=sumario_txt,
                 observacoes=observacoes_txt,
             )

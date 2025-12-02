@@ -564,6 +564,7 @@ def criar_aula_extra(
     turma: Turma,
     data: date,
     *,
+    numero_aulas: int = 1,
     sumario: str | None = None,
     observacoes: str | None = None,
 ) -> CalendarioAula:
@@ -583,6 +584,12 @@ def criar_aula_extra(
     modulos = garantir_modulos_para_turma(turma)
     modulo_id = modulos[0].id if modulos else None
 
+    quantidade = int(numero_aulas) if numero_aulas else 1
+    if quantidade < 1:
+        raise ValueError("Indica um número de aulas válido (mínimo 1).")
+
+    sumarios_placeholder = ",".join(str(n) for n in range(1, quantidade + 1))
+
     aula = CalendarioAula(
         turma_id=turma.id,
         periodo_id=periodo.id,
@@ -590,6 +597,7 @@ def criar_aula_extra(
         weekday=data.weekday(),
         modulo_id=modulo_id,
         tipo="extra",
+        sumarios=sumarios_placeholder,
         sumario=(sumario or "").strip() or None,
         observacoes=(observacoes or "").strip() or None,
     )
