@@ -14,7 +14,7 @@ from flask import (
 )
 
 from flask_migrate import Migrate
-from sqlalchemy import func, inspect
+from sqlalchemy import func, inspect, text
 from sqlalchemy.orm import joinedload
 
 from config import Config
@@ -204,7 +204,9 @@ def create_app():
         colunas = {col["name"] for col in insp.get_columns("calendario_aulas")}
         if "tempos_sem_aula" not in colunas:
             db.session.execute(
-                "ALTER TABLE calendario_aulas ADD COLUMN tempos_sem_aula INTEGER DEFAULT 0"
+                text(
+                    "ALTER TABLE calendario_aulas ADD COLUMN tempos_sem_aula INTEGER DEFAULT 0"
+                )
             )
             db.session.commit()
 
