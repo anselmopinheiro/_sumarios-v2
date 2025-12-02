@@ -115,6 +115,16 @@ def _ler_modulos_form():
     return modulos
 
 
+def _parse_date_form(value):
+    """Lê <input type='date'> em formato YYYY-MM-DD."""
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
 def _extrair_filtros_outras_datas(origem):
     tipo_bruto = origem.get("tipo") or origem.get("tipo_filtro")
     tipo_filtro = tipo_bruto if tipo_bruto in TIPOS_ESPECIAIS else None
@@ -189,15 +199,6 @@ def create_app():
     # ----------------------------------------
     # Helpers internos à app
     # ----------------------------------------
-    def _parse_date_form(value):
-        """Lê <input type='date'> em formato YYYY-MM-DD."""
-        if not value:
-            return None
-        try:
-            return datetime.strptime(value, "%Y-%m-%d").date()
-        except ValueError:
-            return None
-
     def get_ano_letivo_atual():
         """
         Ano letivo a usar no calendário escolar:
