@@ -137,7 +137,10 @@
             </div>
 
             {% if ano_fechado %}
-              {{ a.sumario or '' }}
+              <div class="mb-1">{{ a.sumario or '' }}</div>
+              {% if a.previsao %}
+                <div class="text-muted small">Previsão: {{ a.previsao }}</div>
+              {% endif %}
             {% else %}
               {% set form_id = "sumario-form-" ~ a.id %}
               <form method="post"
@@ -149,7 +152,7 @@
                 {% endif %}
                 <div class="d-flex align-items-start gap-2">
                 <textarea name="sumario"
-                          class="form-control form-control-sm"
+                          class="form-control form-control-sm js-autoresize"
                           rows="2"
                           placeholder="Escrever sumário...">{{ a.sumario or '' }}</textarea>
                   <div class="d-flex flex-column" style="width: 120px;">
@@ -166,6 +169,10 @@
                            {% if not pode_editar_tempos %}readonly{% endif %}>
                   </div>
                 </div>
+                <textarea name="previsao"
+                          class="form-control form-control-sm js-autoresize"
+                          rows="2"
+                          placeholder="Previsão da aula (planeamento)...">{{ a.previsao or '' }}</textarea>
               </form>
             {% endif %}
           </td>

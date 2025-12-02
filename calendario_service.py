@@ -578,6 +578,7 @@ def criar_aula_extra(
     *,
     numero_aulas: int = 1,
     sumario: str | None = None,
+    previsao: str | None = None,
     observacoes: str | None = None,
 ) -> CalendarioAula:
     """Cria uma aula do tipo "extra" para a turma e data indicadas.
@@ -611,6 +612,7 @@ def criar_aula_extra(
         tipo="extra",
         sumarios=sumarios_placeholder,
         sumario=(sumario or "").strip() or None,
+        previsao=(previsao or "").strip() or None,
         tempos_sem_aula=0,
         observacoes=(observacoes or "").strip() or None,
     )
@@ -643,6 +645,7 @@ def exportar_sumarios_json(
                 "total_geral": aula.total_geral,
                 "sumarios": aula.sumarios,
                 "sumario": aula.sumario,
+                "previsao": aula.previsao,
                 "observacoes": aula.observacoes,
                 "tipo": aula.tipo,
                 "periodo_id": aula.periodo_id,
@@ -711,6 +714,7 @@ def exportar_outras_datas_json(
                 "total_geral": aula.total_geral,
                 "sumarios": aula.sumarios,
                 "sumario": aula.sumario,
+                "previsao": aula.previsao,
                 "observacoes": aula.observacoes,
                 "tipo": aula.tipo,
                 "periodo_id": aula.periodo_id,
@@ -872,6 +876,7 @@ def importar_sumarios_json(turma: Turma, linhas: List[Dict[str, object]]) -> Dic
             "total_geral": linha.get("total_geral"),
             "sumarios": linha.get("sumarios"),
             "sumario": linha.get("sumario"),
+            "previsao": linha.get("previsao"),
             "observacoes": linha.get("observacoes"),
             "tipo": linha.get("tipo") or "normal",
             "tempos_sem_aula": linha.get("tempos_sem_aula"),

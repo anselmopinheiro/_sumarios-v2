@@ -95,13 +95,17 @@
         <label class="form-label">N.º de aulas</label>
         <input type="number" name="numero_aulas" class="form-control" min="1" value="1" required>
       </div>
-      <div class="col-12 col-lg-5">
+      <div class="col-12 col-lg-4">
         <label class="form-label">Sumário</label>
-        <textarea name="sumario" class="form-control" rows="2" placeholder="Descrição da aula"></textarea>
+        <textarea name="sumario" class="form-control js-autoresize" rows="2" placeholder="Descrição da aula"></textarea>
+      </div>
+      <div class="col-12 col-lg-3">
+        <label class="form-label">Previsão</label>
+        <textarea name="previsao" class="form-control js-autoresize" rows="2" placeholder="Planeamento"></textarea>
       </div>
       <div class="col-12">
         <label class="form-label">Observações</label>
-        <textarea name="observacoes" class="form-control" rows="2" placeholder="Observações adicionais"></textarea>
+        <textarea name="observacoes" class="form-control js-autoresize" rows="2" placeholder="Observações adicionais"></textarea>
       </div>
 
       <input type="hidden" name="tipo_filtro" value="{{ filtro_tipo or '' }}" />
@@ -175,6 +179,7 @@
           <tbody>
             {% for a in aulas %}
               {% set sem_aula = a.tipo in tipos_sem_aula %}
+              {% set form_id = "outras-form-" ~ a.id %}
           <tr>
             <td class="fw-semibold">{{ a.turma.nome if a.turma else '—' }}</td>
             <td class="text-nowrap">
@@ -191,10 +196,28 @@
                 {% endif %}
               </div>
             </td>
-            <td>{{ a.sumario or '' }}</td>
+            <td>
+              <div class="d-flex flex-column gap-2">
+                <textarea
+                  name="sumario"
+                  form="{{ form_id }}"
+                  class="form-control form-control-sm js-autoresize"
+                  rows="2"
+                  placeholder="Sumário"
+                >{{ a.sumario or '' }}</textarea>
+                <textarea
+                  name="previsao"
+                  form="{{ form_id }}"
+                  class="form-control form-control-sm js-autoresize"
+                  rows="2"
+                  placeholder="Previsão"
+                >{{ a.previsao or '' }}</textarea>
+              </div>
+            </td>
             <td>
               <form
                 method="post"
+                id="{{ form_id }}"
                 action="{{ url_for('calendario_update_sumario', turma_id=a.turma.id, aula_id=a.id) }}"
                 class="d-flex flex-column gap-2"
               >
@@ -205,7 +228,7 @@
                 <input type="hidden" name="data_fim" value="{{ data_fim.isoformat() if data_fim else '' }}" />
                 <textarea
                   name="observacoes"
-                  class="form-control"
+                  class="form-control js-autoresize"
                   rows="2"
                   placeholder="Observações"
                 >{{ a.observacoes or '' }}</textarea>

@@ -85,8 +85,13 @@
 
     <div class="col-md-6 mb-3">
       <label class="form-label">Sumário (descrição da aula)</label>
-      <textarea name="sumario" class="form-control" rows="3"
+      <textarea name="sumario" class="form-control js-autoresize" rows="3"
                 placeholder="Breve descrição da aula">{{ aula.sumario if aula and aula.sumario else '' }}</textarea>
+    </div>
+    <div class="col-md-6 mb-3">
+      <label class="form-label">Previsão (planeamento)</label>
+      <textarea name="previsao" class="form-control js-autoresize" rows="3"
+                placeholder="Plano para a aula">{{ aula.previsao if aula and aula.previsao else '' }}</textarea>
     </div>
   </div>
 

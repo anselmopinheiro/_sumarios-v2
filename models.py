@@ -302,5 +302,6 @@ class CalendarioAula(db.Model):
 
     observacoes = db.Column(db.Text)
     sumario = db.Column(db.Text)
+    previsao = db.Column(db.Text)
 
     turma = db.relationship("Turma", backref="calendario_aulas")

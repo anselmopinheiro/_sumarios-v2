@@ -196,12 +196,13 @@ def create_app():
     db.init_app(app)
     Migrate(app, db)
 
-    # Garantir que a coluna "tempos_sem_aula" existe em instalações que ainda não
-    # aplicaram a migração correspondente (evita erros em bases de dados antigas
-    # carregadas a partir de ficheiro).
-    def _ensure_tempos_sem_aula_column():
+    # Garantir que colunas recentes existem em instalações que ainda não
+    # aplicaram as migrações correspondentes (evita erros em bases de dados
+    # antigas carregadas a partir de ficheiro).
+    def _ensure_columns():
         insp = inspect(db.engine)
         colunas = {col["name"] for col in insp.get_columns("calendario_aulas")}
+
         if "tempos_sem_aula" not in colunas:
             db.session.execute(
                 text(
@@ -210,8 +211,14 @@ def create_app():
             )
             db.session.commit()
 
+        if "previsao" not in colunas:
+            db.session.execute(
+                text("ALTER TABLE calendario_aulas ADD COLUMN previsao TEXT")
+            )
+            db.session.commit()
+
     with app.app_context():
-        _ensure_tempos_sem_aula_column()
+        _ensure_columns()
 
     # ----------------------------------------
     # Helpers internos à app
@@ -809,6 +816,7 @@ def create_app():
         data_aula = _parse_date_form(data_txt)
         numero_aulas = request.form.get("numero_aulas", type=int) or 1
         sumario_txt = request.form.get("sumario")
+        previsao_txt = request.form.get("previsao")
         observacoes_txt = request.form.get("observacoes")
 
         filtros_limpos = _filtros_outras_datas_redirect(
@@ -835,6 +843,7 @@ def create_app():
                 data_aula,
                 numero_aulas=numero_aulas,
                 sumario=sumario_txt,
+                previsao=previsao_txt,
                 observacoes=observacoes_txt,
             )
             renumerar_calendario_turma(turma.id)
@@ -974,7 +983,15 @@ def create_app():
 
         buf = io.StringIO()
         writer = csv.writer(buf, delimiter=";")
-        writer.writerow(["Turma", "Data", "Tipo", "N.º Sumário", "Sumário", "Observações"])
+        writer.writerow([
+            "Turma",
+            "Data",
+            "Tipo",
+            "N.º Sumário",
+            "Sumário",
+            "Previsão",
+            "Observações",
+        ])
         for linha in dados:
             data_txt = linha.get("data")
             data_legivel = ""
@@ -990,6 +1007,7 @@ def create_app():
                     dict(TIPOS_AULA).get(linha.get("tipo"), linha.get("tipo")),
                     linha.get("sumarios") or "",
                     linha.get("sumario") or "",
+                    linha.get("previsao") or "",
                     linha.get("observacoes") or "",
                 ]
             )
@@ -1251,6 +1269,7 @@ def create_app():
             total_geral = request.form.get("total_geral", type=int)
             sumarios_txt = (request.form.get("sumarios") or "").strip()
             sumario_txt = (request.form.get("sumario") or "").strip()
+            previsao_txt = (request.form.get("previsao") or "").strip()
             tipo = request.form.get("tipo") or "normal"
             tempos_sem_aula = request.form.get("tempos_sem_aula", type=int)
 
@@ -1287,6 +1306,7 @@ def create_app():
                 total_geral=total_geral,
                 sumarios=sumarios_txt,
                 sumario=sumario_txt,
+                previsao=previsao_txt,
                 tipo=tipo,
                 tempos_sem_aula=tempos_sem_aula if tipo in DEFAULT_TIPOS_SEM_AULA else 0,
             )
@@ -1376,6 +1396,7 @@ def create_app():
             total_geral = request.form.get("total_geral", type=int)
             sumarios_txt = (request.form.get("sumarios") or "").strip()
             sumario_txt = (request.form.get("sumario") or "").strip()
+            previsao_txt = (request.form.get("previsao") or "").strip()
             tipo = request.form.get("tipo") or "normal"
             tempos_sem_aula = request.form.get("tempos_sem_aula", type=int)
 
@@ -1412,6 +1433,7 @@ def create_app():
             aula.total_geral = total_geral
             aula.sumarios = sumarios_txt
             aula.sumario = sumario_txt
+            aula.previsao = previsao_txt
             aula.tipo = tipo
             aula.tempos_sem_aula = tempos_sem_aula if tipo in DEFAULT_TIPOS_SEM_AULA else 0
 
@@ -1536,6 +1558,10 @@ def create_app():
         sumario_txt = request.form.get("sumario")
         if sumario_txt is not None:
             aula.sumario = sumario_txt.strip()
+
+        previsao_txt = request.form.get("previsao")
+        if previsao_txt is not None:
+            aula.previsao = previsao_txt.strip()
 
         observacoes_txt = request.form.get("observacoes")
         if observacoes_txt is not None:
