@@ -6,6 +6,7 @@ from typing import List, Dict, Set, Tuple, Optional
 from collections import defaultdict
 
 from sqlalchemy import func
+from sqlalchemy.orm import joinedload
 
 from models import (
     db,
