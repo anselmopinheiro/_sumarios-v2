@@ -1,6 +1,7 @@
 import csv
 import io
 import json
+import unicodedata
 from datetime import datetime, date, timedelta
 
 from flask import (
@@ -811,7 +812,23 @@ def create_app():
             flash("Cabeçalho do CSV inválido.", "error")
             return redirect(url_for("turma_alunos", turma_id=turma.id))
 
-        header_map = {h.strip().lower(): h for h in reader.fieldnames}
+        def _norm_header(texto: str) -> str:
+            base = unicodedata.normalize("NFD", (texto or "").strip().lower())
+            base = "".join(ch for ch in base if unicodedata.category(ch) != "Mn")
+            base = (
+                base.replace(" ", "_")
+                .replace("-", "_")
+                .replace(".", "_")
+                .replace("__", "_")
+            )
+            return base
+
+        header_map = {}
+        for h in reader.fieldnames:
+            chave = _norm_header(h)
+            if chave and chave not in header_map:
+                header_map[chave] = h
+
         obrigatorios = ["nome"]
         if not all(col in header_map for col in obrigatorios):
             flash("O CSV deve incluir pelo menos a coluna 'nome'.", "error")
@@ -819,14 +836,18 @@ def create_app():
 
         inseridos = 0
         for row in reader:
-            nome = (row.get(header_map.get("nome"), "") or "").strip()
+            def _valor(col):
+                header = header_map.get(col)
+                return (row.get(header, "") if header else "") or ""
+
+            nome = _valor("nome").strip()
             if not nome:
                 continue
-            processo = (row.get(header_map.get("processo", ""), "") or "").strip() or None
-            numero_raw = (row.get(header_map.get("numero", ""), "") or "").strip()
-            nome_curto = (row.get(header_map.get("nome_curto", ""), "") or "").strip() or None
-            nee = (row.get(header_map.get("nee", ""), "") or "").strip() or None
-            observacoes = (row.get(header_map.get("observacoes", ""), "") or "").strip() or None
+            processo = _valor("processo").strip() or None
+            numero_raw = _valor("numero").strip()
+            nome_curto = _valor("nome_curto").strip() or None
+            nee = _valor("nee").strip() or None
+            observacoes = _valor("observacoes").strip() or None
 
             numero = None
             if numero_raw:
