@@ -42,6 +42,30 @@
   </form>
 </div>
 
+{% set ns = namespace(editaveis=false) %}
+{% for dia in dias_semana %}
+  {% for a in aulas_por_data.get(dia, []) %}
+    {% if not anos_fechados.get(a.turma_id, False) %}
+      {% set ns.editaveis = true %}
+    {% endif %}
+  {% endfor %}
+{% endfor %}
+
+{% if ns.editaveis %}
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h5 class="mb-0">Sumários</h5>
+    <button type="button"
+            class="btn btn-success js-guardar-todos"
+            data-scope="#calendario-semanal"
+            data-loading-text="A guardar todos..."
+            data-error-text="Falha ao guardar">
+      Guardar todos os sumários/previsões
+    </button>
+  </div>
+{% endif %}
+
+<div id="calendario-semanal">
+
 {% for dia in dias_semana %}
   <h1 class="h4 mt-4">{{ dia.strftime('%d/%m/%Y') }}</h1>
   <div class="text-muted mb-2">{{ ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"][dia.weekday()] }}</div>
@@ -97,7 +121,7 @@
                 <form method="post"
                       id="{{ form_id }}"
                       action="{{ url_for('calendario_update_sumario', turma_id=a.turma_id, aula_id=a.id) }}"
-                      class="d-flex flex-column gap-2">
+                      class="d-flex flex-column gap-2 js-sumario-form">
                   <input type="hidden" name="view" value="semana">
                   <input type="hidden" name="data_ref" value="{{ semana_inicio.isoformat() }}">
                   {% if turma %}
@@ -173,6 +197,8 @@
     <div class="alert alert-info">Não existem aulas para esta data.</div>
   {% endif %}
 {% endfor %}
+
+</div>
 
 {% endblock %}
 
