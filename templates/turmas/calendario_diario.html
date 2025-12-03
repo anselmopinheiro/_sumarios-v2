@@ -210,6 +210,8 @@
 
           {% if not turma_fechada %}
             <td>
+              <a href="{{ url_for('calendario_aula_alunos', turma_id=a.turma_id, aula_id=a.id, return_url=request.full_path) }}"
+                 class="btn btn-sm btn-outline-info mb-1">Alunos</a>
               <a href="{{ url_for('calendario_edit', turma_id=a.turma_id, aula_id=a.id, view='dia', data_ref=data_atual.isoformat(), periodo_id=periodo_atual.id if periodo_atual else None) }}"
                 class="btn btn-sm btn-warning">
                 Editar

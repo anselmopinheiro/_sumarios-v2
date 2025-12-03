@@ -35,6 +35,7 @@ from models import (
     LivroTurma,
     TurmaDisciplina,
     Aluno,
+    AulaAluno,
 )
 
 from calendario_service import (
@@ -117,6 +118,19 @@ def _ler_modulos_form():
         })
 
     return modulos
+
+
+def _clamp_int(value, default=None, min_val=None, max_val=None):
+    try:
+        num = int(value)
+    except (TypeError, ValueError):
+        return default
+
+    if min_val is not None:
+        num = max(min_val, num)
+    if max_val is not None:
+        num = min(max_val, num)
+    return num
 
 
 def _parse_date_form(value):
@@ -221,6 +235,31 @@ def create_app():
                         nee TEXT,
                         observacoes TEXT,
                         FOREIGN KEY(turma_id) REFERENCES turmas(id)
+                    )
+                    """
+                )
+            )
+            db.session.commit()
+
+        if "aulas_alunos" not in tabelas:
+            db.session.execute(
+                text(
+                    """
+                    CREATE TABLE aulas_alunos (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        aula_id INTEGER NOT NULL,
+                        aluno_id INTEGER NOT NULL,
+                        atraso BOOLEAN NOT NULL DEFAULT 0,
+                        faltas INTEGER NOT NULL DEFAULT 0,
+                        responsabilidade INTEGER,
+                        comportamento INTEGER,
+                        participacao INTEGER,
+                        trabalho_autonomo INTEGER,
+                        portatil_material INTEGER,
+                        atividade INTEGER,
+                        CONSTRAINT fk_aula FOREIGN KEY(aula_id) REFERENCES calendario_aulas(id),
+                        CONSTRAINT fk_aluno FOREIGN KEY(aluno_id) REFERENCES alunos(id),
+                        CONSTRAINT uq_aula_aluno UNIQUE(aula_id, aluno_id)
                     )
                     """
                 )
@@ -1953,6 +1992,85 @@ def create_app():
     # ----------------------------------------
     # CALENDÁRIO – SUMÁRIOS EM LINHA
     # ----------------------------------------
+    @app.route(
+        "/turmas/<int:turma_id>/calendario/<int:aula_id>/alunos",
+        methods=["GET", "POST"],
+    )
+    def calendario_aula_alunos(turma_id, aula_id):
+        turma = Turma.query.options(joinedload(Turma.ano_letivo)).get_or_404(turma_id)
+        aula = (
+            CalendarioAula.query.options(joinedload(CalendarioAula.modulo))
+            .filter_by(id=aula_id, apagado=False)
+            .first_or_404()
+        )
+
+        if aula.turma_id != turma.id:
+            flash("Linha de calendário não pertence a esta turma.", "error")
+            return redirect(url_for("turma_calendario", turma_id=turma.id))
+
+        ano = turma.ano_letivo
+        ano_fechado = bool(ano and ano.fechado)
+
+        return_url = request.args.get("return_url") or request.form.get("return_url")
+        if return_url and not return_url.startswith("/"):
+            return_url = None
+
+        alunos = (
+            Aluno.query.filter_by(turma_id=turma.id)
+            .order_by(Aluno.numero.is_(None), Aluno.numero, Aluno.nome)
+            .all()
+        )
+        avaliacoes = {
+            avaliacao.aluno_id: avaliacao
+            for avaliacao in AulaAluno.query.filter_by(aula_id=aula.id).all()
+        }
+
+        def _parse_nota(field_name):
+            valor = request.form.get(field_name)
+            if valor in (None, ""):
+                return None
+            return _clamp_int(valor, min_val=1, max_val=5)
+
+        if request.method == "POST":
+            if ano_fechado:
+                flash("Ano letivo fechado: apenas leitura.", "error")
+                destino = return_url or url_for("turma_calendario", turma_id=turma.id)
+                return redirect(destino)
+
+            for aluno in alunos:
+                avaliacao = avaliacoes.get(aluno.id)
+                if not avaliacao:
+                    avaliacao = AulaAluno(aula=aula, aluno=aluno)
+                    db.session.add(avaliacao)
+                    avaliacoes[aluno.id] = avaliacao
+
+                avaliacao.atraso = bool(request.form.get(f"atraso_{aluno.id}"))
+                avaliacao.faltas = (
+                    _clamp_int(request.form.get(f"faltas_{aluno.id}"), default=0, min_val=0, max_val=6)
+                    or 0
+                )
+                avaliacao.responsabilidade = _parse_nota(f"responsabilidade_{aluno.id}")
+                avaliacao.comportamento = _parse_nota(f"comportamento_{aluno.id}")
+                avaliacao.participacao = _parse_nota(f"participacao_{aluno.id}")
+                avaliacao.trabalho_autonomo = _parse_nota(f"trabalho_autonomo_{aluno.id}")
+                avaliacao.portatil_material = _parse_nota(f"portatil_material_{aluno.id}")
+                avaliacao.atividade = _parse_nota(f"atividade_{aluno.id}")
+
+            db.session.commit()
+            flash("Avaliações de alunos guardadas.", "success")
+            destino = return_url or url_for("turma_calendario", turma_id=turma.id)
+            return redirect(destino)
+
+        return render_template(
+            "turmas/calendario_aula_alunos.html",
+            turma=turma,
+            aula=aula,
+            alunos=alunos,
+            avaliacoes=avaliacoes,
+            ano_fechado=ano_fechado,
+            return_url=return_url,
+        )
+
     @app.route(
         "/turmas/<int:turma_id>/calendario/<int:aula_id>/sumario",
         methods=["POST"],

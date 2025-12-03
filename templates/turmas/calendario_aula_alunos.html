@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h2>Avaliação de alunos</h2>
+    <p class="mb-0 text-muted">
+      Turma {{ turma.nome }} &mdash; {{ aula.data.strftime('%d/%m/%Y') }}
+      {% if aula.modulo %}
+        &bull; {{ aula.modulo.nome }}
+      {% endif %}
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    {% if return_url %}
+      <a href="{{ return_url }}" class="btn btn-outline-secondary">Voltar</a>
+    {% else %}
+      <a href="{{ url_for('turma_calendario', turma_id=turma.id) }}" class="btn btn-outline-secondary">Voltar</a>
+    {% endif %}
+  </div>
+</div>
+
+{% if ano_fechado %}
+  <div class="alert alert-warning">Ano letivo fechado: apenas leitura.</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-body">
+    <h5 class="card-title">Pontualidade, faltas e desempenho</h5>
+    <p class="text-muted">Pontualidade: selecione quando o aluno chegou com atraso. Falta: número de tempos (0-6). As restantes avaliações variam de 1 a 5.</p>
+    <form method="post" class="table-responsive">
+      {% if return_url %}
+        <input type="hidden" name="return_url" value="{{ return_url }}">
+      {% endif %}
+      <table class="table align-middle">
+        <thead class="table-dark">
+          <tr>
+            <th>Nº</th>
+            <th>Nome</th>
+            <th class="text-center">Atraso</th>
+            <th style="width: 110px;">Faltas</th>
+            <th class="text-center">Responsabilidade</th>
+            <th class="text-center">Comportamento</th>
+            <th class="text-center">Participação</th>
+            <th class="text-center">Trabalho autónomo</th>
+            <th class="text-center">Portátil/Material</th>
+            <th class="text-center">Atividade</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for aluno in alunos %}
+            {% set avaliacao = avaliacoes.get(aluno.id) %}
+            <tr>
+              <td style="width: 70px;">{{ aluno.numero or '' }}</td>
+              <td>{{ aluno.nome }}</td>
+              <td class="text-center">
+                <div class="form-check d-inline-block">
+                  <input class="form-check-input" type="checkbox" name="atraso_{{ aluno.id }}" id="atraso_{{ aluno.id }}" {% if avaliacao and avaliacao.atraso %}checked{% endif %} {% if ano_fechado %}disabled{% endif %}>
+                  <label class="form-check-label" for="atraso_{{ aluno.id }}">Atraso</label>
+                </div>
+              </td>
+              <td style="max-width: 110px;">
+                <input type="number" name="faltas_{{ aluno.id }}" class="form-control form-control-sm" min="0" max="6" value="{{ avaliacao.faltas if avaliacao else 0 }}" {% if ano_fechado %}disabled{% endif %}>
+              </td>
+              {% for campo in ["responsabilidade", "comportamento", "participacao", "trabalho_autonomo", "portatil_material", "atividade"] %}
+                {% set valor = getattr(avaliacao, campo) if avaliacao else None %}
+                <td class="text-center">
+                  <select name="{{ campo }}_{{ aluno.id }}" class="form-select form-select-sm" {% if ano_fechado %}disabled{% endif %}>
+                    <option value="">&mdash;</option>
+                    {% for n in range(1,6) %}
+                      <option value="{{ n }}" {% if valor==n %}selected{% endif %}>{{ n }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+              {% endfor %}
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="10" class="text-center text-muted">Nenhum aluno registado.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="d-flex justify-content-end">
+        <button type="submit" class="btn btn-primary" {% if ano_fechado or not alunos %}disabled{% endif %}>Guardar avaliações</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

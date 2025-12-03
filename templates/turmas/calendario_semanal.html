@@ -195,6 +195,8 @@
               {% if turma_fechada %}
                 <span class="text-muted">—</span>
               {% else %}
+                <a href="{{ url_for('calendario_aula_alunos', turma_id=a.turma_id, aula_id=a.id, return_url=request.full_path) }}"
+                   class="btn btn-sm btn-outline-info mb-1">Alunos</a>
                 <a href="{{ url_for('calendario_edit', turma_id=a.turma_id, aula_id=a.id, view='semana', data_ref=semana_inicio.isoformat(), turma_filtro=turma.id if turma else None, periodo_id=periodo_atual.id if periodo_atual else None) }}"
                    class="btn btn-sm btn-warning">Editar</a>
                 <form method="post"

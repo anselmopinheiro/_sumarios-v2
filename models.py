@@ -172,6 +172,9 @@ class Aluno(db.Model):
     observacoes = db.Column(db.Text)
 
     turma = db.relationship("Turma", back_populates="alunos")
+    avaliacoes = db.relationship(
+        "AulaAluno", back_populates="aluno", cascade="all, delete-orphan"
+    )
 
 
 class Modulo(db.Model):
@@ -327,3 +330,33 @@ class CalendarioAula(db.Model):
     previsao = db.Column(db.Text)
 
     turma = db.relationship("Turma", backref="calendario_aulas")
+    avaliacoes = db.relationship(
+        "AulaAluno", back_populates="aula", cascade="all, delete-orphan"
+    )
+
+
+class AulaAluno(db.Model):
+    __tablename__ = "aulas_alunos"
+
+    id = db.Column(db.Integer, primary_key=True)
+    aula_id = db.Column(db.Integer, db.ForeignKey("calendario_aulas.id"), nullable=False)
+    aluno_id = db.Column(db.Integer, db.ForeignKey("alunos.id"), nullable=False)
+
+    # True = atraso; False = pontual
+    atraso = db.Column(db.Boolean, default=False, nullable=False)
+    # Número de tempos em falta (0 = presente)
+    faltas = db.Column(db.Integer, default=0, nullable=False)
+
+    responsabilidade = db.Column(db.Integer)
+    comportamento = db.Column(db.Integer)
+    participacao = db.Column(db.Integer)
+    trabalho_autonomo = db.Column(db.Integer)
+    portatil_material = db.Column(db.Integer)
+    atividade = db.Column(db.Integer)
+
+    aula = db.relationship("CalendarioAula", back_populates="avaliacoes")
+    aluno = db.relationship("Aluno", back_populates="avaliacoes")
+
+    __table_args__ = (
+        db.UniqueConstraint("aula_id", "aluno_id", name="uq_aula_aluno"),
+    )
