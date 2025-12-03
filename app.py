@@ -219,6 +219,15 @@ def create_app():
             )
             db.session.commit()
 
+        turmas_cols = {col["name"] for col in insp.get_columns("turmas")}
+        if "periodo_tipo" not in turmas_cols:
+            db.session.execute(
+                text(
+                    "ALTER TABLE turmas ADD COLUMN periodo_tipo VARCHAR(20) NOT NULL DEFAULT 'anual'"
+                )
+            )
+            db.session.commit()
+
     with app.app_context():
         _ensure_columns()
 
