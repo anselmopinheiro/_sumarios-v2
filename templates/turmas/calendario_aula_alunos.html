@@ -62,7 +62,7 @@
                 <input type="number" name="faltas_{{ aluno.id }}" class="form-control form-control-sm" min="0" max="6" value="{{ avaliacao.faltas if avaliacao else 0 }}" {% if ano_fechado %}disabled{% endif %}>
               </td>
               {% for campo in ["responsabilidade", "comportamento", "participacao", "trabalho_autonomo", "portatil_material", "atividade"] %}
-                {% set valor = getattr(avaliacao, campo) if avaliacao else None %}
+                {% set valor = avaliacao|attr(campo) if avaliacao else None %}
                 <td class="text-center">
                   <select name="{{ campo }}_{{ aluno.id }}" class="form-select form-select-sm" {% if ano_fechado %}disabled{% endif %}>
                     <option value="">&mdash;</option>
