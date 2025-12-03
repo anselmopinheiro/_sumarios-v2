@@ -14,6 +14,7 @@ from models import (
     Periodo,
     Modulo,
     CalendarioAula,
+    AulaAluno,
     AnoLetivo,
     InterrupcaoLetiva,
     Feriado,
@@ -1041,6 +1042,87 @@ def _contar_aulas(aula: CalendarioAula) -> int:
 def _total_previsto_para_aula(aula: CalendarioAula) -> int:
     sumarios = [s.strip() for s in (aula.sumarios or "").split(",") if s.strip()]
     return len(sumarios) if sumarios else 1
+
+
+def calcular_mapa_avaliacao_diaria(
+    turma: Turma,
+    alunos: List,
+    data_inicio: Optional[date] = None,
+    data_fim: Optional[date] = None,
+    periodo_id: Optional[int] = None,
+) -> List[Dict]:
+    """Devolve médias diárias de avaliação para cada aluno da turma.
+
+    A média diária corresponde à média simples das notas registadas nas aulas
+    que o aluno frequentou nesse dia. Se o aluno tiver avaliações apenas com
+    faltas que cubram todos os tempos avaliados, a média do dia é zero.
+    """
+
+    query = CalendarioAula.query.filter_by(turma_id=turma.id, apagado=False)
+    if periodo_id:
+        query = query.filter(CalendarioAula.periodo_id == periodo_id)
+    if data_inicio:
+        query = query.filter(CalendarioAula.data >= data_inicio)
+    if data_fim:
+        query = query.filter(CalendarioAula.data <= data_fim)
+
+    aulas = (
+        query.options(joinedload(CalendarioAula.avaliacoes))
+        .order_by(CalendarioAula.data, CalendarioAula.id)
+        .all()
+    )
+
+    aulas_por_data: Dict[date, List[CalendarioAula]] = defaultdict(list)
+    for aula in aulas:
+        aulas_por_data[aula.data].append(aula)
+
+    def _media_para_aluno(aluno_id: int, aulas_dia: List[CalendarioAula]) -> Optional[float]:
+        total_previsto = 0
+        faltas_total = 0
+        soma_notas = 0
+        total_campos = 0
+        teve_avaliacao = False
+
+        for aula in aulas_dia:
+            avaliacao = next((av for av in aula.avaliacoes if av.aluno_id == aluno_id), None)
+            if not avaliacao:
+                continue
+
+            teve_avaliacao = True
+            tempos_aula = _total_previsto_para_aula(aula)
+            total_previsto += tempos_aula
+
+            faltas = max(0, min(avaliacao.faltas or 0, tempos_aula))
+            if faltas >= tempos_aula:
+                faltas_total += faltas
+                continue
+
+            notas = [
+                avaliacao.responsabilidade or 0,
+                avaliacao.comportamento or 0,
+                avaliacao.participacao or 0,
+                avaliacao.trabalho_autonomo or 0,
+                avaliacao.portatil_material or 0,
+                avaliacao.atividade or 0,
+            ]
+            soma_notas += sum(notas)
+            total_campos += len(notas)
+
+        if total_campos:
+            return round(soma_notas / total_campos, 2)
+
+        if teve_avaliacao and total_previsto and faltas_total >= total_previsto:
+            return 0.0
+
+        return None
+
+    dias = []
+    for data_ref in sorted(aulas_por_data.keys()):
+        aulas_dia = aulas_por_data[data_ref]
+        medias = {aluno.id: _media_para_aluno(aluno.id, aulas_dia) for aluno in alunos}
+        dias.append({"data": data_ref, "medias": medias})
+
+    return dias
 
 
 def completar_modulos_profissionais(

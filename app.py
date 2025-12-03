@@ -55,6 +55,7 @@ from calendario_service import (
     exportar_outras_datas_json,
     importar_outras_datas_json,
     listar_aulas_especiais,
+    calcular_mapa_avaliacao_diaria,
 )
 
 
@@ -1071,6 +1072,61 @@ def create_app():
             periodos_disponiveis=periodos_disponiveis,
             tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
             tipos_aula=TIPOS_AULA,
+        )
+
+    @app.route("/turmas/<int:turma_id>/mapa-avaliacao-diaria")
+    def turma_mapa_avaliacao_diaria(turma_id):
+        turma = Turma.query.get_or_404(turma_id)
+        ano = turma.ano_letivo
+
+        periodos_disponiveis = filtrar_periodos_para_turma(
+            turma,
+            (
+                Periodo.query.filter_by(turma_id=turma.id)
+                .order_by(Periodo.data_inicio)
+                .all()
+            ),
+        )
+
+        periodo_id = request.args.get("periodo_id", type=int)
+        periodo_atual = None
+        if periodo_id:
+            periodo_atual = next((p for p in periodos_disponiveis if p.id == periodo_id), None)
+        elif periodos_disponiveis:
+            periodo_atual = periodos_disponiveis[0]
+
+        data_inicio = _parse_date_form(request.args.get("data_inicio"))
+        data_fim = _parse_date_form(request.args.get("data_fim"))
+
+        if not data_inicio and periodo_atual:
+            data_inicio = periodo_atual.data_inicio
+        if not data_fim and periodo_atual:
+            data_fim = periodo_atual.data_fim
+
+        alunos = (
+            Aluno.query.filter_by(turma_id=turma.id)
+            .order_by(Aluno.numero.is_(None), Aluno.numero, Aluno.nome)
+            .all()
+        )
+
+        dias = calcular_mapa_avaliacao_diaria(
+            turma,
+            alunos,
+            data_inicio=data_inicio,
+            data_fim=data_fim,
+            periodo_id=periodo_atual.id if periodo_atual else None,
+        )
+
+        return render_template(
+            "turmas/mapa_avaliacao_diaria.html",
+            turma=turma,
+            ano=ano,
+            dias=dias,
+            alunos=alunos,
+            periodo_atual=periodo_atual,
+            periodos_disponiveis=periodos_disponiveis,
+            data_inicio=data_inicio,
+            data_fim=data_fim,
         )
 
     @app.route("/calendario/dia")
