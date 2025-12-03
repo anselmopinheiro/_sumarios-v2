@@ -640,6 +640,12 @@ def create_app():
         ano = turma.ano_letivo
         ano_fechado = bool(ano and ano.fechado)
 
+        turmas_destino = (
+            Turma.query.filter(Turma.id != turma.id)
+            .order_by(Turma.nome)
+            .all()
+        )
+
         def _lista_alunos():
             return (
                 Aluno.query.filter_by(turma_id=turma.id)
@@ -665,12 +671,13 @@ def create_app():
                     numero = int(numero_raw)
                 except ValueError:
                     flash("Número do aluno inválido.", "error")
-                    return render_template(
-                        "turmas/alunos.html",
-                        turma=turma,
-                        ano_fechado=ano_fechado,
-                        alunos=_lista_alunos(),
-                    )
+                return render_template(
+                    "turmas/alunos.html",
+                    turma=turma,
+                    ano_fechado=ano_fechado,
+                    turmas_destino=turmas_destino,
+                    alunos=_lista_alunos(),
+                )
 
             if not nome:
                 flash("O nome do aluno é obrigatório.", "error")
@@ -678,6 +685,7 @@ def create_app():
                     "turmas/alunos.html",
                     turma=turma,
                     ano_fechado=ano_fechado,
+                    turmas_destino=turmas_destino,
                     alunos=_lista_alunos(),
                 )
 
@@ -700,6 +708,7 @@ def create_app():
             "turmas/alunos.html",
             turma=turma,
             ano_fechado=ano_fechado,
+            turmas_destino=turmas_destino,
             alunos=_lista_alunos(),
         )
 
@@ -767,6 +776,162 @@ def create_app():
         db.session.commit()
         flash("Aluno removido.", "success")
         return redirect(url_for("turma_alunos", turma_id=turma.id))
+
+    @app.route(
+        "/turmas/<int:turma_id>/alunos/import", methods=["POST"], endpoint="turma_alunos_import"
+    )
+    def turma_alunos_import(turma_id):
+        turma = (
+            Turma.query.options(joinedload(Turma.ano_letivo))
+            .filter_by(id=turma_id)
+            .first_or_404()
+        )
+        ano = turma.ano_letivo
+        ano_fechado = bool(ano and ano.fechado)
+
+        if ano_fechado:
+            flash("Ano letivo fechado: não é possível importar alunos.", "error")
+            return redirect(url_for("turma_alunos", turma_id=turma.id))
+
+        ficheiro = request.files.get("ficheiro")
+        if not ficheiro or ficheiro.filename == "":
+            flash("Selecione um ficheiro CSV.", "error")
+            return redirect(url_for("turma_alunos", turma_id=turma.id))
+
+        try:
+            conteudo = ficheiro.read().decode("utf-8-sig")
+        except Exception:
+            flash("Não foi possível ler o ficheiro. Confirme se é um CSV em UTF-8.", "error")
+            return redirect(url_for("turma_alunos", turma_id=turma.id))
+
+        sample = conteudo[:1024]
+        delim = ";" if sample.count(";") >= sample.count(",") else ","
+        reader = csv.DictReader(io.StringIO(conteudo), delimiter=delim)
+        if not reader.fieldnames:
+            flash("Cabeçalho do CSV inválido.", "error")
+            return redirect(url_for("turma_alunos", turma_id=turma.id))
+
+        header_map = {h.strip().lower(): h for h in reader.fieldnames}
+        obrigatorios = ["nome"]
+        if not all(col in header_map for col in obrigatorios):
+            flash("O CSV deve incluir pelo menos a coluna 'nome'.", "error")
+            return redirect(url_for("turma_alunos", turma_id=turma.id))
+
+        inseridos = 0
+        for row in reader:
+            nome = (row.get(header_map.get("nome"), "") or "").strip()
+            if not nome:
+                continue
+            processo = (row.get(header_map.get("processo", ""), "") or "").strip() or None
+            numero_raw = (row.get(header_map.get("numero", ""), "") or "").strip()
+            nome_curto = (row.get(header_map.get("nome_curto", ""), "") or "").strip() or None
+            nee = (row.get(header_map.get("nee", ""), "") or "").strip() or None
+            observacoes = (row.get(header_map.get("observacoes", ""), "") or "").strip() or None
+
+            numero = None
+            if numero_raw:
+                try:
+                    numero = int(numero_raw)
+                except ValueError:
+                    pass
+
+            novo = Aluno(
+                turma_id=turma.id,
+                processo=processo,
+                numero=numero,
+                nome=nome,
+                nome_curto=nome_curto,
+                nee=nee,
+                observacoes=observacoes,
+            )
+            db.session.add(novo)
+            inseridos += 1
+
+        if inseridos:
+            db.session.commit()
+            flash(f"{inseridos} aluno(s) importado(s).", "success")
+        else:
+            db.session.rollback()
+            flash("Nenhum aluno importado.", "warning")
+
+        return redirect(url_for("turma_alunos", turma_id=turma.id))
+
+    @app.route(
+        "/turmas/<int:turma_id>/alunos/transfer", methods=["POST"], endpoint="turma_alunos_transfer"
+    )
+    def turma_alunos_transfer(turma_id):
+        turma_origem = (
+            Turma.query.options(joinedload(Turma.ano_letivo))
+            .filter_by(id=turma_id)
+            .first_or_404()
+        )
+        ano_origem_fechado = bool(turma_origem.ano_letivo and turma_origem.ano_letivo.fechado)
+
+        destino_id_raw = (request.form.get("destino_turma") or "").strip()
+        acao = (request.form.get("acao") or "").strip()
+        selecionados = request.form.getlist("aluno_ids")
+
+        if not selecionados:
+            flash("Selecione pelo menos um aluno.", "error")
+            return redirect(url_for("turma_alunos", turma_id=turma_origem.id))
+
+        try:
+            destino_id = int(destino_id_raw)
+        except ValueError:
+            flash("Selecione uma turma de destino.", "error")
+            return redirect(url_for("turma_alunos", turma_id=turma_origem.id))
+
+        turma_destino = (
+            Turma.query.options(joinedload(Turma.ano_letivo))
+            .filter_by(id=destino_id)
+            .first()
+        )
+        if not turma_destino or turma_destino.id == turma_origem.id:
+            flash("Turma de destino inválida.", "error")
+            return redirect(url_for("turma_alunos", turma_id=turma_origem.id))
+
+        ano_destino_fechado = bool(turma_destino.ano_letivo and turma_destino.ano_letivo.fechado)
+
+        if acao == "mover" and ano_origem_fechado:
+            flash("Ano letivo fechado: não é possível mover alunos desta turma.", "error")
+            return redirect(url_for("turma_alunos", turma_id=turma_origem.id))
+
+        if ano_destino_fechado:
+            flash("Ano letivo fechado: não é possível adicionar alunos na turma de destino.", "error")
+            return redirect(url_for("turma_alunos", turma_id=turma_origem.id))
+
+        alunos = (
+            Aluno.query.filter(Aluno.id.in_(selecionados), Aluno.turma_id == turma_origem.id)
+            .order_by(Aluno.id)
+            .all()
+        )
+        if not alunos:
+            flash("Nenhum aluno válido selecionado.", "error")
+            return redirect(url_for("turma_alunos", turma_id=turma_origem.id))
+
+        if acao == "copiar":
+            for aluno in alunos:
+                copia = Aluno(
+                    turma_id=turma_destino.id,
+                    processo=aluno.processo,
+                    numero=aluno.numero,
+                    nome=aluno.nome,
+                    nome_curto=aluno.nome_curto,
+                    nee=aluno.nee,
+                    observacoes=aluno.observacoes,
+                )
+                db.session.add(copia)
+            db.session.commit()
+            flash(f"{len(alunos)} aluno(s) copiado(s) para {turma_destino.nome}.", "success")
+        elif acao == "mover":
+            for aluno in alunos:
+                aluno.turma_id = turma_destino.id
+            db.session.commit()
+            flash(f"{len(alunos)} aluno(s) movido(s) para {turma_destino.nome}.", "success")
+        else:
+            flash("Ação inválida.", "error")
+
+        return redirect(url_for("turma_alunos", turma_id=turma_origem.id))
 
     @app.route("/turmas/<int:turma_id>/calendario")
     def turma_calendario(turma_id):
