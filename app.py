@@ -637,6 +637,22 @@ def create_app():
         elif turma_id:
             turma_selecionada = Turma.query.get_or_404(turma_id)
 
+        periodo_id = request.args.get("periodo_id", type=int)
+        periodos_disponiveis = []
+        periodo_atual = None
+        if turma_selecionada:
+            periodos_disponiveis = (
+                Periodo.query.filter_by(turma_id=turma_selecionada.id)
+                .order_by(Periodo.data_inicio)
+                .all()
+            )
+            if periodo_id:
+                periodo_atual = next(
+                    (p for p in periodos_disponiveis if p.id == periodo_id), None
+                )
+            if not periodo_atual and periodos_disponiveis:
+                periodo_atual = periodos_disponiveis[0]
+
         data_txt = request.args.get("data")
         hoje = date.today()
         try:
@@ -668,6 +684,8 @@ def create_app():
         )
         if turma_selecionada:
             query = query.filter(CalendarioAula.turma_id == turma_selecionada.id)
+        if periodo_atual:
+            query = query.filter(CalendarioAula.periodo_id == periodo_atual.id)
 
         aulas = (
             query.order_by(
@@ -689,6 +707,8 @@ def create_app():
         return render_template(
             "turmas/calendario_diario.html",
             turma=turma_selecionada,
+            periodo_atual=periodo_atual,
+            periodos_disponiveis=periodos_disponiveis,
             aulas=aulas,
             data_atual=data_atual,
             dia_anterior=data_atual - timedelta(days=1),
@@ -705,6 +725,22 @@ def create_app():
 
         turma_id_param = request.args.get("turma_id", type=int)
         turma_selecionada = Turma.query.get(turma_id_param) if turma_id_param else None
+
+        periodo_id = request.args.get("periodo_id", type=int)
+        periodos_disponiveis = []
+        periodo_atual = None
+        if turma_selecionada:
+            periodos_disponiveis = (
+                Periodo.query.filter_by(turma_id=turma_selecionada.id)
+                .order_by(Periodo.data_inicio)
+                .all()
+            )
+            if periodo_id:
+                periodo_atual = next(
+                    (p for p in periodos_disponiveis if p.id == periodo_id), None
+                )
+            if not periodo_atual and periodos_disponiveis:
+                periodo_atual = periodos_disponiveis[0]
 
         data_txt = request.args.get("data")
         hoje = date.today()
@@ -745,6 +781,8 @@ def create_app():
         )
         if turma_selecionada:
             query = query.filter(CalendarioAula.turma_id == turma_selecionada.id)
+        if periodo_atual:
+            query = query.filter(CalendarioAula.periodo_id == periodo_atual.id)
 
         aulas = (
             query.order_by(
@@ -771,6 +809,8 @@ def create_app():
             "turmas/calendario_semanal.html",
             turmas=todas_turmas,
             turma=turma_selecionada,
+            periodo_atual=periodo_atual,
+            periodos_disponiveis=periodos_disponiveis,
             data_base=data_base,
             semana_inicio=semana_inicio,
             semana_fim=semana_fim,
@@ -1630,7 +1670,12 @@ def create_app():
 
         if redirect_view == "dia" and data_ref:
             return redirect(
-                url_for("turma_calendario_dia", turma_id=turma.id, data=data_ref)
+                url_for(
+                    "turma_calendario_dia",
+                    turma_id=turma.id,
+                    data=data_ref,
+                    periodo_id=periodo_id,
+                )
             )
         if redirect_view == "semana":
             filtros = {}
@@ -1639,6 +1684,8 @@ def create_app():
             turma_filtro = request.form.get("turma_id", type=int)
             if turma_filtro:
                 filtros["turma_id"] = turma_filtro
+            if periodo_id:
+                filtros["periodo_id"] = periodo_id
             return redirect(url_for("calendario_semana", **filtros))
 
         return redirect(

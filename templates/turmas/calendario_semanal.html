@@ -17,6 +17,19 @@
       {% endfor %}
     </select>
   </div>
+  {% if turma and periodos_disponiveis %}
+    <div class="col-12 col-md-4">
+      <label class="form-label">Período</label>
+      <select name="periodo_id" class="form-select">
+        <option value="">Todos os períodos</option>
+        {% for p in periodos_disponiveis %}
+          <option value="{{ p.id }}" {% if periodo_atual and periodo_atual.id == p.id %}selected{% endif %}>
+            {{ p.nome }} ({{ p.data_inicio.strftime('%d/%m/%Y') }} – {{ p.data_fim.strftime('%d/%m/%Y') }})
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+  {% endif %}
   <div class="col-12 col-md-4 d-flex gap-2">
     <button type="submit" class="btn btn-primary mt-auto">Atualizar</button>
     {% if turma %}
@@ -28,13 +41,16 @@
 <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
   <div class="d-flex align-items-center gap-2">
     <a class="btn btn-outline-primary"
-       href="{{ url_for('calendario_semana', turma_id=turma.id if turma else None, data=semana_anterior.isoformat()) }}">◀ Semana anterior</a>
+       href="{{ url_for('calendario_semana', turma_id=turma.id if turma else None, data=semana_anterior.isoformat(), periodo_id=periodo_atual.id if periodo_atual else None) }}">◀ Semana anterior</a>
     <a class="btn btn-outline-primary"
-       href="{{ url_for('calendario_semana', turma_id=turma.id if turma else None, data=semana_seguinte.isoformat()) }}">Semana seguinte ▶</a>
+       href="{{ url_for('calendario_semana', turma_id=turma.id if turma else None, data=semana_seguinte.isoformat(), periodo_id=periodo_atual.id if periodo_atual else None) }}">Semana seguinte ▶</a>
   </div>
   <form method="get" class="d-flex align-items-center gap-2">
     {% if turma %}
       <input type="hidden" name="turma_id" value="{{ turma.id }}">
+    {% endif %}
+    {% if periodo_atual %}
+      <input type="hidden" name="periodo_id" value="{{ periodo_atual.id }}">
     {% endif %}
     <label class="form-label mb-0">Ir para data:</label>
     <input type="date" name="data" class="form-control" value="{{ data_base.isoformat() }}">
@@ -151,6 +167,11 @@
                           rows="2"
                           placeholder="Previsão da aula (planeamento)...">{{ a.previsao or '' }}</textarea>
                 <button type="button" class="btn btn-link btn-sm ps-0 js-copy-previsao">Copiar previsão para sumário</button>
+                {% if periodo_atual %}
+                  <input type="hidden" name="periodo_id" form="{{ form_id }}" value="{{ periodo_atual.id }}">
+                {% elif a.periodo_id %}
+                  <input type="hidden" name="periodo_id" form="{{ form_id }}" value="{{ a.periodo_id }}">
+                {% endif %}
               </form>
             {% endif %}
               </td>
@@ -174,7 +195,7 @@
               {% if turma_fechada %}
                 <span class="text-muted">—</span>
               {% else %}
-                <a href="{{ url_for('calendario_edit', turma_id=a.turma_id, aula_id=a.id, view='semana', data_ref=semana_inicio.isoformat(), turma_filtro=turma.id if turma else None) }}"
+                <a href="{{ url_for('calendario_edit', turma_id=a.turma_id, aula_id=a.id, view='semana', data_ref=semana_inicio.isoformat(), turma_filtro=turma.id if turma else None, periodo_id=periodo_atual.id if periodo_atual else None) }}"
                    class="btn btn-sm btn-warning">Editar</a>
                 <form method="post"
                       action="{{ url_for('calendario_delete', turma_id=a.turma_id, aula_id=a.id) }}"
@@ -184,6 +205,9 @@
                   <input type="hidden" name="data_ref" value="{{ semana_inicio.isoformat() }}">
                   {% if turma %}
                     <input type="hidden" name="turma_id" value="{{ turma.id }}">
+                  {% endif %}
+                  {% if periodo_atual %}
+                    <input type="hidden" name="periodo_id" value="{{ periodo_atual.id }}">
                   {% endif %}
                   <button type="submit" class="btn btn-sm btn-danger">Apagar</button>
                 </form>
