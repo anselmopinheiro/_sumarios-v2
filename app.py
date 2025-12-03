@@ -171,7 +171,10 @@ def _mapear_alunos_em_falta(aulas):
             )
         )
         nome = aluno.nome if aluno else ""
-        resultados[avaliacao.aula_id].append(f"{etiqueta_num} {nome}".strip())
+        faltas_dia = avaliacao.faltas or 0
+        resultados[avaliacao.aula_id].append(
+            f"{etiqueta_num} {nome} ({faltas_dia})".strip()
+        )
 
     return resultados
 
