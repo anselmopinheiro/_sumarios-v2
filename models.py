@@ -347,12 +347,12 @@ class AulaAluno(db.Model):
     # Número de tempos em falta (0 = presente)
     faltas = db.Column(db.Integer, default=0, nullable=False)
 
-    responsabilidade = db.Column(db.Integer)
-    comportamento = db.Column(db.Integer)
-    participacao = db.Column(db.Integer)
-    trabalho_autonomo = db.Column(db.Integer)
-    portatil_material = db.Column(db.Integer)
-    atividade = db.Column(db.Integer)
+    responsabilidade = db.Column(db.Integer, default=5, server_default="5")
+    comportamento = db.Column(db.Integer, default=5, server_default="5")
+    participacao = db.Column(db.Integer, default=5, server_default="5")
+    trabalho_autonomo = db.Column(db.Integer, default=5, server_default="5")
+    portatil_material = db.Column(db.Integer, default=5, server_default="5")
+    atividade = db.Column(db.Integer, default=5, server_default="5")
 
     aula = db.relationship("CalendarioAula", back_populates="avaliacoes")
     aluno = db.relationship("Aluno", back_populates="avaliacoes")

@@ -2,6 +2,7 @@ import csv
 import io
 import json
 import unicodedata
+from collections import defaultdict
 from datetime import datetime, date, timedelta
 
 from flask import (
@@ -141,6 +142,38 @@ def _parse_date_form(value):
         return datetime.strptime(value, "%Y-%m-%d").date()
     except ValueError:
         return None
+
+
+def _mapear_alunos_em_falta(aulas):
+    ids = [a.id for a in aulas if getattr(a, "id", None)]
+    if not ids:
+        return {}
+
+    resultados = defaultdict(list)
+    faltas = (
+        AulaAluno.query.options(joinedload(AulaAluno.aluno))
+        .join(Aluno)
+        .filter(AulaAluno.aula_id.in_(ids), AulaAluno.faltas > 0)
+        .order_by(Aluno.numero.is_(None), Aluno.numero, Aluno.nome)
+        .all()
+    )
+
+    for avaliacao in faltas:
+        aluno = avaliacao.aluno
+        numero = aluno.numero if aluno else None
+        etiqueta_num = (
+            f"{numero:02d}"
+            if numero is not None
+            else (
+                str(aluno.processo).zfill(2)
+                if aluno and aluno.processo is not None
+                else "--"
+            )
+        )
+        nome = aluno.nome if aluno else ""
+        resultados[avaliacao.aula_id].append(f"{etiqueta_num} {nome}".strip())
+
+    return resultados
 
 
 def _extrair_filtros_outras_datas(origem):
@@ -1022,6 +1055,7 @@ def create_app():
         if periodo_atual:
             query_aulas = query_aulas.filter_by(periodo_id=periodo_atual.id)
         aulas = query_aulas.order_by(CalendarioAula.data).all()
+        faltas_por_aula = _mapear_alunos_em_falta(aulas)
 
         return render_template(
             "turmas/calendario.html",
@@ -1029,6 +1063,7 @@ def create_app():
             ano=ano,
             ano_fechado=ano_fechado,
             aulas=aulas,
+            faltas_por_aula=faltas_por_aula,
             periodo_atual=periodo_atual,
             periodos_disponiveis=periodos_disponiveis,
             tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
@@ -1116,6 +1151,7 @@ def create_app():
             for a in aulas
             if a.turma_id
         }
+        faltas_por_aula = _mapear_alunos_em_falta(aulas)
 
         return render_template(
             "turmas/calendario_diario.html",
@@ -1123,6 +1159,7 @@ def create_app():
             periodo_atual=periodo_atual,
             periodos_disponiveis=periodos_disponiveis,
             aulas=aulas,
+            faltas_por_aula=faltas_por_aula,
             data_atual=data_atual,
             dia_anterior=data_atual - timedelta(days=1),
             dia_seguinte=data_atual + timedelta(days=1),
@@ -1210,6 +1247,7 @@ def create_app():
             )
             .all()
         )
+        faltas_por_aula = _mapear_alunos_em_falta(aulas)
 
         aulas_por_data = {}
         for aula in aulas:
@@ -1234,6 +1272,7 @@ def create_app():
             semana_anterior=semana_inicio - timedelta(days=7),
             semana_seguinte=semana_inicio + timedelta(days=7),
             aulas_por_data=aulas_por_data,
+            faltas_por_aula=faltas_por_aula,
             tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
             tipos_aula=TIPOS_AULA,
             anos_fechados=anos_fechados,
@@ -1247,10 +1286,12 @@ def create_app():
 
         turmas = Turma.query.order_by(Turma.nome).all()
         aulas = listar_aulas_especiais(turma_filtro, tipo_filtro, data_inicio, data_fim)
+        faltas_por_aula = _mapear_alunos_em_falta(aulas)
 
         return render_template(
             "turmas/outras_datas.html",
             aulas=aulas,
+            faltas_por_aula=faltas_por_aula,
             tipos_aula=TIPOS_AULA,
             tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
             tipo_labels=dict(TIPOS_AULA),
@@ -2025,10 +2066,10 @@ def create_app():
             for avaliacao in AulaAluno.query.filter_by(aula_id=aula.id).all()
         }
 
-        def _parse_nota(field_name):
+        def _parse_nota(field_name, default_val=5):
             valor = request.form.get(field_name)
             if valor in (None, ""):
-                return None
+                return default_val
             return _clamp_int(valor, min_val=1, max_val=5)
 
         if request.method == "POST":

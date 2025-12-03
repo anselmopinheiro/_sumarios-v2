@@ -15,12 +15,12 @@ COLS = [
     sa.Column("aluno_id", sa.Integer(), nullable=False),
     sa.Column("atraso", sa.Boolean(), nullable=False, server_default=sa.text("0")),
     sa.Column("faltas", sa.Integer(), nullable=False, server_default=sa.text("0")),
-    sa.Column("responsabilidade", sa.Integer()),
-    sa.Column("comportamento", sa.Integer()),
-    sa.Column("participacao", sa.Integer()),
-    sa.Column("trabalho_autonomo", sa.Integer()),
-    sa.Column("portatil_material", sa.Integer()),
-    sa.Column("atividade", sa.Integer()),
+    sa.Column("responsabilidade", sa.Integer(), server_default=sa.text("5")),
+    sa.Column("comportamento", sa.Integer(), server_default=sa.text("5")),
+    sa.Column("participacao", sa.Integer(), server_default=sa.text("5")),
+    sa.Column("trabalho_autonomo", sa.Integer(), server_default=sa.text("5")),
+    sa.Column("portatil_material", sa.Integer(), server_default=sa.text("5")),
+    sa.Column("atividade", sa.Integer(), server_default=sa.text("5")),
 ]
 
 

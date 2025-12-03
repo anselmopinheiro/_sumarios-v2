@@ -226,6 +226,10 @@
                   placeholder="Previsão"
                 >{{ a.previsao or '' }}</textarea>
                 <button type="button" class="btn btn-link btn-sm ps-0 js-copy-previsao">Copiar previsão para sumário</button>
+                {% set faltas_alunos = faltas_por_aula.get(a.id) if faltas_por_aula else [] %}
+                {% if faltas_alunos %}
+                  <div class="small text-danger">Em falta: {{ faltas_alunos|join('; ') }}</div>
+                {% endif %}
               </div>
             </td>
             <td>
