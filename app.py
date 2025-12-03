@@ -33,6 +33,7 @@ from models import (
     Extra,
     LivroTurma,
     TurmaDisciplina,
+    Aluno,
 )
 
 from calendario_service import (
@@ -203,6 +204,28 @@ def create_app():
     # antigas carregadas a partir de ficheiro).
     def _ensure_columns():
         insp = inspect(db.engine)
+        tabelas = set(insp.get_table_names())
+
+        if "alunos" not in tabelas:
+            db.session.execute(
+                text(
+                    """
+                    CREATE TABLE alunos (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        turma_id INTEGER NOT NULL,
+                        processo VARCHAR(50),
+                        numero INTEGER,
+                        nome VARCHAR(255) NOT NULL,
+                        nome_curto VARCHAR(100),
+                        nee TEXT,
+                        observacoes TEXT,
+                        FOREIGN KEY(turma_id) REFERENCES turmas(id)
+                    )
+                    """
+                )
+            )
+            db.session.commit()
+
         colunas = {col["name"] for col in insp.get_columns("calendario_aulas")}
 
         if "tempos_sem_aula" not in colunas:
@@ -606,6 +629,144 @@ def create_app():
             anos_letivos=anos_letivos,
             modulos=None,
         )
+
+    @app.route("/turmas/<int:turma_id>/alunos", methods=["GET", "POST"])
+    def turma_alunos(turma_id):
+        turma = (
+            Turma.query.options(joinedload(Turma.ano_letivo))
+            .filter_by(id=turma_id)
+            .first_or_404()
+        )
+        ano = turma.ano_letivo
+        ano_fechado = bool(ano and ano.fechado)
+
+        def _lista_alunos():
+            return (
+                Aluno.query.filter_by(turma_id=turma.id)
+                .order_by(Aluno.numero.is_(None), Aluno.numero, Aluno.nome)
+                .all()
+            )
+
+        if request.method == "POST":
+            if ano_fechado:
+                flash("Ano letivo fechado: não é possível adicionar alunos.", "error")
+                return redirect(url_for("turma_alunos", turma_id=turma.id))
+
+            processo = (request.form.get("processo") or "").strip()
+            numero_raw = (request.form.get("numero") or "").strip()
+            nome = (request.form.get("nome") or "").strip()
+            nome_curto = (request.form.get("nome_curto") or "").strip()
+            nee = (request.form.get("nee") or "").strip()
+            observacoes = (request.form.get("observacoes") or "").strip()
+
+            numero = None
+            if numero_raw:
+                try:
+                    numero = int(numero_raw)
+                except ValueError:
+                    flash("Número do aluno inválido.", "error")
+                    return render_template(
+                        "turmas/alunos.html",
+                        turma=turma,
+                        ano_fechado=ano_fechado,
+                        alunos=_lista_alunos(),
+                    )
+
+            if not nome:
+                flash("O nome do aluno é obrigatório.", "error")
+                return render_template(
+                    "turmas/alunos.html",
+                    turma=turma,
+                    ano_fechado=ano_fechado,
+                    alunos=_lista_alunos(),
+                )
+
+            aluno = Aluno(
+                turma_id=turma.id,
+                processo=processo or None,
+                numero=numero,
+                nome=nome,
+                nome_curto=nome_curto or None,
+                nee=nee or None,
+                observacoes=observacoes or None,
+            )
+            db.session.add(aluno)
+            db.session.commit()
+
+            flash("Aluno adicionado.", "success")
+            return redirect(url_for("turma_alunos", turma_id=turma.id))
+
+        return render_template(
+            "turmas/alunos.html",
+            turma=turma,
+            ano_fechado=ano_fechado,
+            alunos=_lista_alunos(),
+        )
+
+    @app.route("/turmas/<int:turma_id>/alunos/<int:aluno_id>/update", methods=["POST"])
+    def turma_alunos_update(turma_id, aluno_id):
+        turma = Turma.query.get_or_404(turma_id)
+        ano = turma.ano_letivo
+        ano_fechado = bool(ano and ano.fechado)
+
+        aluno = Aluno.query.get_or_404(aluno_id)
+        if aluno.turma_id != turma.id:
+            flash("Aluno não pertence a esta turma.", "error")
+            return redirect(url_for("turma_alunos", turma_id=turma.id))
+
+        if ano_fechado:
+            flash("Ano letivo fechado: não é possível editar alunos.", "error")
+            return redirect(url_for("turma_alunos", turma_id=turma.id))
+
+        processo = (request.form.get("processo") or "").strip()
+        numero_raw = (request.form.get("numero") or "").strip()
+        nome = (request.form.get("nome") or "").strip()
+        nome_curto = (request.form.get("nome_curto") or "").strip()
+        nee = (request.form.get("nee") or "").strip()
+        observacoes = (request.form.get("observacoes") or "").strip()
+
+        numero = None
+        if numero_raw:
+            try:
+                numero = int(numero_raw)
+            except ValueError:
+                flash("Número do aluno inválido.", "error")
+                return redirect(url_for("turma_alunos", turma_id=turma.id))
+
+        if not nome:
+            flash("O nome do aluno é obrigatório.", "error")
+            return redirect(url_for("turma_alunos", turma_id=turma.id))
+
+        aluno.processo = processo or None
+        aluno.numero = numero
+        aluno.nome = nome
+        aluno.nome_curto = nome_curto or None
+        aluno.nee = nee or None
+        aluno.observacoes = observacoes or None
+
+        db.session.commit()
+        flash("Aluno atualizado.", "success")
+        return redirect(url_for("turma_alunos", turma_id=turma.id))
+
+    @app.route("/turmas/<int:turma_id>/alunos/<int:aluno_id>/delete", methods=["POST"])
+    def turma_alunos_delete(turma_id, aluno_id):
+        turma = Turma.query.get_or_404(turma_id)
+        ano = turma.ano_letivo
+        ano_fechado = bool(ano and ano.fechado)
+
+        aluno = Aluno.query.get_or_404(aluno_id)
+        if aluno.turma_id != turma.id:
+            flash("Aluno não pertence a esta turma.", "error")
+            return redirect(url_for("turma_alunos", turma_id=turma.id))
+
+        if ano_fechado:
+            flash("Ano letivo fechado: não é possível eliminar alunos.", "error")
+            return redirect(url_for("turma_alunos", turma_id=turma.id))
+
+        db.session.delete(aluno)
+        db.session.commit()
+        flash("Aluno removido.", "success")
+        return redirect(url_for("turma_alunos", turma_id=turma.id))
 
     @app.route("/turmas/<int:turma_id>/calendario")
     def turma_calendario(turma_id):

@@ -90,6 +90,11 @@ class Turma(db.Model):
         secondary=lambda: TurmaDisciplina.__table__,
         back_populates="turmas",
     )
+    alunos = db.relationship(
+        "Aluno",
+        back_populates="turma",
+        cascade="all, delete-orphan",
+    )
 
     
     
@@ -151,6 +156,22 @@ class Horario(db.Model):
     # 0=Seg, 1=Ter, ..., 6=Dom
     weekday = db.Column(db.Integer, nullable=False)
     horas = db.Column(db.Integer, nullable=False)
+
+
+class Aluno(db.Model):
+    __tablename__ = "alunos"
+
+    id = db.Column(db.Integer, primary_key=True)
+    turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), nullable=False)
+
+    processo = db.Column(db.String(50))
+    numero = db.Column(db.Integer)
+    nome = db.Column(db.String(255), nullable=False)
+    nome_curto = db.Column(db.String(100))
+    nee = db.Column(db.Text)
+    observacoes = db.Column(db.Text)
+
+    turma = db.relationship("Turma", back_populates="alunos")
 
 
 class Modulo(db.Model):

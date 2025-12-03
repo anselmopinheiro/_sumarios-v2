@@ -30,6 +30,7 @@
                 {{ turma.carga_quinta or 0 }} /
                 {{ turma.carga_sexta or 0 }}</th>
             <td>
+                <a href="{{ url_for('turma_alunos', turma_id=turma.id) }}" class="btn btn-sm btn-secondary">Alunos</a>
                 <a href="{{ url_for('turma_calendario', turma_id=turma.id) }}" class="btn btn-sm btn-info">Calendário</a>
                 <a href="{{ url_for('turmas_edit', turma_id=turma.id) }}" class="btn btn-sm btn-warning">Editar</a>
                 <form method="post"
