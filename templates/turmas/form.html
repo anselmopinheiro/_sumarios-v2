@@ -28,6 +28,15 @@
     </select>
   </div>
 
+  <div class="mb-3">
+    <label class="form-label">Período</label>
+    <select name="periodo_tipo" class="form-control">
+      <option value="anual" {% if not turma or turma.periodo_tipo == "anual" %}selected{% endif %}>Anual</option>
+      <option value="semestre1" {% if turma and turma.periodo_tipo == "semestre1" %}selected{% endif %}>1.º semestre</option>
+      <option value="semestre2" {% if turma and turma.periodo_tipo == "semestre2" %}selected{% endif %}>2.º semestre</option>
+    </select>
+  </div>
+
   <div id="modulos-profissionais" class="mb-4" style="display: none;">
     <h5 class="mt-4">Módulos (ensino profissional)</h5>
     <p class="text-muted small">Indica o nome do módulo e a respetiva carga horária total.</p>

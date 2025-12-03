@@ -44,6 +44,8 @@ from calendario_service import (
     completar_modulos_profissionais,
     criar_aula_extra,
     DEFAULT_TIPOS_SEM_AULA,
+    filtrar_periodos_para_turma,
+    PERIODOS_TURMA_VALIDOS,
     exportar_sumarios_json,
     importar_sumarios_json,
     exportar_outras_datas_json,
@@ -389,6 +391,7 @@ def create_app():
         if request.method == "POST":
             nome = (request.form.get("nome") or "").strip()
             tipo = request.form.get("tipo") or turma.tipo
+            periodo_tipo = request.form.get("periodo_tipo") or turma.periodo_tipo or "anual"
             ano_id = request.form.get("ano_letivo_id", type=int)
             carga_seg = request.form.get("carga_segunda", type=float)
             carga_ter = request.form.get("carga_terca", type=float)
@@ -437,8 +440,12 @@ def create_app():
                     )
                 modulos_form = modulos_validos
 
+            if periodo_tipo not in PERIODOS_TURMA_VALIDOS:
+                periodo_tipo = "anual"
+
             turma.nome = nome
             turma.tipo = tipo
+            turma.periodo_tipo = periodo_tipo
             turma.ano_letivo_id = ano_escolhido.id
             turma.carga_segunda = carga_seg
             turma.carga_terca = carga_ter
@@ -500,6 +507,7 @@ def create_app():
         if request.method == "POST":
             nome = (request.form.get("nome") or "").strip()
             tipo = request.form.get("tipo") or "regular"
+            periodo_tipo = request.form.get("periodo_tipo") or "anual"
             ano_id = request.form.get("ano_letivo_id", type=int)
             carga_seg = request.form.get("carga_segunda", type=float)
             carga_ter = request.form.get("carga_terca", type=float)
@@ -548,9 +556,13 @@ def create_app():
                     )
                 modulos_form = modulos_validos
 
+            if periodo_tipo not in PERIODOS_TURMA_VALIDOS:
+                periodo_tipo = "anual"
+
             turma = Turma(
                 nome=nome,
                 tipo=tipo,
+                periodo_tipo=periodo_tipo,
                 ano_letivo_id=ano_escolhido.id,
                 carga_segunda=carga_seg,
                 carga_terca=carga_ter,
@@ -592,11 +604,14 @@ def create_app():
         ano = turma.ano_letivo
         ano_fechado = bool(ano and ano.fechado)
 
-        periodos_disponiveis = (
-            Periodo.query
-            .filter_by(turma_id=turma.id)
-            .order_by(Periodo.data_inicio)
-            .all()
+        periodos_disponiveis = filtrar_periodos_para_turma(
+            turma,
+            (
+                Periodo.query
+                .filter_by(turma_id=turma.id)
+                .order_by(Periodo.data_inicio)
+                .all()
+            ),
         )
 
         periodo_id = request.args.get("periodo_id", type=int)
@@ -641,10 +656,13 @@ def create_app():
         periodos_disponiveis = []
         periodo_atual = None
         if turma_selecionada:
-            periodos_disponiveis = (
-                Periodo.query.filter_by(turma_id=turma_selecionada.id)
-                .order_by(Periodo.data_inicio)
-                .all()
+            periodos_disponiveis = filtrar_periodos_para_turma(
+                turma_selecionada,
+                (
+                    Periodo.query.filter_by(turma_id=turma_selecionada.id)
+                    .order_by(Periodo.data_inicio)
+                    .all()
+                ),
             )
             if periodo_id:
                 periodo_atual = next(
@@ -730,10 +748,13 @@ def create_app():
         periodos_disponiveis = []
         periodo_atual = None
         if turma_selecionada:
-            periodos_disponiveis = (
-                Periodo.query.filter_by(turma_id=turma_selecionada.id)
-                .order_by(Periodo.data_inicio)
-                .all()
+            periodos_disponiveis = filtrar_periodos_para_turma(
+                turma_selecionada,
+                (
+                    Periodo.query.filter_by(turma_id=turma_selecionada.id)
+                    .order_by(Periodo.data_inicio)
+                    .all()
+                ),
             )
             if periodo_id:
                 periodo_atual = next(

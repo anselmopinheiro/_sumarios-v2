@@ -56,6 +56,7 @@ class Turma(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(50), nullable=False)
     tipo = db.Column(db.String(20), nullable=False, default="regular")
+    periodo_tipo = db.Column(db.String(20), nullable=False, default="anual")
 
     # deixa como nullable=True para não partir a migração em SQLite
     ano_letivo_id = db.Column(db.Integer, db.ForeignKey("anos_letivos.id"))

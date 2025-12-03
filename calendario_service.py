@@ -41,6 +41,25 @@ MESES_PT = {
     "dezembro": 12,
 }
 
+PERIODOS_TURMA_VALIDOS = {"anual", "semestre1", "semestre2"}
+
+
+def tipos_periodo_para_turma(turma: Turma) -> Set[str]:
+    tipo_principal = getattr(turma, "periodo_tipo", None) or "anual"
+
+    permitidos = {"modular"}
+    if tipo_principal in PERIODOS_TURMA_VALIDOS:
+        permitidos.add(tipo_principal)
+    else:
+        permitidos.add("anual")
+
+    return permitidos
+
+
+def filtrar_periodos_para_turma(turma: Turma, periodos: List[Periodo]) -> List[Periodo]:
+    permitidos = tipos_periodo_para_turma(turma)
+    return [p for p in periodos if p.tipo in permitidos]
+
 
 def garantir_periodos_basicos_para_turma(turma: Turma) -> None:
     """
@@ -363,10 +382,13 @@ def gerar_calendario_turma(turma_id: int, recalcular_tudo: bool = True) -> int:
 
     dias_interrupcao, dias_feriados = _build_dias_nao_letivos(ano)
 
-    periodos: List[Periodo] = (
-        Periodo.query.filter_by(turma_id=turma.id)
-        .order_by(Periodo.data_inicio)
-        .all()
+    periodos: List[Periodo] = filtrar_periodos_para_turma(
+        turma,
+        (
+            Periodo.query.filter_by(turma_id=turma.id)
+            .order_by(Periodo.data_inicio)
+            .all()
+        ),
     )
     if not periodos:
         return 0
@@ -528,11 +550,14 @@ TIPOS_ESPECIAIS: Set[str] = {"greve", "servico_oficial", "outros", "extra", "fal
 def _periodo_para_data(turma: Turma, data: date) -> Periodo | None:
     """Encontra um período que abrange a data dada para a turma."""
 
+    tipos_permitidos = tipos_periodo_para_turma(turma)
+
     return (
         Periodo.query.filter(
             Periodo.turma_id == turma.id,
             Periodo.data_inicio <= data,
             Periodo.data_fim >= data,
+            Periodo.tipo.in_(tipos_permitidos),
         )
         .order_by(Periodo.data_inicio)
         .first()
@@ -547,23 +572,25 @@ def _periodo_padrao_import(turma: Turma, datas: List[date]) -> Periodo | None:
     "Importado" que cobre o intervalo mínimo/máximo das datas fornecidas.
     """
 
-    existente = (
+    existentes = (
         Periodo.query.filter_by(turma_id=turma.id)
         .order_by(Periodo.data_inicio)
-        .first()
+        .all()
     )
-    if existente:
-        return existente
+    filtrados = filtrar_periodos_para_turma(turma, existentes)
+    if filtrados:
+        return filtrados[0]
 
     if not datas:
         return None
 
     inicio = min(datas)
     fim = max(datas)
+    tipo_padrao = turma.periodo_tipo if getattr(turma, "periodo_tipo", None) in PERIODOS_TURMA_VALIDOS else "anual"
     periodo = Periodo(
         turma_id=turma.id,
         nome="Importado",
-        tipo="anual",
+        tipo=tipo_padrao,
         data_inicio=inicio,
         data_fim=fim,
     )
@@ -1035,10 +1062,13 @@ def completar_modulos_profissionais(
     if not ano:
         return 0
 
-    periodos: List[Periodo] = (
-        Periodo.query.filter_by(turma_id=turma.id)
-        .order_by(Periodo.data_inicio)
-        .all()
+    periodos: List[Periodo] = filtrar_periodos_para_turma(
+        turma,
+        (
+            Periodo.query.filter_by(turma_id=turma.id)
+            .order_by(Periodo.data_inicio)
+            .all()
+        ),
     )
     periodos_validos = [p for p in periodos if p.data_inicio and p.data_fim]
     if not periodos_validos:
