@@ -1129,6 +1129,93 @@ def create_app():
             data_fim=data_fim,
         )
 
+    @app.route("/turmas/<int:turma_id>/mapa-avaliacao-diaria/export")
+    def turma_mapa_avaliacao_diaria_export(turma_id):
+        turma = Turma.query.get_or_404(turma_id)
+
+        periodos_disponiveis = filtrar_periodos_para_turma(
+            turma,
+            (
+                Periodo.query.filter_by(turma_id=turma.id)
+                .order_by(Periodo.data_inicio)
+                .all()
+            ),
+        )
+
+        periodo_id = request.args.get("periodo_id", type=int)
+        periodo_atual = None
+        if periodo_id:
+            periodo_atual = next((p for p in periodos_disponiveis if p.id == periodo_id), None)
+        elif periodos_disponiveis:
+            periodo_atual = periodos_disponiveis[0]
+
+        data_inicio = _parse_date_form(request.args.get("data_inicio"))
+        data_fim = _parse_date_form(request.args.get("data_fim"))
+
+        if not data_inicio and periodo_atual:
+            data_inicio = periodo_atual.data_inicio
+        if not data_fim and periodo_atual:
+            data_fim = periodo_atual.data_fim
+
+        alunos = (
+            Aluno.query.filter_by(turma_id=turma.id)
+            .order_by(Aluno.numero.is_(None), Aluno.numero, Aluno.nome)
+            .all()
+        )
+
+        dias = calcular_mapa_avaliacao_diaria(
+            turma,
+            alunos,
+            data_inicio=data_inicio,
+            data_fim=data_fim,
+            periodo_id=periodo_atual.id if periodo_atual else None,
+        )
+
+        datas = [d.data for d in dias]
+
+        def _media_formatada(valor):
+            return "—" if valor is None else f"{valor:.2f}"
+
+        safe_nome = unicodedata.normalize("NFKD", turma.nome).encode("ascii", "ignore").decode()
+        safe_nome = "_".join(filter(None, ["".join(c if c.isalnum() else "_" for c in safe_nome).strip("_")]))
+        if not safe_nome:
+            safe_nome = "turma"
+        data_export = datetime.now().strftime("%Y%m%d")
+        filename = f"mapa_avaliacao_{safe_nome}_{data_export}.xls"
+
+        output = io.StringIO()
+        output.write("<html><head><meta charset='utf-8'></head><body>")
+        output.write("<table border='1'>")
+        output.write("<thead><tr><th>#</th><th>Aluno</th>")
+        for d in datas:
+            output.write(f"<th>{d.strftime('%d/%m/%Y')}</th>")
+        output.write("<th>Média</th></tr></thead><tbody>")
+
+        for aluno in alunos:
+            valores = []
+            output.write("<tr>")
+            output.write(f"<td>{aluno.numero if aluno.numero is not None else '--'}</td>")
+            output.write(f"<td>{aluno.nome}</td>")
+            for dia in dias:
+                media = dia.medias.get(aluno.id)
+                if media is not None:
+                    valores.append(media)
+                output.write(f"<td>{_media_formatada(media)}</td>")
+            if valores:
+                media_final = sum(valores) / len(valores)
+                output.write(f"<td>{media_final:.2f}</td>")
+            else:
+                output.write("<td>—</td>")
+            output.write("</tr>")
+
+        output.write("</tbody></table></body></html>")
+
+        return Response(
+            output.getvalue(),
+            mimetype="application/vnd.ms-excel",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+
     @app.route("/calendario/dia")
     @app.route("/turmas/<int:turma_id>/calendario/dia")
     def turma_calendario_dia(turma_id=None):

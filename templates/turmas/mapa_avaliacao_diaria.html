@@ -31,6 +31,12 @@
 
 <div class="mb-3">
   <a href="{{ url_for('turma_calendario', turma_id=turma.id, periodo_id=periodo_atual.id if periodo_atual else None) }}" class="btn btn-secondary">← Voltar ao calendário</a>
+  <a
+    href="{{ url_for('turma_mapa_avaliacao_diaria_export', turma_id=turma.id, periodo_id=periodo_atual.id if periodo_atual else None, data_inicio=data_inicio.isoformat() if data_inicio else None, data_fim=data_fim.isoformat() if data_fim else None) }}"
+    class="btn btn-outline-success ms-2"
+  >
+    Exportar XLS
+  </a>
 </div>
 
 {% if not dias %}
