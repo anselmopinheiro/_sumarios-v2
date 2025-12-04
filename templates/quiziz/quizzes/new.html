@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1 class="mb-4">Criar novo Quiz</h1>
+<form method="post" class="card p-4 shadow-sm">
+    <div class="row mb-3">
+        <div class="col-md-4">
+            <label class="form-label">Código da turma</label>
+            <input type="text" name="codigo_turma" class="form-control" placeholder="ex.: TURMA2024" required>
+        </div>
+        <div class="col-md-8">
+            <label class="form-label">Título</label>
+            <input type="text" name="titulo" class="form-control" required>
+        </div>
+    </div>
+
+    <h5 class="mt-4">Perguntas</h5>
+    <p class="text-muted">Preenche as perguntas abaixo (4 opções cada). Deixa em branco o que não precisares.</p>
+
+    {% for idx in range(0,3) %}
+        <div class="border rounded p-3 mb-3">
+            <div class="mb-2">
+                <label class="form-label">Pergunta {{ idx + 1 }}</label>
+                <input type="text" name="question_text" class="form-control" placeholder="Texto da pergunta">
+            </div>
+            <div class="row g-2">
+                {% for opt_idx in range(0,4) %}
+                    <div class="col-md-6">
+                        <label class="form-label">Opção {{ opt_idx + 1 }}</label>
+                        <input type="text" name="option_text_{{ idx }}" class="form-control" placeholder="Texto da opção">
+                        <div class="form-check mt-1">
+                            <input class="form-check-input" type="radio" name="correct_option_{{ idx }}" value="{{ opt_idx }}" id="correct_{{ idx }}_{{ opt_idx }}">
+                            <label class="form-check-label" for="correct_{{ idx }}_{{ opt_idx }}">Resposta correta</label>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    {% endfor %}
+
+    <button class="btn btn-primary">Guardar Quiz</button>
+</form>
+{% endblock %}

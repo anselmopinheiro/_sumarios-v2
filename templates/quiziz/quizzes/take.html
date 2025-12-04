@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="d-flex align-items-center mb-3">
+    <h1 class="mb-0">{{ quiz.titulo }}</h1>
+    <a href="/quiziz/quizzes" class="btn btn-link ms-auto">Voltar</a>
+</div>
+
+{% if tentativa %}
+    <div class="alert alert-info">Última tentativa: {{ tentativa.pontuacao }}/{{ tentativa.total_perguntas }}</div>
+{% endif %}
+
+<form method="post" class="card p-4 shadow-sm">
+    {% for pergunta in quiz.perguntas %}
+        <div class="mb-4">
+            <div class="fw-semibold">{{ loop.index }}. {{ pergunta.texto }}</div>
+            <div class="mt-2">
+                {% for opcao in pergunta.opcoes %}
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="answer_{{ pergunta.id }}" value="{{ opcao.id }}" id="answer_{{ pergunta.id }}_{{ opcao.id }}">
+                        <label class="form-check-label" for="answer_{{ pergunta.id }}_{{ opcao.id }}">{{ opcao.texto }}</label>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    {% endfor %}
+    <button class="btn btn-success">Submeter respostas</button>
+</form>
+{% endblock %}

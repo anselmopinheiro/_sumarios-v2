@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row">
+    <div class="col-lg-6">
+        <h1 class="mb-4">Entrar no Quiziz</h1>
+        <form method="post" class="card p-4 shadow-sm">
+            <div class="mb-3">
+                <label class="form-label">Código da turma</label>
+                <input type="text" name="codigo_turma" class="form-control" placeholder="ex.: TURMA2024" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Nickname</label>
+                <input type="text" name="nickname" class="form-control" placeholder="O nome que queres usar" required>
+            </div>
+            <button class="btn btn-primary">Entrar</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="d-flex align-items-center mb-3">
+    <h1 class="mb-0">Avaliações e respostas</h1>
+    <a href="/quiziz/quizzes" class="btn btn-link ms-auto">Voltar aos quizzes</a>
+</div>
+
+{% if tentativas %}
+    {% for tentativa in tentativas %}
+        <div class="card mb-3 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title mb-1">{{ tentativa.quiz.titulo }}</h5>
+                        <small class="text-muted">Pontuação: {{ tentativa.pontuacao }}/{{ tentativa.total_perguntas }}</small>
+                    </div>
+                    <div class="text-muted">{{ tentativa.concluido_em.strftime('%d/%m/%Y %H:%M') if tentativa.concluido_em else '' }}</div>
+                </div>
+
+                <div class="mt-3">
+                    {% for resposta in tentativa.respostas %}
+                        <div class="mb-2">
+                            <div class="fw-semibold">{{ loop.index }}. {{ resposta.pergunta.texto }}</div>
+                            <div>
+                                <span class="badge {{ 'bg-success' if resposta.correta else 'bg-danger' }}">
+                                    {{ 'Correta' if resposta.correta else 'Incorreta' }}
+                                </span>
+                                <span class="ms-2">Resposta: {{ resposta.opcao.texto if resposta.opcao else 'Sem resposta' }}</span>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    {% endfor %}
+{% else %}
+    <p class="text-muted">Ainda não tens tentativas registadas.</p>
+{% endif %}
+{% endblock %}

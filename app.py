@@ -9,6 +9,7 @@ from flask import (
     request,
     flash,
     Response,   # se ainda estiveres a usar o JSON
+    session,
 )
 
 from flask_migrate import Migrate
@@ -30,6 +31,12 @@ from models import (
     Extra,
     LivroTurma,
     TurmaDisciplina,
+    Aluno,
+    Quiz,
+    QuizAttempt,
+    QuizAnswer,
+    QuizQuestion,
+    QuizOption,
 )
 
 from calendario_service import (
@@ -168,6 +175,16 @@ def create_app():
             .order_by(AnoLetivo.data_inicio_ano.desc())
             .first()
         )
+
+    def get_aluno_atual():
+        aluno_id = session.get("aluno_id")
+        if not aluno_id:
+            return None
+        return Aluno.query.get(aluno_id)
+
+    @app.context_processor
+    def inject_aluno():
+        return {"aluno_atual": get_aluno_atual()}
 
     # ----------------------------------------
     # DASHBOARD
@@ -312,6 +329,7 @@ def create_app():
 
         if request.method == "POST":
             nome = (request.form.get("nome") or "").strip()
+            codigo_acesso = (request.form.get("codigo_acesso") or "").strip()
             tipo = request.form.get("tipo") or turma.tipo
             ano_id = request.form.get("ano_letivo_id", type=int)
             carga_seg = request.form.get("carga_segunda", type=float)
@@ -344,6 +362,32 @@ def create_app():
                     modulos=modulos_form,
                 )
 
+            if not codigo_acesso:
+                flash("Define um código de turma para permitir o login dos alunos.", "error")
+                return render_template(
+                    "turmas/form.html",
+                    titulo="Editar Turma",
+                    turma=turma,
+                    ano_atual=ano_atual,
+                    anos_letivos=anos_letivos,
+                    modulos=modulos_form,
+                )
+
+            existente = (
+                Turma.query.filter(Turma.codigo_acesso == codigo_acesso, Turma.id != turma.id)
+                .first()
+            )
+            if existente:
+                flash("Já existe uma turma com esse código de acesso.", "error")
+                return render_template(
+                    "turmas/form.html",
+                    titulo="Editar Turma",
+                    turma=turma,
+                    ano_atual=ano_atual,
+                    anos_letivos=anos_letivos,
+                    modulos=modulos_form,
+                )
+
             if tipo == "profissional":
                 modulos_validos = [m for m in modulos_form if m.get("nome")]
                 if not modulos_validos or any(m["total"] <= 0 for m in modulos_validos):
@@ -362,6 +406,7 @@ def create_app():
                 modulos_form = modulos_validos
 
             turma.nome = nome
+            turma.codigo_acesso = codigo_acesso
             turma.tipo = tipo
             turma.ano_letivo_id = ano_escolhido.id
             turma.carga_segunda = carga_seg
@@ -423,6 +468,7 @@ def create_app():
 
         if request.method == "POST":
             nome = (request.form.get("nome") or "").strip()
+            codigo_acesso = (request.form.get("codigo_acesso") or "").strip()
             tipo = request.form.get("tipo") or "regular"
             ano_id = request.form.get("ano_letivo_id", type=int)
             carga_seg = request.form.get("carga_segunda", type=float)
@@ -472,8 +518,32 @@ def create_app():
                     )
                 modulos_form = modulos_validos
 
+            if not codigo_acesso:
+                flash("Define um código de turma para permitir o login dos alunos.", "error")
+                return render_template(
+                    "turmas/form.html",
+                    titulo="Nova Turma",
+                    turma=None,
+                    ano_atual=ano_atual,
+                    anos_letivos=anos_letivos,
+                    modulos=modulos_form,
+                )
+
+            existente = Turma.query.filter_by(codigo_acesso=codigo_acesso).first()
+            if existente:
+                flash("Já existe uma turma com esse código de acesso.", "error")
+                return render_template(
+                    "turmas/form.html",
+                    titulo="Nova Turma",
+                    turma=None,
+                    ano_atual=ano_atual,
+                    anos_letivos=anos_letivos,
+                    modulos=modulos_form,
+                )
+
             turma = Turma(
                 nome=nome,
+                codigo_acesso=codigo_acesso,
                 tipo=tipo,
                 ano_letivo_id=ano_escolhido.id,
                 carga_segunda=carga_seg,
@@ -902,6 +972,195 @@ def create_app():
         db.session.commit()
         flash(f"Ano letivo {ano.nome} reaberto para edição.", "success")
         return redirect(url_for("anos_letivos_list"))
+
+    # ----------------------------------------
+    # QUIZIZ / AVALIAÇÕES
+    # ----------------------------------------
+    @app.route("/quiziz/login", methods=["GET", "POST"])
+    def quiziz_login():
+        if request.method == "POST":
+            codigo = (request.form.get("codigo_turma") or "").strip()
+            nickname = (request.form.get("nickname") or "").strip()
+
+            if not codigo or not nickname:
+                flash("Código da turma e nickname são obrigatórios.", "error")
+                return render_template("quiziz/login.html")
+
+            turma = Turma.query.filter_by(codigo_acesso=codigo).first()
+            if not turma:
+                flash("Código de turma inválido.", "error")
+                return render_template("quiziz/login.html")
+
+            aluno = (
+                Aluno.query.filter_by(turma_id=turma.id, nickname=nickname).first()
+            )
+            if not aluno:
+                aluno = Aluno(turma_id=turma.id, nickname=nickname)
+                db.session.add(aluno)
+                db.session.commit()
+
+            session["aluno_id"] = aluno.id
+            flash(f"Bem-vindo, {aluno.nickname}!", "success")
+            return redirect(url_for("quiziz_quizzes"))
+
+        return render_template("quiziz/login.html")
+
+    @app.route("/quiziz/logout")
+    def quiziz_logout():
+        session.pop("aluno_id", None)
+        flash("Sessão terminada.", "info")
+        return redirect(url_for("quiziz_login"))
+
+    @app.route("/quiziz/quizzes")
+    def quiziz_quizzes():
+        aluno = get_aluno_atual()
+        if not aluno:
+            flash("Entra com o código da turma para veres os quizzes.", "warning")
+            return redirect(url_for("quiziz_login"))
+
+        quizzes = Quiz.query.filter_by(turma_id=aluno.turma_id).order_by(Quiz.criado_em.desc()).all()
+        tentativas = {
+            t.quiz_id: t
+            for t in QuizAttempt.query.filter_by(aluno_id=aluno.id).all()
+        }
+
+        return render_template(
+            "quiziz/quizzes/list.html",
+            quizzes=quizzes,
+            tentativas=tentativas,
+            aluno=aluno,
+        )
+
+    @app.route("/quiziz/quizzes/new", methods=["GET", "POST"])
+    def quiziz_new():
+        if request.method == "POST":
+            codigo_turma = (request.form.get("codigo_turma") or "").strip()
+            titulo = (request.form.get("titulo") or "").strip()
+
+            if not codigo_turma or not titulo:
+                flash("Código da turma e título são obrigatórios.", "error")
+                return render_template("quiziz/quizzes/new.html")
+
+            turma = Turma.query.filter_by(codigo_acesso=codigo_turma).first()
+            if not turma:
+                flash("Código de turma inválido.", "error")
+                return render_template("quiziz/quizzes/new.html")
+
+            quiz = Quiz(titulo=titulo, turma_id=turma.id)
+            db.session.add(quiz)
+
+            perguntas_txt = request.form.getlist("question_text")
+            for idx, texto in enumerate(perguntas_txt):
+                texto_limpo = (texto or "").strip()
+                if not texto_limpo:
+                    continue
+
+                pergunta = QuizQuestion(texto=texto_limpo, quiz=quiz)
+                db.session.add(pergunta)
+
+                opcoes_txt = request.form.getlist(f"option_text_{idx}")
+                correta_idx = request.form.get(f"correct_option_{idx}")
+                for opt_idx, opt_texto in enumerate(opcoes_txt):
+                    opt_limpo = (opt_texto or "").strip()
+                    if not opt_limpo:
+                        continue
+                    opcao = QuizOption(
+                        pergunta=pergunta,
+                        texto=opt_limpo,
+                        correta=str(opt_idx) == (correta_idx or ""),
+                    )
+                    db.session.add(opcao)
+
+            db.session.commit()
+
+            flash("Quiz criado com sucesso!", "success")
+            return redirect(url_for("quiziz_quizzes"))
+
+        return render_template("quiziz/quizzes/new.html")
+
+    @app.route("/quiziz/quizzes/<int:quiz_id>", methods=["GET", "POST"])
+    def quiziz_take(quiz_id):
+        quiz = Quiz.query.get_or_404(quiz_id)
+        aluno = get_aluno_atual()
+
+        if not aluno:
+            flash("Entra com o código da turma para responder ao quiz.", "warning")
+            return redirect(url_for("quiziz_login"))
+
+        if quiz.turma_id != aluno.turma_id:
+            flash("Este quiz não pertence à tua turma.", "error")
+            return redirect(url_for("quiziz_quizzes"))
+
+        if request.method == "POST":
+            tentativa = QuizAttempt.query.filter_by(
+                quiz_id=quiz.id, aluno_id=aluno.id
+            ).first()
+            if not tentativa:
+                tentativa = QuizAttempt(quiz=quiz, aluno=aluno)
+                db.session.add(tentativa)
+                db.session.flush()
+            else:
+                QuizAnswer.query.filter_by(attempt_id=tentativa.id).delete()
+
+            pontuacao = 0
+            total_perguntas = len(quiz.perguntas)
+
+            for pergunta in quiz.perguntas:
+                opcao_id = request.form.get(f"answer_{pergunta.id}", type=int)
+                if not opcao_id:
+                    continue
+                opcao = QuizOption.query.get(opcao_id)
+                correta = bool(opcao and opcao.correta)
+                if correta:
+                    pontuacao += 1
+
+                resposta = QuizAnswer(
+                    tentativa=tentativa,
+                    pergunta=pergunta,
+                    opcao=opcao,
+                    correta=correta,
+                )
+                db.session.add(resposta)
+
+            tentativa.pontuacao = pontuacao
+            tentativa.total_perguntas = total_perguntas
+            tentativa.concluido_em = datetime.utcnow()
+            db.session.commit()
+
+            flash(
+                f"Submetido! Acertaste {pontuacao} de {total_perguntas} perguntas.",
+                "success",
+            )
+            return redirect(url_for("quiziz_attempts"))
+
+        tentativa = QuizAttempt.query.filter_by(
+            quiz_id=quiz.id, aluno_id=aluno.id
+        ).first()
+
+        return render_template(
+            "quiziz/quizzes/take.html",
+            quiz=quiz,
+            tentativa=tentativa,
+        )
+
+    @app.route("/quiziz/attempts")
+    def quiziz_attempts():
+        aluno = get_aluno_atual()
+        if not aluno:
+            flash("Entra com o código da turma para veres as tuas avaliações.", "warning")
+            return redirect(url_for("quiziz_login"))
+
+        tentativas = (
+            QuizAttempt.query
+            .filter_by(aluno_id=aluno.id)
+            .order_by(QuizAttempt.concluido_em.desc().nullslast())
+            .all()
+        )
+
+        return render_template(
+            "quiziz/attempts.html",
+            tentativas=tentativas,
+        )
 
     # ----------------------------------------
     # CALENDÁRIO ESCOLAR – VISUALIZAÇÃO

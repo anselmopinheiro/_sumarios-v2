@@ -57,6 +57,9 @@ class Turma(db.Model):
     nome = db.Column(db.String(50), nullable=False)
     tipo = db.Column(db.String(20), nullable=False, default="regular")
 
+    # Código de acesso para permitir que os alunos entrem via "código de turma"
+    codigo_acesso = db.Column(db.String(20), unique=True)
+
     # deixa como nullable=True para não partir a migração em SQLite
     ano_letivo_id = db.Column(db.Integer, db.ForeignKey("anos_letivos.id"))
     ano_letivo = db.relationship("AnoLetivo", backref="turmas")
@@ -113,6 +116,104 @@ class Disciplina(db.Model):
         secondary=lambda: TurmaDisciplina.__table__,
         back_populates="disciplinas",
     )
+
+
+# --- QUIZIZ / AVALIAÇÕES ---------------------------------------
+
+
+class Aluno(db.Model):
+    __tablename__ = "alunos"
+
+    id = db.Column(db.Integer, primary_key=True)
+    nickname = db.Column(db.String(80), nullable=False)
+    turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), nullable=False)
+    criado_em = db.Column(db.DateTime, server_default=db.func.now())
+
+    turma = db.relationship("Turma", backref="alunos")
+
+    __table_args__ = (
+        db.UniqueConstraint("turma_id", "nickname", name="uq_aluno_nickname_turma"),
+    )
+
+
+class Quiz(db.Model):
+    __tablename__ = "quizzes"
+
+    id = db.Column(db.Integer, primary_key=True)
+    titulo = db.Column(db.String(255), nullable=False)
+    turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), nullable=False)
+    criado_em = db.Column(db.DateTime, server_default=db.func.now())
+
+    turma = db.relationship("Turma", backref="quizzes")
+    perguntas = db.relationship(
+        "QuizQuestion",
+        back_populates="quiz",
+        cascade="all, delete-orphan",
+    )
+
+
+class QuizQuestion(db.Model):
+    __tablename__ = "quiz_questions"
+
+    id = db.Column(db.Integer, primary_key=True)
+    quiz_id = db.Column(db.Integer, db.ForeignKey("quizzes.id"), nullable=False)
+    texto = db.Column(db.String(500), nullable=False)
+
+    quiz = db.relationship("Quiz", back_populates="perguntas")
+    opcoes = db.relationship(
+        "QuizOption",
+        back_populates="pergunta",
+        cascade="all, delete-orphan",
+    )
+
+
+class QuizOption(db.Model):
+    __tablename__ = "quiz_options"
+
+    id = db.Column(db.Integer, primary_key=True)
+    question_id = db.Column(db.Integer, db.ForeignKey("quiz_questions.id"), nullable=False)
+    texto = db.Column(db.String(255), nullable=False)
+    correta = db.Column(db.Boolean, nullable=False, default=False)
+
+    pergunta = db.relationship("QuizQuestion", back_populates="opcoes")
+
+
+class QuizAttempt(db.Model):
+    __tablename__ = "quiz_attempts"
+
+    id = db.Column(db.Integer, primary_key=True)
+    quiz_id = db.Column(db.Integer, db.ForeignKey("quizzes.id"), nullable=False)
+    aluno_id = db.Column(db.Integer, db.ForeignKey("alunos.id"), nullable=False)
+    iniciado_em = db.Column(db.DateTime, server_default=db.func.now())
+    concluido_em = db.Column(db.DateTime)
+    pontuacao = db.Column(db.Integer, nullable=False, default=0)
+    total_perguntas = db.Column(db.Integer, nullable=False, default=0)
+
+    quiz = db.relationship("Quiz", backref="tentativas")
+    aluno = db.relationship("Aluno", backref="tentativas")
+    respostas = db.relationship(
+        "QuizAnswer",
+        back_populates="tentativa",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint("quiz_id", "aluno_id", name="uq_quiz_aluno"),
+    )
+
+
+class QuizAnswer(db.Model):
+    __tablename__ = "quiz_answers"
+
+    id = db.Column(db.Integer, primary_key=True)
+    attempt_id = db.Column(db.Integer, db.ForeignKey("quiz_attempts.id"), nullable=False)
+    question_id = db.Column(db.Integer, db.ForeignKey("quiz_questions.id"), nullable=False)
+    option_id = db.Column(db.Integer, db.ForeignKey("quiz_options.id"), nullable=False)
+    correta = db.Column(db.Boolean, nullable=False, default=False)
+
+    tentativa = db.relationship("QuizAttempt", back_populates="respostas")
+    pergunta = db.relationship("QuizQuestion")
+    opcao = db.relationship("QuizOption")
 
 
 class LivroTurma(db.Model):
