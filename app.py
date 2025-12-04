@@ -1171,7 +1171,7 @@ def create_app():
             periodo_id=periodo_atual.id if periodo_atual else None,
         )
 
-        datas = [d.data for d in dias]
+        datas = [d["data"] for d in dias]
 
         def _media_formatada(valor):
             return "—" if valor is None else f"{valor:.2f}"
