@@ -817,6 +817,70 @@ def importar_outras_datas_json(
     return contadores, turmas_fechadas, turmas_inexistentes, turmas_para_renumerar
 
 
+def importar_calendarios_json(
+    linhas: List[Dict[str, object]]
+) -> tuple[Dict[str, int], list[str], list[str], set[int]]:
+    """Importa backups de calendários (normal/extra/etc.) agrupando por turma.
+
+    Aceita linhas com ``turma_id`` ou ``turma_nome``; linhas sem essa informação
+    são ignoradas. Turmas com ano letivo fechado também são ignoradas. No final,
+    efetua renumeração das turmas importadas.
+    """
+
+    contadores = {"criados": 0, "atualizados": 0, "ignorados": 0}
+    turmas_fechadas: set[str] = set()
+    turmas_inexistentes: set[str] = set()
+    turmas_para_renumerar: set[int] = set()
+    linhas_por_turma: Dict[int, List[Dict[str, object]]] = defaultdict(list)
+
+    for linha in linhas:
+        turma_id = linha.get("turma_id") or None
+        turma_nome = (linha.get("turma_nome") or "").strip()
+
+        turma: Turma | None = None
+        if turma_id:
+            turma = Turma.query.get(turma_id)
+        if not turma and turma_nome:
+            turma = Turma.query.filter(func.lower(Turma.nome) == turma_nome.lower()).first()
+
+        if not turma:
+            contadores["ignorados"] += 1
+            if turma_nome:
+                turmas_inexistentes.add(turma_nome)
+            continue
+
+        ano = turma.ano_letivo
+        if ano and ano.fechado:
+            contadores["ignorados"] += 1
+            turmas_fechadas.add(turma.nome)
+            continue
+
+        linha_copy = dict(linha)
+        linha_copy.pop("turma_nome", None)
+        linhas_por_turma[turma.id].append(linha_copy)
+
+    for turma_id, linhas_turma in linhas_por_turma.items():
+        turma = Turma.query.get(turma_id)
+        if not turma:
+            continue
+
+        resultado = importar_sumarios_json(turma, linhas_turma)
+        contadores["criados"] += resultado.get("criados", 0)
+        contadores["atualizados"] += resultado.get("atualizados", 0)
+        contadores["ignorados"] += resultado.get("ignorados", 0)
+        turmas_para_renumerar.add(turma_id)
+
+    for turma_id in turmas_para_renumerar:
+        renumerar_calendario_turma(turma_id)
+
+    return (
+        contadores,
+        sorted(turmas_fechadas),
+        sorted(turmas_inexistentes),
+        turmas_para_renumerar,
+    )
+
+
 def importar_sumarios_json(turma: Turma, linhas: List[Dict[str, object]]) -> Dict[str, int]:
     """
     Importa ou atualiza linhas do calendário a partir de um backup.

@@ -39,3 +39,8 @@ Aplicação Flask para gestão de turmas, calendários de aulas e sumários.
 - Índices criados para consultas frequentes sobre calendários, alunos e avaliações (melhoram listagens diárias/semanais e mapas de avaliação).
 - Criação automática de tabelas e colunas recentes para reduzir falhas em instalações novas ou bases antigas.
 
+## Importação de calendários
+- Disponível em **"Importar calendário"** no menu principal.
+- Aceita ficheiros JSON com uma lista de aulas ou um bloco `{"turmas": [{"turma_id"/"turma_nome", "aulas": [...]}, ...]}`.
+- Opcionalmente pode ser escolhido, na página, uma turma por defeito para linhas sem turma definida.
+

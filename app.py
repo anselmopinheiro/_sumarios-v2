@@ -52,6 +52,7 @@ from calendario_service import (
     PERIODOS_TURMA_VALIDOS,
     exportar_sumarios_json,
     importar_sumarios_json,
+    importar_calendarios_json,
     exportar_outras_datas_json,
     importar_outras_datas_json,
     listar_aulas_especiais,
@@ -1452,6 +1453,103 @@ def create_app():
             tipos_aula=TIPOS_AULA,
             anos_fechados=anos_fechados,
         )
+
+
+    @app.route("/calendarios/import", methods=["GET", "POST"])
+    def calendarios_import():
+        turmas = Turma.query.order_by(Turma.nome).all()
+
+        if request.method == "POST":
+            ficheiro = request.files.get("ficheiro")
+            conteudo = request.form.get("conteudo")
+            turma_padrao_id = request.form.get("turma_id_padrao", type=int)
+
+            bruto: str | None = None
+            if ficheiro and ficheiro.filename:
+                bruto = ficheiro.read().decode("utf-8", errors="ignore")
+            elif conteudo:
+                bruto = conteudo
+
+            if not bruto:
+                flash("Seleciona um ficheiro JSON para importar.", "error")
+                return redirect(url_for("calendarios_import"))
+
+            try:
+                payload = json.loads(bruto)
+            except ValueError:
+                flash("Ficheiro JSON inválido.", "error")
+                return redirect(url_for("calendarios_import"))
+
+            linhas: list[dict] = []
+
+            if isinstance(payload, dict) and "turmas" in payload:
+                for bloco in payload.get("turmas") or []:
+                    aulas = bloco.get("aulas") or []
+                    turma_info = bloco.get("turma") if isinstance(bloco.get("turma"), dict) else {}
+                    bloco_turma_id = bloco.get("turma_id") or bloco.get("id") or turma_info.get("id")
+                    bloco_turma_nome = bloco.get("turma_nome") or turma_info.get("nome")
+                    for aula in aulas:
+                        linha = dict(aula)
+                        if bloco_turma_id:
+                            linha.setdefault("turma_id", bloco_turma_id)
+                        if bloco_turma_nome:
+                            linha.setdefault("turma_nome", bloco_turma_nome)
+                        linhas.append(linha)
+            elif isinstance(payload, dict) and "aulas" in payload:
+                turma_info = payload.get("turma") if isinstance(payload.get("turma"), dict) else {}
+                turma_payload_id = payload.get("turma_id") or turma_info.get("id")
+                turma_payload_nome = payload.get("turma_nome") or turma_info.get("nome")
+                for aula in payload.get("aulas") or []:
+                    linha = dict(aula)
+                    if turma_payload_id:
+                        linha.setdefault("turma_id", turma_payload_id)
+                    if turma_payload_nome:
+                        linha.setdefault("turma_nome", turma_payload_nome)
+                    linhas.append(linha)
+            elif isinstance(payload, list):
+                linhas = list(payload)
+            else:
+                flash(
+                    "Formato de backup desconhecido: esperado lista de aulas ou objeto com 'aulas'.",
+                    "error",
+                )
+                return redirect(url_for("calendarios_import"))
+
+            if turma_padrao_id:
+                for linha in linhas:
+                    if not linha.get("turma_id") and not linha.get("turma_nome"):
+                        linha["turma_id"] = turma_padrao_id
+
+            if not linhas:
+                flash("Nenhuma linha de calendário encontrada no JSON.", "warning")
+                return redirect(url_for("calendarios_import"))
+
+            contadores, turmas_fechadas, turmas_inexistentes, _ = importar_calendarios_json(
+                linhas
+            )
+
+            flash(
+                "Importação concluída: "
+                f"{contadores['criados']} criadas, "
+                f"{contadores['atualizados']} atualizadas, "
+                f"{contadores['ignorados']} ignoradas.",
+                "success",
+            )
+
+            if turmas_fechadas:
+                flash(
+                    "Turmas ignoradas por ano letivo fechado: " + ", ".join(turmas_fechadas),
+                    "warning",
+                )
+            if turmas_inexistentes:
+                flash(
+                    "Turmas não encontradas no ficheiro: " + ", ".join(turmas_inexistentes),
+                    "warning",
+                )
+
+            return redirect(url_for("calendarios_import"))
+
+        return render_template("calendario_import.html", turmas=turmas)
 
     @app.route("/calendario/outras-datas")
     def calendario_outras_datas():
