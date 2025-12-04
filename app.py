@@ -1197,7 +1197,7 @@ def create_app():
             output.write(f"<td>{aluno.numero if aluno.numero is not None else '--'}</td>")
             output.write(f"<td>{aluno.nome}</td>")
             for dia in dias:
-                media = dia.medias.get(aluno.id)
+                media = dia["medias"].get(aluno.id)
                 if media is not None:
                     valores.append(media)
                 output.write(f"<td>{_media_formatada(media)}</td>")
