@@ -1120,7 +1120,22 @@ def calcular_mapa_avaliacao_diaria(
     for data_ref in sorted(aulas_por_data.keys()):
         aulas_dia = aulas_por_data[data_ref]
         medias = {aluno.id: _media_para_aluno(aluno.id, aulas_dia) for aluno in alunos}
-        dias.append({"data": data_ref, "medias": medias})
+        faltas = {}
+        for aluno in alunos:
+            faltas_aluno = 0
+            for aula in aulas_dia:
+                avaliacao = next(
+                    (av for av in aula.avaliacoes if av.aluno_id == aluno.id), None
+                )
+                if not avaliacao:
+                    continue
+
+                tempos_aula = _total_previsto_para_aula(aula)
+                faltas_aluno += max(0, min(avaliacao.faltas or 0, tempos_aula))
+
+            faltas[aluno.id] = faltas_aluno
+
+        dias.append({"data": data_ref, "medias": medias, "faltas": faltas})
 
     return dias
 

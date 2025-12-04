@@ -1197,10 +1197,11 @@ def create_app():
         output.write("<thead><tr><th>#</th><th>Aluno</th>")
         for d in datas:
             output.write(f"<th>{d.strftime('%d/%m/%Y')}</th>")
-        output.write("<th>Média</th></tr></thead><tbody>")
+        output.write("<th>Faltas</th><th>Média</th></tr></thead><tbody>")
 
         for aluno in alunos:
             valores = []
+            faltas_total = 0
             output.write("<tr>")
             output.write(f"<td>{aluno.numero if aluno.numero is not None else '--'}</td>")
             output.write(f"<td>{aluno.nome}</td>")
@@ -1209,6 +1210,8 @@ def create_app():
                 if media is not None:
                     valores.append(media)
                 output.write(f"<td>{_media_formatada(media)}</td>")
+                faltas_total += dia.get("faltas", {}).get(aluno.id, 0)
+            output.write(f"<td>{faltas_total}</td>")
             if valores:
                 media_final = sum(valores) / len(valores)
                 output.write(f"<td>{media_final:.2f}</td>")
