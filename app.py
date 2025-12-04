@@ -258,6 +258,14 @@ def create_app():
         insp = inspect(db.engine)
         tabelas = set(insp.get_table_names())
 
+        # Instalações limpas: criar todas as tabelas definidas nos modelos para
+        # que a aplicação arranque mesmo sem ter corrido as migrações.
+        if not tabelas:
+            db.create_all()
+            db.session.commit()
+            insp = inspect(db.engine)
+            tabelas = set(insp.get_table_names())
+
         if "alunos" not in tabelas:
             db.session.execute(
                 text(

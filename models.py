@@ -176,6 +176,10 @@ class Aluno(db.Model):
         "AulaAluno", back_populates="aluno", cascade="all, delete-orphan"
     )
 
+    __table_args__ = (
+        db.Index("ix_alunos_turma_numero", "turma_id", "numero"),
+    )
+
 
 class Modulo(db.Model):
     __tablename__ = "modulos"
@@ -334,6 +338,12 @@ class CalendarioAula(db.Model):
         "AulaAluno", back_populates="aula", cascade="all, delete-orphan"
     )
 
+    __table_args__ = (
+        db.Index("ix_cal_aulas_turma_data", "turma_id", "data", "apagado"),
+        db.Index("ix_cal_aulas_periodo", "periodo_id", "data"),
+        db.Index("ix_cal_aulas_modulo", "modulo_id"),
+    )
+
 
 class AulaAluno(db.Model):
     __tablename__ = "aulas_alunos"
@@ -359,4 +369,6 @@ class AulaAluno(db.Model):
 
     __table_args__ = (
         db.UniqueConstraint("aula_id", "aluno_id", name="uq_aula_aluno"),
+        db.Index("ix_aulas_alunos_aula", "aula_id"),
+        db.Index("ix_aulas_alunos_aluno", "aluno_id"),
     )
