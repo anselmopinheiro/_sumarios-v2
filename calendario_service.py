@@ -1050,6 +1050,7 @@ def calcular_mapa_avaliacao_diaria(
     data_inicio: Optional[date] = None,
     data_fim: Optional[date] = None,
     periodo_id: Optional[int] = None,
+    modulo_id: Optional[int] = None,
 ) -> List[Dict]:
     """Devolve médias diárias de avaliação para cada aluno da turma.
 
@@ -1061,6 +1062,8 @@ def calcular_mapa_avaliacao_diaria(
     query = CalendarioAula.query.filter_by(turma_id=turma.id, apagado=False)
     if periodo_id:
         query = query.filter(CalendarioAula.periodo_id == periodo_id)
+    if modulo_id:
+        query = query.filter(CalendarioAula.modulo_id == modulo_id)
     if data_inicio:
         query = query.filter(CalendarioAula.data >= data_inicio)
     if data_fim:

@@ -1087,6 +1087,12 @@ def create_app():
         turma = Turma.query.get_or_404(turma_id)
         ano = turma.ano_letivo
 
+        modulos = (
+            Modulo.query.filter_by(turma_id=turma.id)
+            .order_by(Modulo.nome)
+            .all()
+        )
+
         periodos_disponiveis = filtrar_periodos_para_turma(
             turma,
             (
@@ -1097,6 +1103,7 @@ def create_app():
         )
 
         periodo_id = request.args.get("periodo_id", type=int)
+        modulo_id = request.args.get("modulo_id", type=int)
         periodo_atual = None
         if periodo_id:
             periodo_atual = next((p for p in periodos_disponiveis if p.id == periodo_id), None)
@@ -1123,6 +1130,7 @@ def create_app():
             data_inicio=data_inicio,
             data_fim=data_fim,
             periodo_id=periodo_atual.id if periodo_atual else None,
+            modulo_id=modulo_id,
         )
 
         return render_template(
@@ -1133,6 +1141,8 @@ def create_app():
             alunos=alunos,
             periodo_atual=periodo_atual,
             periodos_disponiveis=periodos_disponiveis,
+            modulos=modulos,
+            modulo_id=modulo_id,
             data_inicio=data_inicio,
             data_fim=data_fim,
         )
@@ -1140,6 +1150,12 @@ def create_app():
     @app.route("/turmas/<int:turma_id>/mapa-avaliacao-diaria/export")
     def turma_mapa_avaliacao_diaria_export(turma_id):
         turma = Turma.query.get_or_404(turma_id)
+
+        modulos = (
+            Modulo.query.filter_by(turma_id=turma.id)
+            .order_by(Modulo.nome)
+            .all()
+        )
 
         periodos_disponiveis = filtrar_periodos_para_turma(
             turma,
@@ -1151,6 +1167,7 @@ def create_app():
         )
 
         periodo_id = request.args.get("periodo_id", type=int)
+        modulo_id = request.args.get("modulo_id", type=int)
         periodo_atual = None
         if periodo_id:
             periodo_atual = next((p for p in periodos_disponiveis if p.id == periodo_id), None)
@@ -1177,6 +1194,7 @@ def create_app():
             data_inicio=data_inicio,
             data_fim=data_fim,
             periodo_id=periodo_atual.id if periodo_atual else None,
+            modulo_id=modulo_id,
         )
 
         datas = [d["data"] for d in dias]
