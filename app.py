@@ -2047,13 +2047,10 @@ def create_app():
             sumarios_originais = [s.strip() for s in sumarios_txt.split(",") if s.strip()]
             total_previsto = len(sumarios_originais) if sumarios_originais else 1
             if tempos_sem_aula is None:
-                tempos_sem_aula = (
-                    aula.tempos_sem_aula if tipo in DEFAULT_TIPOS_SEM_AULA else 0
-                )
-            if tempos_sem_aula is None:
-                tempos_sem_aula = (
-                    total_previsto if tipo in DEFAULT_TIPOS_SEM_AULA else 0
-                )
+                if tipo in DEFAULT_TIPOS_SEM_AULA:
+                    tempos_sem_aula = total_previsto
+                else:
+                    tempos_sem_aula = 0
             tempos_sem_aula = max(0, min(tempos_sem_aula, total_previsto))
 
             if not data or not modulo_id:
@@ -2174,13 +2171,14 @@ def create_app():
             sumarios_originais = [s.strip() for s in sumarios_txt.split(",") if s.strip()]
             total_previsto = len(sumarios_originais) if sumarios_originais else 1
             if tempos_sem_aula is None:
-                tempos_sem_aula = (
-                    aula.tempos_sem_aula if tipo in DEFAULT_TIPOS_SEM_AULA else 0
-                )
-            if tempos_sem_aula is None:
-                tempos_sem_aula = (
-                    total_previsto if tipo in DEFAULT_TIPOS_SEM_AULA else 0
-                )
+                if tipo in DEFAULT_TIPOS_SEM_AULA:
+                    tempos_sem_aula = (
+                        aula.tempos_sem_aula
+                        if aula.tempos_sem_aula is not None
+                        else total_previsto
+                    )
+                else:
+                    tempos_sem_aula = 0
             tempos_sem_aula = max(0, min(tempos_sem_aula, total_previsto))
 
             if not data or not modulo_id:
@@ -2431,11 +2429,14 @@ def create_app():
         ]
         total_previsto = len(sumarios_originais) if sumarios_originais else 1
         if tempos_sem_aula is None:
-            tempos_sem_aula = (
-                aula.tempos_sem_aula if novo_tipo in DEFAULT_TIPOS_SEM_AULA else 0
-            )
-        if tempos_sem_aula is None:
-            tempos_sem_aula = total_previsto if novo_tipo in DEFAULT_TIPOS_SEM_AULA else 0
+            if novo_tipo in DEFAULT_TIPOS_SEM_AULA:
+                tempos_sem_aula = (
+                    aula.tempos_sem_aula
+                    if aula.tempos_sem_aula is not None
+                    else total_previsto
+                )
+            else:
+                tempos_sem_aula = 0
         tempos_sem_aula = max(0, min(tempos_sem_aula, total_previsto))
         aula.tempos_sem_aula = (
             tempos_sem_aula if novo_tipo in DEFAULT_TIPOS_SEM_AULA else 0
