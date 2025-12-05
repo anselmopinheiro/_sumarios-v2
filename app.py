@@ -1686,7 +1686,10 @@ def create_app():
                 continue
 
             aula.tipo = novo_tipo
-            total_previsto = _total_previsto_ui(aula.sumarios, aula.tempos_sem_aula)
+            total_previsto = _total_previsto_ui(
+                aula.sumarios,
+                tempos_sem_aula if tempos_sem_aula is not None else aula.tempos_sem_aula,
+            )
             if novo_tipo in DEFAULT_TIPOS_SEM_AULA:
                 valor_tempos = tempos_sem_aula
                 if valor_tempos is None:
@@ -2432,7 +2435,10 @@ def create_app():
         aula.tipo = novo_tipo
 
         tempos_sem_aula = request.form.get("tempos_sem_aula", type=int)
-        total_previsto = _total_previsto_ui(aula.sumarios, aula.tempos_sem_aula)
+        total_previsto = _total_previsto_ui(
+            aula.sumarios,
+            tempos_sem_aula if tempos_sem_aula is not None else aula.tempos_sem_aula,
+        )
         if tempos_sem_aula is None:
             if novo_tipo in DEFAULT_TIPOS_SEM_AULA:
                 tempos_sem_aula = (
