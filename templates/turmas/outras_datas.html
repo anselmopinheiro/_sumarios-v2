@@ -210,8 +210,9 @@
               {% endif %}
             </td>
             <td>
+              {% set sem_aula = a.tipo in tipos_sem_aula %}
               <div class="d-flex flex-column gap-1">
-                <span class="badge bg-secondary text-light">{{ tipo_labels.get(a.tipo, a.tipo) }}</span>
+                <span class="badge {% if sem_aula %}bg-danger text-light{% else %}bg-secondary text-light{% endif %}">{{ tipo_labels.get(a.tipo, a.tipo) }}</span>
                 {% if a.tempos_sem_aula is not none %}
                   <span class="badge bg-light text-dark">Tempos sem aula: {{ a.tempos_sem_aula }}</span>
                 {% endif %}

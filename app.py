@@ -1093,6 +1093,7 @@ def create_app():
             periodos_disponiveis=periodos_disponiveis,
             tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
             tipos_aula=TIPOS_AULA,
+            tipo_labels=dict(TIPOS_AULA),
         )
 
     @app.route("/turmas/<int:turma_id>/mapa-avaliacao-diaria")
@@ -1353,6 +1354,7 @@ def create_app():
             dia_seguinte=data_atual + timedelta(days=1),
             tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
             tipos_aula=TIPOS_AULA,
+            tipo_labels=dict(TIPOS_AULA),
             turmas=todas_turmas,
             anos_fechados=anos_fechados,
         )
@@ -1463,6 +1465,7 @@ def create_app():
             faltas_por_aula=faltas_por_aula,
             tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
             tipos_aula=TIPOS_AULA,
+            tipo_labels=dict(TIPOS_AULA),
             anos_fechados=anos_fechados,
         )
 

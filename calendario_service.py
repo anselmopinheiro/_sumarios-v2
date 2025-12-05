@@ -1243,7 +1243,10 @@ def calcular_mapa_avaliacao_diaria(
     faltas que cubram todos os tempos avaliados, a média do dia é zero.
     """
 
-    query = CalendarioAula.query.filter_by(turma_id=turma.id, apagado=False)
+    query = (
+        CalendarioAula.query.filter_by(turma_id=turma.id, apagado=False)
+        .filter(~CalendarioAula.tipo.in_(DEFAULT_TIPOS_SEM_AULA))
+    )
     if periodo_id:
         query = query.filter(CalendarioAula.periodo_id == periodo_id)
     if modulo_id:

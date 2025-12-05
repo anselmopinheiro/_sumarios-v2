@@ -139,10 +139,12 @@
         {% set sem_aula = a.tipo in tipos_sem_aula %}
         {% set sem_aula_total = sem_aula and faltas >= total_previsto %}
         {% set aulas_contam = total_previsto - faltas if sem_aula else total_previsto %}
+        {% set tipo_label = tipo_labels.get(a.tipo, a.tipo) if tipo_labels is defined else a.tipo %}
         <tr>
           <td class="w-100">
             <div class="d-flex flex-wrap gap-1 mb-2">
               <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">Turma {{ turma.nome }}</span>
+              <span class="badge rounded-pill {% if sem_aula %}bg-danger text-light{% else %}bg-body-secondary text-dark border border-secondary-subtle{% endif %}">{{ tipo_label }}</span>
               <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
                 Nº Sumário {% if sem_aula %}—{% else %}{{ a.sumarios or '—' }}{% endif %}
               </span>
