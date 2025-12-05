@@ -308,6 +308,120 @@ def _build_dias_nao_letivos(ano: AnoLetivo) -> Tuple[Set[date], Set[date]]:
     return dias_interrupcao, dias_feriados
 
 
+def importar_calendario_escolar_json(payload: dict, ano_destino_id: int | None = None):
+    """
+    Importa um calendário escolar (interrupções e feriados) a partir de JSON.
+
+    - Se ``ano_destino_id`` for fornecido, aplica ao ano escolhido;
+    - Caso contrário tenta corresponder por id/nome no JSON;
+    - Se não existir, cria um novo ano letivo com os dados do ficheiro.
+    """
+
+    if not isinstance(payload, dict):
+        raise ValueError("Formato inválido: esperado um objeto JSON.")
+
+    ano_info = payload.get("ano_letivo") or {}
+    interrupcoes_payload = payload.get("interrupcoes") or []
+    feriados_payload = payload.get("feriados") or []
+
+    ano: AnoLetivo | None = None
+
+    if ano_destino_id:
+        ano = AnoLetivo.query.get(ano_destino_id)
+        if not ano:
+            raise ValueError("Ano letivo selecionado não encontrado.")
+
+    if not ano and ano_info.get("id"):
+        ano = AnoLetivo.query.get(ano_info.get("id"))
+
+    nome_ano = (ano_info.get("nome") or "").strip()
+    if not ano and nome_ano:
+        ano = AnoLetivo.query.filter(func.lower(AnoLetivo.nome) == nome_ano.lower()).first()
+
+    if not ano:
+        if not ano_info:
+            raise ValueError("O ficheiro JSON precisa do bloco 'ano_letivo' para criar um novo ano.")
+
+        ano = AnoLetivo(
+            nome=nome_ano or "Ano letivo importado",
+            descricao=ano_info.get("descricao"),
+            ativo=bool(ano_info.get("ativo")) if "ativo" in ano_info else False,
+            fechado=bool(ano_info.get("fechado")) if "fechado" in ano_info else False,
+        )
+        db.session.add(ano)
+        db.session.flush()
+
+    if ano.fechado:
+        raise ValueError("Ano letivo fechado: não é possível importar o calendário escolar.")
+
+    campos_data = {
+        "data_inicio_ano": "data_inicio_ano",
+        "data_fim_ano": "data_fim_ano",
+        "data_fim_semestre1": "data_fim_semestre1",
+        "data_inicio_semestre2": "data_inicio_semestre2",
+    }
+
+    for attr, chave in campos_data.items():
+        valor = _parse_iso_date(ano_info.get(chave)) if ano_info else None
+        if valor:
+            setattr(ano, attr, valor)
+
+    if "descricao" in ano_info:
+        ano.descricao = ano_info.get("descricao")
+    if "ativo" in ano_info:
+        ano.ativo = bool(ano_info.get("ativo"))
+    if "fechado" in ano_info:
+        ano.fechado = bool(ano_info.get("fechado"))
+
+    InterrupcaoLetiva.query.filter_by(ano_letivo_id=ano.id).delete()
+    Feriado.query.filter_by(ano_letivo_id=ano.id).delete()
+
+    novas_interrupcoes = 0
+    novas_feriados = 0
+
+    for intr in interrupcoes_payload:
+        if not isinstance(intr, dict):
+            continue
+        registo = InterrupcaoLetiva(
+            ano_letivo_id=ano.id,
+            tipo=intr.get("tipo") or "outros",
+            data_inicio=_parse_iso_date(intr.get("data_inicio")),
+            data_fim=_parse_iso_date(intr.get("data_fim")),
+            data_text=intr.get("data_text") or None,
+            descricao=intr.get("descricao") or None,
+        )
+        db.session.add(registo)
+        novas_interrupcoes += 1
+
+    for fer in feriados_payload:
+        if not isinstance(fer, dict):
+            continue
+        registo = Feriado(
+            ano_letivo_id=ano.id,
+            nome=fer.get("nome") or "Feriado",
+            data=_parse_iso_date(fer.get("data")),
+            data_text=fer.get("data_text") or None,
+        )
+        db.session.add(registo)
+        novas_feriados += 1
+
+    db.session.commit()
+
+    return ano, {"interrupcoes": novas_interrupcoes, "feriados": novas_feriados}
+
+
+def _parse_iso_date(valor) -> Optional[date]:
+    """Converte valores ISO (YYYY-MM-DD) em date, ignorando entradas inválidas."""
+
+    if not valor:
+        return None
+
+    try:
+        return date.fromisoformat(str(valor))
+    except ValueError:
+        return None
+
+
 def _e_dia_letivo(d: date, ano: AnoLetivo, dias_interrupcao: Set[date], dias_feriados: Set[date]) -> bool:
     """
     Verifica se é dia letivo:

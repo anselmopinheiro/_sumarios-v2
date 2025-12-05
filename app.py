@@ -53,6 +53,7 @@ from calendario_service import (
     exportar_sumarios_json,
     importar_sumarios_json,
     importar_calendarios_json,
+    importar_calendario_escolar_json,
     exportar_outras_datas_json,
     importar_outras_datas_json,
     listar_aulas_especiais,
@@ -2607,12 +2608,64 @@ def create_app():
     # ----------------------------------------
     # CALENDÁRIO ESCOLAR – VISUALIZAÇÃO
     # ----------------------------------------
+    @app.route("/calendario-escolar/importar", methods=["GET", "POST"])
+    def calendario_escolar_importar():
+        anos = (
+            AnoLetivo.query
+            .order_by(AnoLetivo.data_inicio_ano.desc().nullslast(), AnoLetivo.nome)
+            .all()
+        )
+        ano_atual = get_ano_letivo_atual()
+
+        if request.method == "POST":
+            ano_destino_id = request.form.get("ano_id", type=int)
+            ficheiro = request.files.get("ficheiro")
+            conteudo = request.form.get("conteudo") or ""
+
+            bruto: str | None = None
+            if ficheiro and ficheiro.filename:
+                bruto = ficheiro.read().decode("utf-8", errors="ignore")
+            elif conteudo.strip():
+                bruto = conteudo
+
+            if not bruto:
+                flash("Seleciona um ficheiro ou cola o JSON do calendário escolar.", "error")
+                return redirect(url_for("calendario_escolar_importar"))
+
+            try:
+                payload = json.loads(bruto)
+            except ValueError:
+                flash("Ficheiro JSON inválido.", "error")
+                return redirect(url_for("calendario_escolar_importar"))
+
+            try:
+                ano_resultado, contadores = importar_calendario_escolar_json(
+                    payload, ano_destino_id=ano_destino_id
+                )
+            except ValueError as exc:
+                flash(str(exc), "error")
+                return redirect(url_for("calendario_escolar_importar"))
+
+            flash(
+                "Calendário escolar importado com sucesso: "
+                f"{contadores['interrupcoes']} interrupções e "
+                f"{contadores['feriados']} feriados.",
+                "success",
+            )
+            return redirect(url_for("calendario_escolar_gestao", ano_id=ano_resultado.id))
+
+        return render_template(
+            "calendario/importar_escolar.html",
+            anos=anos,
+            ano_atual=ano_atual,
+        )
+
     @app.route("/calendario-escolar")
     def calendario_escolar():
         ano = get_ano_letivo_atual()
         if not ano:
             flash("Ainda não existe Ano Letivo definido.", "error")
-            return redirect(url_for("dashboard"))
+            return redirect(url_for("calendario_escolar_importar"))
 
         interrupcoes = (
             InterrupcaoLetiva.query
@@ -2642,7 +2695,7 @@ def create_app():
         ano = get_ano_letivo_atual()
         if not ano:
             flash("Ainda não existe Ano Letivo definido.", "error")
-            return redirect(url_for("dashboard"))
+            return redirect(url_for("calendario_escolar_importar"))
 
         interrupcoes = (
             InterrupcaoLetiva.query
@@ -2657,9 +2710,16 @@ def create_app():
             .all()
         )
 
+        anos = (
+            AnoLetivo.query
+            .order_by(AnoLetivo.data_inicio_ano.desc().nullslast(), AnoLetivo.nome)
+            .all()
+        )
+
         return render_template(
             "calendario/gestao.html",
             ano=ano,
+            anos=anos,
             interrupcoes=interrupcoes,
             feriados=feriados,
         )

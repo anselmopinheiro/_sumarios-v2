@@ -44,3 +44,8 @@ Aplicação Flask para gestão de turmas, calendários de aulas e sumários.
 - Aceita ficheiros JSON com uma lista de aulas ou um bloco `{"turmas": [{"turma_id"/"turma_nome", "aulas": [...]}, ...]}`.
 - Opcionalmente pode ser escolhido, na página, uma turma por defeito para linhas sem turma definida.
 
+## Importação do calendário escolar
+- Aceder a **Calendário Escolar → Importar calendário**.
+- Suporta o JSON exportado em `/api/calendario-escolar.json`, incluindo dados do ano letivo, interrupções e feriados.
+- Pode apontar para um ano existente ou criar um novo automaticamente com base no ficheiro.
+
