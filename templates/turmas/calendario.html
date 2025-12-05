@@ -95,19 +95,27 @@
   </div>
 </div>
 
-{% if aulas %}
-  {% if not ano_fechado %}
-    <div class="d-flex justify-content-between align-items-center mb-2">
-      <h5 class="mb-0">Sumários</h5>
+  {% if aulas %}
+    {% if not ano_fechado %}
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h5 class="mb-0">Sumários</h5>
+        <button type="button"
+                class="btn btn-success js-guardar-todos"
+                data-scope="#calendario-principal"
+                data-loading-text="A guardar todos..."
+                data-error-text="Falha ao guardar">
+          Guardar todos os sumários/previsões
+        </button>
+      </div>
       <button type="button"
-              class="btn btn-success js-guardar-todos"
+              class="btn btn-success js-guardar-todos floating-guardar"
               data-scope="#calendario-principal"
               data-loading-text="A guardar todos..."
-              data-error-text="Falha ao guardar">
+              data-error-text="Falha ao guardar"
+              aria-label="Guardar todos os sumários e previsões visíveis">
         Guardar todos os sumários/previsões
       </button>
-    </div>
-  {% endif %}
+    {% endif %}
   <div id="calendario-principal">
   <table class="table table-striped table-bordered align-middle">
     <thead class="table-dark">
