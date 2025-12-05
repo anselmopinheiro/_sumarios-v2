@@ -1132,13 +1132,16 @@ def renumerar_calendario_turma(
     for aula in aulas:
         total_previsto = _total_previsto_para_aula(aula)
         sem_aula = aula.tipo in tipos_sem_aula
-        faltas = aula.tempos_sem_aula if aula.tempos_sem_aula is not None else (
-            total_previsto if sem_aula else 0
-        )
+
+        if sem_aula:
+            faltas = total_previsto
+        else:
+            faltas = aula.tempos_sem_aula if aula.tempos_sem_aula is not None else 0
+
         faltas = max(0, min(faltas, total_previsto))
         aula.tempos_sem_aula = faltas if sem_aula else 0
 
-        quantidade = total_previsto - faltas if sem_aula else total_previsto
+        quantidade = 0 if sem_aula else total_previsto - faltas
 
         if quantidade > 0:
             novos_sumarios = list(range(total_global + 1, total_global + quantidade + 1))
@@ -1146,7 +1149,7 @@ def renumerar_calendario_turma(
             aula.sumarios = ",".join(str(n) for n in novos_sumarios)
         else:
             # Mantém o sumário preenchido nesse dia, mas sem contar para os totais.
-            aula.sumarios = aula.sumarios or ""
+            aula.sumarios = ""
 
         aula.total_geral = total_global
 
@@ -1210,11 +1213,11 @@ def _contar_aulas(aula: CalendarioAula) -> int:
     total_previsto = _total_previsto_para_aula(aula)
 
     if aula.tipo in DEFAULT_TIPOS_SEM_AULA:
-        faltas = aula.tempos_sem_aula if aula.tempos_sem_aula is not None else total_previsto
-        faltas = max(0, min(faltas, total_previsto))
-        return max(total_previsto - faltas, 0)
+        return 0
 
-    return total_previsto
+    faltas = aula.tempos_sem_aula if aula.tempos_sem_aula is not None else 0
+    faltas = max(0, min(faltas, total_previsto))
+    return max(total_previsto - faltas, 0)
 
 
 def _total_previsto_para_aula(aula: CalendarioAula) -> int:
