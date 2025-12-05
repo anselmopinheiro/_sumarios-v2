@@ -846,6 +846,7 @@ def listar_sumarios_pendentes(data_limite: date, turma_id: int | None = None) ->
             joinedload(CalendarioAula.modulo),
         )
         .filter(CalendarioAula.apagado.is_(False))
+        .filter(CalendarioAula.tipo == "normal")
         .filter(CalendarioAula.data < data_limite)
         .filter(
             or_(
