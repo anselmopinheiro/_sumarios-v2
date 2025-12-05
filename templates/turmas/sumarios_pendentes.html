@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% set title = "Sumários pendentes" %}
+
+{% block content %}
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h1 class="h4 mb-1">Sumários pendentes</h1>
+      <div class="text-muted">Aulas anteriores a {{ hoje.strftime('%d/%m/%Y') }} sem sumário preenchido.</div>
+    </div>
+    {% set algum_editavel = false %}
+    {% for aula in aulas %}
+      {% if not anos_fechados.get(aula.turma_id, False) %}{% set algum_editavel = true %}{% endif %}
+    {% endfor %}
+    {% if algum_editavel %}
+      <button type="button"
+              class="btn btn-success js-guardar-todos floating-guardar"
+              data-loading-text="A guardar..."
+              data-error-text="Falha ao guardar"
+              aria-label="Guardar todos os sumários e previsões visíveis">
+        Guardar todos os sumários/previsões
+      </button>
+    {% endif %}
+  </div>
+
+  <form class="row g-3 align-items-end mb-4">
+    <div class="col-md-4">
+      <label class="form-label" for="turma-filtro">Turma</label>
+      <select id="turma-filtro" name="turma_id" class="form-select">
+        <option value="">Todas</option>
+        {% for t in turmas %}
+          <option value="{{ t.id }}" {% if turma_selecionada and turma_selecionada.id == t.id %}selected{% endif %}>{{ t.nome }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-auto">
+      <button class="btn btn-primary" type="submit">Filtrar</button>
+      <a class="btn btn-link" href="/calendario/sumarios-pendentes">Limpar</a>
+    </div>
+  </form>
+
+  {% if not aulas %}
+    <div class="alert alert-success">Não existem sumários pendentes anteriores a hoje.</div>
+  {% else %}
+    <table class="table table-striped table-bordered align-middle">
+      <thead class="table-dark">
+        <tr>
+          <th style="width: 65%;">Sumário</th>
+          <th>Tipo</th>
+          <th style="width: 160px;">Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in aulas %}
+          {% set sumarios_limpos = (a.sumarios or '').split(',')|map('trim')|reject('equalto','')|list %}
+          {% set total_base = sumarios_limpos|length if sumarios_limpos|length > 0 else 1 %}
+          {% set total_previsto = [total_base, a.tempos_sem_aula or 0]|max %}
+          {% if total_previsto < 1 %}{% set total_previsto = 1 %}{% endif %}
+          {% set faltas = a.tempos_sem_aula if a.tempos_sem_aula is not none else (total_previsto if a.tipo in tipos_sem_aula else 0) %}
+          {% set faltas = [faltas, total_previsto]|min %}
+          {% set faltas = [faltas, 0]|max %}
+          {% set sem_aula = a.tipo in tipos_sem_aula %}
+          {% set sem_aula_total = sem_aula and faltas >= total_previsto %}
+          {% set tipo_label = tipo_labels.get(a.tipo, a.tipo) if tipo_labels is defined else a.tipo %}
+          {% set turma_fechada = anos_fechados.get(a.turma_id, False) %}
+          {% set form_id = 'sumario-form-' ~ a.id %}
+          <tr>
+            <td class="w-100">
+              <div class="d-flex flex-wrap gap-1 mb-2">
+                <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">Turma {{ a.turma.nome if a.turma else a.turma_id }}</span>
+                <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">Nº Sumário {% if sem_aula %}—{% else %}{{ a.sumarios or '—' }}{% endif %}</span>
+                {% if a.data %}
+                  <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
+                    {{ a.data.strftime('%d/%m/%Y') }}
+                    <small class="text-muted ms-1">{{ ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'][a.data.weekday()] }}</small>
+                  </span>
+                {% endif %}
+                <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">{% if a.modulo %}{{ a.modulo.nome }}{% else %}Sem módulo{% endif %}</span>
+                <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">Aula {% if sem_aula_total %}—{% else %}{{ a.numero_modulo or '—' }}{% endif %}</span>
+                <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">Total {% if sem_aula_total %}—{% else %}{{ a.total_geral or '—' }}{% endif %}</span>
+                <span class="badge rounded-pill {% if sem_aula %}bg-danger text-light{% else %}bg-body-secondary text-dark border border-secondary-subtle{% endif %}">{{ tipo_label }}</span>
+              </div>
+
+              {% if turma_fechada %}
+                <div class="mb-1">{{ a.sumario or '' }}</div>
+                {% if a.previsao %}
+                  <div class="text-muted small">Previsão: {{ a.previsao }}</div>
+                {% endif %}
+              {% else %}
+                <form method="post"
+                      id="{{ form_id }}"
+                      action="{{ url_for('calendario_update_sumario', turma_id=a.turma_id, aula_id=a.id) }}"
+                      class="d-flex flex-column gap-2 js-sumario-form">
+                  <input type="hidden" name="view" value="pendentes">
+                  <input type="hidden" name="turma_filtro" value="{{ turma_selecionada.id if turma_selecionada else '' }}">
+                  {% if a.periodo_id %}
+                    <input type="hidden" name="periodo_id" value="{{ a.periodo_id }}">
+                  {% endif %}
+                  <div class="d-flex align-items-start gap-2">
+                    <textarea name="sumario"
+                              class="form-control form-control-sm js-autoresize"
+                              rows="2"
+                              placeholder="Escrever sumário...">{{ a.sumario or '' }}</textarea>
+                    <div class="d-flex flex-column" style="width: 120px;">
+                      <label class="form-label form-label-sm mb-1">Tempos (sem aula)</label>
+                      {% set pode_editar_tempos = a.tipo in tipos_sem_aula %}
+                      <input type="number"
+                             name="tempos_sem_aula"
+                             form="{{ form_id }}"
+                             class="form-control form-control-sm {% if not pode_editar_tempos %}bg-light text-muted{% endif %}"
+                             min="0"
+                             value="{{ faltas if sem_aula else 0 }}"
+                             data-total-previsto="{{ total_previsto }}"
+                             data-tempos-atual="{{ faltas if sem_aula else 0 }}"
+                             {% if not pode_editar_tempos %}readonly{% endif %}>
+                    </div>
+                  </div>
+                  <textarea name="previsao"
+                            class="form-control form-control-sm js-autoresize"
+                            rows="2"
+                            placeholder="Previsão da aula (planeamento)...">{{ a.previsao or '' }}</textarea>
+                  <button type="button" class="btn btn-link btn-sm ps-0 js-copy-previsao">Copiar previsão para sumário</button>
+                </form>
+              {% endif %}
+              {% set faltas_alunos = faltas_por_aula.get(a.id) if faltas_por_aula else [] %}
+              {% if faltas_alunos %}
+                <div class="small text-danger">Em falta: {{ faltas_alunos|join('; ') }}</div>
+              {% endif %}
+            </td>
+            <td>
+              {% if turma_fechada %}
+                {{ tipo_label }}
+                {% if sem_aula %}
+                  <div class="small text-danger">Tempos sem aula: {{ faltas }}</div>
+                {% endif %}
+              {% else %}
+                <div class="d-flex align-items-start gap-2">
+                  <select name="tipo"
+                          form="{{ form_id }}"
+                          class="form-select form-select-sm">
+                    {% for valor, label in tipos_aula %}
+                      <option value="{{ valor }}" {% if a.tipo == valor %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                  <button type="submit" form="{{ form_id }}" class="btn btn-sm btn-primary">Guardar</button>
+                </div>
+                {% if sem_aula %}
+                  <div class="small text-danger mt-1">Tempos sem aula: {{ faltas }}</div>
+                {% endif %}
+              {% endif %}
+            </td>
+            <td>
+              {% if turma_fechada %}
+                <span class="badge bg-secondary">Ano letivo fechado</span>
+              {% else %}
+                <a href="{{ url_for('calendario_aula_alunos', turma_id=a.turma_id, aula_id=a.id, return_url=request.full_path) }}"
+                   class="btn btn-sm btn-outline-info mb-1">Alunos</a>
+                <a href="{{ url_for('calendario_edit', turma_id=a.turma_id, aula_id=a.id, view='pendentes', data_ref=a.data.isoformat() if a.data else None, periodo_id=a.periodo_id) }}"
+                   class="btn btn-sm btn-warning mb-1">Editar</a>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+{% endblock %}

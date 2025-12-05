@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from typing import List, Dict, Set, Tuple, Optional
 from collections import defaultdict
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import joinedload
 
 from models import (
@@ -832,6 +832,33 @@ def listar_aulas_especiais(
         .join(Turma)
         .all()
     )
+
+
+def listar_sumarios_pendentes(data_limite: date, turma_id: int | None = None) -> List[CalendarioAula]:
+    """Devolve aulas anteriores à data_limite cujo sumário ainda não foi preenchido."""
+
+    if data_limite is None:
+        data_limite = date.today()
+
+    query = (
+        CalendarioAula.query.options(
+            joinedload(CalendarioAula.turma),
+            joinedload(CalendarioAula.modulo),
+        )
+        .filter(CalendarioAula.apagado.is_(False))
+        .filter(CalendarioAula.data < data_limite)
+        .filter(
+            or_(
+                CalendarioAula.sumario.is_(None),
+                func.trim(CalendarioAula.sumario) == "",
+            )
+        )
+    )
+
+    if turma_id:
+        query = query.filter(CalendarioAula.turma_id == turma_id)
+
+    return query.order_by(CalendarioAula.data, CalendarioAula.turma_id, CalendarioAula.id).all()
 
 
 def exportar_outras_datas_json(

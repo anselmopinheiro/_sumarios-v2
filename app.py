@@ -58,6 +58,7 @@ from calendario_service import (
     importar_outras_datas_json,
     listar_aulas_especiais,
     calcular_mapa_avaliacao_diaria,
+    listar_sumarios_pendentes,
 )
 
 
@@ -1469,6 +1470,35 @@ def create_app():
             anos_fechados=anos_fechados,
         )
 
+    @app.route("/calendario/sumarios-pendentes")
+    def calendario_sumarios_pendentes():
+        hoje = date.today()
+        turma_id = request.args.get("turma_id", type=int)
+        turma_selecionada = Turma.query.get(turma_id) if turma_id else None
+
+        aulas = listar_sumarios_pendentes(hoje, turma_id=turma_id)
+        faltas_por_aula = _mapear_alunos_em_falta(aulas)
+        anos_fechados = {
+            a.turma_id: bool(
+                a.turma and a.turma.ano_letivo and a.turma.ano_letivo.fechado
+            )
+            for a in aulas
+            if a.turma_id
+        }
+
+        return render_template(
+            "turmas/sumarios_pendentes.html",
+            hoje=hoje,
+            aulas=aulas,
+            turmas=Turma.query.order_by(Turma.nome).all(),
+            turma_selecionada=turma_selecionada,
+            faltas_por_aula=faltas_por_aula,
+            tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
+            tipos_aula=TIPOS_AULA,
+            tipo_labels=dict(TIPOS_AULA),
+            anos_fechados=anos_fechados,
+        )
+
 
     @app.route("/calendarios/import", methods=["GET", "POST"])
     def calendarios_import():
@@ -2482,6 +2512,13 @@ def create_app():
         periodo_id = request.form.get("periodo_id", type=int)
         redirect_view = request.form.get("view")
         data_ref = request.form.get("data_ref")
+
+        if redirect_view == "pendentes":
+            filtros = {}
+            turma_filtro = request.form.get("turma_filtro", type=int)
+            if turma_filtro:
+                filtros["turma_id"] = turma_filtro
+            return redirect(url_for("calendario_sumarios_pendentes", **filtros))
 
         if redirect_view == "outras_datas":
             filtros = {
