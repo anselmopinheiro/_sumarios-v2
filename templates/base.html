@@ -52,6 +52,30 @@
       el.style.height = `${el.scrollHeight}px`;
     };
 
+    const scrollKey = 'calendario-scroll-pos';
+    const storeScroll = () => {
+      try {
+        sessionStorage.setItem(scrollKey, window.scrollY.toString());
+      } catch (err) {
+        console.warn('Não foi possível guardar a posição de scroll', err);
+      }
+    };
+
+    const restoreScroll = () => {
+      try {
+        const raw = sessionStorage.getItem(scrollKey);
+        if (raw !== null) {
+          const pos = parseInt(raw, 10);
+          if (!Number.isNaN(pos)) {
+            window.scrollTo(0, pos);
+          }
+          sessionStorage.removeItem(scrollKey);
+        }
+      } catch (err) {
+        console.warn('Não foi possível restaurar a posição de scroll', err);
+      }
+    };
+
     const autos = () => {
       document.querySelectorAll('textarea.js-autoresize').forEach((el) => {
         resize(el);
@@ -63,9 +87,13 @@
     };
 
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', autos);
+      document.addEventListener('DOMContentLoaded', () => {
+        autos();
+        restoreScroll();
+      });
     } else {
       autos();
+      restoreScroll();
     }
 
     const copiarPrevisao = (btn) => {
@@ -105,6 +133,7 @@
       btn.innerHTML = btn.dataset.loadingText || 'A guardar...';
 
       try {
+        storeScroll();
         for (const form of forms) {
           const method = (form.method || 'post').toUpperCase();
           const resp = await fetch(form.action, {
@@ -138,6 +167,13 @@
       document._guardarTodosHandler = handler;
       document.addEventListener('click', handler);
     };
+
+    document.addEventListener('submit', (ev) => {
+      if (ev.target && ev.target.closest('form.js-sumario-form')) {
+        storeScroll();
+      }
+    });
+    window.addEventListener('beforeunload', storeScroll);
 
     const onReady = () => {
       bindCopias();

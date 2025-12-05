@@ -61,8 +61,11 @@
     </div>
     <div class="col-md-3 mb-3">
       {% set sumarios_limpos = (aula.sumarios or '').split(',')|map('trim')|reject('equalto','')|list if aula else [] %}
-      {% set total_previsto = sumarios_limpos|length if sumarios_limpos|length > 0 else 1 %}
+      {% set total_base = sumarios_limpos|length if sumarios_limpos|length > 0 else 1 %}
+      {% set total_previsto = [total_base, aula.tempos_sem_aula or 0 if aula else 0]|max %}
+      {% if total_previsto < 1 %}{% set total_previsto = 1 %}{% endif %}
       {% set tempos_default = aula.tempos_sem_aula if aula and aula.tempos_sem_aula is not none else (total_previsto if aula and aula.tipo in tipos_sem_aula else 0) %}
+      {% set tempos_default = [tempos_default, total_previsto]|max %}
       <label class="form-label">Tempos sem aula</label>
       <input type="number"
              name="tempos_sem_aula"

@@ -1134,7 +1134,7 @@ def renumerar_calendario_turma(
         sem_aula = aula.tipo in tipos_sem_aula
 
         if sem_aula:
-            faltas = total_previsto
+            faltas = aula.tempos_sem_aula if aula.tempos_sem_aula is not None else total_previsto
         else:
             faltas = aula.tempos_sem_aula if aula.tempos_sem_aula is not None else 0
 
@@ -1222,7 +1222,10 @@ def _contar_aulas(aula: CalendarioAula) -> int:
 
 def _total_previsto_para_aula(aula: CalendarioAula) -> int:
     sumarios = [s.strip() for s in (aula.sumarios or "").split(",") if s.strip()]
-    return len(sumarios) if sumarios else 1
+    base = len(sumarios) if sumarios else 1
+    tempos = aula.tempos_sem_aula if aula.tempos_sem_aula is not None else 0
+    base = max(base, tempos)
+    return max(base, 1)
 
 
 def calcular_mapa_avaliacao_diaria(

@@ -97,9 +97,11 @@
       </thead>
       <tbody>
         {% for a in aulas %}
-          {% set sumarios_limpos = (a.sumarios or '').split(',')|map('trim')|reject('equalto','')|list %}
-          {% set total_previsto = sumarios_limpos|length if sumarios_limpos|length > 0 else 1 %}
-          {% set faltas = a.tempos_sem_aula if a.tempos_sem_aula is not none else (total_previsto if a.tipo in tipos_sem_aula else 0) %}
+        {% set sumarios_limpos = (a.sumarios or '').split(',')|map('trim')|reject('equalto','')|list %}
+        {% set total_base = sumarios_limpos|length if sumarios_limpos|length > 0 else 1 %}
+        {% set total_previsto = [total_base, a.tempos_sem_aula or 0]|max %}
+        {% if total_previsto < 1 %}{% set total_previsto = 1 %}{% endif %}
+        {% set faltas = a.tempos_sem_aula if a.tempos_sem_aula is not none else (total_previsto if a.tipo in tipos_sem_aula else 0) %}
           {% set faltas = [faltas, total_previsto]|min %}
           {% set faltas = [faltas, 0]|max %}
           {% set sem_aula = a.tipo in tipos_sem_aula %}

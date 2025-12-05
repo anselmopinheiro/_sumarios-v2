@@ -147,6 +147,17 @@ def _parse_date_form(value):
         return None
 
 
+def _total_previsto_ui(sumarios_txt, tempos_sem_aula):
+    sumarios_limpos = [s.strip() for s in (sumarios_txt or "").split(",") if s.strip()]
+    base = len(sumarios_limpos) if sumarios_limpos else 1
+    if tempos_sem_aula:
+        try:
+            base = max(base, int(tempos_sem_aula))
+        except (TypeError, ValueError):
+            pass
+    return max(base, 1)
+
+
 def _mapear_alunos_em_falta(aulas):
     ids = [a.id for a in aulas if getattr(a, "id", None)]
     if not ids:
@@ -1675,10 +1686,7 @@ def create_app():
                 continue
 
             aula.tipo = novo_tipo
-            sumarios_originais = [
-                s.strip() for s in (aula.sumarios or "").split(",") if s.strip()
-            ]
-            total_previsto = len(sumarios_originais) if sumarios_originais else 1
+            total_previsto = _total_previsto_ui(aula.sumarios, aula.tempos_sem_aula)
             if novo_tipo in DEFAULT_TIPOS_SEM_AULA:
                 valor_tempos = tempos_sem_aula
                 if valor_tempos is None:
@@ -2045,7 +2053,7 @@ def create_app():
             tempos_sem_aula = request.form.get("tempos_sem_aula", type=int)
 
             sumarios_originais = [s.strip() for s in sumarios_txt.split(",") if s.strip()]
-            total_previsto = len(sumarios_originais) if sumarios_originais else 1
+            total_previsto = _total_previsto_ui(sumarios_txt, tempos_sem_aula)
             if tempos_sem_aula is None:
                 if tipo in DEFAULT_TIPOS_SEM_AULA:
                     tempos_sem_aula = total_previsto
@@ -2169,7 +2177,7 @@ def create_app():
             tempos_sem_aula = request.form.get("tempos_sem_aula", type=int)
 
             sumarios_originais = [s.strip() for s in sumarios_txt.split(",") if s.strip()]
-            total_previsto = len(sumarios_originais) if sumarios_originais else 1
+            total_previsto = _total_previsto_ui(sumarios_txt, tempos_sem_aula if tempos_sem_aula is not None else aula.tempos_sem_aula)
             if tempos_sem_aula is None:
                 if tipo in DEFAULT_TIPOS_SEM_AULA:
                     tempos_sem_aula = (
@@ -2424,10 +2432,7 @@ def create_app():
         aula.tipo = novo_tipo
 
         tempos_sem_aula = request.form.get("tempos_sem_aula", type=int)
-        sumarios_originais = [
-            s.strip() for s in (aula.sumarios or "").split(",") if s.strip()
-        ]
-        total_previsto = len(sumarios_originais) if sumarios_originais else 1
+        total_previsto = _total_previsto_ui(aula.sumarios, aula.tempos_sem_aula)
         if tempos_sem_aula is None:
             if novo_tipo in DEFAULT_TIPOS_SEM_AULA:
                 tempos_sem_aula = (
