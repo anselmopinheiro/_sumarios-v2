@@ -851,6 +851,7 @@ def listar_sumarios_pendentes(data_limite: date, turma_id: int | None = None) ->
             or_(
                 CalendarioAula.sumario.is_(None),
                 func.trim(CalendarioAula.sumario) == "",
+                func.lower(func.trim(CalendarioAula.sumario)) == "none",
             )
         )
     )
