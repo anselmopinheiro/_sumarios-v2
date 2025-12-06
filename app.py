@@ -16,6 +16,7 @@ from flask import (
 )
 
 from flask_migrate import Migrate
+from alembic.script import ScriptDirectory
 from sqlalchemy import func, inspect, text
 from sqlalchemy.orm import joinedload
 
@@ -364,6 +365,35 @@ def create_app():
                 )
             )
             db.session.commit()
+
+        try:
+            script = ScriptDirectory("migrations")
+            head_revision = script.get_current_head()
+        except Exception:
+            head_revision = None
+
+        if head_revision:
+            tabelas = set(insp.get_table_names())
+            if "alembic_version" not in tabelas:
+                db.session.execute(
+                    text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)")
+                )
+                db.session.execute(
+                    text("INSERT INTO alembic_version (version_num) VALUES (:vnum)"),
+                    {"vnum": head_revision},
+                )
+                db.session.commit()
+            else:
+                versao_atual = db.session.execute(
+                    text("SELECT version_num FROM alembic_version")
+                ).scalar()
+                if versao_atual != head_revision:
+                    db.session.execute(text("DELETE FROM alembic_version"))
+                    db.session.execute(
+                        text("INSERT INTO alembic_version (version_num) VALUES (:vnum)"),
+                        {"vnum": head_revision},
+                    )
+                    db.session.commit()
 
     with app.app_context():
         _ensure_columns()
