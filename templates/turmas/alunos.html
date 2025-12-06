@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h2>Alunos da turma {{ turma.nome }}</h2>
+        {% if turma.ano_letivo %}
+            <p class="text-muted mb-0">Ano letivo: {{ turma.ano_letivo.nome }}</p>
+        {% endif %}
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('turmas_list') }}" class="btn btn-secondary">Voltar</a>
+        <a href="{{ url_for('turmas_edit', turma_id=turma.id) }}" class="btn btn-outline-secondary">Editar turma</a>
+    </div>
+</div>
+
+{% if ano_fechado %}
+    <div class="alert alert-warning">Ano letivo fechado: apenas leitura.</div>
+{% endif %}
+
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 class="card-title">Adicionar aluno</h5>
+        <form method="post" class="row g-3">
+            <div class="col-sm-3 col-md-2">
+                <label class="form-label">Processo</label>
+                <input type="text" name="processo" class="form-control" {% if ano_fechado %}disabled{% endif %}>
+            </div>
+            <div class="col-sm-3 col-md-2">
+                <label class="form-label">Número</label>
+                <input type="number" name="numero" class="form-control" min="0" {% if ano_fechado %}disabled{% endif %}>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Nome</label>
+                <input type="text" name="nome" class="form-control" required {% if ano_fechado %}disabled{% endif %}>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Nome curto</label>
+                <input type="text" name="nome_curto" class="form-control" {% if ano_fechado %}disabled{% endif %}>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">NEE</label>
+                <textarea name="nee" class="form-control js-autoresize" rows="1" {% if ano_fechado %}disabled{% endif %}></textarea>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Observações</label>
+                <textarea name="observacoes" class="form-control js-autoresize" rows="1" {% if ano_fechado %}disabled{% endif %}></textarea>
+            </div>
+            <div class="col-12">
+                <button type="submit" class="btn btn-primary" {% if ano_fechado %}disabled{% endif %}>Adicionar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">Importar CSV</h5>
+                <form method="post" action="{{ url_for('turma_alunos_import', turma_id=turma.id) }}" enctype="multipart/form-data" class="row g-2 align-items-end">
+                    <div class="col-12">
+                        <label class="form-label">Ficheiro CSV</label>
+                        <input type="file" name="ficheiro" accept=".csv" class="form-control" {% if ano_fechado %}disabled{% endif %}>
+                        <div class="form-text">Colunas suportadas: processo, número, nome, nome curto, NEE, observações.</div>
+                    </div>
+                    <div class="col-12">
+                        <button type="submit" class="btn btn-outline-primary" {% if ano_fechado %}disabled{% endif %}>Importar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">Copiar/mover alunos</h5>
+                <form id="transfer-form" method="post" action="{{ url_for('turma_alunos_transfer', turma_id=turma.id) }}" class="row g-2 align-items-end">
+                    <div class="col-12">
+                        <label class="form-label">Turma de destino</label>
+                        <select name="destino_turma" class="form-select" {% if ano_fechado %}disabled{% endif %} required>
+                            <option value="" selected disabled>Escolha uma turma</option>
+                            {% for t in turmas_destino %}
+                                <option value="{{ t.id }}">{{ t.nome }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-12 d-flex gap-2">
+                        <button type="submit" name="acao" value="copiar" class="btn btn-outline-secondary" {% if ano_fechado %}disabled{% endif %}>Copiar selecionados</button>
+                        <button type="submit" name="acao" value="mover" class="btn btn-outline-danger" {% if ano_fechado %}disabled{% endif %}>Mover selecionados</button>
+                        <button type="button" class="btn btn-link ms-auto p-0" id="toggle-select-all">Selecionar todos</button>
+                    </div>
+                    <div class="col-12">
+                        <div class="form-text">Use as caixas na tabela para escolher os alunos a copiar/mover.</div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="table-responsive">
+<table class="table table-striped align-middle">
+    <thead class="table-dark">
+        <tr>
+            <th style="width: 40px;"></th>
+            <th>Processo</th>
+            <th>Número</th>
+            <th>Nome</th>
+            <th>Nome curto</th>
+            <th>NEE</th>
+            <th>Observações</th>
+            <th style="width: 190px;">Ações</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for aluno in alunos %}
+        <form id="aluno-{{ aluno.id }}" method="post" action="{{ url_for('turma_alunos_update', turma_id=turma.id, aluno_id=aluno.id) }}"></form>
+        <tr>
+            <td class="text-center">
+                <input class="form-check-input" type="checkbox" name="aluno_ids" value="{{ aluno.id }}" form="transfer-form" {% if ano_fechado %}disabled{% endif %}>
+            </td>
+            <td>
+                <input type="text" class="form-control form-control-sm" name="processo" value="{{ aluno.processo or '' }}" form="aluno-{{ aluno.id }}" {% if ano_fechado %}disabled{% endif %}>
+            </td>
+            <td style="max-width: 100px;">
+                <input type="number" class="form-control form-control-sm" min="0" name="numero" value="{{ aluno.numero if aluno.numero is not none else '' }}" form="aluno-{{ aluno.id }}" {% if ano_fechado %}disabled{% endif %}>
+            </td>
+            <td>
+                <input type="text" class="form-control form-control-sm" name="nome" value="{{ aluno.nome }}" required form="aluno-{{ aluno.id }}" {% if ano_fechado %}disabled{% endif %}>
+            </td>
+            <td>
+                <input type="text" class="form-control form-control-sm" name="nome_curto" value="{{ aluno.nome_curto or '' }}" form="aluno-{{ aluno.id }}" {% if ano_fechado %}disabled{% endif %}>
+            </td>
+            <td style="min-width: 180px;">
+                <textarea name="nee" class="form-control form-control-sm js-autoresize" rows="1" form="aluno-{{ aluno.id }}" {% if ano_fechado %}disabled{% endif %}>{{ aluno.nee or '' }}</textarea>
+            </td>
+            <td style="min-width: 180px;">
+                <textarea name="observacoes" class="form-control form-control-sm js-autoresize" rows="1" form="aluno-{{ aluno.id }}" {% if ano_fechado %}disabled{% endif %}>{{ aluno.observacoes or '' }}</textarea>
+            </td>
+            <td class="text-end">
+                <div class="d-flex gap-2 justify-content-end">
+                    <button type="submit" class="btn btn-sm btn-primary" form="aluno-{{ aluno.id }}" {% if ano_fechado %}disabled{% endif %}>Guardar</button>
+                    <form method="post" action="{{ url_for('turma_alunos_delete', turma_id=turma.id, aluno_id=aluno.id) }}" onsubmit="return confirm('Remover aluno?');">
+                        <button type="submit" class="btn btn-sm btn-outline-danger" {% if ano_fechado %}disabled{% endif %}>Eliminar</button>
+                    </form>
+                </div>
+            </td>
+        </tr>
+    {% else %}
+        <tr>
+            <td colspan="8" class="text-center text-muted">Nenhum aluno registado.</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const toggle = document.getElementById('toggle-select-all');
+        if (!toggle) return;
+        toggle.addEventListener('click', () => {
+            const boxes = document.querySelectorAll('input[type="checkbox"][name="aluno_ids"]');
+            const shouldCheck = Array.from(boxes).some((b) => !b.checked);
+            boxes.forEach((b) => b.checked = shouldCheck);
+        });
+    });
+</script>
+{% endblock %}

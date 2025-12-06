@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Mapa diário de avaliação — {{ turma.nome }}</h2>
+{% if ano %}
+  <p class="text-muted">Ano letivo: {{ ano.nome }}</p>
+{% endif %}
+
+<form method="get" class="row g-3 mb-3">
+  <div class="col-md-3">
+    <label class="form-label">Período</label>
+    <select name="periodo_id" class="form-select" onchange="this.form.submit()">
+      {% for p in periodos_disponiveis %}
+        <option value="{{ p.id }}" {% if periodo_atual and p.id == periodo_atual.id %}selected{% endif %}>
+          {{ p.nome }} ({{ p.data_inicio.strftime('%d/%m/%Y') }} – {{ p.data_fim.strftime('%d/%m/%Y') }})
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-3">
+    <label class="form-label">Módulo</label>
+    <select name="modulo_id" class="form-select" onchange="this.form.submit()">
+      <option value="">Todos</option>
+      {% for modulo in modulos %}
+        <option value="{{ modulo.id }}" {% if modulo_id and modulo_id == modulo.id %}selected{% endif %}>{{ modulo.nome }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-3">
+    <label class="form-label">Data inicial</label>
+    <input type="date" name="data_inicio" class="form-control" value="{{ data_inicio.isoformat() if data_inicio else '' }}">
+  </div>
+  <div class="col-md-3">
+    <label class="form-label">Data final</label>
+    <div class="d-flex gap-2">
+      <input type="date" name="data_fim" class="form-control" value="{{ data_fim.isoformat() if data_fim else '' }}">
+      <button type="submit" class="btn btn-primary">Filtrar</button>
+    </div>
+  </div>
+</form>
+
+<div class="mb-3">
+  <a href="{{ url_for('turma_calendario', turma_id=turma.id, periodo_id=periodo_atual.id if periodo_atual else None) }}" class="btn btn-secondary">← Voltar ao calendário</a>
+  <a
+    href="{{ url_for('turma_mapa_avaliacao_diaria_export', turma_id=turma.id, periodo_id=periodo_atual.id if periodo_atual else None, modulo_id=modulo_id if modulo_id else None, data_inicio=data_inicio.isoformat() if data_inicio else None, data_fim=data_fim.isoformat() if data_fim else None) }}"
+    class="btn btn-outline-success ms-2"
+  >
+    Exportar XLS
+  </a>
+</div>
+
+{% if not dias and not atividades %}
+  <div class="alert alert-info">Não existem aulas no intervalo selecionado.</div>
+{% endif %}
+
+{% if dias %}
+  {% set datas = dias %}
+  <h4 class="mt-4">Mapa diário (Responsabilidade, Comportamento, Participação, Trabalho autónomo, Portátil/Material)</h4>
+  <div class="table-responsive mt-3">
+    <table class="table table-striped table-bordered align-middle">
+      <thead class="table-dark">
+        <tr>
+          <th style="width: 70px;">#</th>
+          <th style="min-width: 240px;">Aluno</th>
+          {% for dia in datas %}
+            <th class="text-center">
+              {{ dia.data.strftime('%d/%m/%Y') }}
+              {% if dia.sumarios %}<br><small>N.º {{ dia.sumarios }}</small>{% endif %}
+            </th>
+          {% endfor %}
+          <th class="text-center" style="width: 120px;">Faltas</th>
+          <th class="text-end" style="width: 140px;">Média</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for aluno in alunos %}
+          {% set ns = namespace(valores=[], faltas_total=0) %}
+          <tr>
+            <td>{{ aluno.numero if aluno.numero is not none else '--' }}</td>
+            <td>{{ aluno.nome }}</td>
+            {% for dia in dias %}
+              {% set media = dia.medias.get(aluno.id) %}
+              {% if media is not none %}
+                {% set _ = ns.valores.append(media) %}
+              {% endif %}
+              <td class="text-center">
+                {% if media is none %}
+                  —
+                {% else %}
+                  {{ '%.2f'|format(media) }}
+                {% endif %}
+              </td>
+              {% set ns.faltas_total = ns.faltas_total + (dia.faltas.get(aluno.id) or 0) %}
+            {% endfor %}
+            <td class="text-center">{{ ns.faltas_total }}</td>
+            <td class="text-end fw-semibold">
+              {% if ns.valores %}
+                {{ '%.2f'|format((ns.valores | sum) / (ns.valores | length)) }}
+              {% else %}
+                —
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+
+{% if atividades %}
+  <h4 class="mt-4" id="mapa-atividades">Mapa de atividades</h4>
+  <div class="table-responsive mt-3">
+    <table class="table table-striped table-bordered align-middle">
+      <thead class="table-secondary">
+        <tr>
+          <th style="width: 70px;">#</th>
+          <th style="min-width: 240px;">Aluno</th>
+          {% for at in atividades %}
+            <th class="text-center">{{ at.data.strftime('%d/%m/%Y') }}{% if at.titulo %}<br><small>{{ at.titulo }}</small>{% endif %}</th>
+          {% endfor %}
+          <th class="text-end" style="width: 140px;">Média atividades</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for aluno in alunos %}
+          {% set ns = namespace(valores=[]) %}
+          <tr>
+            <td>{{ aluno.numero if aluno.numero is not none else '--' }}</td>
+            <td>{{ aluno.nome }}</td>
+            {% for at in atividades %}
+              {% set nota = at.notas.get(aluno.id) %}
+              {% if nota is not none %}
+                {% set _ = ns.valores.append(nota) %}
+              {% endif %}
+              <td class="text-center">
+                {% if nota is none %}
+                  —
+                {% else %}
+                  {{ '%.2f'|format(nota) }}
+                {% endif %}
+              </td>
+            {% endfor %}
+            <td class="text-end fw-semibold">
+              {% if ns.valores %}
+                {{ '%.2f'|format((ns.valores | sum) / (ns.valores | length)) }}
+              {% else %}
+                —
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+{% endblock %}
