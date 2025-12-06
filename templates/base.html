@@ -6,6 +6,15 @@
 
     <link rel="stylesheet"
           href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+    <style>
+      .floating-guardar {
+        position: fixed;
+        right: 1.5rem;
+        bottom: 1.5rem;
+        z-index: 1100;
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+      }
+    </style>
 </head>
 
 <body class="bg-light">
@@ -17,6 +26,11 @@
         <ul class="navbar-nav ms-auto">
             <li class="nav-item"><a class="nav-link" href="/anos-letivos">Anos Letivos</a></li>
             <li class="nav-item"><a class="nav-link" href="/calendario-escolar">Calendário Escolar</a></li>
+            <li class="nav-item"><a class="nav-link" href="/calendario/semana">Calendário Semanal</a></li>
+            <li class="nav-item"><a class="nav-link" href="/calendario/dia">Calendário Diário</a></li>
+            <li class="nav-item"><a class="nav-link" href="/calendario/sumarios-pendentes">Sumários pendentes</a></li>
+            <li class="nav-item"><a class="nav-link" href="/calendario/outras-datas">Outras datas</a></li>
+            <li class="nav-item"><a class="nav-link" href="/calendarios/import">Importar calendário</a></li>
             <li class="nav-item"><a class="nav-link" href="/turmas">Turmas</a></li>
         </ul>
     </div>
@@ -40,6 +54,149 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  (() => {
+    const resize = (el) => {
+      if (!el) return;
+      el.style.height = 'auto';
+      el.style.height = `${el.scrollHeight}px`;
+    };
+
+    const scrollKey = 'calendario-scroll-pos';
+    const storeScroll = () => {
+      try {
+        sessionStorage.setItem(scrollKey, window.scrollY.toString());
+      } catch (err) {
+        console.warn('Não foi possível guardar a posição de scroll', err);
+      }
+    };
+
+    const restoreScroll = () => {
+      try {
+        const raw = sessionStorage.getItem(scrollKey);
+        if (raw !== null) {
+          const pos = parseInt(raw, 10);
+          if (!Number.isNaN(pos)) {
+            window.scrollTo(0, pos);
+          }
+          sessionStorage.removeItem(scrollKey);
+        }
+      } catch (err) {
+        console.warn('Não foi possível restaurar a posição de scroll', err);
+      }
+    };
+
+    const autos = () => {
+      document.querySelectorAll('textarea.js-autoresize').forEach((el) => {
+        resize(el);
+        el.removeEventListener('input', el._autoResizeHandler || (() => {}));
+        const handler = () => resize(el);
+        el._autoResizeHandler = handler;
+        el.addEventListener('input', handler);
+      });
+    };
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => {
+        autos();
+        restoreScroll();
+      });
+    } else {
+      autos();
+      restoreScroll();
+    }
+
+    const copiarPrevisao = (btn) => {
+      if (!btn) return;
+      const form = btn.closest('form');
+      if (!form) return;
+      const previsao = form.querySelector('textarea[name="previsao"]');
+      const sumario = form.querySelector('textarea[name="sumario"]');
+      if (!previsao || !sumario) return;
+
+      sumario.value = previsao.value || '';
+      sumario.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+
+    const bindCopias = () => {
+      document.removeEventListener('click', document._copiaPrevisaoHandler || (() => {}));
+      const handler = (ev) => {
+        const target = ev.target.closest('.js-copy-previsao');
+        if (target) {
+          ev.preventDefault();
+          copiarPrevisao(target);
+        }
+      };
+      document._copiaPrevisaoHandler = handler;
+      document.addEventListener('click', handler);
+    };
+
+    const guardarTodos = async (btn) => {
+      if (!btn) return;
+      const selector = btn.dataset.formsSelector || 'form.js-sumario-form';
+      const scope = btn.dataset.scope ? document.querySelector(btn.dataset.scope) : document;
+      const forms = Array.from(scope ? scope.querySelectorAll(selector) : []);
+      if (!forms.length) return;
+
+      const originalText = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = btn.dataset.loadingText || 'A guardar...';
+
+      try {
+        storeScroll();
+        for (const form of forms) {
+          const method = (form.method || 'post').toUpperCase();
+          const resp = await fetch(form.action, {
+            method,
+            body: new FormData(form),
+          });
+          if (!resp.ok) {
+            throw new Error(`Erro ao guardar o registo ${form.action}`);
+          }
+        }
+        window.location.reload();
+      } catch (err) {
+        console.error(err);
+        btn.innerHTML = btn.dataset.errorText || 'Falha ao guardar';
+        setTimeout(() => {
+          btn.disabled = false;
+          btn.innerHTML = originalText;
+        }, 2000);
+      }
+    };
+
+    const bindGuardarTodos = () => {
+      document.removeEventListener('click', document._guardarTodosHandler || (() => {}));
+      const handler = (ev) => {
+        const target = ev.target.closest('.js-guardar-todos');
+        if (target) {
+          ev.preventDefault();
+          guardarTodos(target);
+        }
+      };
+      document._guardarTodosHandler = handler;
+      document.addEventListener('click', handler);
+    };
+
+    document.addEventListener('submit', (ev) => {
+      if (ev.target && ev.target.closest('form.js-sumario-form')) {
+        storeScroll();
+      }
+    });
+    window.addEventListener('beforeunload', storeScroll);
+
+    const onReady = () => {
+      bindCopias();
+      bindGuardarTodos();
+    };
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', onReady);
+    } else {
+      onReady();
+    }
+  })();
+</script>
 
 </body>
 </html>

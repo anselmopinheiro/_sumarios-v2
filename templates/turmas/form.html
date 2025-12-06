@@ -28,6 +28,15 @@
     </select>
   </div>
 
+  <div class="mb-3">
+    <label class="form-label">Período</label>
+    <select name="periodo_tipo" class="form-control">
+      <option value="anual" {% if not turma or turma.periodo_tipo == "anual" %}selected{% endif %}>Anual</option>
+      <option value="semestre1" {% if turma and turma.periodo_tipo == "semestre1" %}selected{% endif %}>1.º semestre</option>
+      <option value="semestre2" {% if turma and turma.periodo_tipo == "semestre2" %}selected{% endif %}>2.º semestre</option>
+    </select>
+  </div>
+
   <div id="modulos-profissionais" class="mb-4" style="display: none;">
     <h5 class="mt-4">Módulos (ensino profissional)</h5>
     <p class="text-muted small">Indica o nome do módulo e a respetiva carga horária total.</p>
@@ -47,10 +56,10 @@
               <tr>
                 <td>
                   <input type="hidden" name="modulo_id" value="{{ modulo.id }}">
-                  <input type="text" name="modulo_nome" class="form-control" value="{{ modulo.nome }}" required>
+                  <input type="text" name="modulo_nome" class="form-control" value="{{ modulo.nome }}">
                 </td>
                 <td>
-                  <input type="number" name="modulo_total" class="form-control" min="0" step="1" value="{{ modulo.total_aulas }}" required>
+                  <input type="number" name="modulo_total" class="form-control" min="0" step="1" value="{{ modulo.total_aulas }}">
                 </td>
                 <td class="text-end">
                   <button type="button" class="btn btn-outline-danger btn-sm" onclick="removerLinhaModulo(this)">Remover</button>
@@ -60,10 +69,10 @@
           {% else %}
             <tr>
               <td>
-                <input type="text" name="modulo_nome" class="form-control" placeholder="Ex.: Módulo 1" required>
+                <input type="text" name="modulo_nome" class="form-control" placeholder="Ex.: Módulo 1">
               </td>
               <td>
-                <input type="number" name="modulo_total" class="form-control" min="0" step="1" placeholder="Total de horas" required>
+                <input type="number" name="modulo_total" class="form-control" min="0" step="1" placeholder="Total de horas">
               </td>
               <td class="text-end">
                 <button type="button" class="btn btn-outline-danger btn-sm" onclick="removerLinhaModulo(this)">Remover</button>
@@ -146,23 +155,27 @@
   const corpoModulos = document.getElementById('linhas-modulos');
 
   function atualizarVisibilidadeModulos() {
-    if (seletorTipo.value === 'profissional') {
-      secaoModulos.style.display = '';
-    } else {
-      secaoModulos.style.display = 'none';
-    }
+    const profissional = seletorTipo.value === 'profissional';
+
+    secaoModulos.style.display = profissional ? '' : 'none';
+
+    corpoModulos.querySelectorAll('input').forEach((input) => {
+      input.required = profissional;
+      input.disabled = !profissional;
+    });
   }
 
   function adicionarLinhaModulo() {
     const linha = document.createElement('tr');
     linha.innerHTML = `
-      <td><input type="text" name="modulo_nome" class="form-control" placeholder="Ex.: Módulo" required></td>
-      <td><input type="number" name="modulo_total" class="form-control" min="0" step="1" placeholder="Total de horas" required></td>
+      <td><input type="text" name="modulo_nome" class="form-control" placeholder="Ex.: Módulo"></td>
+      <td><input type="number" name="modulo_total" class="form-control" min="0" step="1" placeholder="Total de horas"></td>
       <td class="text-end">
         <button type="button" class="btn btn-outline-danger btn-sm" onclick="removerLinhaModulo(this)">Remover</button>
       </td>
     `;
     corpoModulos.appendChild(linha);
+    atualizarVisibilidadeModulos();
   }
 
   function removerLinhaModulo(botao) {

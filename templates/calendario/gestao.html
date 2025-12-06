@@ -6,6 +6,32 @@
   <a href="{{ url_for('calendario_escolar') }}">⟵ Ver calendário escolar</a>
 </p>
 
+<div class="alert alert-info" role="alert">
+  Importa backups do calendário escolar em JSON para este ou outro ano letivo. Se escolheres
+  "(criar a partir do ficheiro)" será gerado um ano novo com as datas do ficheiro.
+</div>
+
+<form method="post" action="{{ url_for('calendario_escolar_importar') }}" enctype="multipart/form-data" class="mb-4">
+  <div class="mb-2">
+    <label class="form-label">Ano letivo de destino</label>
+    <select name="ano_id" class="form-select" style="max-width: 360px;">
+      <option value="">(criar a partir do ficheiro)</option>
+      {% for a in anos %}
+        <option value="{{ a.id }}" {% if a.id == ano.id %}selected{% endif %}>{{ a.nome }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="mb-2">
+    <label class="form-label">Ficheiro JSON</label>
+    <input type="file" name="ficheiro" accept="application/json" class="form-control" style="max-width: 480px;">
+  </div>
+  <div class="mb-2">
+    <label class="form-label">Ou cola aqui o conteúdo JSON</label>
+    <textarea name="conteudo" rows="4" class="form-control js-autoresize" style="max-width: 720px;"></textarea>
+  </div>
+  <button type="submit" class="btn btn-primary">Importar calendário escolar</button>
+</form>
+
 <hr>
 
 <h3>Nova Interrupção</h3>

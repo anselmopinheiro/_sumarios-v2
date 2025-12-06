@@ -1,0 +1,279 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Calendário Semanal</h2>
+
+<form method="get" class="row g-3 align-items-end mb-3">
+  <div class="col-12 col-md-4">
+    <label class="form-label">Data de referência</label>
+    <input type="date" name="data" class="form-control" value="{{ data_base.isoformat() }}">
+  </div>
+  <div class="col-12 col-md-4">
+    <label class="form-label">Filtrar por turma</label>
+    <select name="turma_id" class="form-select">
+      <option value="">Todas as turmas</option>
+      {% for t in turmas %}
+        <option value="{{ t.id }}" {% if turma and turma.id == t.id %}selected{% endif %}>{{ t.nome }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% if turma and periodos_disponiveis %}
+    <div class="col-12 col-md-4">
+      <label class="form-label">Período</label>
+      <select name="periodo_id" class="form-select">
+        <option value="">Todos os períodos</option>
+        {% for p in periodos_disponiveis %}
+          <option value="{{ p.id }}" {% if periodo_atual and periodo_atual.id == p.id %}selected{% endif %}>
+            {{ p.nome }} ({{ p.data_inicio.strftime('%d/%m/%Y') }} – {{ p.data_fim.strftime('%d/%m/%Y') }})
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+  {% endif %}
+  <div class="col-12 col-md-4 d-flex gap-2">
+    <button type="submit" class="btn btn-primary mt-auto">Atualizar</button>
+    {% if turma %}
+      <a href="{{ url_for('turma_calendario', turma_id=turma.id) }}" class="btn btn-outline-secondary mt-auto">Calendário da turma</a>
+    {% endif %}
+  </div>
+</form>
+
+<div class="d-flex flex-wrap gap-2 align-items-end mb-3">
+  <div class="d-flex align-items-center gap-2">
+    <a class="btn btn-outline-primary"
+       href="{{ url_for('calendario_semana', turma_id=turma.id if turma else None, data=semana_anterior.isoformat(), periodo_id=periodo_atual.id if periodo_atual else None) }}">◀ Semana anterior</a>
+    <a class="btn btn-outline-primary"
+       href="{{ url_for('calendario_semana', turma_id=turma.id if turma else None, data=semana_seguinte.isoformat(), periodo_id=periodo_atual.id if periodo_atual else None) }}">Semana seguinte ▶</a>
+  </div>
+  <form method="get" class="d-flex align-items-center gap-2">
+    {% if turma %}
+      <input type="hidden" name="turma_id" value="{{ turma.id }}">
+    {% endif %}
+    {% if periodo_atual %}
+      <input type="hidden" name="periodo_id" value="{{ periodo_atual.id }}">
+    {% endif %}
+    <label class="form-label mb-0">Ir para data:</label>
+    <input type="date" name="data" class="form-control" value="{{ data_base.isoformat() }}">
+    <button type="submit" class="btn btn-primary">Ir</button>
+  </form>
+</div>
+
+{% set ns = namespace(editaveis=false) %}
+{% for dia in dias_semana %}
+  {% for a in aulas_por_data.get(dia, []) %}
+    {% if not anos_fechados.get(a.turma_id, False) %}
+      {% set ns.editaveis = true %}
+    {% endif %}
+  {% endfor %}
+{% endfor %}
+
+{% if ns.editaveis %}
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h5 class="mb-0">Sumários</h5>
+    <button type="button"
+            class="btn btn-success js-guardar-todos"
+            data-scope="#calendario-semanal"
+            data-loading-text="A guardar todos..."
+            data-error-text="Falha ao guardar">
+      Guardar todos os sumários/previsões
+    </button>
+  </div>
+  <button type="button"
+          class="btn btn-success js-guardar-todos floating-guardar"
+          data-scope="#calendario-semanal"
+          data-loading-text="A guardar todos..."
+          data-error-text="Falha ao guardar"
+          aria-label="Guardar todos os sumários e previsões visíveis">
+    Guardar todos os sumários/previsões
+  </button>
+{% endif %}
+
+<div id="calendario-semanal">
+
+{% for dia in dias_semana %}
+  <h1 class="h4 mt-4">{{ dia.strftime('%d/%m/%Y') }}</h1>
+  <div class="text-muted mb-2">{{ ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"][dia.weekday()] }}</div>
+  {% set aulas = aulas_por_data.get(dia, []) %}
+  {% if aulas %}
+    <table class="table table-striped table-bordered align-middle">
+      <thead class="table-dark">
+        <tr>
+          <th style="width: 65%;">Sumário</th>
+          <th>Tipo</th>
+          <th style="width: 160px;">Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in aulas %}
+        {% set sumarios_limpos = (a.sumarios or '').split(',')|map('trim')|reject('equalto','')|list %}
+        {% set total_base = sumarios_limpos|length if sumarios_limpos|length > 0 else 1 %}
+        {% set total_previsto = [total_base, a.tempos_sem_aula or 0]|max %}
+        {% if total_previsto < 1 %}{% set total_previsto = 1 %}{% endif %}
+        {% set faltas = a.tempos_sem_aula if a.tempos_sem_aula is not none else (total_previsto if a.tipo in tipos_sem_aula else 0) %}
+          {% set faltas = [faltas, total_previsto]|min %}
+          {% set faltas = [faltas, 0]|max %}
+          {% set sem_aula = a.tipo in tipos_sem_aula %}
+          {% set sem_aula_total = sem_aula and faltas >= total_previsto %}
+          {% set tipo_label = tipo_labels.get(a.tipo, a.tipo) if tipo_labels is defined else a.tipo %}
+          {% set form_id = "semana-form-" ~ a.id %}
+          {% set turma_fechada = anos_fechados.get(a.turma_id, False) %}
+          <tr>
+            <td class="w-100">
+              <div class="d-flex flex-wrap gap-1 mb-2">
+                <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">Turma {{ a.turma.nome if a.turma else '—' }}</span>
+                <span class="badge rounded-pill {% if sem_aula %}bg-danger text-light{% else %}bg-body-secondary text-dark border border-secondary-subtle{% endif %}">{{ tipo_label }}</span>
+                {% if a.atividade %}
+                  <a class="badge rounded-pill bg-success text-light text-decoration-none" href="{{ url_for('turma_mapa_avaliacao_diaria', turma_id=a.turma_id) }}#mapa-atividades">Atividade</a>
+                {% endif %}
+                <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
+                  Nº Sumário {% if sem_aula %}—{% else %}{{ a.sumarios or '—' }}{% endif %}
+                </span>
+                <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
+                  {{ dia.strftime('%d/%m/%Y') }}
+                  <small class="text-muted ms-1">{{ ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"][dia.weekday()] }}</small>
+                </span>
+                <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
+                  {% if a.modulo %}{{ a.modulo.nome }}{% else %}Sem módulo{% endif %}
+                </span>
+                <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
+                  Aula {% if sem_aula_total %}—{% else %}{{ a.numero_modulo or '—' }}{% endif %}
+                </span>
+                <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
+                  Total {% if sem_aula_total %}—{% else %}{{ a.total_geral or '—' }}{% endif %}
+                </span>
+              </div>
+
+              {% if turma_fechada %}
+                <div class="mb-1">{{ a.sumario or '' }}</div>
+                {% if a.previsao %}
+                  <div class="text-muted small">Previsão: {{ a.previsao }}</div>
+                {% endif %}
+              {% else %}
+                <form method="post"
+                      id="{{ form_id }}"
+                      action="{{ url_for('calendario_update_sumario', turma_id=a.turma_id, aula_id=a.id) }}"
+                      class="d-flex flex-column gap-2 js-sumario-form">
+                  <input type="hidden" name="view" value="semana">
+                  <input type="hidden" name="data_ref" value="{{ semana_inicio.isoformat() }}">
+                  {% if turma %}
+                    <input type="hidden" name="turma_id" value="{{ turma.id }}">
+                  {% endif %}
+                    <div class="d-flex align-items-start gap-2">
+                      <textarea name="sumario"
+                                class="form-control form-control-sm js-autoresize"
+                                rows="2"
+                                placeholder="Escrever sumário...">{{ a.sumario or '' }}</textarea>
+                      <div class="d-flex flex-column" style="width: 120px;">
+                        <label class="form-label form-label-sm mb-1">Tempos (sem aula)</label>
+                        {% set pode_editar_tempos = a.tipo in tipos_sem_aula %}
+                        <input type="number"
+                               name="tempos_sem_aula"
+                               form="{{ form_id }}"
+                               class="form-control form-control-sm {% if not pode_editar_tempos %}bg-light text-muted{% endif %}"
+                               min="0"
+                               value="{{ faltas if sem_aula else 0 }}"
+                               data-total-previsto="{{ total_previsto }}"
+                               data-tempos-atual="{{ faltas if sem_aula else 0 }}"
+                               {% if not pode_editar_tempos %}readonly{% endif %}>
+                      </div>
+                    </div>
+                <textarea name="previsao"
+                          class="form-control form-control-sm js-autoresize"
+                          rows="2"
+                          placeholder="Previsão da aula (planeamento)...">{{ a.previsao or '' }}</textarea>
+                <button type="button" class="btn btn-link btn-sm ps-0 js-copy-previsao">Copiar previsão para sumário</button>
+                {% if periodo_atual %}
+                  <input type="hidden" name="periodo_id" form="{{ form_id }}" value="{{ periodo_atual.id }}">
+                {% elif a.periodo_id %}
+                  <input type="hidden" name="periodo_id" form="{{ form_id }}" value="{{ a.periodo_id }}">
+                {% endif %}
+              </form>
+            {% endif %}
+            {% set faltas_alunos = faltas_por_aula.get(a.id) if faltas_por_aula else [] %}
+            {% if faltas_alunos %}
+              <div class="small text-danger">Em falta: {{ faltas_alunos|join('; ') }}</div>
+            {% endif %}
+              </td>
+            <td>
+              {% if turma_fechada %}
+                {{ a.tipo }}
+              {% else %}
+                <div class="d-flex align-items-start gap-2">
+                  <select name="tipo"
+                          form="{{ form_id }}"
+                          class="form-select form-select-sm">
+                    {% for valor, label in tipos_aula %}
+                      <option value="{{ valor }}" {% if a.tipo == valor %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                  <button type="submit" form="{{ form_id }}" class="btn btn-sm btn-primary">Guardar</button>
+                </div>
+              {% endif %}
+            </td>
+            <td>
+              {% if turma_fechada %}
+                <span class="text-muted">—</span>
+              {% else %}
+                <a href="{{ url_for('calendario_aula_alunos', turma_id=a.turma_id, aula_id=a.id, return_url=request.full_path) }}"
+                   class="btn btn-sm btn-outline-info mb-1">Alunos</a>
+                <a href="{{ url_for('calendario_edit', turma_id=a.turma_id, aula_id=a.id, view='semana', data_ref=semana_inicio.isoformat(), turma_filtro=turma.id if turma else None, periodo_id=periodo_atual.id if periodo_atual else None) }}"
+                   class="btn btn-sm btn-warning">Editar</a>
+                <form method="post"
+                      action="{{ url_for('calendario_delete', turma_id=a.turma_id, aula_id=a.id) }}"
+                      style="display:inline"
+                      onsubmit="return confirm('Apagar esta linha de calendário?');">
+                  <input type="hidden" name="view" value="semana">
+                  <input type="hidden" name="data_ref" value="{{ semana_inicio.isoformat() }}">
+                  {% if turma %}
+                    <input type="hidden" name="turma_id" value="{{ turma.id }}">
+                  {% endif %}
+                  {% if periodo_atual %}
+                    <input type="hidden" name="periodo_id" value="{{ periodo_atual.id }}">
+                  {% endif %}
+                  <button type="submit" class="btn btn-sm btn-danger">Apagar</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="alert alert-info">Não existem aulas para esta data.</div>
+  {% endif %}
+{% endfor %}
+
+</div>
+
+{% endblock %}
+
+<script>
+  (() => {
+    const tiposSemAula = {{ tipos_sem_aula|list|tojson }};
+
+    function sincronizarTempos(select) {
+      const form = select.closest('form');
+      const input = form ? form.querySelector('input[name="tempos_sem_aula"]') : null;
+      if (!input) return;
+
+      const isSemAula = tiposSemAula.includes(select.value);
+      if (isSemAula) {
+        input.readOnly = false;
+        input.classList.remove('bg-light', 'text-muted');
+        if (!input.value) {
+          const fallback = input.dataset.temposAtual || input.dataset.totalPrevisto || '0';
+          input.value = fallback;
+        }
+      } else {
+        input.value = 0;
+        input.readOnly = true;
+        input.classList.add('bg-light', 'text-muted');
+      }
+    }
+
+    document.querySelectorAll('select[name="tipo"]').forEach((select) => {
+      sincronizarTempos(select);
+      select.addEventListener('change', () => sincronizarTempos(select));
+    });
+  })();
+</script>

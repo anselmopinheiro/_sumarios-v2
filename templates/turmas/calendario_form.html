@@ -9,6 +9,14 @@
 </p>
 
 <form method="post">
+  {% if redirect_view in ['dia', 'semana'] and data_ref %}
+    <input type="hidden" name="view" value="{{ redirect_view }}">
+    <input type="hidden" name="data_ref" value="{{ data_ref }}">
+    {% set turma_hidden = request.values.get('turma_id') or request.values.get('turma_filtro') %}
+    {% if turma_hidden %}
+      <input type="hidden" name="turma_id" value="{{ turma_hidden }}">
+    {% endif %}
+  {% endif %}
 
   <div class="mb-3">
     <label class="form-label">Data</label>
@@ -42,31 +50,106 @@
              value="{{ aula.total_geral if aula and aula.total_geral is not none else '' }}">
     </div>
 
-    <div class="col-md-4 mb-3">
+    <div class="col-md-3 mb-3">
       <label class="form-label">Tipo</label>
-      <select name="tipo" class="form-select">
+      <select name="tipo" class="form-select" id="tipo-select">
         {% set valor_tipo = aula.tipo if aula else "normal" %}
-        <option value="normal" {% if valor_tipo == "normal" %}selected{% endif %}>Normal</option>
-        <option value="greve" {% if valor_tipo == "greve" %}selected{% endif %}>Greve</option>
-        <option value="servico_oficial" {% if valor_tipo == "servico_oficial" %}selected{% endif %}>Serviço oficial</option>
-        <option value="extra" {% if valor_tipo == "extra" %}selected{% endif %}>Extra</option>
+        {% for valor, label in tipos_aula %}
+          <option value="{{ valor }}" {% if valor_tipo == valor %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
       </select>
+    </div>
+    <div class="col-md-3 mb-3">
+      {% set sumarios_limpos = (aula.sumarios or '').split(',')|map('trim')|reject('equalto','')|list if aula else [] %}
+      {% set total_base = sumarios_limpos|length if sumarios_limpos|length > 0 else 1 %}
+      {% set total_previsto = [total_base, aula.tempos_sem_aula or 0 if aula else 0]|max %}
+      {% if total_previsto < 1 %}{% set total_previsto = 1 %}{% endif %}
+      {% set tempos_default = aula.tempos_sem_aula if aula and aula.tempos_sem_aula is not none else (total_previsto if aula and aula.tipo in tipos_sem_aula else 0) %}
+      {% set tempos_default = [tempos_default, total_previsto]|max %}
+      <label class="form-label">Tempos sem aula</label>
+      <input type="number"
+             name="tempos_sem_aula"
+             id="tempos-sem-aula"
+             class="form-control"
+             min="0"
+             value="{{ tempos_default or 0 }}"
+             data-total-previsto="{{ total_previsto }}"
+             data-tempos-atual="{{ tempos_default or 0 }}">
+      <div class="form-text">Usado em faltei/serviço oficial/outros para indicar quantos tempos não contam.</div>
     </div>
   </div>
 
-  <div class="mb-3">
-    <label class="form-label">Sumário(s) (lista de números, ex.: 1,2,3)</label>
-    <input type="text" name="sumarios" class="form-control"
-           value="{{ aula.sumarios if aula and aula.sumarios else '' }}">
+  <div class="row">
+    <div class="col-md-6 mb-3">
+      <label class="form-label">Nº Sumário(s) (lista de números, ex.: 1,2,3)</label>
+      <input type="text" name="sumarios" class="form-control"
+             value="{{ aula.sumarios if aula and aula.sumarios else '' }}">
+    </div>
+
+    <div class="col-md-6 mb-3">
+      <label class="form-label">Sumário (descrição da aula)</label>
+      <textarea name="sumario" class="form-control js-autoresize" rows="3"
+                placeholder="Breve descrição da aula">{{ aula.sumario if aula and aula.sumario else '' }}</textarea>
+    </div>
+    <div class="col-md-6 mb-3">
+      <label class="form-label">Previsão (planeamento)</label>
+  <textarea name="previsao" class="form-control js-autoresize" rows="3"
+            placeholder="Plano para a aula">{{ aula.previsao if aula and aula.previsao else '' }}</textarea>
+  <button type="button" class="btn btn-link btn-sm ps-0 js-copy-previsao">Copiar previsão para sumário</button>
+</div>
   </div>
 
   <button type="submit" class="btn btn-success">Guardar</button>
-  <a href="{{ url_for('turma_calendario',
-                      turma_id=turma.id,
-                      periodo_id=periodo.id) }}"
-     class="btn btn-secondary">
-    Cancelar
-  </a>
+  {% if redirect_view == 'dia' and data_ref %}
+    <a href="{{ url_for('turma_calendario_dia', turma_id=turma.id, data=data_ref) }}"
+       class="btn btn-secondary">
+      Cancelar
+    </a>
+  {% elif redirect_view == 'semana' %}
+    {% set turma_hidden = request.values.get('turma_id') or request.values.get('turma_filtro') %}
+    <a href="{{ url_for('calendario_semana', data=data_ref, turma_id=turma_hidden) }}"
+       class="btn btn-secondary">
+      Cancelar
+    </a>
+  {% else %}
+    <a href="{{ url_for('turma_calendario',
+                        turma_id=turma.id,
+                        periodo_id=periodo.id) }}"
+       class="btn btn-secondary">
+      Cancelar
+    </a>
+  {% endif %}
 </form>
+
+<script>
+  (() => {
+    const tiposSemAula = {{ tipos_sem_aula|list|tojson }};
+    const select = document.getElementById('tipo-select');
+    const temposInput = document.getElementById('tempos-sem-aula');
+
+    function sincronizarTemposForm() {
+      if (!select || !temposInput) return;
+      const isSemAula = tiposSemAula.includes(select.value);
+
+      if (isSemAula) {
+        temposInput.readOnly = false;
+        temposInput.classList.remove('bg-light', 'text-muted');
+        if (!temposInput.value) {
+          const fallback = temposInput.dataset.temposAtual || temposInput.dataset.totalPrevisto || '0';
+          temposInput.value = fallback;
+        }
+      } else {
+        temposInput.value = 0;
+        temposInput.readOnly = true;
+        temposInput.classList.add('bg-light', 'text-muted');
+      }
+    }
+
+    sincronizarTemposForm();
+    if (select) {
+      select.addEventListener('change', sincronizarTemposForm);
+    }
+  })();
+</script>
 
 {% endblock %}
