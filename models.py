@@ -56,6 +56,7 @@ class Turma(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(50), nullable=False)
     tipo = db.Column(db.String(20), nullable=False, default="regular")
+    periodo_tipo = db.Column(db.String(20), nullable=False, default="anual")
 
     # deixa como nullable=True para não partir a migração em SQLite
     ano_letivo_id = db.Column(db.Integer, db.ForeignKey("anos_letivos.id"))
@@ -88,6 +89,11 @@ class Turma(db.Model):
         "Disciplina",
         secondary=lambda: TurmaDisciplina.__table__,
         back_populates="turmas",
+    )
+    alunos = db.relationship(
+        "Aluno",
+        back_populates="turma",
+        cascade="all, delete-orphan",
     )
 
     
@@ -150,6 +156,29 @@ class Horario(db.Model):
     # 0=Seg, 1=Ter, ..., 6=Dom
     weekday = db.Column(db.Integer, nullable=False)
     horas = db.Column(db.Integer, nullable=False)
+
+
+class Aluno(db.Model):
+    __tablename__ = "alunos"
+
+    id = db.Column(db.Integer, primary_key=True)
+    turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), nullable=False)
+
+    processo = db.Column(db.String(50))
+    numero = db.Column(db.Integer)
+    nome = db.Column(db.String(255), nullable=False)
+    nome_curto = db.Column(db.String(100))
+    nee = db.Column(db.Text)
+    observacoes = db.Column(db.Text)
+
+    turma = db.relationship("Turma", back_populates="alunos")
+    avaliacoes = db.relationship(
+        "AulaAluno", back_populates="aluno", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        db.Index("ix_alunos_turma_numero", "turma_id", "numero"),
+    )
 
 
 class Modulo(db.Model):
@@ -295,5 +324,53 @@ class CalendarioAula(db.Model):
     # normal / greve / servico_oficial / extra
     tipo = db.Column(db.String(50), default="normal", nullable=False)
 
+    apagado = db.Column(db.Boolean, default=False, nullable=False)
+
+    # Número de tempos que não contam para a numeração (aplicável em faltas, serviço oficial, etc.)
+    tempos_sem_aula = db.Column(db.Integer, default=0)
+
     observacoes = db.Column(db.Text)
     sumario = db.Column(db.Text)
+    previsao = db.Column(db.Text)
+    atividade = db.Column(db.Boolean, default=False, server_default="0", nullable=False)
+    atividade_nome = db.Column(db.Text)
+
+    turma = db.relationship("Turma", backref="calendario_aulas")
+    avaliacoes = db.relationship(
+        "AulaAluno", back_populates="aula", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        db.Index("ix_cal_aulas_turma_data", "turma_id", "data", "apagado"),
+        db.Index("ix_cal_aulas_periodo", "periodo_id", "data"),
+        db.Index("ix_cal_aulas_modulo", "modulo_id"),
+    )
+
+
+class AulaAluno(db.Model):
+    __tablename__ = "aulas_alunos"
+
+    id = db.Column(db.Integer, primary_key=True)
+    aula_id = db.Column(db.Integer, db.ForeignKey("calendario_aulas.id"), nullable=False)
+    aluno_id = db.Column(db.Integer, db.ForeignKey("alunos.id"), nullable=False)
+
+    # True = atraso; False = pontual
+    atraso = db.Column(db.Boolean, default=False, nullable=False)
+    # Número de tempos em falta (0 = presente)
+    faltas = db.Column(db.Integer, default=0, nullable=False)
+
+    responsabilidade = db.Column(db.Integer, default=3, server_default="3")
+    comportamento = db.Column(db.Integer, default=3, server_default="3")
+    participacao = db.Column(db.Integer, default=3, server_default="3")
+    trabalho_autonomo = db.Column(db.Integer, default=3, server_default="3")
+    portatil_material = db.Column(db.Integer, default=3, server_default="3")
+    atividade = db.Column(db.Integer, default=3, server_default="3")
+
+    aula = db.relationship("CalendarioAula", back_populates="avaliacoes")
+    aluno = db.relationship("Aluno", back_populates="avaliacoes")
+
+    __table_args__ = (
+        db.UniqueConstraint("aula_id", "aluno_id", name="uq_aula_aluno"),
+        db.Index("ix_aulas_alunos_aula", "aula_id"),
+        db.Index("ix_aulas_alunos_aluno", "aluno_id"),
+    )

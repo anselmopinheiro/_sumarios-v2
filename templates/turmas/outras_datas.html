@@ -1,0 +1,306 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Outras datas</h2>
+<p class="text-muted">Visualização de greves, serviço oficial, faltei, outros e extras em todas as turmas.</p>
+
+<form method="get" class="row g-3 align-items-end mb-4">
+  <div class="col-12 col-md-3">
+    <label class="form-label">Data início</label>
+    <input type="date" name="data_inicio" class="form-control" value="{{ data_inicio.isoformat() if data_inicio else '' }}">
+  </div>
+  <div class="col-12 col-md-3">
+    <label class="form-label">Data fim</label>
+    <input type="date" name="data_fim" class="form-control" value="{{ data_fim.isoformat() if data_fim else '' }}">
+  </div>
+  <div class="col-12 col-md-3">
+    <label class="form-label">Turma</label>
+    <select name="turma_id" class="form-select">
+      <option value="">Todas</option>
+      {% for t in turmas %}
+        <option value="{{ t.id }}" {% if filtro_turma_id and filtro_turma_id == t.id %}selected{% endif %}>{{ t.nome }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-12 col-md-2">
+    <label class="form-label">Tipo</label>
+    <select name="tipo" class="form-select">
+      <option value="">Todos</option>
+      {% for valor, label in tipos_aula %}
+        {% if valor in tipos_especiais %}
+          <option value="{{ valor }}" {% if filtro_tipo == valor %}selected{% endif %}>{{ label }}</option>
+        {% endif %}
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-12 col-md-1 d-grid">
+    <button type="submit" class="btn btn-primary">Filtrar</button>
+  </div>
+</form>
+
+<div class="card mb-4">
+  <div class="card-body">
+    <h5 class="card-title">Backup e exportação</h5>
+    <div class="d-flex flex-wrap gap-2 mb-3">
+      <a
+        class="btn btn-outline-primary"
+        href="{{ url_for('calendario_outras_datas_export_json', tipo=filtro_tipo or '', turma_id=filtro_turma_id or '', data_inicio=data_inicio.isoformat() if data_inicio else '', data_fim=data_fim.isoformat() if data_fim else '') }}"
+      >Exportar JSON</a>
+      <a
+        class="btn btn-outline-secondary"
+        href="{{ url_for('calendario_outras_datas_export_csv', tipo=filtro_tipo or '', turma_id=filtro_turma_id or '', data_inicio=data_inicio.isoformat() if data_inicio else '', data_fim=data_fim.isoformat() if data_fim else '') }}"
+      >Exportar CSV</a>
+    </div>
+
+    <form
+      method="post"
+      action="{{ url_for('calendario_outras_datas_import_json') }}"
+      enctype="multipart/form-data"
+      class="row g-3 align-items-end"
+    >
+      <div class="col-12 col-md-6 col-lg-5">
+        <label class="form-label">Importar backup JSON</label>
+        <input type="file" name="ficheiro" accept="application/json" class="form-control" required>
+      </div>
+      <div class="col-12 col-md-3 col-lg-2 d-grid">
+        <button type="submit" class="btn btn-warning">Importar</button>
+      </div>
+
+      <input type="hidden" name="tipo_filtro" value="{{ filtro_tipo or '' }}" />
+      <input type="hidden" name="turma_filtro" value="{{ filtro_turma_id or '' }}" />
+      <input type="hidden" name="data_inicio" value="{{ data_inicio.isoformat() if data_inicio else '' }}" />
+      <input type="hidden" name="data_fim" value="{{ data_fim.isoformat() if data_fim else '' }}" />
+    </form>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-body">
+    <h5 class="card-title">Adicionar aula extra</h5>
+    <form method="post" action="{{ url_for('calendario_outras_datas_add') }}" class="row g-3">
+      <div class="col-12 col-lg-3">
+        <label class="form-label">Turma</label>
+        <select name="turma_id" class="form-select" required>
+          <option value="">Seleciona uma turma</option>
+          {% for t in turmas %}
+            <option value="{{ t.id }}">{{ t.nome }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-lg-2">
+        <label class="form-label">Data</label>
+        <input type="date" name="data" class="form-control" required>
+      </div>
+      <div class="col-12 col-lg-2">
+        <label class="form-label">N.º de aulas</label>
+        <input type="number" name="numero_aulas" class="form-control" min="1" value="1" required>
+      </div>
+      <div class="col-12 col-lg-4">
+        <label class="form-label">Sumário</label>
+        <textarea name="sumario" class="form-control js-autoresize" rows="2" placeholder="Descrição da aula"></textarea>
+      </div>
+      <div class="col-12 col-lg-3">
+        <label class="form-label">Previsão</label>
+        <textarea name="previsao" class="form-control js-autoresize" rows="2" placeholder="Planeamento"></textarea>
+        <button type="button" class="btn btn-link btn-sm ps-0 js-copy-previsao">Copiar previsão para sumário</button>
+      </div>
+      <div class="col-12">
+        <label class="form-label">Observações</label>
+        <textarea name="observacoes" class="form-control js-autoresize" rows="2" placeholder="Observações adicionais"></textarea>
+      </div>
+
+      <input type="hidden" name="tipo_filtro" value="{{ filtro_tipo or '' }}" />
+      <input type="hidden" name="turma_filtro" value="{{ filtro_turma_id or '' }}" />
+      <input type="hidden" name="data_inicio" value="{{ data_inicio.isoformat() if data_inicio else '' }}" />
+      <input type="hidden" name="data_fim" value="{{ data_fim.isoformat() if data_fim else '' }}" />
+
+      <div class="col-12 d-flex justify-content-end">
+        <button type="submit" class="btn btn-success">Adicionar aula extra</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-body">
+    <h5 class="card-title">Alterar tipo de aulas por data</h5>
+    <p class="text-muted mb-3">Aplica o novo tipo a todas as turmas nessa data (exceto aulas extra).</p>
+    <form method="post" action="{{ url_for('calendario_outras_datas_mudar_tipo') }}" class="row g-3 align-items-end">
+      <div class="col-12 col-md-4 col-lg-3">
+        <label class="form-label">Data</label>
+        <input type="date" name="data" class="form-control" required>
+      </div>
+      <div class="col-12 col-md-4 col-lg-3">
+        <label class="form-label">Novo tipo</label>
+        <select name="novo_tipo" class="form-select" required id="novo-tipo-outras">
+          <option value="">Seleciona</option>
+          {% for valor, label in tipos_aula %}
+            {% if valor != 'extra' %}
+              <option value="{{ valor }}">{{ label }}</option>
+            {% endif %}
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-md-4 col-lg-3">
+        <label class="form-label">Tempos sem aula</label>
+        <input type="number"
+               name="tempos_sem_aula"
+               id="tempos-sem-aula-outras"
+               class="form-control"
+               min="0"
+               value="0"
+               placeholder="opcional">
+        <div class="form-text">Usado quando o novo tipo for Faltei/Serviço oficial/Outros.</div>
+      </div>
+
+      <input type="hidden" name="tipo_filtro" value="{{ filtro_tipo or '' }}" />
+      <input type="hidden" name="turma_filtro" value="{{ filtro_turma_id or '' }}" />
+      <input type="hidden" name="data_inicio" value="{{ data_inicio.isoformat() if data_inicio else '' }}" />
+      <input type="hidden" name="data_fim" value="{{ data_fim.isoformat() if data_fim else '' }}" />
+
+      <div class="col-12 col-md-4 col-lg-3 d-grid">
+        <button type="submit" class="btn btn-warning">Alterar tipo</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if aulas %}
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h5 class="mb-0">Sumários</h5>
+    <button type="button"
+            class="btn btn-success js-guardar-todos"
+            data-scope="#outras-datas-lista"
+            data-loading-text="A guardar todos..."
+            data-error-text="Falha ao guardar">
+      Guardar todos os sumários/previsões
+    </button>
+  </div>
+  <button type="button"
+          class="btn btn-success js-guardar-todos floating-guardar"
+          data-scope="#outras-datas-lista"
+          data-loading-text="A guardar todos..."
+          data-error-text="Falha ao guardar"
+          aria-label="Guardar todos os sumários e previsões visíveis">
+    Guardar todos os sumários/previsões
+  </button>
+
+  <div id="outras-datas-lista">
+  <div class="table-responsive">
+    <table class="table table-striped table-bordered align-middle">
+          <thead class="table-dark">
+            <tr>
+              <th>Turma</th>
+              <th>Data</th>
+              <th>Tipo</th>
+              <th style="width: 35%;">Sumário</th>
+              <th style="width: 25%;">Observações</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in aulas %}
+              {% set sem_aula = a.tipo in tipos_sem_aula %}
+              {% set form_id = "outras-form-" ~ a.id %}
+          <tr>
+            <td class="fw-semibold">{{ a.turma.nome if a.turma else '—' }}</td>
+            <td class="text-nowrap">
+              {% if a.data %}
+                {{ a.data.strftime("%d/%m/%Y") }}<br>
+                <small class="text-muted">{{ ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"][a.data.weekday()] }}</small>
+              {% endif %}
+            </td>
+            <td>
+              {% set sem_aula = a.tipo in tipos_sem_aula %}
+              <div class="d-flex flex-column gap-1">
+                <span class="badge {% if sem_aula %}bg-danger text-light{% else %}bg-secondary text-light{% endif %}">{{ tipo_labels.get(a.tipo, a.tipo) }}</span>
+                {% if a.tempos_sem_aula is not none %}
+                  <span class="badge bg-light text-dark">Tempos sem aula: {{ a.tempos_sem_aula }}</span>
+                {% endif %}
+              </div>
+            </td>
+            <td>
+              <div class="d-flex flex-column gap-2">
+                {% if a.atividade %}
+                  <div>
+                    <a class="badge rounded-pill bg-success text-light text-decoration-none" href="{{ url_for('turma_mapa_avaliacao_diaria', turma_id=a.turma.id) }}#mapa-atividades">Atividade</a>
+                  </div>
+                {% endif %}
+                <textarea
+                  name="sumario"
+                  form="{{ form_id }}"
+                  class="form-control form-control-sm js-autoresize"
+                  rows="2"
+                  placeholder="Sumário"
+                >{{ a.sumario or '' }}</textarea>
+                <textarea
+                  name="previsao"
+                  form="{{ form_id }}"
+                  class="form-control form-control-sm js-autoresize"
+                  rows="2"
+                  placeholder="Previsão"
+                >{{ a.previsao or '' }}</textarea>
+                <button type="button" class="btn btn-link btn-sm ps-0 js-copy-previsao">Copiar previsão para sumário</button>
+                {% set faltas_alunos = faltas_por_aula.get(a.id) if faltas_por_aula else [] %}
+                {% if faltas_alunos %}
+                  <div class="small text-danger">Em falta: {{ faltas_alunos|join('; ') }}</div>
+                {% endif %}
+              </div>
+            </td>
+            <td>
+            <form
+                method="post"
+                id="{{ form_id }}"
+                action="{{ url_for('calendario_update_sumario', turma_id=a.turma.id, aula_id=a.id) }}"
+                class="d-flex flex-column gap-2 js-sumario-form"
+              >
+                <input type="hidden" name="view" value="outras_datas" />
+                <input type="hidden" name="tipo_filtro" value="{{ filtro_tipo or '' }}" />
+                <input type="hidden" name="turma_filtro" value="{{ filtro_turma_id or '' }}" />
+                <input type="hidden" name="data_inicio" value="{{ data_inicio.isoformat() if data_inicio else '' }}" />
+                <input type="hidden" name="data_fim" value="{{ data_fim.isoformat() if data_fim else '' }}" />
+                <textarea
+                  name="observacoes"
+                  class="form-control js-autoresize"
+                  rows="2"
+                  placeholder="Observações"
+                >{{ a.observacoes or '' }}</textarea>
+                <button type="submit" class="btn btn-sm btn-primary align-self-start">Guardar</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  </div>
+{% else %}
+  <div class="alert alert-info">Não foram encontradas aulas com os tipos selecionados.</div>
+{% endif %}
+
+<script>
+  (() => {
+    const tiposSemAula = {{ tipos_sem_aula|list|tojson }};
+    const selectTipo = document.getElementById('novo-tipo-outras');
+    const temposInput = document.getElementById('tempos-sem-aula-outras');
+
+    function sincronizarTemposBulk() {
+      if (!selectTipo || !temposInput) return;
+      const isSemAula = tiposSemAula.includes(selectTipo.value);
+      if (isSemAula) {
+        temposInput.readOnly = false;
+        temposInput.classList.remove('bg-light', 'text-muted');
+      } else {
+        temposInput.value = 0;
+        temposInput.readOnly = true;
+        temposInput.classList.add('bg-light', 'text-muted');
+      }
+    }
+
+    sincronizarTemposBulk();
+    if (selectTipo) {
+      selectTipo.addEventListener('change', sincronizarTemposBulk);
+    }
+  })();
+</script>
+
+{% endblock %}
