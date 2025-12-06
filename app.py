@@ -1262,7 +1262,7 @@ def create_app():
         dias = mapa.get("dias", [])
         atividades = mapa.get("atividades", [])
 
-        datas = [d["data"] for d in dias]
+        datas = dias
 
         def _media_formatada(valor):
             return "—" if valor is None else f"{valor:.2f}"
@@ -1279,7 +1279,11 @@ def create_app():
         output.write("<table border='1'>")
         output.write("<thead><tr><th>#</th><th>Aluno</th>")
         for d in datas:
-            output.write(f"<th>{d.strftime('%d/%m/%Y')}</th>")
+            sumarios_txt = d.get("sumarios")
+            titulo = d["data"].strftime("%d/%m/%Y")
+            if sumarios_txt:
+                titulo += f"<br>N.º {sumarios_txt}"
+            output.write(f"<th>{titulo}</th>")
         output.write("<th>Faltas</th><th>Média</th></tr></thead><tbody>")
 
         for aluno in alunos:

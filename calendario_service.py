@@ -1336,6 +1336,15 @@ def calcular_mapa_avaliacao_diaria(
         aulas_dia = aulas_por_data[data_ref]
         medias = {aluno.id: _media_para_aluno(aluno.id, aulas_dia) for aluno in alunos}
         faltas = {}
+        sumarios_dia: List[str] = []
+
+        for aula in aulas_dia:
+            sumarios_aula = [
+                s.strip() for s in (aula.sumarios or "").split(",") if s.strip()
+            ]
+            if sumarios_aula:
+                sumarios_dia.extend(sumarios_aula)
+
         for aluno in alunos:
             faltas_aluno = 0
             for aula in aulas_dia:
@@ -1350,7 +1359,14 @@ def calcular_mapa_avaliacao_diaria(
 
             faltas[aluno.id] = faltas_aluno
 
-        dias.append({"data": data_ref, "medias": medias, "faltas": faltas})
+        dias.append(
+            {
+                "data": data_ref,
+                "medias": medias,
+                "faltas": faltas,
+                "sumarios": ", ".join(sumarios_dia),
+            }
+        )
 
     atividades = []
     for aula in aulas:
