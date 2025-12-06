@@ -145,6 +145,9 @@
             <div class="d-flex flex-wrap gap-1 mb-2">
               <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">Turma {{ turma.nome }}</span>
               <span class="badge rounded-pill {% if sem_aula %}bg-danger text-light{% else %}bg-body-secondary text-dark border border-secondary-subtle{% endif %}">{{ tipo_label }}</span>
+              {% if a.atividade %}
+                <a class="badge rounded-pill bg-success text-light text-decoration-none" href="{{ url_for('turma_mapa_avaliacao_diaria', turma_id=turma.id) }}#mapa-atividades">Atividade</a>
+              {% endif %}
               <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
                 Nº Sumário {% if sem_aula %}—{% else %}{{ a.sumarios or '—' }}{% endif %}
               </span>

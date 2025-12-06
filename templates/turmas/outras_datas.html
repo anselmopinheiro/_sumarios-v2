@@ -220,6 +220,11 @@
             </td>
             <td>
               <div class="d-flex flex-column gap-2">
+                {% if a.atividade %}
+                  <div>
+                    <a class="badge rounded-pill bg-success text-light text-decoration-none" href="{{ url_for('turma_mapa_avaliacao_diaria', turma_id=a.turma.id) }}#mapa-atividades">Atividade</a>
+                  </div>
+                {% endif %}
                 <textarea
                   name="sumario"
                   form="{{ form_id }}"
