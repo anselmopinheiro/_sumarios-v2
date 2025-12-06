@@ -24,10 +24,11 @@
       </div>
       <div class="col-md-6">
         <label class="form-label fw-bold">Aplicar a turma</label>
+        {% set turma_padrao = request.form.get('turma_id_padrao') %}
         <select name="turma_id_padrao" class="form-select">
           <option value="">(usar turma indicada no JSON)</option>
           {% for t in turmas %}
-            <option value="{{ t.id }}" {% if request.form.get('turma_id_padrao')|default(0)|int == t.id %}selected{% endif %}>{{ t.nome }}</option>
+            <option value="{{ t.id }}" {% if turma_padrao is not none and turma_padrao|int == t.id %}selected{% endif %}>{{ t.nome }}</option>
           {% endfor %}
         </select>
         <div class="form-text">Usado apenas para linhas sem turma definida no ficheiro.</div>
