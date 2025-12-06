@@ -332,6 +332,8 @@ class CalendarioAula(db.Model):
     observacoes = db.Column(db.Text)
     sumario = db.Column(db.Text)
     previsao = db.Column(db.Text)
+    atividade = db.Column(db.Boolean, default=False, server_default="0", nullable=False)
+    atividade_nome = db.Column(db.Text)
 
     turma = db.relationship("Turma", backref="calendario_aulas")
     avaliacoes = db.relationship(
@@ -357,12 +359,12 @@ class AulaAluno(db.Model):
     # Número de tempos em falta (0 = presente)
     faltas = db.Column(db.Integer, default=0, nullable=False)
 
-    responsabilidade = db.Column(db.Integer, default=5, server_default="5")
-    comportamento = db.Column(db.Integer, default=5, server_default="5")
-    participacao = db.Column(db.Integer, default=5, server_default="5")
-    trabalho_autonomo = db.Column(db.Integer, default=5, server_default="5")
-    portatil_material = db.Column(db.Integer, default=5, server_default="5")
-    atividade = db.Column(db.Integer, default=5, server_default="5")
+    responsabilidade = db.Column(db.Integer, default=3, server_default="3")
+    comportamento = db.Column(db.Integer, default=3, server_default="3")
+    participacao = db.Column(db.Integer, default=3, server_default="3")
+    trabalho_autonomo = db.Column(db.Integer, default=3, server_default="3")
+    portatil_material = db.Column(db.Integer, default=3, server_default="3")
+    atividade = db.Column(db.Integer, default=3, server_default="3")
 
     aula = db.relationship("CalendarioAula", back_populates="avaliacoes")
     aluno = db.relationship("Aluno", back_populates="avaliacoes")

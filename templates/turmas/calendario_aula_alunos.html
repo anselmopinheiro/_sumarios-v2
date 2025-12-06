@@ -26,11 +26,21 @@
 <div class="card">
   <div class="card-body">
     <h5 class="card-title">Pontualidade, faltas e desempenho</h5>
-    <p class="text-muted">Pontualidade: selecione quando o aluno chegou com atraso. Falta: número de tempos (0-6). As restantes avaliações variam de 1 a 5.</p>
+    <p class="text-muted">Pontualidade: selecione quando o aluno chegou com atraso. Falta: número de tempos (0-6). As restantes avaliações variam de 1 a 5 (valor pré-definido 3).</p>
     <form method="post" class="table-responsive">
       {% if return_url %}
         <input type="hidden" name="return_url" value="{{ return_url }}">
       {% endif %}
+      <div class="alert alert-secondary d-flex align-items-center justify-content-between">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="atividade_flag" name="atividade_flag" value="1" {% if aula.atividade %}checked{% endif %} {% if ano_fechado %}disabled{% endif %}>
+          <label class="form-check-label" for="atividade_flag">Esta aula tem atividade</label>
+        </div>
+        <div class="ms-3 flex-grow-1">
+          <label class="form-label mb-1" for="atividade_nome">Nome da atividade (mostrado no mapa de atividades)</label>
+          <input type="text" class="form-control" id="atividade_nome" name="atividade_nome" value="{{ aula.atividade_nome or '' }}" {% if not aula.atividade %}disabled{% endif %} {% if ano_fechado %}disabled{% endif %}>
+        </div>
+      </div>
       <table class="table align-middle">
         <thead class="table-dark">
           <tr>
@@ -63,7 +73,7 @@
               </td>
               {% for campo in ["responsabilidade", "comportamento", "participacao", "trabalho_autonomo", "portatil_material", "atividade"] %}
                 {% set valor_bruto = avaliacao|attr(campo) if avaliacao else None %}
-                {% set valor = valor_bruto if valor_bruto is not none else 5 %}
+                {% set valor = valor_bruto if valor_bruto is not none else 3 %}
                 <td class="text-center">
                   <select name="{{ campo }}_{{ aluno.id }}" class="form-select form-select-sm" {% if ano_fechado %}disabled{% endif %}>
                     <option value="">&mdash;</option>
@@ -87,4 +97,22 @@
     </form>
   </div>
 </div>
+<script>
+  const atividadeFlag = document.getElementById('atividade_flag');
+  const atividadeNome = document.getElementById('atividade_nome');
+  function toggleAtividadeNome() {
+    if (!atividadeFlag || !atividadeNome) return;
+    const ativo = atividadeFlag.checked;
+    atividadeNome.disabled = !ativo || atividadeFlag.hasAttribute('disabled');
+    if (ativo) {
+      atividadeNome.classList.remove('opacity-50');
+    } else {
+      atividadeNome.classList.add('opacity-50');
+    }
+  }
+  if (atividadeFlag) {
+    atividadeFlag.addEventListener('change', toggleAtividadeNome);
+    toggleAtividadeNome();
+  }
+</script>
 {% endblock %}

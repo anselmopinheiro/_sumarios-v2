@@ -310,12 +310,12 @@ def create_app():
                         aluno_id INTEGER NOT NULL,
                         atraso BOOLEAN NOT NULL DEFAULT 0,
                         faltas INTEGER NOT NULL DEFAULT 0,
-                        responsabilidade INTEGER,
-                        comportamento INTEGER,
-                        participacao INTEGER,
-                        trabalho_autonomo INTEGER,
-                        portatil_material INTEGER,
-                        atividade INTEGER,
+                        responsabilidade INTEGER DEFAULT 3,
+                        comportamento INTEGER DEFAULT 3,
+                        participacao INTEGER DEFAULT 3,
+                        trabalho_autonomo INTEGER DEFAULT 3,
+                        portatil_material INTEGER DEFAULT 3,
+                        atividade INTEGER DEFAULT 3,
                         CONSTRAINT fk_aula FOREIGN KEY(aula_id) REFERENCES calendario_aulas(id),
                         CONSTRAINT fk_aluno FOREIGN KEY(aluno_id) REFERENCES alunos(id),
                         CONSTRAINT uq_aula_aluno UNIQUE(aula_id, aluno_id)
@@ -338,6 +338,21 @@ def create_app():
         if "previsao" not in colunas:
             db.session.execute(
                 text("ALTER TABLE calendario_aulas ADD COLUMN previsao TEXT")
+            )
+            db.session.commit()
+
+        if "atividade" not in colunas:
+            db.session.execute(
+                text(
+                    "ALTER TABLE calendario_aulas ADD COLUMN atividade BOOLEAN NOT NULL DEFAULT 0"
+                )
+            )
+            db.session.commit()
+
+        colunas = {col["name"] for col in insp.get_columns("calendario_aulas")}
+        if "atividade_nome" not in colunas:
+            db.session.execute(
+                text("ALTER TABLE calendario_aulas ADD COLUMN atividade_nome TEXT")
             )
             db.session.commit()
 
@@ -1139,7 +1154,7 @@ def create_app():
             .all()
         )
 
-        dias = calcular_mapa_avaliacao_diaria(
+        mapa = calcular_mapa_avaliacao_diaria(
             turma,
             alunos,
             data_inicio=data_inicio,
@@ -1147,12 +1162,15 @@ def create_app():
             periodo_id=periodo_atual.id if periodo_atual else None,
             modulo_id=modulo_id,
         )
+        dias = mapa.get("dias", [])
+        atividades = mapa.get("atividades", [])
 
         return render_template(
             "turmas/mapa_avaliacao_diaria.html",
             turma=turma,
             ano=ano,
             dias=dias,
+            atividades=atividades,
             alunos=alunos,
             periodo_atual=periodo_atual,
             periodos_disponiveis=periodos_disponiveis,
@@ -1203,7 +1221,7 @@ def create_app():
             .all()
         )
 
-        dias = calcular_mapa_avaliacao_diaria(
+        mapa = calcular_mapa_avaliacao_diaria(
             turma,
             alunos,
             data_inicio=data_inicio,
@@ -1211,6 +1229,8 @@ def create_app():
             periodo_id=periodo_atual.id if periodo_atual else None,
             modulo_id=modulo_id,
         )
+        dias = mapa.get("dias", [])
+        atividades = mapa.get("atividades", [])
 
         datas = [d["data"] for d in dias]
 
@@ -1252,7 +1272,36 @@ def create_app():
                 output.write("<td>—</td>")
             output.write("</tr>")
 
-        output.write("</tbody></table></body></html>")
+        output.write("</tbody></table>")
+
+        if atividades:
+            output.write("<br><br><table border='1'>")
+            output.write("<thead><tr><th>#</th><th>Aluno</th>")
+            for at in atividades:
+                titulo = f"{at['data'].strftime('%d/%m/%Y')} — {at['titulo']}" if at.get('titulo') else at['data'].strftime('%d/%m/%Y')
+                output.write(f"<th>{titulo}</th>")
+            output.write("<th>Média atividades</th></tr></thead><tbody>")
+
+            for aluno in alunos:
+                notas_aluno = []
+                output.write("<tr>")
+                output.write(f"<td>{aluno.numero if aluno.numero is not None else '--'}</td>")
+                output.write(f"<td>{aluno.nome}</td>")
+                for at in atividades:
+                    nota = at.get("notas", {}).get(aluno.id)
+                    if nota is not None:
+                        notas_aluno.append(nota)
+                    output.write(f"<td>{_media_formatada(nota)}</td>")
+                if notas_aluno:
+                    media_ativ = sum(notas_aluno) / len(notas_aluno)
+                    output.write(f"<td>{media_ativ:.2f}</td>")
+                else:
+                    output.write("<td>—</td>")
+                output.write("</tr>")
+
+            output.write("</tbody></table>")
+
+        output.write("</body></html>")
 
         return Response(
             output.getvalue(),
@@ -2382,7 +2431,7 @@ def create_app():
             for avaliacao in AulaAluno.query.filter_by(aula_id=aula.id).all()
         }
 
-        def _parse_nota(field_name, default_val=5):
+        def _parse_nota(field_name, default_val=3):
             valor = request.form.get(field_name)
             if valor in (None, ""):
                 return default_val
@@ -2393,6 +2442,11 @@ def create_app():
                 flash("Ano letivo fechado: apenas leitura.", "error")
                 destino = return_url or url_for("turma_calendario", turma_id=turma.id)
                 return redirect(destino)
+
+            aula.atividade = bool(request.form.get("atividade_flag"))
+            aula.atividade_nome = (
+                request.form.get("atividade_nome") if aula.atividade else None
+            )
 
             for aluno in alunos:
                 avaliacao = avaliacoes.get(aluno.id)

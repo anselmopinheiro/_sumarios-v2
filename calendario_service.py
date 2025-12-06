@@ -1264,12 +1264,9 @@ def calcular_mapa_avaliacao_diaria(
     data_fim: Optional[date] = None,
     periodo_id: Optional[int] = None,
     modulo_id: Optional[int] = None,
-) -> List[Dict]:
-    """Devolve médias diárias de avaliação para cada aluno da turma.
+) -> Dict[str, List[Dict]]:
+    """Devolve mapas de avaliação diária e de atividades para cada aluno.
 
-    A média diária corresponde à média simples das notas registadas nas aulas
-    que o aluno frequentou nesse dia. Se o aluno tiver avaliações apenas com
-    faltas que cubram todos os tempos avaliados, a média do dia é zero.
     """
 
     query = (
@@ -1317,12 +1314,11 @@ def calcular_mapa_avaliacao_diaria(
                 continue
 
             notas = [
-                avaliacao.responsabilidade or 0,
-                avaliacao.comportamento or 0,
-                avaliacao.participacao or 0,
-                avaliacao.trabalho_autonomo or 0,
-                avaliacao.portatil_material or 0,
-                avaliacao.atividade or 0,
+                avaliacao.responsabilidade or 3,
+                avaliacao.comportamento or 3,
+                avaliacao.participacao or 3,
+                avaliacao.trabalho_autonomo or 3,
+                avaliacao.portatil_material or 3,
             ]
             soma_notas += sum(notas)
             total_campos += len(notas)
@@ -1356,7 +1352,37 @@ def calcular_mapa_avaliacao_diaria(
 
         dias.append({"data": data_ref, "medias": medias, "faltas": faltas})
 
-    return dias
+    atividades = []
+    for aula in aulas:
+        if not getattr(aula, "atividade", False):
+            continue
+
+        notas = {}
+        for aluno in alunos:
+            avaliacao = next(
+                (av for av in aula.avaliacoes if av.aluno_id == aluno.id), None
+            )
+            if not avaliacao:
+                notas[aluno.id] = None
+                continue
+
+            tempos_aula = _total_previsto_para_aula(aula)
+            faltas = max(0, min(avaliacao.faltas or 0, tempos_aula))
+            if faltas >= tempos_aula:
+                notas[aluno.id] = 0.0
+            else:
+                nota = avaliacao.atividade if avaliacao.atividade is not None else 3
+                notas[aluno.id] = float(nota)
+
+        atividades.append(
+            {
+                "data": aula.data,
+                "titulo": aula.atividade_nome or "Atividade",
+                "notas": notas,
+            }
+        )
+
+    return {"dias": dias, "atividades": atividades}
 
 
 def completar_modulos_profissionais(

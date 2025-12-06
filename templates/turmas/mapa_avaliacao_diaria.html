@@ -48,10 +48,13 @@
   </a>
 </div>
 
-{% if not dias %}
+{% if not dias and not atividades %}
   <div class="alert alert-info">Não existem aulas no intervalo selecionado.</div>
-{% else %}
+{% endif %}
+
+{% if dias %}
   {% set datas = dias | map(attribute='data') | list %}
+  <h4 class="mt-4">Mapa diário (Responsabilidade, Comportamento, Participação, Trabalho autónomo, Portátil/Material)</h4>
   <div class="table-responsive mt-3">
     <table class="table table-striped table-bordered align-middle">
       <thead class="table-dark">
@@ -86,6 +89,53 @@
               {% set ns.faltas_total = ns.faltas_total + (dia.faltas.get(aluno.id) or 0) %}
             {% endfor %}
             <td class="text-center">{{ ns.faltas_total }}</td>
+            <td class="text-end fw-semibold">
+              {% if ns.valores %}
+                {{ '%.2f'|format((ns.valores | sum) / (ns.valores | length)) }}
+              {% else %}
+                —
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+
+{% if atividades %}
+  <h4 class="mt-4">Mapa de atividades</h4>
+  <div class="table-responsive mt-3">
+    <table class="table table-striped table-bordered align-middle">
+      <thead class="table-secondary">
+        <tr>
+          <th style="width: 70px;">#</th>
+          <th style="min-width: 240px;">Aluno</th>
+          {% for at in atividades %}
+            <th class="text-center">{{ at.data.strftime('%d/%m/%Y') }}{% if at.titulo %}<br><small>{{ at.titulo }}</small>{% endif %}</th>
+          {% endfor %}
+          <th class="text-end" style="width: 140px;">Média atividades</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for aluno in alunos %}
+          {% set ns = namespace(valores=[]) %}
+          <tr>
+            <td>{{ aluno.numero if aluno.numero is not none else '--' }}</td>
+            <td>{{ aluno.nome }}</td>
+            {% for at in atividades %}
+              {% set nota = at.notas.get(aluno.id) %}
+              {% if nota is not none %}
+                {% set _ = ns.valores.append(nota) %}
+              {% endif %}
+              <td class="text-center">
+                {% if nota is none %}
+                  —
+                {% else %}
+                  {{ '%.2f'|format(nota) }}
+                {% endif %}
+              </td>
+            {% endfor %}
             <td class="text-end fw-semibold">
               {% if ns.valores %}
                 {{ '%.2f'|format((ns.valores | sum) / (ns.valores | length)) }}
