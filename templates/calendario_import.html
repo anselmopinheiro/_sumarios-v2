@@ -27,7 +27,7 @@
         <select name="turma_id_padrao" class="form-select">
           <option value="">(usar turma indicada no JSON)</option>
           {% for t in turmas %}
-            <option value="{{ t.id }}" {% if request.form.turma_id_padrao|int == t.id %}selected{% endif %}>{{ t.nome }}</option>
+            <option value="{{ t.id }}" {% if request.form.get('turma_id_padrao')|default(0)|int == t.id %}selected{% endif %}>{{ t.nome }}</option>
           {% endfor %}
         </select>
         <div class="form-text">Usado apenas para linhas sem turma definida no ficheiro.</div>
