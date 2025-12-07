@@ -824,10 +824,14 @@ def create_app():
         ano_fechado = bool(ano and ano.fechado)
 
         turmas_destino = (
-            Turma.query.filter(Turma.id != turma.id)
+            Turma.query.options(joinedload(Turma.ano_letivo))
+            .filter(Turma.id != turma.id)
             .order_by(Turma.nome)
             .all()
         )
+        turmas_destino_abertas = [
+            t for t in turmas_destino if not (t.ano_letivo and t.ano_letivo.fechado)
+        ]
 
         def _lista_alunos():
             return (
@@ -858,7 +862,7 @@ def create_app():
                     "turmas/alunos.html",
                     turma=turma,
                     ano_fechado=ano_fechado,
-                    turmas_destino=turmas_destino,
+                    turmas_destino=turmas_destino_abertas,
                     alunos=_lista_alunos(),
                 )
 
@@ -868,7 +872,7 @@ def create_app():
                     "turmas/alunos.html",
                     turma=turma,
                     ano_fechado=ano_fechado,
-                    turmas_destino=turmas_destino,
+                    turmas_destino=turmas_destino_abertas,
                     alunos=_lista_alunos(),
                 )
 
@@ -891,7 +895,7 @@ def create_app():
             "turmas/alunos.html",
             turma=turma,
             ano_fechado=ano_fechado,
-            turmas_destino=turmas_destino,
+            turmas_destino=turmas_destino_abertas,
             alunos=_lista_alunos(),
         )
 
@@ -1087,10 +1091,6 @@ def create_app():
             return redirect(url_for("turma_alunos", turma_id=turma_origem.id))
 
         ano_destino_fechado = bool(turma_destino.ano_letivo and turma_destino.ano_letivo.fechado)
-
-        if acao == "mover" and ano_origem_fechado:
-            flash("Ano letivo fechado: não é possível mover alunos desta turma.", "error")
-            return redirect(url_for("turma_alunos", turma_id=turma_origem.id))
 
         if ano_destino_fechado:
             flash("Ano letivo fechado: não é possível adicionar alunos na turma de destino.", "error")

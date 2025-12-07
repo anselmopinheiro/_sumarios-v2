@@ -14,7 +14,7 @@
 </div>
 
 {% if ano_fechado %}
-    <div class="alert alert-warning">Ano letivo fechado: edição bloqueada (importação permitida).</div>
+    <div class="alert alert-warning">Ano letivo fechado: edição bloqueada (importação e transferências para anos abertos permitidas).</div>
 {% endif %}
 
 <div class="card mb-4">
@@ -77,7 +77,7 @@
                 <form id="transfer-form" method="post" action="{{ url_for('turma_alunos_transfer', turma_id=turma.id) }}" class="row g-2 align-items-end">
                     <div class="col-12">
                         <label class="form-label">Turma de destino</label>
-                        <select name="destino_turma" class="form-select" {% if ano_fechado %}disabled{% endif %} required>
+                        <select name="destino_turma" class="form-select" required>
                             <option value="" selected disabled>Escolha uma turma</option>
                             {% for t in turmas_destino %}
                                 <option value="{{ t.id }}">{{ t.nome }}</option>
@@ -85,8 +85,8 @@
                         </select>
                     </div>
                     <div class="col-12 d-flex gap-2">
-                        <button type="submit" name="acao" value="copiar" class="btn btn-outline-secondary" {% if ano_fechado %}disabled{% endif %}>Copiar selecionados</button>
-                        <button type="submit" name="acao" value="mover" class="btn btn-outline-danger" {% if ano_fechado %}disabled{% endif %}>Mover selecionados</button>
+                        <button type="submit" name="acao" value="copiar" class="btn btn-outline-secondary">Copiar selecionados</button>
+                        <button type="submit" name="acao" value="mover" class="btn btn-outline-danger">Mover selecionados</button>
                         <button type="button" class="btn btn-link ms-auto p-0" id="toggle-select-all">Selecionar todos</button>
                     </div>
                     <div class="col-12">
@@ -117,7 +117,7 @@
         <form id="aluno-{{ aluno.id }}" method="post" action="{{ url_for('turma_alunos_update', turma_id=turma.id, aluno_id=aluno.id) }}"></form>
         <tr>
             <td class="text-center">
-                <input class="form-check-input" type="checkbox" name="aluno_ids" value="{{ aluno.id }}" form="transfer-form" {% if ano_fechado %}disabled{% endif %}>
+                <input class="form-check-input" type="checkbox" name="aluno_ids" value="{{ aluno.id }}" form="transfer-form">
             </td>
             <td>
                 <input type="text" class="form-control form-control-sm" name="processo" value="{{ aluno.processo or '' }}" form="aluno-{{ aluno.id }}" {% if ano_fechado %}disabled{% endif %}>
