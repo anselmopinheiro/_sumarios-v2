@@ -1753,9 +1753,9 @@ def create_app():
         data_txt = request.form.get("data")
         data_aula = _parse_date_form(data_txt)
         numero_aulas = request.form.get("numero_aulas", type=int) or 1
-        sumario_txt = request.form.get("sumario")
-        previsao_txt = request.form.get("previsao")
-        observacoes_txt = request.form.get("observacoes")
+        sumario_txt = None
+        previsao_txt = None
+        observacoes_txt = None
 
         filtros_limpos = _filtros_outras_datas_redirect(
             tipo_filtro, turma_filtro or turma_id, data_inicio, data_fim

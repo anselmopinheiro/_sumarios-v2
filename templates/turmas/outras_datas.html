@@ -78,7 +78,7 @@
   <div class="card-body">
     <h5 class="card-title">Adicionar aula extra</h5>
     <form method="post" action="{{ url_for('calendario_outras_datas_add') }}" class="row g-3">
-      <div class="col-12 col-lg-3">
+      <div class="col-12 col-lg-4">
         <label class="form-label">Turma</label>
         <select name="turma_id" class="form-select" required>
           <option value="">Seleciona uma turma</option>
@@ -87,26 +87,13 @@
           {% endfor %}
         </select>
       </div>
-      <div class="col-12 col-lg-2">
+      <div class="col-12 col-lg-3">
         <label class="form-label">Data</label>
         <input type="date" name="data" class="form-control" required>
       </div>
-      <div class="col-12 col-lg-2">
+      <div class="col-12 col-lg-3">
         <label class="form-label">N.º de aulas</label>
         <input type="number" name="numero_aulas" class="form-control" min="1" value="1" required>
-      </div>
-      <div class="col-12 col-lg-4">
-        <label class="form-label">Sumário</label>
-        <textarea name="sumario" class="form-control js-autoresize" rows="2" placeholder="Descrição da aula"></textarea>
-      </div>
-      <div class="col-12 col-lg-3">
-        <label class="form-label">Previsão</label>
-        <textarea name="previsao" class="form-control js-autoresize" rows="2" placeholder="Planeamento"></textarea>
-        <button type="button" class="btn btn-link btn-sm ps-0 js-copy-previsao">Copiar previsão para sumário</button>
-      </div>
-      <div class="col-12">
-        <label class="form-label">Observações</label>
-        <textarea name="observacoes" class="form-control js-autoresize" rows="2" placeholder="Observações adicionais"></textarea>
       </div>
 
       <input type="hidden" name="tipo_filtro" value="{{ filtro_tipo or '' }}" />
