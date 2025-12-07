@@ -1,54 +1,49 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>
-  {% if ano %}Editar Ano Letivo{% else %}Novo Ano Letivo{% endif %}
-</h2>
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <div>
+    <h1 class="h4 mb-1">{% if ano %}Editar Ano Letivo{% else %}Novo Ano Letivo{% endif %}</h1>
+    <p class="text-muted mb-0">Preencha as datas de início e fim do ano e de cada semestre.</p>
+  </div>
+  <a class="btn btn-outline-secondary" href="{{ url_for('anos_letivos_list') }}">Voltar</a>
+</div>
 
-<form method="post">
-  <p>
-    <label>Nome (ex.: 2025/2026):<br>
-      <input type="text" name="nome" size="20"
-             value="{{ ano.nome if ano else '' }}">
-    </label>
-  </p>
+<div class="card shadow-sm">
+  <div class="card-body">
+    <form method="post" class="row g-3">
+      <div class="col-12">
+        <label class="form-label">Nome (ex.: 2025/2026)</label>
+        <input type="text" name="nome" class="form-control" value="{{ ano.nome if ano else '' }}" required>
+      </div>
 
-  <p>
-    <label>Início do ano letivo:
-      <input type="date" name="data_inicio_ano"
-             value="{{ ano.data_inicio_ano.strftime('%Y-%m-%d') if ano and ano.data_inicio_ano }}">
-    </label>
-  </p>
+      <div class="col-md-6">
+        <label class="form-label">Início do ano letivo</label>
+        <input type="date" name="data_inicio_ano" class="form-control" value="{{ ano.data_inicio_ano.strftime('%Y-%m-%d') if ano and ano.data_inicio_ano }}">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Fim do ano letivo</label>
+        <input type="date" name="data_fim_ano" class="form-control" value="{{ ano.data_fim_ano.strftime('%Y-%m-%d') if ano and ano.data_fim_ano }}">
+      </div>
 
-  <p>
-    <label>Fim do ano letivo:
-      <input type="date" name="data_fim_ano"
-             value="{{ ano.data_fim_ano.strftime('%Y-%m-%d') if ano and ano.data_fim_ano }}">
-    </label>
-  </p>
+      <div class="col-md-6">
+        <label class="form-label">Fim do 1.º semestre</label>
+        <input type="date" name="data_fim_semestre1" class="form-control" value="{{ ano.data_fim_semestre1.strftime('%Y-%m-%d') if ano and ano.data_fim_semestre1 }}">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Início do 2.º semestre</label>
+        <input type="date" name="data_inicio_semestre2" class="form-control" value="{{ ano.data_inicio_semestre2.strftime('%Y-%m-%d') if ano and ano.data_inicio_semestre2 }}">
+      </div>
 
-  <p>
-    <label>Fim do 1.º Semestre:
-      <input type="date" name="data_fim_semestre1"
-             value="{{ ano.data_fim_semestre1.strftime('%Y-%m-%d') if ano and ano.data_fim_semestre1 }}">
-    </label>
-  </p>
+      <div class="col-12">
+        <label class="form-label">Descrição (opcional)</label>
+        <input type="text" name="descricao" class="form-control" value="{{ ano.descricao if ano and ano.descricao else '' }}" placeholder="Notas sobre o ano letivo">
+      </div>
 
-  <p>
-    <label>Início do 2.º Semestre:
-      <input type="date" name="data_inicio_semestre2"
-             value="{{ ano.data_inicio_semestre2.strftime('%Y-%m-%d') if ano and ano.data_inicio_semestre2 }}">
-    </label>
-  </p>
-
-  <p>
-    <label>Descrição (opcional):<br>
-      <input type="text" name="descricao" size="50"
-             value="{{ ano.descricao if ano and ano.descricao else '' }}">
-    </label>
-  </p>
-
-  <button type="submit">Guardar</button>
-  <a href="{{ url_for('anos_letivos_list') }}">Cancelar</a>
-</form>
-
+      <div class="col-12 d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Guardar</button>
+        <a class="btn btn-outline-secondary" href="{{ url_for('anos_letivos_list') }}">Cancelar</a>
+      </div>
+    </form>
+  </div>
+</div>
 {% endblock %}
