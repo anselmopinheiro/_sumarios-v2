@@ -573,8 +573,21 @@ def create_app():
     # ----------------------------------------
     @app.route("/turmas")
     def turmas_list():
-        turmas = Turma.query.order_by(Turma.nome).all()
-        return render_template("turmas/list.html", turmas=turmas)
+        turmas = (
+            Turma.query.options(joinedload(Turma.ano_letivo))
+            .outerjoin(AnoLetivo)
+            .order_by(AnoLetivo.ativo.desc(), AnoLetivo.fechado.asc(), AnoLetivo.data_inicio_ano.desc(), Turma.nome)
+            .all()
+        )
+
+        turmas_abertas = [t for t in turmas if not (t.ano_letivo and t.ano_letivo.fechado)]
+        turmas_fechadas = [t for t in turmas if t.ano_letivo and t.ano_letivo.fechado]
+
+        return render_template(
+            "turmas/list.html",
+            turmas_abertas=turmas_abertas,
+            turmas_fechadas=turmas_fechadas,
+        )
 
     @app.route("/turmas/<int:turma_id>/edit", methods=["GET", "POST"])
     def turmas_edit(turma_id):

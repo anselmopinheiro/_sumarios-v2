@@ -7,46 +7,83 @@
 
 </div>
 
-{% if turmas %}
-<table class="table table-striped table-bordered">
-    <thead class="table-dark">
-        <tr>
-            <th>Nome</th>
-            <th>Tipo</th>
-            <th>Ano Letivo</th>
+{% if turmas_abertas or turmas_fechadas %}
+  {% macro render_turmas_card(turmas, titulo, badge_class) %}
+    <div class="card shadow-sm mb-4">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <div class="fw-semibold">{{ titulo }}</div>
+        <span class="badge {{ badge_class }}">{{ turmas|length }} turma(s)</span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-striped align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Nome</th>
+              <th>Tipo</th>
+              <th>Ano Letivo</th>
               <th>Carga (Seg–Sex)</th>
-            <th style="width: 200px;">Ações</th>
-        </tr>
-    </thead>
-    <tbody>
-    {% for turma in turmas %}
-        <tr>
-            <td>{{ turma.nome }}</td>
-            <td>{{ turma.tipo }}</td>
-            <td>{{ turma.ano_letivo.nome if turma.ano_letivo else ''}}</td>
-            <th>{{ turma.carga_segunda or 0 }} /
+              <th class="text-end" style="width: 260px;">Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for turma in turmas %}
+            <tr>
+              <td class="fw-semibold">{{ turma.nome }}</td>
+              <td>{{ turma.tipo }}</td>
+              <td>
+                {% if turma.ano_letivo %}
+                  <div class="fw-semibold">{{ turma.ano_letivo.nome }}</div>
+                  <div class="small text-muted">
+                    {% if turma.ano_letivo.ativo %}
+                      <span class="badge text-bg-success">Ativo</span>
+                    {% else %}
+                      <span class="badge text-bg-secondary">Inativo</span>
+                    {% endif %}
+                    {% if turma.ano_letivo.fechado %}
+                      <span class="badge text-bg-danger">Fechado</span>
+                    {% else %}
+                      <span class="badge text-bg-info text-dark">Aberto</span>
+                    {% endif %}
+                  </div>
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td class="text-nowrap">{{ turma.carga_segunda or 0 }} /
                 {{ turma.carga_terca or 0 }} /
                 {{ turma.carga_quarta or 0 }} /
                 {{ turma.carga_quinta or 0 }} /
-                {{ turma.carga_sexta or 0 }}</th>
-            <td>
-                <a href="{{ url_for('turma_alunos', turma_id=turma.id) }}" class="btn btn-sm btn-secondary">Alunos</a>
-                <a href="{{ url_for('turma_calendario', turma_id=turma.id) }}" class="btn btn-sm btn-info">Calendário</a>
-                <a href="{{ url_for('turmas_edit', turma_id=turma.id) }}" class="btn btn-sm btn-warning">Editar</a>
-                <form method="post"
-                      action="{{ url_for('turmas_delete', turma_id=turma.id) }}"
-                      style="display:inline"
-                      onsubmit="return confirm('Eliminar turma?')">
-                    <button type="submit" class="btn btn-sm btn-danger">Eliminar</button>
-                </form>
-            </td>
-        </tr>
+                {{ turma.carga_sexta or 0 }}</td>
+              <td class="text-end">
+                <div class="btn-group" role="group">
+                  <a href="{{ url_for('turma_alunos', turma_id=turma.id) }}" class="btn btn-sm btn-outline-secondary">Alunos</a>
+                  <a href="{{ url_for('turma_calendario', turma_id=turma.id) }}" class="btn btn-sm btn-outline-info">Calendário</a>
+                  <a href="{{ url_for('turmas_edit', turma_id=turma.id) }}" class="btn btn-sm btn-outline-warning">Editar</a>
+                  <form method="post"
+                        action="{{ url_for('turmas_delete', turma_id=turma.id) }}"
+                        class="d-inline"
+                        onsubmit="return confirm('Eliminar turma?')">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">Eliminar</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% endmacro %}
 
-    {% endfor %}
-    </tbody>
-</table>
+  {% if turmas_abertas %}
+    {{ render_turmas_card(turmas_abertas, "Turmas (anos ativos/abertos)", "text-bg-primary") }}
+  {% endif %}
+
+  {% if turmas_fechadas %}
+    {{ render_turmas_card(turmas_fechadas, "Turmas (anos fechados)", "text-bg-secondary") }}
+  {% endif %}
 {% else %}
-<p>Nenhuma turma registada.</p>
+  <div class="alert alert-secondary">Nenhuma turma registada.</div>
 {% endif %}
 
 {% endblock %}
