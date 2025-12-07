@@ -1,173 +1,200 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>Gestão do Calendário Escolar — {{ ano.nome }}</h2>
-
-<p>
-  <a href="{{ url_for('calendario_escolar') }}">⟵ Ver calendário escolar</a>
-</p>
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+  <h2 class="mb-0">Gestão do Calendário Escolar — {{ ano.nome }}</h2>
+  <a class="btn btn-outline-secondary" href="{{ url_for('calendario_escolar') }}">⟵ Ver calendário escolar</a>
+</div>
 
 <div class="alert alert-info" role="alert">
   Importa backups do calendário escolar em JSON para este ou outro ano letivo. Se escolheres
   "(criar a partir do ficheiro)" será gerado um ano novo com as datas do ficheiro.
 </div>
 
-<form method="post" action="{{ url_for('calendario_escolar_importar') }}" enctype="multipart/form-data" class="mb-4">
-  <div class="mb-2">
-    <label class="form-label">Ano letivo de destino</label>
-    <select name="ano_id" class="form-select" style="max-width: 360px;">
-      <option value="">(criar a partir do ficheiro)</option>
-      {% for a in anos %}
-        <option value="{{ a.id }}" {% if a.id == ano.id %}selected{% endif %}>{{ a.nome }}</option>
-      {% endfor %}
-    </select>
+<div class="card mb-4">
+  <div class="card-header fw-bold">Importar calendário escolar</div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('calendario_escolar_importar') }}" enctype="multipart/form-data" class="row g-3">
+      <div class="col-12 col-md-4">
+        <label class="form-label">Ano letivo de destino</label>
+        <select name="ano_id" class="form-select">
+          <option value="">(criar a partir do ficheiro)</option>
+          {% for a in anos %}
+            <option value="{{ a.id }}" {% if a.id == ano.id %}selected{% endif %}>{{ a.nome }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-md-6">
+        <label class="form-label">Ficheiro JSON</label>
+        <input type="file" name="ficheiro" accept="application/json" class="form-control">
+      </div>
+      <div class="col-12">
+        <label class="form-label">Ou cola aqui o conteúdo JSON</label>
+        <textarea name="conteudo" rows="4" class="form-control js-autoresize"></textarea>
+      </div>
+      <div class="col-12">
+        <button type="submit" class="btn btn-primary">Importar calendário escolar</button>
+      </div>
+    </form>
   </div>
-  <div class="mb-2">
-    <label class="form-label">Ficheiro JSON</label>
-    <input type="file" name="ficheiro" accept="application/json" class="form-control" style="max-width: 480px;">
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header fw-bold">Nova Interrupção</div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('interrupcao_add') }}" class="row g-3">
+          <div class="col-12">
+            <label class="form-label">Tipo</label>
+            <select name="tipo" class="form-select">
+              <option value="natal">Natal</option>
+              <option value="pascoa">Páscoa</option>
+              <option value="carnaval">Carnaval</option>
+              <option value="intercalar1">Intercalar 1</option>
+              <option value="intercalar2">Intercalar 2</option>
+              <option value="outros">Outros</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Data início</label>
+            <input type="date" name="data_inicio" class="form-control">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Data fim</label>
+            <input type="date" name="data_fim" class="form-control">
+          </div>
+          <div class="col-12">
+            <label class="form-label">Ou expressão de datas (texto)</label>
+            <input type="text" name="data_text" class="form-control" placeholder="22 de dezembro de 2025 a 2 de janeiro de 2026">
+          </div>
+          <div class="col-12">
+            <label class="form-label">Descrição</label>
+            <input type="text" name="descricao" class="form-control">
+          </div>
+          <div class="col-12">
+            <button type="submit" class="btn btn-success">Guardar interrupção</button>
+          </div>
+        </form>
+
+        <hr class="my-4">
+
+        <h5 class="fw-semibold">Interrupções existentes</h5>
+        {% if interrupcoes %}
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th scope="col">Tipo</th>
+                  <th scope="col">Datas</th>
+                  <th scope="col">Descrição</th>
+                  <th scope="col" class="text-end">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for i in interrupcoes %}
+                <tr>
+                  <td>{{ i.tipo }}</td>
+                  <td>
+                    {% if i.data_text %}
+                      {{ i.data_text }}
+                    {% elif i.data_inicio and i.data_fim %}
+                      {{ i.data_inicio.strftime("%d/%m/%Y") }} a {{ i.data_fim.strftime("%d/%m/%Y") }}
+                    {% elif i.data_inicio %}
+                      {{ i.data_inicio.strftime("%d/%m/%Y") }}
+                    {% endif %}
+                  </td>
+                  <td>{{ i.descricao or "" }}</td>
+                  <td class="text-end">
+                    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('interrupcao_edit', intr_id=i.id) }}">Editar</a>
+                    <form method="post"
+                          action="{{ url_for('interrupcao_delete', intr_id=i.id) }}"
+                          class="d-inline"
+                          onsubmit="return confirm('Apagar esta interrupção?');">
+                      <button type="submit" class="btn btn-outline-danger btn-sm">Apagar</button>
+                    </form>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="text-muted mb-0">(sem interrupções registadas)</p>
+        {% endif %}
+      </div>
+    </div>
   </div>
-  <div class="mb-2">
-    <label class="form-label">Ou cola aqui o conteúdo JSON</label>
-    <textarea name="conteudo" rows="4" class="form-control js-autoresize" style="max-width: 720px;"></textarea>
+
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header fw-bold">Novo Feriado</div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('feriado_add') }}" class="row g-3">
+          <div class="col-12">
+            <label class="form-label">Nome</label>
+            <input type="text" name="nome" class="form-control" placeholder="1 de dezembro">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Data</label>
+            <input type="date" name="data" class="form-control">
+          </div>
+          <div class="col-md-6"></div>
+          <div class="col-12">
+            <label class="form-label">Ou expressão de datas (texto)</label>
+            <input type="text" name="data_text" class="form-control" placeholder="16 e 17 de fevereiro de 2026">
+          </div>
+          <div class="col-12">
+            <button type="submit" class="btn btn-success">Guardar feriado</button>
+          </div>
+        </form>
+
+        <hr class="my-4">
+
+        <h5 class="fw-semibold">Feriados existentes</h5>
+        {% if feriados %}
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th scope="col">Data(s)</th>
+                  <th scope="col">Nome</th>
+                  <th scope="col" class="text-end">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for f in feriados %}
+                <tr>
+                  <td>
+                    {% if f.data_text %}
+                      {{ f.data_text }}
+                    {% elif f.data %}
+                      {{ f.data.strftime("%d/%m/%Y") }}
+                    {% endif %}
+                  </td>
+                  <td>{{ f.nome }}</td>
+                  <td class="text-end">
+                    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('feriado_edit', fer_id=f.id) }}">Editar</a>
+                    <form method="post"
+                          action="{{ url_for('feriado_delete', fer_id=f.id) }}"
+                          class="d-inline"
+                          onsubmit="return confirm('Apagar este feriado?');">
+                      <button type="submit" class="btn btn-outline-danger btn-sm">Apagar</button>
+                    </form>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="text-muted mb-3">(sem feriados registados)</p>
+          <form method="post" action="{{ url_for('feriados_add_nacionais') }}">
+            <button type="submit" class="btn btn-outline-primary">Adicionar feriados nacionais automaticamente</button>
+          </form>
+        {% endif %}
+      </div>
+    </div>
   </div>
-  <button type="submit" class="btn btn-primary">Importar calendário escolar</button>
-</form>
-
-<hr>
-
-<h3>Nova Interrupção</h3>
-<form method="post" action="{{ url_for('interrupcao_add') }}">
-  <p>
-    <label>Tipo:
-      <select name="tipo">
-        <option value="natal">Natal</option>
-        <option value="pascoa">Páscoa</option>
-        <option value="carnaval">Carnaval</option>
-        <option value="intercalar1">Intercalar 1</option>
-        <option value="intercalar2">Intercalar 2</option>
-        <option value="outros">Outros</option>
-      </select>
-    </label>
-  </p>
-  <p>
-    <label>Data início:
-      <input type="date" name="data_inicio">
-    </label>
-    <label>Data fim:
-      <input type="date" name="data_fim">
-    </label>
-  </p>
-  <p>
-    <label>Ou expressão de datas (texto):<br>
-      <input type="text" name="data_text" size="60"
-             placeholder="22 de dezembro de 2025 a 2 de janeiro de 2026">
-    </label>
-  </p>
-  <p>
-    <label>Descrição:<br>
-      <input type="text" name="descricao" size="60">
-    </label>
-  </p>
-  <button type="submit">Guardar interrupção</button>
-</form>
-
-<h4>Interrupções existentes</h4>
-{% if interrupcoes %}
-<table border="1" cellpadding="4" cellspacing="0">
-  <tr>
-    <th>Tipo</th>
-    <th>Datas</th>
-    <th>Descrição</th>
-    <th>Ações</th>
-  </tr>
-  {% for i in interrupcoes %}
-  <tr>
-    <td>{{ i.tipo }}</td>
-    <td>
-      {% if i.data_text %}
-        {{ i.data_text }}
-      {% elif i.data_inicio and i.data_fim %}
-        {{ i.data_inicio.strftime("%d/%m/%Y") }} a {{ i.data_fim.strftime("%d/%m/%Y") }}
-      {% elif i.data_inicio %}
-        {{ i.data_inicio.strftime("%d/%m/%Y") }}
-      {% endif %}
-    </td>
-    <td>{{ i.descricao or "" }}</td>
-    <td>
-      <a href="{{ url_for('interrupcao_edit', intr_id=i.id) }}">Editar</a>
-      <form method="post"
-            action="{{ url_for('interrupcao_delete', intr_id=i.id) }}"
-            style="display:inline"
-            onsubmit="return confirm('Apagar esta interrupção?');">
-        <button type="submit">Apagar</button>
-      </form>
-    </td>
-  </tr>
-  {% endfor %}
-</table>
-{% else %}
-<p>(sem interrupções registadas)</p>
-{% endif %}
-
-<hr>
-
-<h3>Novo Feriado</h3>
-<form method="post" action="{{ url_for('feriado_add') }}">
-  <p>
-    <label>Nome:<br>
-      <input type="text" name="nome" size="40" placeholder="1 de dezembro">
-    </label>
-  </p>
-  <p>
-    <label>Data:
-      <input type="date" name="data">
-    </label>
-  </p>
-  <p>
-    <label>Ou expressão de datas (texto):<br>
-      <input type="text" name="data_text" size="60"
-             placeholder="16 e 17 de fevereiro de 2026">
-    </label>
-  </p>
-  <button type="submit">Guardar feriado</button>
-</form>
-
-<h4>Feriados existentes</h4>
-{% if feriados %}
-<table border="1" cellpadding="4" cellspacing="0">
-  <tr>
-    <th>Data(s)</th>
-    <th>Nome</th>
-    <th>Ações</th>
-  </tr>
-  {% for f in feriados %}
-  <tr>
-    <td>
-      {% if f.data_text %}
-        {{ f.data_text }}
-      {% elif f.data %}
-        {{ f.data.strftime("%d/%m/%Y") }}
-      {% endif %}
-    </td>
-    <td>{{ f.nome }}</td>
-    <td>
-      <a href="{{ url_for('feriado_edit', fer_id=f.id) }}">Editar</a>
-      <form method="post"
-            action="{{ url_for('feriado_delete', fer_id=f.id) }}"
-            style="display:inline"
-            onsubmit="return confirm('Apagar este feriado?');">
-        <button type="submit">Apagar</button>
-      </form>
-    </td>
-  </tr>
-  {% endfor %}
-</table>
-
-
-{% else %}
-<p>(sem feriados registados)</p>
-<form method="post" action="{{ url_for('feriados_add_nacionais') }}" style="margin-top: 1em;">
-  <button type="submit">Adicionar feriados nacionais automaticamente</button>
-</form>
-{% endif %}
+</div>
 
 {% endblock %}
