@@ -423,12 +423,21 @@ def create_app():
             .first()
         )
 
+    def turmas_abertas_ativas():
+        return (
+            Turma.query.join(AnoLetivo)
+            .filter(AnoLetivo.ativo == True)  # noqa: E712
+            .filter(AnoLetivo.fechado == False)  # noqa: E712
+            .order_by(Turma.nome)
+            .all()
+        )
+
     # ----------------------------------------
     # DASHBOARD
     # ----------------------------------------
     @app.route("/")
     def dashboard():
-        turmas = Turma.query.order_by(Turma.nome).all()
+        turmas = turmas_abertas_ativas()
         ano_atual = get_ano_letivo_atual()
         return render_template(
             "dashboard.html",
@@ -1386,7 +1395,7 @@ def create_app():
     @app.route("/calendario/dia")
     @app.route("/turmas/<int:turma_id>/calendario/dia")
     def turma_calendario_dia(turma_id=None):
-        todas_turmas = Turma.query.order_by(Turma.nome).all()
+        todas_turmas = turmas_abertas_ativas()
 
         turma_id_param = request.args.get("turma_id", type=int)
         turma_selecionada = None
@@ -1485,7 +1494,7 @@ def create_app():
 
     @app.route("/calendario/semana")
     def calendario_semana():
-        todas_turmas = Turma.query.order_by(Turma.nome).all()
+        todas_turmas = turmas_abertas_ativas()
 
         turma_id_param = request.args.get("turma_id", type=int)
         turma_selecionada = Turma.query.get(turma_id_param) if turma_id_param else None
@@ -1613,7 +1622,7 @@ def create_app():
             "turmas/sumarios_pendentes.html",
             hoje=hoje,
             aulas=aulas,
-            turmas=Turma.query.order_by(Turma.nome).all(),
+            turmas=turmas_abertas_ativas(),
             turma_selecionada=turma_selecionada,
             faltas_por_aula=faltas_por_aula,
             tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
@@ -1625,7 +1634,7 @@ def create_app():
 
     @app.route("/calendarios/import", methods=["GET", "POST"])
     def calendarios_import():
-        turmas = Turma.query.order_by(Turma.nome).all()
+        turmas = turmas_abertas_ativas()
 
         if request.method == "POST":
             ficheiro = request.files.get("ficheiro")
@@ -1725,7 +1734,7 @@ def create_app():
             request.args
         )
 
-        turmas = Turma.query.order_by(Turma.nome).all()
+        turmas = turmas_abertas_ativas()
         aulas = listar_aulas_especiais(turma_filtro, tipo_filtro, data_inicio, data_fim)
         faltas_por_aula = _mapear_alunos_em_falta(aulas)
 
