@@ -14,7 +14,7 @@
 </div>
 
 {% if ano_fechado %}
-    <div class="alert alert-warning">Ano letivo fechado: apenas leitura.</div>
+    <div class="alert alert-warning">Ano letivo fechado: edição bloqueada (importação permitida).</div>
 {% endif %}
 
 <div class="card mb-4">
@@ -60,11 +60,11 @@
                 <form method="post" action="{{ url_for('turma_alunos_import', turma_id=turma.id) }}" enctype="multipart/form-data" class="row g-2 align-items-end">
                     <div class="col-12">
                         <label class="form-label">Ficheiro CSV</label>
-                        <input type="file" name="ficheiro" accept=".csv" class="form-control" {% if ano_fechado %}disabled{% endif %}>
+                        <input type="file" name="ficheiro" accept=".csv" class="form-control">
                         <div class="form-text">Colunas suportadas: processo, número, nome, nome curto, NEE, observações.</div>
                     </div>
                     <div class="col-12">
-                        <button type="submit" class="btn btn-outline-primary" {% if ano_fechado %}disabled{% endif %}>Importar</button>
+                        <button type="submit" class="btn btn-outline-primary">Importar</button>
                     </div>
                 </form>
             </div>

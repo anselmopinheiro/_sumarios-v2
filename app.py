@@ -969,13 +969,6 @@ def create_app():
             .filter_by(id=turma_id)
             .first_or_404()
         )
-        ano = turma.ano_letivo
-        ano_fechado = bool(ano and ano.fechado)
-
-        if ano_fechado:
-            flash("Ano letivo fechado: não é possível importar alunos.", "error")
-            return redirect(url_for("turma_alunos", turma_id=turma.id))
-
         ficheiro = request.files.get("ficheiro")
         if not ficheiro or ficheiro.filename == "":
             flash("Selecione um ficheiro CSV.", "error")
