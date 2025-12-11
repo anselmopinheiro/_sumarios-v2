@@ -44,11 +44,26 @@
         background-color: #ffc107;
       }
 
+      .table-sticky-wrapper {
+        position: relative;
+        max-height: 70vh;
+        overflow: auto;
+      }
+
       .table-sticky-header thead th {
         position: sticky;
         top: 0;
         z-index: 3;
-        background-color: inherit;
+        background-color: var(--bs-body-bg);
+      }
+
+      .table-sticky-header thead.table-dark th {
+        background-color: #212529;
+        color: #fff;
+      }
+
+      .table-sticky-header thead.table-secondary th {
+        background-color: #e9ecef;
       }
     </style>
 </head>
