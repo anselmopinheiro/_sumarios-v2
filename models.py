@@ -79,6 +79,12 @@ class Turma(db.Model):
     carga_quarta = db.Column(db.Float, nullable=True)
     carga_quinta = db.Column(db.Float, nullable=True)
     carga_sexta = db.Column(db.Float, nullable=True)
+    # Tempo/horário por dia da semana (1.º a 12.º tempo)
+    tempo_segunda = db.Column(db.Integer, nullable=True)
+    tempo_terca = db.Column(db.Integer, nullable=True)
+    tempo_quarta = db.Column(db.Integer, nullable=True)
+    tempo_quinta = db.Column(db.Integer, nullable=True)
+    tempo_sexta = db.Column(db.Integer, nullable=True)
     # relação many-to-many com disciplina
     turmas_disciplinas = db.relationship(
         "TurmaDisciplina",

@@ -128,6 +128,12 @@
             <td class="w-100">
               <div class="d-flex flex-wrap gap-1 mb-2">
                 <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">Turma {{ a.turma.nome if a.turma else '—' }}</span>
+                {% set tempo = tempos_por_aula.get(a.id) if tempos_por_aula is defined else None %}
+                {% if tempo %}
+                  <span class="badge rounded-pill text-dark" style="background-color: #0dcaf0;">{{ tempo }}.º Tempo</span>
+                {% else %}
+                  <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">Tempo —</span>
+                {% endif %}
                 <span class="badge rounded-pill {% if sem_aula %}bg-danger text-light{% else %}bg-body-secondary text-dark border border-secondary-subtle{% endif %}">{{ tipo_label }}</span>
                 {% if a.atividade %}
                   <a class="badge rounded-pill bg-success text-light text-decoration-none" href="{{ url_for('turma_mapa_avaliacao_diaria', turma_id=a.turma_id) }}#mapa-atividades">Atividade</a>

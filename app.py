@@ -416,6 +416,20 @@ def create_app():
             )
             db.session.commit()
 
+        turmas_cols = {col["name"] for col in insp.get_columns("turmas")}
+        for nome_coluna in [
+            "tempo_segunda",
+            "tempo_terca",
+            "tempo_quarta",
+            "tempo_quinta",
+            "tempo_sexta",
+        ]:
+            if nome_coluna not in turmas_cols:
+                db.session.execute(
+                    text(f"ALTER TABLE turmas ADD COLUMN {nome_coluna} INTEGER")
+                )
+                db.session.commit()
+
         try:
             script = ScriptDirectory("migrations")
             head_revision = script.get_current_head()
@@ -510,6 +524,34 @@ def create_app():
             .filter(AnoLetivo.fechado == False)  # noqa: E712
             .order_by(Turma.nome)
             .all()
+        )
+
+    def _tempo_da_turma_no_dia(turma: Turma | None, data_ref: date | None):
+        if not turma or not data_ref:
+            return None
+
+        tempos = {
+            0: turma.tempo_segunda,
+            1: turma.tempo_terca,
+            2: turma.tempo_quarta,
+            3: turma.tempo_quinta,
+            4: turma.tempo_sexta,
+        }
+
+        return tempos.get(data_ref.weekday())
+
+    def _chave_ordenacao_aula(aula: CalendarioAula):
+        tempo = _tempo_da_turma_no_dia(aula.turma, aula.data)
+        tempo_ord = tempo if tempo is not None else 999
+        turma_nome = aula.turma.nome if aula.turma else ""
+
+        return (
+            aula.data or date.min,
+            tempo_ord,
+            turma_nome,
+            aula.numero_modulo or 0,
+            aula.total_geral or 0,
+            aula.id,
         )
 
     # ----------------------------------------
@@ -805,6 +847,11 @@ def create_app():
             carga_qua = request.form.get("carga_quarta", type=float)
             carga_qui = request.form.get("carga_quinta", type=float)
             carga_sex = request.form.get("carga_sexta", type=float)
+            tempo_seg = request.form.get("tempo_segunda", type=int)
+            tempo_ter = request.form.get("tempo_terca", type=int)
+            tempo_qua = request.form.get("tempo_quarta", type=int)
+            tempo_qui = request.form.get("tempo_quinta", type=int)
+            tempo_sex = request.form.get("tempo_sexta", type=int)
             modulos_form = _ler_modulos_form()
 
             if not nome:
@@ -859,6 +906,11 @@ def create_app():
             turma.carga_quarta = carga_qua
             turma.carga_quinta = carga_qui
             turma.carga_sexta = carga_sex
+            turma.tempo_segunda = tempo_seg
+            turma.tempo_terca = tempo_ter
+            turma.tempo_quarta = tempo_qua
+            turma.tempo_quinta = tempo_qui
+            turma.tempo_sexta = tempo_sex
 
             modulos_existentes = {
                 m.id: m for m in Modulo.query.filter_by(turma_id=turma.id).all()
@@ -921,6 +973,11 @@ def create_app():
             carga_qua = request.form.get("carga_quarta", type=float)
             carga_qui = request.form.get("carga_quinta", type=float)
             carga_sex = request.form.get("carga_sexta", type=float)
+            tempo_seg = request.form.get("tempo_segunda", type=int)
+            tempo_ter = request.form.get("tempo_terca", type=int)
+            tempo_qua = request.form.get("tempo_quarta", type=int)
+            tempo_qui = request.form.get("tempo_quinta", type=int)
+            tempo_sex = request.form.get("tempo_sexta", type=int)
             modulos_form = _ler_modulos_form()
 
             if not nome:
@@ -976,6 +1033,11 @@ def create_app():
                 carga_quarta=carga_qua,
                 carga_quinta=carga_qui,
                 carga_sexta=carga_sex,
+                tempo_segunda=tempo_seg,
+                tempo_terca=tempo_ter,
+                tempo_quarta=tempo_qua,
+                tempo_quinta=tempo_qui,
+                tempo_sexta=tempo_sex,
             )
 
             db.session.add(turma)
@@ -1651,6 +1713,11 @@ def create_app():
             .all()
         )
 
+        aulas.sort(key=_chave_ordenacao_aula)
+        tempos_por_aula = {
+            a.id: _tempo_da_turma_no_dia(a.turma, a.data) for a in aulas
+        }
+
         anos_fechados = {
             a.turma_id: bool(a.turma and a.turma.ano_letivo and a.turma.ano_letivo.fechado)
             for a in aulas
@@ -1665,6 +1732,7 @@ def create_app():
             periodos_disponiveis=periodos_disponiveis,
             aulas=aulas,
             faltas_por_aula=faltas_por_aula,
+            tempos_por_aula=tempos_por_aula,
             data_atual=data_atual,
             dia_anterior=data_atual - timedelta(days=1),
             dia_seguinte=data_atual + timedelta(days=1),
@@ -1753,11 +1821,16 @@ def create_app():
             )
             .all()
         )
+        tempos_por_aula = {
+            a.id: _tempo_da_turma_no_dia(a.turma, a.data) for a in aulas
+        }
         faltas_por_aula = _mapear_alunos_em_falta(aulas)
 
         aulas_por_data = {}
         for aula in aulas:
             aulas_por_data.setdefault(aula.data, []).append(aula)
+        for lista in aulas_por_data.values():
+            lista.sort(key=_chave_ordenacao_aula)
 
         anos_fechados = {
             a.turma_id: bool(a.turma and a.turma.ano_letivo and a.turma.ano_letivo.fechado)
@@ -1779,6 +1852,7 @@ def create_app():
             semana_seguinte=semana_inicio + timedelta(days=7),
             aulas_por_data=aulas_por_data,
             faltas_por_aula=faltas_por_aula,
+            tempos_por_aula=tempos_por_aula,
             tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
             tipos_aula=TIPOS_AULA,
             tipo_labels=dict(TIPOS_AULA),

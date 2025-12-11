@@ -47,6 +47,7 @@
               <th>Tipo</th>
               <th>Ano Letivo</th>
               <th>Carga (Seg–Sex)</th>
+              <th>Tempos (Seg–Sex)</th>
               <th class="text-end" style="width: 260px;">Ações</th>
             </tr>
           </thead>
@@ -79,6 +80,11 @@
                 {{ turma.carga_quarta or 0 }} /
                 {{ turma.carga_quinta or 0 }} /
                 {{ turma.carga_sexta or 0 }}</td>
+              <td class="text-nowrap">{{ turma.tempo_segunda or '—' }} /
+                {{ turma.tempo_terca or '—' }} /
+                {{ turma.tempo_quarta or '—' }} /
+                {{ turma.tempo_quinta or '—' }} /
+                {{ turma.tempo_sexta or '—' }}</td>
               <td class="text-end">
                 <div class="btn-group" role="group">
                   <a href="{{ url_for('turma_alunos', turma_id=turma.id) }}" class="btn btn-sm btn-outline-secondary">Alunos</a>

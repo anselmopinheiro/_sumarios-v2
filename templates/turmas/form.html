@@ -130,6 +130,44 @@
   </div>
 
   <div class="mb-3">
+    <h5 class="mt-4">Tempo/horário por dia</h5>
+    <p class="text-muted small">(1.º a 12.º tempo; usado para ordenar o calendário)</p>
+
+    <div class="row g-3">
+      <div class="col-md-2">
+        <label for="tempo-segunda" class="form-label">Segunda</label>
+        <input type="number" min="1" max="12" class="form-control" id="tempo-segunda"
+               name="tempo_segunda"
+               value="{{ turma.tempo_segunda if turma else '' }}">
+      </div>
+      <div class="col-md-2">
+        <label for="tempo-terca" class="form-label">Terça</label>
+        <input type="number" min="1" max="12" class="form-control" id="tempo-terca"
+               name="tempo_terca"
+               value="{{ turma.tempo_terca if turma else '' }}">
+      </div>
+      <div class="col-md-2">
+        <label for="tempo-quarta" class="form-label">Quarta</label>
+        <input type="number" min="1" max="12" class="form-control" id="tempo-quarta"
+               name="tempo_quarta"
+               value="{{ turma.tempo_quarta if turma else '' }}">
+      </div>
+      <div class="col-md-2">
+        <label for="tempo-quinta" class="form-label">Quinta</label>
+        <input type="number" min="1" max="12" class="form-control" id="tempo-quinta"
+               name="tempo_quinta"
+               value="{{ turma.tempo_quinta if turma else '' }}">
+      </div>
+      <div class="col-md-2">
+        <label for="tempo-sexta" class="form-label">Sexta</label>
+        <input type="number" min="1" max="12" class="form-control" id="tempo-sexta"
+               name="tempo_sexta"
+               value="{{ turma.tempo_sexta if turma else '' }}">
+      </div>
+    </div>
+  </div>
+
+  <div class="mb-3">
     <label class="form-label">Ano Letivo</label>
     <select name="ano_letivo_id" class="form-control" required>
       {% for ano in anos_letivos %}
