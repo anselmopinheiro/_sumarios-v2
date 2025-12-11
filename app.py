@@ -55,13 +55,13 @@ from calendario_service import (
     filtrar_periodos_para_turma,
     PERIODOS_TURMA_VALIDOS,
     exportar_sumarios_json,
-    exportar_tempos_turmas,
     importar_sumarios_json,
     importar_calendarios_json,
     importar_calendario_escolar_json,
     exportar_outras_datas_json,
     importar_outras_datas_json,
-    importar_tempos_turmas,
+    exportar_backup_ano,
+    importar_backup_ano,
     listar_aulas_especiais,
     calcular_mapa_avaliacao_diaria,
     listar_sumarios_pendentes,
@@ -715,12 +715,16 @@ def create_app():
 
         turmas_abertas = [t for t in turmas if not (t.ano_letivo and t.ano_letivo.fechado)]
         turmas_fechadas = [t for t in turmas if t.ano_letivo and t.ano_letivo.fechado]
+        anos_letivos = (
+            AnoLetivo.query.order_by(AnoLetivo.data_inicio_ano.desc()).all()
+        )
 
         return render_template(
             "turmas/list.html",
             turmas_abertas=turmas_abertas,
             turmas_fechadas=turmas_fechadas,
             csv_dest_dir=app.config.get("CSV_EXPORT_DIR"),
+            anos_letivos=anos_letivos,
         )
 
     @app.route("/turmas/export/csv", methods=["POST"])
@@ -825,28 +829,23 @@ def create_app():
 
         return redirect(url_for("turmas_list"))
 
-    @app.route("/turmas/tempos/export")
-    def turmas_export_tempos_json():
-        turmas = (
-            Turma.query.options(joinedload(Turma.ano_letivo))
-            .outerjoin(AnoLetivo)
-            .order_by(
-                AnoLetivo.ativo.desc(),
-                AnoLetivo.fechado.asc(),
-                AnoLetivo.data_inicio_ano.desc(),
-                Turma.nome,
-            )
-            .all()
-        )
+    @app.route("/backup/ano/export", methods=["POST"])
+    def backup_ano_export():
+        ano_id = request.form.get("ano_letivo_id", type=int)
+        ano = AnoLetivo.query.get(ano_id) if ano_id else None
 
-        payload = {
-            "gerado_em": datetime.now().isoformat(),
-            "quantidade": len(turmas),
-            "turmas": exportar_tempos_turmas(turmas),
-        }
+        if not ano:
+            flash("Escolhe um ano letivo para exportar.", "error")
+            return redirect(url_for("turmas_list"))
+
+        try:
+            payload = exportar_backup_ano(ano)
+        except ValueError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("turmas_list"))
 
         data_export = date.today().isoformat()
-        filename = f"tempos_turmas_{data_export}.json"
+        filename = f"backup_{_slugify_filename(ano.nome, 'ano')}_{data_export}.json"
         response = Response(
             json.dumps(payload, ensure_ascii=False, indent=2),
             mimetype="application/json; charset=utf-8",
@@ -854,49 +853,35 @@ def create_app():
         response.headers["Content-Disposition"] = f"attachment; filename={filename}"
         return response
 
-    @app.route("/turmas/tempos/import", methods=["POST"])
-    def turmas_import_tempos_json():
-        ficheiro = request.files.get("tempos_json")
-        conteudo = None
+    @app.route("/backup/ano/import", methods=["POST"])
+    def backup_ano_import():
+        ficheiro = request.files.get("ano_json")
+        substituir = bool(request.form.get("substituir"))
 
-        if ficheiro and ficheiro.filename:
-            conteudo = ficheiro.read().decode("utf-8", errors="ignore")
-
-        if not conteudo:
-            flash("Seleciona um ficheiro JSON com tempos para importar.", "error")
+        if not ficheiro or not ficheiro.filename:
+            flash("Seleciona um ficheiro JSON de backup.", "error")
             return redirect(url_for("turmas_list"))
 
         try:
+            conteudo = ficheiro.read().decode("utf-8", errors="ignore")
             payload = json.loads(conteudo)
-        except ValueError:
-            flash("Ficheiro JSON inválido.", "error")
+        except Exception:
+            flash("Ficheiro JSON inválido ou corrompido.", "error")
             return redirect(url_for("turmas_list"))
 
-        if isinstance(payload, dict) and "turmas" in payload:
-            linhas = payload.get("turmas") or []
-        elif isinstance(payload, list):
-            linhas = payload
-        else:
-            flash(
-                "Formato de backup desconhecido: esperado array ou objeto com a chave 'turmas'.",
-                "error",
-            )
+        try:
+            resumo = importar_backup_ano(payload, substituir=substituir)
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            flash(str(exc), "error")
             return redirect(url_for("turmas_list"))
 
-        contagem, turmas_fechadas, turmas_inexistentes = importar_tempos_turmas(linhas)
-
-        msg = (
-            "Tempos importados: "
-            f"{contagem['atualizados']} atualizadas, "
-            f"{contagem['sem_alteracao']} sem alterações, "
-            f"{contagem['ignorados']} ignoradas."
+        mensagem = (
+            f"Backup importado para o ano '{resumo['ano']}' "
+            f"({resumo['turmas']} turmas, {resumo['alunos']} alunos, {resumo['disciplinas']} disciplinas)."
         )
-        if turmas_fechadas:
-            msg += f" Turmas fechadas: {', '.join(sorted(set(turmas_fechadas)))}."
-        if turmas_inexistentes:
-            msg += f" Turmas não encontradas: {', '.join(sorted(set(turmas_inexistentes)))}."
-
-        flash(msg, "success")
+        flash(mensagem, "success")
         return redirect(url_for("turmas_list"))
 
     @app.route("/turmas/<int:turma_id>/edit", methods=["GET", "POST"])

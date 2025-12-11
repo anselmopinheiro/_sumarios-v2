@@ -33,22 +33,42 @@
 </div>
 
 <div class="card shadow-sm mb-4">
-  <div class="card-header fw-semibold">Backup de tempos (JSON)</div>
+  <div class="card-header fw-semibold">Backup anual (JSON)</div>
   <div class="card-body">
-    <div class="row gy-3 align-items-end">
-      <div class="col-12 col-lg-6 d-flex gap-2">
-        <a class="btn btn-outline-primary" href="{{ url_for('turmas_export_tempos_json') }}">Exportar tempos</a>
-        <div class="form-text">Descarrega todos os tempos configurados para cada turma.</div>
+    <div class="row gy-3">
+      <div class="col-12 col-lg-6">
+        <form class="row gy-2 gx-3 align-items-end" method="post" action="{{ url_for('backup_ano_export') }}">
+          <div class="col-12">
+            <label class="form-label" for="ano_letivo_id">Ano letivo</label>
+            <select id="ano_letivo_id" name="ano_letivo_id" class="form-select" required>
+              <option value="">Seleciona um ano</option>
+              {% for ano in anos_letivos %}
+                <option value="{{ ano.id }}">{{ ano.nome }}{% if ano.ativo %} (ativo){% endif %}{% if ano.fechado %} (fechado){% endif %}</option>
+              {% endfor %}
+            </select>
+            <div class="form-text">Exporta todos os dados do ano escolhido, incluindo turmas, alunos, calendários e avaliações.</div>
+          </div>
+          <div class="col-12">
+            <button type="submit" class="btn btn-outline-primary">Exportar backup</button>
+          </div>
+        </form>
       </div>
       <div class="col-12 col-lg-6">
-        <form class="row gy-2 gx-3 align-items-end" method="post" enctype="multipart/form-data" action="{{ url_for('turmas_import_tempos_json') }}">
-          <div class="col-12 col-md-8">
-            <label class="form-label" for="tempos_json">Importar tempos</label>
-            <input class="form-control" type="file" id="tempos_json" name="tempos_json" accept="application/json" required>
-            <div class="form-text">Seleciona o ficheiro JSON exportado anteriormente.</div>
+        <form class="row gy-2 gx-3 align-items-end" method="post" enctype="multipart/form-data" action="{{ url_for('backup_ano_import') }}">
+          <div class="col-12">
+            <label class="form-label" for="ano_json">Importar backup anual</label>
+            <input class="form-control" type="file" id="ano_json" name="ano_json" accept="application/json" required>
+            <div class="form-text">Restaurar todos os dados de um ano letivo a partir de um ficheiro JSON.</div>
           </div>
-          <div class="col-12 col-md-4">
-            <button type="submit" class="btn btn-success w-100">Importar tempos</button>
+          <div class="col-12">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="substituir" name="substituir" value="1">
+              <label class="form-check-label" for="substituir">Substituir dados caso o ano já exista</label>
+            </div>
+            <div class="form-text">Se ativo, o ano existente com o mesmo nome será limpo antes da reposição.</div>
+          </div>
+          <div class="col-12">
+            <button type="submit" class="btn btn-success w-100">Importar backup</button>
           </div>
         </form>
       </div>
