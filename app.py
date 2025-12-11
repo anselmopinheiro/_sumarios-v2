@@ -55,11 +55,13 @@ from calendario_service import (
     filtrar_periodos_para_turma,
     PERIODOS_TURMA_VALIDOS,
     exportar_sumarios_json,
+    exportar_tempos_turmas,
     importar_sumarios_json,
     importar_calendarios_json,
     importar_calendario_escolar_json,
     exportar_outras_datas_json,
     importar_outras_datas_json,
+    importar_tempos_turmas,
     listar_aulas_especiais,
     calcular_mapa_avaliacao_diaria,
     listar_sumarios_pendentes,
@@ -821,6 +823,80 @@ def create_app():
         if falhas:
             flash("Falhas ao exportar: " + "; ".join(falhas), "error")
 
+        return redirect(url_for("turmas_list"))
+
+    @app.route("/turmas/tempos/export")
+    def turmas_export_tempos_json():
+        turmas = (
+            Turma.query.options(joinedload(Turma.ano_letivo))
+            .outerjoin(AnoLetivo)
+            .order_by(
+                AnoLetivo.ativo.desc(),
+                AnoLetivo.fechado.asc(),
+                AnoLetivo.data_inicio_ano.desc(),
+                Turma.nome,
+            )
+            .all()
+        )
+
+        payload = {
+            "gerado_em": datetime.now().isoformat(),
+            "quantidade": len(turmas),
+            "turmas": exportar_tempos_turmas(turmas),
+        }
+
+        data_export = date.today().isoformat()
+        filename = f"tempos_turmas_{data_export}.json"
+        response = Response(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            mimetype="application/json; charset=utf-8",
+        )
+        response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+        return response
+
+    @app.route("/turmas/tempos/import", methods=["POST"])
+    def turmas_import_tempos_json():
+        ficheiro = request.files.get("tempos_json")
+        conteudo = None
+
+        if ficheiro and ficheiro.filename:
+            conteudo = ficheiro.read().decode("utf-8", errors="ignore")
+
+        if not conteudo:
+            flash("Seleciona um ficheiro JSON com tempos para importar.", "error")
+            return redirect(url_for("turmas_list"))
+
+        try:
+            payload = json.loads(conteudo)
+        except ValueError:
+            flash("Ficheiro JSON inválido.", "error")
+            return redirect(url_for("turmas_list"))
+
+        if isinstance(payload, dict) and "turmas" in payload:
+            linhas = payload.get("turmas") or []
+        elif isinstance(payload, list):
+            linhas = payload
+        else:
+            flash(
+                "Formato de backup desconhecido: esperado array ou objeto com a chave 'turmas'.",
+                "error",
+            )
+            return redirect(url_for("turmas_list"))
+
+        contagem, turmas_fechadas, turmas_inexistentes = importar_tempos_turmas(linhas)
+
+        msg = (
+            "Tempos importados: "
+            f"{contagem['atualizados']} atualizadas, "
+            f"{contagem['sem_alteracao']} sem alterações, "
+            f"{contagem['ignorados']} ignoradas."
+        )
+        if turmas_fechadas:
+            msg += f" Turmas fechadas: {', '.join(sorted(set(turmas_fechadas)))}."
+        if turmas_inexistentes:
+            msg += f" Turmas não encontradas: {', '.join(sorted(set(turmas_inexistentes)))}."
+
+        flash(msg, "success")
         return redirect(url_for("turmas_list"))
 
     @app.route("/turmas/<int:turma_id>/edit", methods=["GET", "POST"])

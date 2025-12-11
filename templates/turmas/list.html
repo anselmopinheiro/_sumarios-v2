@@ -32,6 +32,30 @@
   </div>
 </div>
 
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-semibold">Backup de tempos (JSON)</div>
+  <div class="card-body">
+    <div class="row gy-3 align-items-end">
+      <div class="col-12 col-lg-6 d-flex gap-2">
+        <a class="btn btn-outline-primary" href="{{ url_for('turmas_export_tempos_json') }}">Exportar tempos</a>
+        <div class="form-text">Descarrega todos os tempos configurados para cada turma.</div>
+      </div>
+      <div class="col-12 col-lg-6">
+        <form class="row gy-2 gx-3 align-items-end" method="post" enctype="multipart/form-data" action="{{ url_for('turmas_import_tempos_json') }}">
+          <div class="col-12 col-md-8">
+            <label class="form-label" for="tempos_json">Importar tempos</label>
+            <input class="form-control" type="file" id="tempos_json" name="tempos_json" accept="application/json" required>
+            <div class="form-text">Seleciona o ficheiro JSON exportado anteriormente.</div>
+          </div>
+          <div class="col-12 col-md-4">
+            <button type="submit" class="btn btn-success w-100">Importar tempos</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% if turmas_abertas or turmas_fechadas %}
   {% macro render_turmas_card(turmas, titulo, badge_class) %}
     <div class="card shadow-sm mb-4">

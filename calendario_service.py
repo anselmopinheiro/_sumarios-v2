@@ -22,6 +22,15 @@ from models import (
 )
 
 
+TEMPOS_KEYS = [
+    ("segunda", "tempo_segunda"),
+    ("terca", "tempo_terca"),
+    ("quarta", "tempo_quarta"),
+    ("quinta", "tempo_quinta"),
+    ("sexta", "tempo_sexta"),
+]
+
+
 # ----------------------------------------
 # Helpers de datas em PT
 # ----------------------------------------
@@ -796,6 +805,92 @@ def exportar_sumarios_json(
         )
 
     return resultado
+
+
+def exportar_tempos_turmas(turmas: List[Turma]) -> List[Dict[str, object]]:
+    """Exporta os tempos semanais de cada turma para JSON serializável."""
+
+    resultado: List[Dict[str, object]] = []
+    for turma in turmas:
+        tempos = {chave: getattr(turma, atributo) for chave, atributo in TEMPOS_KEYS}
+        resultado.append(
+            {
+                "id": turma.id,
+                "nome": turma.nome,
+                "ano_letivo_id": turma.ano_letivo_id,
+                "ano_letivo": turma.ano_letivo.nome if turma.ano_letivo else None,
+                "tempos": tempos,
+            }
+        )
+
+    return resultado
+
+
+def importar_tempos_turmas(dados: List[dict]):
+    """Atualiza tempos das turmas a partir de uma lista de objetos JSON.
+
+    Retorna um triplo (contagem, turmas_fechadas, turmas_inexistentes) para feedback.
+    """
+
+    contagem = {"atualizados": 0, "sem_alteracao": 0, "ignorados": 0}
+    turmas_fechadas: list[str] = []
+    turmas_inexistentes: list[str] = []
+
+    for entrada in dados:
+        tempos = entrada.get("tempos") if isinstance(entrada, dict) else None
+        if not isinstance(tempos, dict):
+            contagem["ignorados"] += 1
+            continue
+
+        turma: Turma | None = None
+        turma_id = entrada.get("id") if isinstance(entrada, dict) else None
+        if turma_id:
+            turma = Turma.query.get(turma_id)
+
+        if not turma and isinstance(entrada, dict):
+            nome = entrada.get("nome")
+            ano_id = entrada.get("ano_letivo_id") or entrada.get("ano_id")
+            if nome and ano_id:
+                turma = Turma.query.filter_by(nome=nome, ano_letivo_id=ano_id).first()
+            elif nome:
+                turma = Turma.query.filter_by(nome=nome).first()
+
+        if not turma:
+            identificador = None
+            if isinstance(entrada, dict):
+                identificador = entrada.get("nome") or turma_id or "desconhecido"
+            turmas_inexistentes.append(str(identificador))
+            contagem["ignorados"] += 1
+            continue
+
+        if turma.ano_letivo and turma.ano_letivo.fechado:
+            turmas_fechadas.append(turma.nome)
+            contagem["ignorados"] += 1
+            continue
+
+        alterado = False
+        for chave, atributo in TEMPOS_KEYS:
+            valor = tempos.get(chave)
+            if valor in ("", None):
+                novo_valor = None
+            else:
+                try:
+                    novo_valor = int(valor)
+                except (TypeError, ValueError):
+                    novo_valor = None
+
+            if getattr(turma, atributo) != novo_valor:
+                setattr(turma, atributo, novo_valor)
+                alterado = True
+
+        if alterado:
+            contagem["atualizados"] += 1
+        else:
+            contagem["sem_alteracao"] += 1
+
+    db.session.commit()
+
+    return contagem, turmas_fechadas, turmas_inexistentes
 
 
 def listar_aulas_especiais(
