@@ -164,14 +164,16 @@
       if (!elemento) return null;
       const direto = elemento.closest('form');
       if (direto) return direto;
+      if (elemento.form) return elemento.form;
       const idForm = elemento.getAttribute('form');
       return idForm ? document.getElementById(idForm) : null;
     };
 
-    const setEstadoSumario = (form, estado, label) => {
-      if (!form) return;
-      const dot = form.querySelector('.js-sumario-status');
-      const texto = form.querySelector('.js-sumario-status-text');
+    const setEstadoSumario = (form, estado, label, origem) => {
+      const scope = form || origem?.closest('.js-sumario-form') || origem?.closest('tr');
+      if (!scope) return;
+      const dot = scope.querySelector('.js-sumario-status');
+      const texto = scope.querySelector('.js-sumario-status-text');
       if (!dot || !texto) return;
 
       dot.classList.remove('status-saved', 'status-unsaved', 'status-saving');
@@ -228,7 +230,7 @@
         if (!form) return;
 
         select.addEventListener('change', () => {
-          setEstadoSumario(form, 'unsaved', 'Alterações por guardar');
+          setEstadoSumario(form, 'unsaved', 'Alterações por guardar', select);
           guardarAutomatico(form);
         });
 
