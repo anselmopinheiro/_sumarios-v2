@@ -160,7 +160,16 @@
       document.addEventListener('click', handler);
     };
 
+    const obterForm = (elemento) => {
+      if (!elemento) return null;
+      const direto = elemento.closest('form');
+      if (direto) return direto;
+      const idForm = elemento.getAttribute('form');
+      return idForm ? document.getElementById(idForm) : null;
+    };
+
     const setEstadoSumario = (form, estado, label) => {
+      if (!form) return;
       const dot = form.querySelector('.js-sumario-status');
       const texto = form.querySelector('.js-sumario-status-text');
       if (!dot || !texto) return;
@@ -211,6 +220,19 @@
         sumario.addEventListener('blur', () => guardarAutomatico(form));
 
         form._autosaveBound = true;
+      });
+
+      document.querySelectorAll('select[name="tipo"]').forEach((select) => {
+        if (select._autosaveBound) return;
+        const form = obterForm(select);
+        if (!form) return;
+
+        select.addEventListener('change', () => {
+          setEstadoSumario(form, 'unsaved', 'Alterações por guardar');
+          guardarAutomatico(form);
+        });
+
+        select._autosaveBound = true;
       });
     };
 

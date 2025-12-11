@@ -2780,7 +2780,7 @@ def create_app():
             flash("Linha de calendário não pertence a esta turma.", "error")
             return redirect(url_for("turma_calendario", turma_id=turma.id))
 
-        aceita_json = request.accept_mimetypes.accept_json or request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        aceita_json = request.headers.get("X-Requested-With") == "XMLHttpRequest"
 
         sumario_txt = request.form.get("sumario")
         if sumario_txt is not None:
