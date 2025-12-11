@@ -80,6 +80,21 @@ TIPOS_ESPECIAIS = ["greve", "servico_oficial", "outros", "extra", "faltei"]
 # --------------------------------------------
 # Funções auxiliares fora da factory
 # --------------------------------------------
+def _slugify_filename(texto, fallback="ficheiro"):
+    if not texto:
+        return fallback
+
+    safe_nome = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode()
+    safe_nome = "_".join(
+        filter(
+            None,
+            ["".join(c if c.isalnum() else "_" for c in safe_nome).strip("_")],
+        )
+    )
+
+    return safe_nome or fallback
+
+
 def _easter_sunday(year: int) -> date:
     """Domingo de Páscoa (algoritmo de Meeus/Jones/Butcher)."""
     a = year % 19
@@ -267,6 +282,38 @@ def create_app():
 
     db.init_app(app)
     Migrate(app, db)
+
+    os.makedirs(app.instance_path, exist_ok=True)
+    export_options_path = os.path.join(app.instance_path, "export_options.json")
+
+    def _default_csv_dir():
+        return app.config.get("CSV_EXPORT_DIR") or os.path.join(app.root_path, "exports")
+
+    def _load_export_options():
+        options = {"csv_dest_dir": _default_csv_dir()}
+
+        try:
+            with open(export_options_path, "r", encoding="utf-8") as handle:
+                stored = json.load(handle)
+                if isinstance(stored, dict) and stored.get("csv_dest_dir"):
+                    options["csv_dest_dir"] = stored["csv_dest_dir"]
+        except FileNotFoundError:
+            pass
+        except (OSError, json.JSONDecodeError) as exc:
+            app.logger.warning("Não foi possível ler opções de exportação: %s", exc)
+
+        app.config["CSV_EXPORT_DIR"] = options["csv_dest_dir"] or _default_csv_dir()
+        return options
+
+    def _save_export_options(csv_dest_dir):
+        try:
+            os.makedirs(os.path.dirname(export_options_path), exist_ok=True)
+            with open(export_options_path, "w", encoding="utf-8") as handle:
+                json.dump({"csv_dest_dir": csv_dest_dir}, handle, ensure_ascii=False, indent=2)
+        except OSError as exc:
+            app.logger.warning("Não foi possível gravar opções de exportação: %s", exc)
+
+    _load_export_options()
 
     # Garantir que colunas recentes existem em instalações que ainda não
     # aplicaram as migrações correspondentes (evita erros em bases de dados
@@ -628,7 +675,110 @@ def create_app():
             "turmas/list.html",
             turmas_abertas=turmas_abertas,
             turmas_fechadas=turmas_fechadas,
+            csv_dest_dir=app.config.get("CSV_EXPORT_DIR"),
         )
+
+    @app.route("/turmas/export/csv", methods=["POST"])
+    def turmas_export_csv():
+        acao = (request.form.get("acao") or "exportar").lower()
+        csv_dest_dir = (request.form.get("csv_dest_dir") or "").strip()
+
+        if not csv_dest_dir:
+            flash("Indica uma pasta de destino para os CSV.", "error")
+            return redirect(url_for("turmas_list"))
+
+        try:
+            os.makedirs(csv_dest_dir, exist_ok=True)
+        except OSError as exc:
+            flash(f"Não foi possível usar a pasta indicada: {exc}", "error")
+            return redirect(url_for("turmas_list"))
+
+        _save_export_options(csv_dest_dir)
+        app.config["CSV_EXPORT_DIR"] = csv_dest_dir
+
+        if acao == "guardar":
+            flash("Pasta de destino atualizada.", "success")
+            return redirect(url_for("turmas_list"))
+
+        hoje = date.today()
+        data_export = hoje.strftime("%Y%m%d")
+        total_ficheiros = 0
+        falhas = []
+        turmas = (
+            Turma.query.options(joinedload(Turma.ano_letivo))
+            .outerjoin(AnoLetivo)
+            .order_by(
+                AnoLetivo.ativo.desc(),
+                AnoLetivo.fechado.asc(),
+                AnoLetivo.data_inicio_ano.desc(),
+                Turma.nome,
+            )
+            .all()
+        )
+
+        for turma in turmas:
+            dados = exportar_sumarios_json(turma.id)
+            linhas_validas = []
+
+            for linha in dados:
+                tipo = (linha.get("tipo") or "").lower()
+                if tipo not in {"normal", "extra"}:
+                    continue
+
+                data_txt = linha.get("data")
+                try:
+                    data_aula = datetime.fromisoformat(data_txt).date() if data_txt else None
+                except ValueError:
+                    data_aula = None
+
+                if data_aula and data_aula > hoje:
+                    continue
+
+                data_legivel = ""
+                if data_aula:
+                    data_legivel = data_aula.strftime("%d/%m/%Y")
+                elif data_txt:
+                    data_legivel = data_txt
+
+                linhas_validas.append(
+                    [
+                        data_legivel,
+                        linha.get("modulo_nome") or "",
+                        linha.get("sumarios") or "",
+                        linha.get("sumario") or "",
+                    ]
+                )
+
+            if not linhas_validas:
+                continue
+
+            filename = f"sumarios_{_slugify_filename(turma.nome, 'turma')}_{data_export}.csv"
+            destino = os.path.join(csv_dest_dir, filename)
+
+            try:
+                with open(destino, "w", newline="", encoding="utf-8-sig") as handle:
+                    writer = csv.writer(handle, delimiter=";")
+                    writer.writerow(["DATA", "MÓDULO", "N.º Sumário", "Sumário"])
+                    writer.writerows(linhas_validas)
+                total_ficheiros += 1
+            except OSError as exc:
+                falhas.append(f"{turma.nome}: {exc}")
+
+        if total_ficheiros:
+            flash(
+                f"Exportação concluída: {total_ficheiros} ficheiro(s) criado(s) em {csv_dest_dir}.",
+                "success",
+            )
+        else:
+            flash(
+                "Nenhum sumário elegível encontrado para exportar até à data de hoje.",
+                "warning",
+            )
+
+        if falhas:
+            flash("Falhas ao exportar: " + "; ".join(falhas), "error")
+
+        return redirect(url_for("turmas_list"))
 
     @app.route("/turmas/<int:turma_id>/edit", methods=["GET", "POST"])
     def turmas_edit(turma_id):

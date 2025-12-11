@@ -7,6 +7,31 @@
 
 </div>
 
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-semibold">Opções de exportação</div>
+  <div class="card-body">
+    <form class="row gy-2 gx-3 align-items-end" method="post" action="{{ url_for('turmas_export_csv') }}">
+      <div class="col-12 col-md-6">
+        <label class="form-label" for="csv_dest_dir">Pasta de destino dos CSV</label>
+        <input
+          type="text"
+          class="form-control"
+          id="csv_dest_dir"
+          name="csv_dest_dir"
+          value="{{ csv_dest_dir or '' }}"
+          placeholder="/caminho/para/pasta"
+          required
+        >
+        <div class="form-text">Os ficheiros são gravados em UTF-8 (com BOM) e um por turma.</div>
+      </div>
+      <div class="col-12 col-md-6 d-flex gap-2">
+        <button type="submit" name="acao" value="guardar" class="btn btn-outline-secondary">Guardar pasta</button>
+        <button type="submit" name="acao" value="exportar" class="btn btn-success">Exportar CSV por turma</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 {% if turmas_abertas or turmas_fechadas %}
   {% macro render_turmas_card(turmas, titulo, badge_class) %}
     <div class="card shadow-sm mb-4">
