@@ -169,6 +169,40 @@
       sumario.dispatchEvent(new Event('input', { bubbles: true }));
     };
 
+    const copiarSumario = async (btn) => {
+      if (!btn) return;
+      const form = obterForm(btn) || btn.closest('.js-sumario-form');
+      const alvo = btn.dataset.target ? document.querySelector(btn.dataset.target) : null;
+      const sumario = alvo || form?.querySelector('textarea[name="sumario"]');
+      if (!sumario) return;
+
+      const original = btn.innerHTML;
+      try {
+        await navigator.clipboard.writeText(sumario.value || '');
+        btn.innerHTML = 'Copiado!';
+      } catch (err) {
+        console.error(err);
+        btn.innerHTML = 'Erro ao copiar';
+      } finally {
+        setTimeout(() => {
+          btn.innerHTML = original;
+        }, 1500);
+      }
+    };
+
+    const bindCopiarSumario = () => {
+      document.removeEventListener('click', document._copiarSumarioHandler || (() => {}));
+      const handler = (ev) => {
+        const target = ev.target.closest('.js-copy-sumario');
+        if (target) {
+          ev.preventDefault();
+          copiarSumario(target);
+        }
+      };
+      document._copiarSumarioHandler = handler;
+      document.addEventListener('click', handler);
+    };
+
     const bindCopias = () => {
       document.removeEventListener('click', document._copiaPrevisaoHandler || (() => {}));
       const handler = (ev) => {
@@ -316,6 +350,7 @@
 
     const onReady = () => {
       bindCopias();
+      bindCopiarSumario();
       bindGuardarTodos();
       bindAutosave();
     };

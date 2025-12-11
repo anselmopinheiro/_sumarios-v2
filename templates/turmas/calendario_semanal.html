@@ -165,10 +165,13 @@
                   {% if turma %}
                     <input type="hidden" name="turma_id" value="{{ turma.id }}">
                   {% endif %}
-                  <div class="d-flex align-items-center gap-2 text-muted small">
+                <div class="d-flex align-items-center gap-2 text-muted small flex-wrap">
+                  <div class="d-flex align-items-center gap-2">
                     <span class="sumario-status-dot status-saved js-sumario-status" aria-hidden="true"></span>
                     <span class="js-sumario-status-text">Guardado</span>
                   </div>
+                  <button type="button" class="btn btn-outline-secondary btn-sm py-0 js-copy-sumario">Copiar sumário</button>
+                </div>
                   <div class="d-flex align-items-start gap-2">
                     <textarea name="sumario"
                               class="form-control form-control-sm js-autoresize"
