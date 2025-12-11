@@ -186,6 +186,10 @@
                 {% if periodo_atual %}
                   <input type="hidden" name="periodo_id" value="{{ periodo_atual.id }}">
                 {% endif %}
+                <div class="d-flex align-items-center gap-2 text-muted small">
+                  <span class="sumario-status-dot status-saved js-sumario-status" aria-hidden="true"></span>
+                  <span class="js-sumario-status-text">Guardado</span>
+                </div>
                 <div class="d-flex align-items-start gap-2">
                 <textarea name="sumario"
                           class="form-control form-control-sm js-autoresize"

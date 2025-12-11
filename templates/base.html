@@ -14,6 +14,35 @@
         z-index: 1100;
         box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
       }
+
+      .floating-nav {
+        position: fixed;
+        left: 1.5rem;
+        bottom: 1.5rem;
+        z-index: 1100;
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+
+      .sumario-status-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        display: inline-block;
+      }
+
+      .sumario-status-dot.status-saved {
+        background-color: #198754;
+      }
+
+      .sumario-status-dot.status-unsaved {
+        background-color: #dc3545;
+      }
+
+      .sumario-status-dot.status-saving {
+        background-color: #ffc107;
+      }
     </style>
 </head>
 
@@ -131,6 +160,60 @@
       document.addEventListener('click', handler);
     };
 
+    const setEstadoSumario = (form, estado, label) => {
+      const dot = form.querySelector('.js-sumario-status');
+      const texto = form.querySelector('.js-sumario-status-text');
+      if (!dot || !texto) return;
+
+      dot.classList.remove('status-saved', 'status-unsaved', 'status-saving');
+      dot.classList.add(`status-${estado}`);
+      texto.textContent = label;
+    };
+
+    const guardarAutomatico = async (form) => {
+      if (!form || form._savingSumario) return;
+      form._savingSumario = true;
+      setEstadoSumario(form, 'saving', 'A guardar...');
+
+      try {
+        const resp = await fetch(form.action, {
+          method: (form.method || 'post').toUpperCase(),
+          body: new FormData(form),
+          headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            Accept: 'application/json',
+          },
+        });
+
+        if (!resp.ok) {
+          throw new Error('Resposta inválida ao guardar');
+        }
+
+        setEstadoSumario(form, 'saved', 'Guardado');
+      } catch (err) {
+        console.error(err);
+        setEstadoSumario(form, 'unsaved', 'Erro ao guardar');
+      } finally {
+        form._savingSumario = false;
+      }
+    };
+
+    const bindAutosave = () => {
+      document.querySelectorAll('form.js-sumario-form').forEach((form) => {
+        if (form._autosaveBound) return;
+        const sumario = form.querySelector('textarea[name="sumario"]');
+        if (!sumario) return;
+
+        const marcarPorGuardar = () => setEstadoSumario(form, 'unsaved', 'Alterações por guardar');
+
+        sumario.addEventListener('input', marcarPorGuardar);
+        sumario.addEventListener('change', marcarPorGuardar);
+        sumario.addEventListener('blur', () => guardarAutomatico(form));
+
+        form._autosaveBound = true;
+      });
+    };
+
     const guardarTodos = async (btn) => {
       if (!btn) return;
       const selector = btn.dataset.formsSelector || 'form.js-sumario-form';
@@ -188,6 +271,7 @@
     const onReady = () => {
       bindCopias();
       bindGuardarTodos();
+      bindAutosave();
     };
 
     if (document.readyState === 'loading') {

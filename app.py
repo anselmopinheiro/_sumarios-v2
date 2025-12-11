@@ -14,7 +14,8 @@ from flask import (
     url_for,
     request,
     flash,
-    Response,   # se ainda estiveres a usar o JSON
+    Response,
+    jsonify,
 )
 
 from flask_migrate import Migrate
@@ -2779,6 +2780,8 @@ def create_app():
             flash("Linha de calendário não pertence a esta turma.", "error")
             return redirect(url_for("turma_calendario", turma_id=turma.id))
 
+        aceita_json = request.accept_mimetypes.accept_json or request.headers.get("X-Requested-With") == "XMLHttpRequest"
+
         sumario_txt = request.form.get("sumario")
         if sumario_txt is not None:
             aula.sumario = sumario_txt.strip()
@@ -2822,6 +2825,8 @@ def create_app():
 
         db.session.commit()
 
+        mensagem = "Sumário atualizado."
+
         if novo_tipo != tipo_original or mudou_tempos:
             renumerar_calendario_turma(turma.id)
             novas = completar_modulos_profissionais(
@@ -2831,15 +2836,25 @@ def create_app():
             )
             if novas:
                 renumerar_calendario_turma(turma.id)
-                flash(
+                mensagem = (
                     "Tipo de aula atualizado e "
-                    f"{novas} aula(s) adicionadas para cumprir o total do módulo.",
-                    "success",
+                    f"{novas} aula(s) adicionadas para cumprir o total do módulo."
                 )
             else:
-                flash("Sumário e contagens atualizados.", "success")
+                mensagem = "Sumário e contagens atualizados."
+
+        if not aceita_json:
+            flash(mensagem, "success")
         else:
-            flash("Sumário atualizado.", "success")
+            return jsonify(
+                {
+                    "status": "ok",
+                    "sumario": aula.sumario or "",
+                    "previsao": aula.previsao or "",
+                    "tipo": aula.tipo,
+                    "tempos_sem_aula": aula.tempos_sem_aula or 0,
+                }
+            )
 
         periodo_id = request.form.get("periodo_id", type=int)
         redirect_view = request.form.get("view")
