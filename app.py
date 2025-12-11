@@ -1,6 +1,8 @@
 import csv
 import io
 import json
+import os
+import shutil
 import unicodedata
 from collections import defaultdict
 from datetime import datetime, date, timedelta
@@ -395,8 +397,38 @@ def create_app():
                     )
                     db.session.commit()
 
+    def _backup_database():
+        uri = app.config.get("SQLALCHEMY_DATABASE_URI")
+        backup_dir = app.config.get("BACKUP_DIR")
+
+        if not uri or not backup_dir:
+            return
+
+        if uri.startswith("sqlite:///"):
+            db_path = uri.replace("sqlite:///", "", 1)
+        else:
+            return
+
+        if not os.path.isfile(db_path):
+            return
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base_name, ext = os.path.splitext(os.path.basename(db_path))
+        backup_name = f"{base_name}_{timestamp}{ext or '.db'}"
+
+        try:
+            os.makedirs(backup_dir, exist_ok=True)
+            shutil.copy2(db_path, os.path.join(backup_dir, backup_name))
+        except OSError as exc:
+            app.logger.warning(
+                "Não foi possível criar backup da base de dados em %s: %s",
+                backup_dir,
+                exc,
+            )
+
     with app.app_context():
         _ensure_columns()
+        _backup_database()
 
     # ----------------------------------------
     # Helpers internos à app
