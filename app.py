@@ -292,29 +292,50 @@ def create_app():
     def _default_csv_dir():
         return app.config.get("CSV_EXPORT_DIR") or os.path.join(app.root_path, "exports")
 
+    def _default_backup_json_dir():
+        return app.config.get("BACKUP_JSON_DIR") or os.path.join(
+            app.root_path, "exports", "backups"
+        )
+
     def _load_export_options():
-        options = {"csv_dest_dir": _default_csv_dir()}
+        options = {
+            "csv_dest_dir": _default_csv_dir(),
+            "backup_json_dir": _default_backup_json_dir(),
+        }
 
         try:
             with open(export_options_path, "r", encoding="utf-8") as handle:
                 stored = json.load(handle)
-                if isinstance(stored, dict) and stored.get("csv_dest_dir"):
-                    options["csv_dest_dir"] = stored["csv_dest_dir"]
+                if isinstance(stored, dict):
+                    if stored.get("csv_dest_dir"):
+                        options["csv_dest_dir"] = stored["csv_dest_dir"]
+                    if stored.get("backup_json_dir"):
+                        options["backup_json_dir"] = stored["backup_json_dir"]
         except FileNotFoundError:
             pass
         except (OSError, json.JSONDecodeError) as exc:
             app.logger.warning("Não foi possível ler opções de exportação: %s", exc)
 
         app.config["CSV_EXPORT_DIR"] = options["csv_dest_dir"] or _default_csv_dir()
+        app.config["BACKUP_JSON_DIR"] = options.get("backup_json_dir") or _default_backup_json_dir()
         return options
 
-    def _save_export_options(csv_dest_dir):
+    def _save_export_options(csv_dest_dir=None, backup_json_dir=None):
+        options = _load_export_options()
+        if csv_dest_dir is not None:
+            options["csv_dest_dir"] = csv_dest_dir
+        if backup_json_dir is not None:
+            options["backup_json_dir"] = backup_json_dir
+
         try:
             os.makedirs(os.path.dirname(export_options_path), exist_ok=True)
             with open(export_options_path, "w", encoding="utf-8") as handle:
-                json.dump({"csv_dest_dir": csv_dest_dir}, handle, ensure_ascii=False, indent=2)
+                json.dump(options, handle, ensure_ascii=False, indent=2)
         except OSError as exc:
             app.logger.warning("Não foi possível gravar opções de exportação: %s", exc)
+
+        app.config["CSV_EXPORT_DIR"] = options["csv_dest_dir"] or _default_csv_dir()
+        app.config["BACKUP_JSON_DIR"] = options.get("backup_json_dir") or _default_backup_json_dir()
 
     _load_export_options()
 
@@ -724,6 +745,7 @@ def create_app():
             turmas_abertas=turmas_abertas,
             turmas_fechadas=turmas_fechadas,
             csv_dest_dir=app.config.get("CSV_EXPORT_DIR"),
+            backup_json_dir=app.config.get("BACKUP_JSON_DIR"),
             anos_letivos=anos_letivos,
         )
 
@@ -742,7 +764,7 @@ def create_app():
             flash(f"Não foi possível usar a pasta indicada: {exc}", "error")
             return redirect(url_for("turmas_list"))
 
-        _save_export_options(csv_dest_dir)
+        _save_export_options(csv_dest_dir=csv_dest_dir)
         app.config["CSV_EXPORT_DIR"] = csv_dest_dir
 
         if acao == "guardar":
@@ -833,9 +855,20 @@ def create_app():
     def backup_ano_export():
         ano_id = request.form.get("ano_letivo_id", type=int)
         ano = AnoLetivo.query.get(ano_id) if ano_id else None
+        backup_json_dir = (request.form.get("backup_json_dir") or "").strip()
 
         if not ano:
             flash("Escolhe um ano letivo para exportar.", "error")
+            return redirect(url_for("turmas_list"))
+
+        if not backup_json_dir:
+            flash("Indica uma pasta de destino para o backup.", "error")
+            return redirect(url_for("turmas_list"))
+
+        try:
+            os.makedirs(backup_json_dir, exist_ok=True)
+        except OSError as exc:
+            flash(f"Não foi possível usar a pasta indicada: {exc}", "error")
             return redirect(url_for("turmas_list"))
 
         try:
@@ -846,12 +879,18 @@ def create_app():
 
         data_export = date.today().isoformat()
         filename = f"backup_{_slugify_filename(ano.nome, 'ano')}_{data_export}.json"
-        response = Response(
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            mimetype="application/json; charset=utf-8",
-        )
-        response.headers["Content-Disposition"] = f"attachment; filename={filename}"
-        return response
+        destino = os.path.join(backup_json_dir, filename)
+
+        try:
+            with open(destino, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, ensure_ascii=False, indent=2)
+        except OSError as exc:
+            flash(f"Não foi possível gravar o backup: {exc}", "error")
+            return redirect(url_for("turmas_list"))
+
+        _save_export_options(backup_json_dir=backup_json_dir)
+        flash(f"Backup gravado em {destino}", "success")
+        return redirect(url_for("turmas_list"))
 
     @app.route("/backup/ano/import", methods=["POST"])
     def backup_ano_import():

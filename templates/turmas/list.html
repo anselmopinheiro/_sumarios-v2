@@ -49,6 +49,19 @@
             <div class="form-text">Exporta todos os dados do ano escolhido, incluindo turmas, alunos, calendários e avaliações.</div>
           </div>
           <div class="col-12">
+            <label class="form-label" for="backup_json_dir">Pasta de destino do backup</label>
+            <input
+              class="form-control"
+              type="text"
+              id="backup_json_dir"
+              name="backup_json_dir"
+              value="{{ backup_json_dir or '' }}"
+              placeholder="/caminho/para/guardar"
+              required
+            >
+            <div class="form-text">O ficheiro JSON será gravado nesta pasta.</div>
+          </div>
+          <div class="col-12">
             <button type="submit" class="btn btn-outline-primary">Exportar backup</button>
           </div>
         </form>
