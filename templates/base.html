@@ -181,10 +181,10 @@
       texto.textContent = label;
     };
 
-    const guardarAutomatico = async (form) => {
+    const guardarAutomatico = async (form, origem) => {
       if (!form || form._savingSumario) return;
       form._savingSumario = true;
-      setEstadoSumario(form, 'saving', 'A guardar...');
+      setEstadoSumario(form, 'saving', 'A guardar...', origem);
 
       try {
         const resp = await fetch(form.action, {
@@ -200,10 +200,10 @@
           throw new Error('Resposta inválida ao guardar');
         }
 
-        setEstadoSumario(form, 'saved', 'Guardado');
+        setEstadoSumario(form, 'saved', 'Guardado', origem);
       } catch (err) {
         console.error(err);
-        setEstadoSumario(form, 'unsaved', 'Erro ao guardar');
+        setEstadoSumario(form, 'unsaved', 'Erro ao guardar', origem);
       } finally {
         form._savingSumario = false;
       }
@@ -219,7 +219,7 @@
 
         sumario.addEventListener('input', marcarPorGuardar);
         sumario.addEventListener('change', marcarPorGuardar);
-        sumario.addEventListener('blur', () => guardarAutomatico(form));
+        sumario.addEventListener('blur', () => guardarAutomatico(form, sumario));
 
         form._autosaveBound = true;
       });
@@ -231,7 +231,7 @@
 
         select.addEventListener('change', () => {
           setEstadoSumario(form, 'unsaved', 'Alterações por guardar', select);
-          guardarAutomatico(form);
+          guardarAutomatico(form, select);
         });
 
         select._autosaveBound = true;
