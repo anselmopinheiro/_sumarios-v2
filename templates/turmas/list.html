@@ -32,6 +32,20 @@
   </div>
 </div>
 
+{% set ano_destaque = None %}
+{% for ano in anos_letivos %}
+  {% if ano.ativo %}
+    {% set ano_destaque = ano %}
+    {% break %}
+  {% endif %}
+{% endfor %}
+{% if not ano_destaque and anos_letivos %}
+  {% set ano_destaque = anos_letivos[0] %}
+{% endif %}
+{% if ano_destaque %}
+  <h2 class="h4">Ano letivo: {{ ano_destaque.nome }}</h2>
+{% endif %}
+
 <div class="card shadow-sm mb-4">
   <div class="card-header fw-semibold">Backup anual (JSON)</div>
   <div class="card-body">
@@ -102,7 +116,6 @@
             <tr>
               <th>Nome</th>
               <th>Tipo</th>
-              <th>Ano Letivo</th>
               <th>Carga (Seg–Sex)</th>
               <th>Tempos (Seg–Sex)</th>
               <th class="text-end" style="width: 260px;">Ações</th>
@@ -113,25 +126,6 @@
             <tr>
               <td class="fw-semibold">{{ turma.nome }}</td>
               <td>{{ turma.tipo }}</td>
-              <td>
-                {% if turma.ano_letivo %}
-                  <div class="fw-semibold">{{ turma.ano_letivo.nome }}</div>
-                  <div class="small text-muted">
-                    {% if turma.ano_letivo.ativo %}
-                      <span class="badge text-bg-success">Ativo</span>
-                    {% else %}
-                      <span class="badge text-bg-secondary">Inativo</span>
-                    {% endif %}
-                    {% if turma.ano_letivo.fechado %}
-                      <span class="badge text-bg-danger">Fechado</span>
-                    {% else %}
-                      <span class="badge text-bg-info text-dark">Aberto</span>
-                    {% endif %}
-                  </div>
-                {% else %}
-                  <span class="text-muted">—</span>
-                {% endif %}
-              </td>
               <td class="text-nowrap">{{ turma.carga_segunda or 0 }} /
                 {{ turma.carga_terca or 0 }} /
                 {{ turma.carga_quarta or 0 }} /

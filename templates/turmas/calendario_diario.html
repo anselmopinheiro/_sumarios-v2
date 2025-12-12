@@ -103,10 +103,7 @@
   <table class="table table-striped table-bordered">
     <thead class="table-dark">
       <tr>
-        <th>Data</th>
-        <th>Módulo</th>
-        <th>Nº Sumário(s)</th>
-        <th style="width: 40%;">Sumário</th>
+        <th style="width: 50%;">Sumário</th>
         <th>Tipo</th>
         <th style="width: 160px;">Ações</th>
       </tr>
@@ -128,22 +125,6 @@
         {% set sumario_anterior = sumarios_anteriores.get(a.id) if sumarios_anteriores is defined else None %}
         {% set form_id = "sumario-form-" ~ a.id %}
         <tr>
-          <td>
-            {% if a.data %}
-              {{ a.data.strftime("%d/%m/%Y") }}<br>
-              <small class="text-muted">{{ ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"][a.data.weekday()] }}</small>
-            {% endif %}
-          </td>
-          <td class="text-nowrap">
-            {% if a.modulo %}
-              <div>{{ a.modulo.nome }}</div>
-            {% else %}
-              <div>—</div>
-            {% endif %}
-            <div class="text-muted small">Aula {% if sem_aula_total %}—{% else %}{{ a.numero_modulo }}{% endif %}</div>
-            <div class="text-muted small">Total {% if sem_aula_total %}—{% else %}{{ a.total_geral }}{% endif %}</div>
-          </td>
-          <td>{% if sem_aula_total %}—{% else %}{{ a.sumarios or '' }}{% endif %}</td>
           <td class="w-50">
             <div class="d-flex flex-wrap gap-1 mb-2 align-items-center">
               <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">Turma {{ a.turma.nome if a.turma else (turma.nome if turma else '') }}</span>
