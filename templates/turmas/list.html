@@ -32,16 +32,8 @@
   </div>
 </div>
 
-{% set ano_destaque = None %}
-{% for ano in anos_letivos %}
-  {% if ano.ativo %}
-    {% set ano_destaque = ano %}
-    {% break %}
-  {% endif %}
-{% endfor %}
-{% if not ano_destaque and anos_letivos %}
-  {% set ano_destaque = anos_letivos[0] %}
-{% endif %}
+{% set anos_ativos = anos_letivos|selectattr('ativo')|list %}
+{% set ano_destaque = anos_ativos[0] if anos_ativos else (anos_letivos[0] if anos_letivos else None) %}
 {% if ano_destaque %}
   <h2 class="h4">Ano letivo: {{ ano_destaque.nome }}</h2>
 {% endif %}
