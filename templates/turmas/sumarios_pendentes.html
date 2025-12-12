@@ -63,6 +63,7 @@
           {% set tipo_label = tipo_labels.get(a.tipo, a.tipo) if tipo_labels is defined else a.tipo %}
           {% set turma_fechada = anos_fechados.get(a.turma_id, False) %}
           {% set form_id = 'sumario-form-' ~ a.id %}
+          {% set sumario_anterior = sumarios_anteriores.get(a.id) if sumarios_anteriores is defined else None %}
           <tr>
             <td class="w-100">
               <div class="d-flex flex-wrap gap-1 mb-2">
@@ -99,16 +100,23 @@
                     <input type="hidden" name="periodo_id" value="{{ a.periodo_id }}">
                   {% endif %}
                   <div class="d-flex align-items-center gap-2 text-muted small flex-wrap">
-                    <div class="d-flex align-items-center gap-2">
-                      <span class="sumario-status-dot status-saved js-sumario-status" aria-hidden="true"></span>
-                      <span class="js-sumario-status-text">Guardado</span>
-                    </div>
-                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 js-copy-sumario">Copiar sumário</button>
+                  <div class="d-flex align-items-center gap-2">
+                    <span class="sumario-status-dot status-saved js-sumario-status" aria-hidden="true"></span>
+                    <span class="js-sumario-status-text">Guardado</span>
                   </div>
-                  <div class="d-flex align-items-start gap-2">
-                    <textarea name="sumario"
-                              class="form-control form-control-sm js-autoresize"
-                              rows="2"
+                  <button type="button" class="btn btn-outline-secondary btn-sm py-0 js-copy-sumario">Copiar sumário</button>
+                  {% if sumario_anterior %}
+                    <button type="button"
+                            class="btn btn-outline-info btn-sm py-0 js-use-prev-sumario"
+                            data-sumario-anterior="{{ sumario_anterior }}">
+                      Usar sumário anterior
+                    </button>
+                  {% endif %}
+                </div>
+                <div class="d-flex align-items-start gap-2">
+                  <textarea name="sumario"
+                            class="form-control form-control-sm js-autoresize"
+                            rows="2"
                               placeholder="Escrever sumário...">{{ a.sumario or '' }}</textarea>
                     <div class="d-flex flex-column" style="width: 120px;">
                       <label class="form-label form-label-sm mb-1">Tempos (sem aula)</label>

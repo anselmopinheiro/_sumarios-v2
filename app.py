@@ -215,6 +215,51 @@ def _mapear_alunos_em_falta(aulas):
     return resultados
 
 
+def _mapear_sumarios_anteriores(aulas):
+    if not aulas:
+        return {}
+
+    turma_ids = {
+        aula.turma_id for aula in aulas if getattr(aula, "turma_id", None) is not None
+    }
+    if turma_ids:
+        universo = (
+            CalendarioAula.query.filter(
+                CalendarioAula.apagado == False,  # noqa: E712
+                CalendarioAula.turma_id.in_(turma_ids),
+            )
+            .order_by(CalendarioAula.data.asc(), CalendarioAula.id.asc())
+            .all()
+        )
+    else:
+        universo = list(aulas)
+
+    grupos = defaultdict(list)
+    for aula in universo:
+        chave = (aula.turma_id, aula.modulo_id)
+        grupos[chave].append(aula)
+
+    anteriores: dict[int, str | None] = {}
+
+    for lista in grupos.values():
+        lista.sort(
+            key=lambda a: (
+                a.data or date.min,
+                a.total_geral or 0,
+                a.numero_modulo or 0,
+                a.id or 0,
+            )
+        )
+
+        ultimo_sumario: str | None = None
+        for aula in lista:
+            anteriores[aula.id] = ultimo_sumario
+            if aula.sumario and aula.sumario.strip():
+                ultimo_sumario = aula.sumario.strip()
+
+    return anteriores
+
+
 def _extrair_filtros_outras_datas(origem):
     tipo_bruto = origem.get("tipo") or origem.get("tipo_filtro")
     tipo_filtro = tipo_bruto if tipo_bruto in TIPOS_ESPECIAIS else None
@@ -1513,6 +1558,7 @@ def create_app():
             query_aulas = query_aulas.filter_by(periodo_id=periodo_atual.id)
         aulas = query_aulas.order_by(CalendarioAula.data).all()
         faltas_por_aula = _mapear_alunos_em_falta(aulas)
+        sumarios_anteriores = _mapear_sumarios_anteriores(aulas)
 
         calendario_existe = (
             db.session.query(CalendarioAula.id)
@@ -1528,6 +1574,7 @@ def create_app():
             ano_fechado=ano_fechado,
             aulas=aulas,
             faltas_por_aula=faltas_por_aula,
+            sumarios_anteriores=sumarios_anteriores,
             periodo_atual=periodo_atual,
             periodos_disponiveis=periodos_disponiveis,
             calendario_existe=calendario_existe,
@@ -1824,6 +1871,7 @@ def create_app():
             if a.turma_id
         }
         faltas_por_aula = _mapear_alunos_em_falta(aulas)
+        sumarios_anteriores = _mapear_sumarios_anteriores(aulas)
 
         return render_template(
             "turmas/calendario_diario.html",
@@ -1833,6 +1881,7 @@ def create_app():
             aulas=aulas,
             faltas_por_aula=faltas_por_aula,
             tempos_por_aula=tempos_por_aula,
+            sumarios_anteriores=sumarios_anteriores,
             data_atual=data_atual,
             dia_anterior=data_atual - timedelta(days=1),
             dia_seguinte=data_atual + timedelta(days=1),
@@ -1925,6 +1974,7 @@ def create_app():
             a.id: _tempo_da_turma_no_dia(a.turma, a.data) for a in aulas
         }
         faltas_por_aula = _mapear_alunos_em_falta(aulas)
+        sumarios_anteriores = _mapear_sumarios_anteriores(aulas)
 
         aulas_por_data = {}
         for aula in aulas:
@@ -1953,6 +2003,7 @@ def create_app():
             aulas_por_data=aulas_por_data,
             faltas_por_aula=faltas_por_aula,
             tempos_por_aula=tempos_por_aula,
+            sumarios_anteriores=sumarios_anteriores,
             tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
             tipos_aula=TIPOS_AULA,
             tipo_labels=dict(TIPOS_AULA),
@@ -1974,6 +2025,7 @@ def create_app():
             for a in aulas
             if a.turma_id
         }
+        sumarios_anteriores = _mapear_sumarios_anteriores(aulas)
 
         return render_template(
             "turmas/sumarios_pendentes.html",
@@ -1982,6 +2034,7 @@ def create_app():
             turmas=turmas_abertas_ativas(),
             turma_selecionada=turma_selecionada,
             faltas_por_aula=faltas_por_aula,
+            sumarios_anteriores=sumarios_anteriores,
             tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
             tipos_aula=TIPOS_AULA,
             tipo_labels=dict(TIPOS_AULA),
@@ -2094,11 +2147,13 @@ def create_app():
         turmas = turmas_abertas_ativas()
         aulas = listar_aulas_especiais(turma_filtro, tipo_filtro, data_inicio, data_fim)
         faltas_por_aula = _mapear_alunos_em_falta(aulas)
+        sumarios_anteriores = _mapear_sumarios_anteriores(aulas)
 
         return render_template(
             "turmas/outras_datas.html",
             aulas=aulas,
             faltas_por_aula=faltas_por_aula,
+            sumarios_anteriores=sumarios_anteriores,
             tipos_aula=TIPOS_AULA,
             tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
             tipo_labels=dict(TIPOS_AULA),
@@ -2609,6 +2664,7 @@ def create_app():
                     modulos=modulos,
                     aula=None,
                     tipos_aula=TIPOS_AULA,
+                    sumario_anterior=None,
                 )
 
             aula = CalendarioAula(
@@ -2657,6 +2713,7 @@ def create_app():
             modulos=modulos,
             aula=None,
             tipos_aula=TIPOS_AULA,
+            sumario_anterior=None,
         )
 
 
@@ -2693,6 +2750,27 @@ def create_app():
         if aula.turma_id != turma.id:
             flash("Linha de calendário não pertence a esta turma.", "error")
             return redirect(url_for("turma_calendario", turma_id=turma.id))
+
+        aulas_mesma_disciplina_query = CalendarioAula.query.filter_by(
+            turma_id=turma.id,
+            apagado=False,
+        )
+        if aula.modulo_id:
+            aulas_mesma_disciplina_query = aulas_mesma_disciplina_query.filter_by(
+                modulo_id=aula.modulo_id
+            )
+        else:
+            aulas_mesma_disciplina_query = aulas_mesma_disciplina_query.filter(
+                CalendarioAula.modulo_id.is_(None)
+            )
+        aulas_mesma_disciplina = (
+            aulas_mesma_disciplina_query
+            .order_by(CalendarioAula.data.asc(), CalendarioAula.id.asc())
+            .all()
+        )
+        sumario_anterior = _mapear_sumarios_anteriores(aulas_mesma_disciplina).get(
+            aula.id
+        )
 
         periodo = Periodo.query.get_or_404(aula.periodo_id)
         redirect_view = request.values.get("view")
@@ -2740,6 +2818,7 @@ def create_app():
                     data_ref=data_ref,
                     tipos_aula=TIPOS_AULA,
                     tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
+                    sumario_anterior=sumario_anterior,
                 )
 
             aula.data = data
@@ -2799,6 +2878,7 @@ def create_app():
             data_ref=data_ref,
             tipos_aula=TIPOS_AULA,
             tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
+            sumario_anterior=sumario_anterior,
         )
 
     @app.route("/turmas/<int:turma_id>/calendario/<int:aula_id>/delete", methods=["POST"])

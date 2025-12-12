@@ -91,8 +91,15 @@
       <div class="d-flex flex-column gap-2">
         <textarea name="sumario" class="form-control js-autoresize" rows="3"
                   placeholder="Breve descrição da aula">{{ aula.sumario if aula and aula.sumario else '' }}</textarea>
-        <div>
+        <div class="d-flex gap-2 flex-wrap">
           <button type="button" class="btn btn-outline-secondary btn-sm js-copy-sumario">Copiar sumário</button>
+          {% if sumario_anterior %}
+            <button type="button"
+                    class="btn btn-outline-info btn-sm js-use-prev-sumario"
+                    data-sumario-anterior="{{ sumario_anterior }}">
+              Usar sumário anterior
+            </button>
+          {% endif %}
         </div>
       </div>
     </div>

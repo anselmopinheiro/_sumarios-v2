@@ -202,6 +202,32 @@
       document.addEventListener('click', handler);
     };
 
+    const aplicarSumarioAnterior = (btn) => {
+      if (!btn) return;
+      const form = obterForm(btn) || btn.closest('.js-sumario-form');
+      const sumario = form?.querySelector('textarea[name="sumario"]');
+      if (!sumario) return;
+
+      const conteudo = btn.dataset.sumarioAnterior;
+      sumario.value = conteudo || '';
+      sumario.dispatchEvent(new Event('input', { bubbles: true }));
+      sumario.dispatchEvent(new Event('change', { bubbles: true }));
+      setEstadoSumario(form, 'unsaved', 'Alterações por guardar', btn);
+    };
+
+    const bindSumarioAnterior = () => {
+      document.removeEventListener('click', document._usarSumarioAnteriorHandler || (() => {}));
+      const handler = (ev) => {
+        const target = ev.target.closest('.js-use-prev-sumario');
+        if (target) {
+          ev.preventDefault();
+          aplicarSumarioAnterior(target);
+        }
+      };
+      document._usarSumarioAnteriorHandler = handler;
+      document.addEventListener('click', handler);
+    };
+
     const bindCopias = () => {
       document.removeEventListener('click', document._copiaPrevisaoHandler || (() => {}));
       const handler = (ev) => {
@@ -351,6 +377,7 @@
       bindCopias();
       bindCopiarSumario();
       bindGuardarTodos();
+      bindSumarioAnterior();
       bindAutosave();
     };
 

@@ -198,6 +198,7 @@
             </td>
             <td>
               {% set sem_aula = a.tipo in tipos_sem_aula %}
+              {% set sumario_anterior = sumarios_anteriores.get(a.id) if sumarios_anteriores is defined else None %}
               <div class="d-flex flex-column gap-1">
                 <span class="badge {% if sem_aula %}bg-danger text-light{% else %}bg-secondary text-light{% endif %}">{{ tipo_labels.get(a.tipo, a.tipo) }}</span>
                 {% if a.tempos_sem_aula is not none %}
@@ -225,6 +226,14 @@
                           form="{{ form_id }}">
                     Copiar sumário
                   </button>
+                  {% if sumario_anterior %}
+                    <button type="button"
+                            class="btn btn-outline-info btn-sm py-0 js-use-prev-sumario"
+                            data-sumario-anterior="{{ sumario_anterior }}"
+                            form="{{ form_id }}">
+                      Usar sumário anterior
+                    </button>
+                  {% endif %}
                 </div>
                 <textarea
                   name="previsao"

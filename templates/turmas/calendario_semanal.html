@@ -116,7 +116,7 @@
         {% set total_base = sumarios_limpos|length if sumarios_limpos|length > 0 else 1 %}
         {% set total_previsto = [total_base, a.tempos_sem_aula or 0]|max %}
         {% if total_previsto < 1 %}{% set total_previsto = 1 %}{% endif %}
-        {% set faltas = a.tempos_sem_aula if a.tempos_sem_aula is not none else (total_previsto if a.tipo in tipos_sem_aula else 0) %}
+          {% set faltas = a.tempos_sem_aula if a.tempos_sem_aula is not none else (total_previsto if a.tipo in tipos_sem_aula else 0) %}
           {% set faltas = [faltas, total_previsto]|min %}
           {% set faltas = [faltas, 0]|max %}
           {% set sem_aula = a.tipo in tipos_sem_aula %}
@@ -124,6 +124,7 @@
           {% set tipo_label = tipo_labels.get(a.tipo, a.tipo) if tipo_labels is defined else a.tipo %}
           {% set form_id = "semana-form-" ~ a.id %}
           {% set turma_fechada = anos_fechados.get(a.turma_id, False) %}
+          {% set sumario_anterior = sumarios_anteriores.get(a.id) if sumarios_anteriores is defined else None %}
           <tr>
             <td class="w-100">
               <div class="d-flex flex-wrap gap-1 mb-2 align-items-center">
@@ -174,12 +175,19 @@
                     <input type="hidden" name="turma_id" value="{{ turma.id }}">
                   {% endif %}
                 <div class="d-flex align-items-center gap-2 text-muted small flex-wrap">
-                  <div class="d-flex align-items-center gap-2">
-                    <span class="sumario-status-dot status-saved js-sumario-status" aria-hidden="true"></span>
-                    <span class="js-sumario-status-text">Guardado</span>
-                  </div>
-                  <button type="button" class="btn btn-outline-secondary btn-sm py-0 js-copy-sumario">Copiar sumário</button>
+                <div class="d-flex align-items-center gap-2">
+                  <span class="sumario-status-dot status-saved js-sumario-status" aria-hidden="true"></span>
+                  <span class="js-sumario-status-text">Guardado</span>
                 </div>
+                <button type="button" class="btn btn-outline-secondary btn-sm py-0 js-copy-sumario">Copiar sumário</button>
+                {% if sumario_anterior %}
+                  <button type="button"
+                          class="btn btn-outline-info btn-sm py-0 js-use-prev-sumario"
+                          data-sumario-anterior="{{ sumario_anterior }}">
+                    Usar sumário anterior
+                  </button>
+                {% endif %}
+              </div>
                   <div class="d-flex align-items-start gap-2">
                     <textarea name="sumario"
                               class="form-control form-control-sm js-autoresize"
