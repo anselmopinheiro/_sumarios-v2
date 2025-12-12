@@ -40,37 +40,10 @@
 
 <div class="card mb-4">
   <div class="card-body">
-    <h5 class="card-title">Backup e exportação</h5>
-    <div class="d-flex flex-wrap gap-2 mb-3">
-      <a
-        class="btn btn-outline-primary"
-        href="{{ url_for('calendario_outras_datas_export_json', tipo=filtro_tipo or '', turma_id=filtro_turma_id or '', data_inicio=data_inicio.isoformat() if data_inicio else '', data_fim=data_fim.isoformat() if data_fim else '') }}"
-      >Exportar JSON</a>
-      <a
-        class="btn btn-outline-secondary"
-        href="{{ url_for('calendario_outras_datas_export_csv', tipo=filtro_tipo or '', turma_id=filtro_turma_id or '', data_inicio=data_inicio.isoformat() if data_inicio else '', data_fim=data_fim.isoformat() if data_fim else '') }}"
-      >Exportar CSV</a>
-    </div>
-
-    <form
-      method="post"
-      action="{{ url_for('calendario_outras_datas_import_json') }}"
-      enctype="multipart/form-data"
-      class="row g-3 align-items-end"
-    >
-      <div class="col-12 col-md-6 col-lg-5">
-        <label class="form-label">Importar backup JSON</label>
-        <input type="file" name="ficheiro" accept="application/json" class="form-control" required>
-      </div>
-      <div class="col-12 col-md-3 col-lg-2 d-grid">
-        <button type="submit" class="btn btn-warning">Importar</button>
-      </div>
-
-      <input type="hidden" name="tipo_filtro" value="{{ filtro_tipo or '' }}" />
-      <input type="hidden" name="turma_filtro" value="{{ filtro_turma_id or '' }}" />
-      <input type="hidden" name="data_inicio" value="{{ data_inicio.isoformat() if data_inicio else '' }}" />
-      <input type="hidden" name="data_fim" value="{{ data_fim.isoformat() if data_fim else '' }}" />
-    </form>
+    <h5 class="card-title">Backups</h5>
+    <p class="mb-0">
+      Usa o fluxo de <strong>Backup anual (JSON)</strong> na página de turmas para salvaguardar e repor todas as aulas.
+    </p>
   </div>
 </div>
 

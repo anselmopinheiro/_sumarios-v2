@@ -61,39 +61,10 @@
 <div class="card mb-3">
   <div class="card-body">
     <div class="row g-3 align-items-end">
-      <div class="col-md-6">
-        <label class="form-label fw-bold">Backup de sumários</label>
-        <div class="d-flex flex-wrap gap-2">
-          <form method="get" action="{{ url_for('turma_calendario_export_json', turma_id=turma.id) }}">
-            {% if periodo_atual %}
-              <input type="hidden" name="periodo_id" value="{{ periodo_atual.id }}">
-            {% endif %}
-            <button class="btn btn-outline-primary" type="submit">Exportar JSON</button>
-          </form>
-          <form method="get" action="{{ url_for('turma_calendario_export_csv', turma_id=turma.id) }}">
-            {% if periodo_atual %}
-              <input type="hidden" name="periodo_id" value="{{ periodo_atual.id }}">
-            {% endif %}
-            <button class="btn btn-outline-secondary" type="submit">Exportar CSV</button>
-          </form>
+      <div class="col-12">
+        <div class="alert alert-info mb-0">
+          Os backups de calendário são geridos através do <strong>Backup anual (JSON)</strong> disponível na lista de turmas.
         </div>
-      </div>
-      <div class="col-md-6">
-        <form method="post"
-              enctype="multipart/form-data"
-              class="d-flex flex-wrap gap-2 align-items-center"
-              action="{{ url_for('turma_calendario_import_json', turma_id=turma.id) }}">
-          <div class="flex-grow-1">
-            <label class="form-label fw-bold mb-1">Importar sumários (JSON)</label>
-            <input type="file" name="ficheiro" accept="application/json" class="form-control" {% if ano_fechado %}disabled{% endif %}>
-          </div>
-          <div class="pb-2">
-            <button class="btn btn-success" type="submit" {% if ano_fechado %}disabled{% endif %}>Importar</button>
-          </div>
-        </form>
-        {% if ano_fechado %}
-          <div class="text-muted small mt-2">Ano letivo fechado: apenas exportação disponível.</div>
-        {% endif %}
       </div>
     </div>
   </div>
