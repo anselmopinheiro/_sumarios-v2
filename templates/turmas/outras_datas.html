@@ -234,12 +234,22 @@
                 <input type="hidden" name="turma_filtro" value="{{ filtro_turma_id or '' }}" />
                 <input type="hidden" name="data_inicio" value="{{ data_inicio.isoformat() if data_inicio else '' }}" />
                 <input type="hidden" name="data_fim" value="{{ data_fim.isoformat() if data_fim else '' }}" />
-                <textarea
-                  name="observacoes"
-                  class="form-control js-autoresize"
-                  rows="2"
-                  placeholder="Observações"
-                >{{ a.observacoes or '' }}</textarea>
+                <div class="js-richtext-wrapper d-flex flex-column gap-1">
+                  <div class="richtext-toolbar d-flex flex-wrap align-items-center gap-2">
+                    <span class="small text-muted">Formatação:</span>
+                    <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="bold"><strong>B</strong></button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="italic"><em>I</em></button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="backColor" data-value="#fff3cd"><span class="px-1" style="background: #fff3cd;">Realçar</span></button>
+                  </div>
+                  <div
+                    class="form-control form-control-sm js-richtext-editor richtext-editor"
+                    contenteditable="true"
+                    data-target="#observacoes-{{ a.id }}"
+                    aria-label="Observações"
+                  >{{ a.observacoes|default('')|safe }}</div>
+                  <input type="hidden" name="observacoes" id="observacoes-{{ a.id }}" value="{{ a.observacoes or '' }}">
+                  <div class="form-text">Suporta negrito, itálico e destaque amarelo.</div>
+                </div>
                 <button type="submit" class="btn btn-sm btn-primary align-self-start">Guardar</button>
               </form>
             </td>

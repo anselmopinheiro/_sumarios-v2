@@ -65,6 +65,21 @@
       .table-sticky-header thead.table-secondary th {
         background-color: #e9ecef;
       }
+
+      .richtext-editor {
+        min-height: 80px;
+        white-space: pre-wrap;
+      }
+
+      .richtext-toolbar .btn {
+        padding-top: 0.15rem;
+        padding-bottom: 0.15rem;
+        line-height: 1.1;
+      }
+
+      .richtext-highlight {
+        background-color: #fff3cd;
+      }
     </style>
 </head>
 
@@ -154,6 +169,118 @@
       autos();
       restoreScroll();
     }
+
+    const sanitizeRichtext = (html) => {
+      const allowed = new Set(['STRONG', 'B', 'EM', 'I', 'MARK', 'BR', 'SPAN']);
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = html || '';
+
+      const cleanNode = (node) => {
+        [...node.childNodes].forEach((child) => {
+          if (child.nodeType === Node.TEXT_NODE) return;
+          if (child.nodeType !== Node.ELEMENT_NODE) {
+            child.remove();
+            return;
+          }
+
+          if (!allowed.has(child.tagName)) {
+            const fragment = document.createDocumentFragment();
+            [...child.childNodes].forEach((grandchild) => fragment.appendChild(grandchild));
+            child.replaceWith(fragment);
+            return;
+          }
+
+          const shouldHighlight =
+            child.tagName === 'MARK' ||
+            child.classList?.contains('richtext-highlight') ||
+            (child.tagName === 'SPAN' && (child.style.backgroundColor || child.style.background));
+
+          [...child.attributes].forEach((attr) => child.removeAttribute(attr.name));
+          if (shouldHighlight) {
+            child.classList.add('richtext-highlight');
+          }
+
+          if (child.tagName === 'SPAN' && !shouldHighlight) {
+            const fragment = document.createDocumentFragment();
+            [...child.childNodes].forEach((grandchild) => fragment.appendChild(grandchild));
+            child.replaceWith(fragment);
+            cleanNode(fragment);
+            return;
+          }
+
+          cleanNode(child);
+        });
+      };
+
+      cleanNode(wrapper);
+      return wrapper.innerHTML;
+    };
+
+    const syncRichtext = (editor) => {
+      if (!editor) return;
+      const target = editor.dataset.target ? document.querySelector(editor.dataset.target) : null;
+      const sanitized = sanitizeRichtext(editor.innerHTML);
+      if (sanitized !== editor.innerHTML) {
+        editor.innerHTML = sanitized;
+      }
+      if (target) {
+        target.value = sanitized;
+      }
+    };
+
+    const bindRichtextEditors = () => {
+      document.querySelectorAll('.js-richtext-editor').forEach((editor) => {
+        if (editor._richtextBound) return;
+
+        const target = editor.dataset.target ? document.querySelector(editor.dataset.target) : null;
+        const initial = target?.value || editor.innerHTML || '';
+        const sanitized = sanitizeRichtext(initial);
+        editor.innerHTML = sanitized;
+        if (target) target.value = sanitized;
+
+        const sync = () => syncRichtext(editor);
+        editor.addEventListener('input', sync);
+        editor.addEventListener('blur', sync);
+
+        const form = editor.closest('form');
+        if (form) {
+          form.addEventListener('submit', () => sync());
+        }
+
+        editor._richtextBound = true;
+      });
+    };
+
+    const aplicarComandoRichtext = (btn) => {
+      if (!btn) return;
+      const wrapper = btn.closest('.js-richtext-wrapper');
+      const editor = wrapper?.querySelector('.js-richtext-editor');
+      if (!editor) return;
+
+      const command = btn.dataset.command;
+      const value = btn.dataset.value || null;
+      editor.focus();
+      document.execCommand(command, false, value);
+      syncRichtext(editor);
+    };
+
+    const bindRichtextToolbar = () => {
+      document.removeEventListener('click', document._richtextToolbarHandler || (() => {}));
+      const handler = (ev) => {
+        const target = ev.target.closest('.js-richtext-cmd');
+        if (target) {
+          ev.preventDefault();
+          aplicarComandoRichtext(target);
+        }
+      };
+      document._richtextToolbarHandler = handler;
+      document.addEventListener('click', handler);
+    };
+
+    const bindRichtext = () => {
+      bindRichtextEditors();
+      bindRichtextToolbar();
+    };
 
     const copiarPrevisao = (btn) => {
       if (!btn) return;
@@ -377,6 +504,7 @@
       bindCopiarSumario();
       bindGuardarTodos();
       bindSumarioAnterior();
+      bindRichtext();
       bindAutosave();
     };
 
