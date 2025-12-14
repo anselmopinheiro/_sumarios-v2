@@ -286,7 +286,7 @@
       if (!btn) return;
       const form = btn.closest('form');
       if (!form) return;
-      const previsao = form.querySelector('textarea[name="previsao"]');
+      const previsao = form.querySelector('[name="previsao"]');
       const sumario = form.querySelector('textarea[name="sumario"]');
       if (!previsao || !sumario) return;
 
