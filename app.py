@@ -432,6 +432,7 @@ def create_app():
                         trabalho_autonomo INTEGER DEFAULT 3,
                         portatil_material INTEGER DEFAULT 3,
                         atividade INTEGER DEFAULT 3,
+                        falta_disciplinar INTEGER NOT NULL DEFAULT 0,
                         CONSTRAINT fk_aula FOREIGN KEY(aula_id) REFERENCES calendario_aulas(id),
                         CONSTRAINT fk_aluno FOREIGN KEY(aluno_id) REFERENCES alunos(id),
                         CONSTRAINT uq_aula_aluno UNIQUE(aula_id, aluno_id)
@@ -469,6 +470,15 @@ def create_app():
         if "atividade_nome" not in colunas:
             db.session.execute(
                 text("ALTER TABLE calendario_aulas ADD COLUMN atividade_nome TEXT")
+            )
+            db.session.commit()
+
+        colunas_alunos = {col["name"] for col in insp.get_columns("aulas_alunos")}
+        if "falta_disciplinar" not in colunas_alunos:
+            db.session.execute(
+                text(
+                    "ALTER TABLE aulas_alunos ADD COLUMN falta_disciplinar INTEGER NOT NULL DEFAULT 0"
+                )
             )
             db.session.commit()
 
@@ -1721,7 +1731,11 @@ def create_app():
             titulo = d["data"].strftime("%d/%m/%Y")
             if sumarios_txt:
                 titulo += f"<br>N.º {sumarios_txt}"
-            output.write(f"<th>{titulo}</th>")
+            if d.get("tem_falta_disciplinar"):
+                titulo += "<br><small style='color:#dc3545;font-weight:bold'>Falta disciplinar</small>"
+                output.write("<th style='background:#f8d7da;'>" + titulo + "</th>")
+            else:
+                output.write(f"<th>{titulo}</th>")
         output.write("<th>Faltas</th><th>Média</th></tr></thead><tbody>")
 
         for aluno in alunos:
@@ -1734,7 +1748,8 @@ def create_app():
                 media = dia["medias"].get(aluno.id)
                 if media is not None:
                     valores.append(media)
-                output.write(f"<td>{_media_formatada(media)}</td>")
+                estilo = " style='background:#f8d7da;'" if dia.get("tem_falta_disciplinar") else ""
+                output.write(f"<td{estilo}>{_media_formatada(media)}</td>")
                 faltas_total += dia.get("faltas", {}).get(aluno.id, 0)
             output.write(f"<td>{faltas_total}</td>")
             if valores:
@@ -2633,6 +2648,12 @@ def create_app():
                 return default_val
             return _clamp_int(valor, min_val=1, max_val=5)
 
+        def _parse_falta_disciplinar(field_name):
+            valor = request.form.get(field_name)
+            if valor in (None, ""):
+                return 0
+            return _clamp_int(valor, min_val=1, max_val=2)
+
         if request.method == "POST":
             if ano_fechado:
                 flash("Ano letivo fechado: apenas leitura.", "error")
@@ -2662,6 +2683,9 @@ def create_app():
                 avaliacao.trabalho_autonomo = _parse_nota(f"trabalho_autonomo_{aluno.id}")
                 avaliacao.portatil_material = _parse_nota(f"portatil_material_{aluno.id}")
                 avaliacao.atividade = _parse_nota(f"atividade_{aluno.id}")
+                avaliacao.falta_disciplinar = _parse_falta_disciplinar(
+                    f"falta_disciplinar_{aluno.id}"
+                )
 
             db.session.commit()
             flash("Avaliações de alunos guardadas.", "success")

@@ -49,6 +49,7 @@
               <th>Nome</th>
               <th class="text-center">Atraso</th>
               <th style="width: 110px;">Faltas</th>
+              <th class="text-center">Falta disciplinar</th>
               <th class="text-center">Responsabilidade</th>
               <th class="text-center">Comportamento</th>
               <th class="text-center">Participação</th>
@@ -72,6 +73,14 @@
                 <td style="max-width: 110px;">
                   <input type="number" name="faltas_{{ aluno.id }}" class="form-control form-control-sm" min="0" max="6" value="{{ avaliacao.faltas if avaliacao else 0 }}" {% if ano_fechado %}disabled{% endif %}>
                 </td>
+                <td class="text-center" style="width: 140px;">
+                  {% set falta_disc = avaliacao.falta_disciplinar if avaliacao else 0 %}
+                  <select name="falta_disciplinar_{{ aluno.id }}" class="form-select form-select-sm" {% if ano_fechado %}disabled{% endif %}>
+                    <option value="" {% if not falta_disc %}selected{% endif %}>&mdash;</option>
+                    <option value="1" {% if falta_disc == 1 %}selected{% endif %}>1</option>
+                    <option value="2" {% if falta_disc == 2 %}selected{% endif %}>2</option>
+                  </select>
+                </td>
                 {% for campo in ["responsabilidade", "comportamento", "participacao", "trabalho_autonomo", "portatil_material", "atividade"] %}
                   {% set valor_bruto = avaliacao|attr(campo) if avaliacao else None %}
                   {% set valor = valor_bruto if valor_bruto is not none else 3 %}
@@ -87,7 +96,7 @@
               </tr>
             {% else %}
               <tr>
-                <td colspan="10" class="text-center text-muted">Nenhum aluno registado.</td>
+                <td colspan="11" class="text-center text-muted">Nenhum aluno registado.</td>
               </tr>
             {% endfor %}
           </tbody>

@@ -62,9 +62,11 @@
           <th style="width: 70px;">#</th>
           <th style="min-width: 240px;">Aluno</th>
           {% for dia in datas %}
-            <th class="text-center">
+            {% set danger = 'table-danger' if dia.tem_falta_disciplinar else '' %}
+            <th class="text-center {{ danger }}">
               {{ dia.data.strftime('%d/%m/%Y') }}
               {% if dia.sumarios %}<br><small>N.º {{ dia.sumarios }}</small>{% endif %}
+              {% if dia.tem_falta_disciplinar %}<br><small class="text-danger fw-semibold">Falta disciplinar</small>{% endif %}
             </th>
           {% endfor %}
           <th class="text-center" style="width: 120px;">Faltas</th>
@@ -78,11 +80,12 @@
             <td>{{ aluno.numero if aluno.numero is not none else '--' }}</td>
             <td>{{ aluno.nome }}</td>
             {% for dia in dias %}
+              {% set danger = 'table-danger' if dia.tem_falta_disciplinar else '' %}
               {% set media = dia.medias.get(aluno.id) %}
               {% if media is not none %}
                 {% set _ = ns.valores.append(media) %}
               {% endif %}
-              <td class="text-center">
+              <td class="text-center {{ danger }}">
                 {% if media is none %}
                   —
                 {% else %}

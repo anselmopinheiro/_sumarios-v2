@@ -371,6 +371,7 @@ class AulaAluno(db.Model):
     trabalho_autonomo = db.Column(db.Integer, default=3, server_default="3")
     portatil_material = db.Column(db.Integer, default=3, server_default="3")
     atividade = db.Column(db.Integer, default=3, server_default="3")
+    falta_disciplinar = db.Column(db.Integer, default=0, server_default="0", nullable=False)
 
     aula = db.relationship("CalendarioAula", back_populates="avaliacoes")
     aluno = db.relationship("Aluno", back_populates="avaliacoes")

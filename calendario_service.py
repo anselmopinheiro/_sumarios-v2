@@ -1104,6 +1104,7 @@ def exportar_backup_ano(ano: AnoLetivo) -> Dict[str, object]:
                             "trabalho_autonomo": avaliacao.trabalho_autonomo,
                             "portatil_material": avaliacao.portatil_material,
                             "atividade": avaliacao.atividade,
+                            "falta_disciplinar": avaliacao.falta_disciplinar,
                         }
                         for avaliacao in aula.avaliacoes
                         if avaliacao.aluno_id in aluno_uuid_map
@@ -1411,6 +1412,7 @@ def importar_backup_ano(payload: dict, substituir: bool = False) -> Dict[str, in
                     trabalho_autonomo=avaliacao_data.get("trabalho_autonomo") or 0,
                     portatil_material=avaliacao_data.get("portatil_material") or 0,
                     atividade=avaliacao_data.get("atividade") or 0,
+                    falta_disciplinar=avaliacao_data.get("falta_disciplinar") or 0,
                 )
                 db.session.add(avaliacao)
 
@@ -1804,6 +1806,7 @@ def calcular_mapa_avaliacao_diaria(
         medias = {aluno.id: _media_para_aluno(aluno.id, aulas_dia) for aluno in alunos}
         faltas = {}
         sumarios_dia: List[str] = []
+        tem_falta_disciplinar = False
 
         for aula in aulas_dia:
             sumarios_aula = [
@@ -1823,6 +1826,8 @@ def calcular_mapa_avaliacao_diaria(
 
                 tempos_aula = _total_previsto_para_aula(aula)
                 faltas_aluno += max(0, min(avaliacao.faltas or 0, tempos_aula))
+                if avaliacao.falta_disciplinar:
+                    tem_falta_disciplinar = True
 
             faltas[aluno.id] = faltas_aluno
 
@@ -1832,6 +1837,7 @@ def calcular_mapa_avaliacao_diaria(
                 "medias": medias,
                 "faltas": faltas,
                 "sumarios": ", ".join(sumarios_dia),
+                "tem_falta_disciplinar": tem_falta_disciplinar,
             }
         )
 
