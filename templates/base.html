@@ -171,7 +171,23 @@
     }
 
     const sanitizeRichtext = (html) => {
-      const allowed = new Set(['STRONG', 'B', 'EM', 'I', 'MARK', 'BR', 'SPAN']);
+      const allowed = new Set([
+        'STRONG',
+        'B',
+        'EM',
+        'I',
+        'MARK',
+        'BR',
+        'SPAN',
+        'DIV',
+        'TABLE',
+        'TBODY',
+        'THEAD',
+        'TFOOT',
+        'TR',
+        'TH',
+        'TD',
+      ]);
       const wrapper = document.createElement('div');
       wrapper.innerHTML = html || '';
 
@@ -187,6 +203,7 @@
             const fragment = document.createDocumentFragment();
             [...child.childNodes].forEach((grandchild) => fragment.appendChild(grandchild));
             child.replaceWith(fragment);
+            cleanNode(fragment);
             return;
           }
 
