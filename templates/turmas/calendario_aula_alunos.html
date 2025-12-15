@@ -27,6 +27,9 @@
   <div class="card-body">
     <h5 class="card-title">Pontualidade, faltas e desempenho</h5>
     <p class="text-muted">Pontualidade: selecione quando o aluno chegou com atraso. Falta: número de tempos (0-6). As restantes avaliações variam de 1 a 5 (valor pré-definido 3).</p>
+    <div class="alert alert-info py-2 mb-3">
+      <small class="text-muted">Legenda: FDis = Falta disciplinar; Resp = Responsabilidade; Comp = Comportamento; Part = Participação; Auto = Trabalho autónomo; Mat = Portátil/Material; At = Atividade.</small>
+    </div>
     <form method="post">
       {% if return_url %}
         <input type="hidden" name="return_url" value="{{ return_url }}">
@@ -49,13 +52,13 @@
               <th>Nome</th>
               <th class="text-center">Atraso</th>
               <th style="width: 110px;">Faltas</th>
-              <th class="text-center">Falta disciplinar</th>
-              <th class="text-center">Responsabilidade</th>
-              <th class="text-center">Comportamento</th>
-              <th class="text-center">Participação</th>
-              <th class="text-center">Trabalho autónomo</th>
-              <th class="text-center">Portátil/Material</th>
-              <th class="text-center">Atividade</th>
+              <th class="text-center">FDis</th>
+              <th class="text-center">Resp</th>
+              <th class="text-center">Comp</th>
+              <th class="text-center">Part</th>
+              <th class="text-center">Auto</th>
+              <th class="text-center">Mat</th>
+              <th class="text-center">At</th>
             </tr>
           </thead>
           <tbody>
