@@ -2800,6 +2800,7 @@ def create_app():
         periodo_id = request.form.get("periodo_id", type=int)
         redirect_view = request.form.get("view")
         data_ref = request.form.get("data_ref")
+        turma_filtro = request.form.get("turma_filtro", type=int)
 
         if redirect_view == "pendentes":
             filtros = {}
@@ -2819,14 +2820,18 @@ def create_app():
             return redirect(url_for("calendario_outras_datas", **filtros_limpos))
 
         if redirect_view == "dia" and data_ref:
-            return redirect(
-                url_for(
-                    "turma_calendario_dia",
-                    turma_id=turma.id,
-                    data=data_ref,
-                    periodo_id=periodo_id,
+            destino = {"data": data_ref}
+            if periodo_id:
+                destino["periodo_id"] = periodo_id
+            if turma_filtro:
+                return redirect(
+                    url_for(
+                        "turma_calendario_dia",
+                        turma_id=turma_filtro,
+                        **destino,
+                    )
                 )
-            )
+            return redirect(url_for("turma_calendario_dia", **destino))
         if redirect_view == "semana":
             filtros = {}
             if data_ref:

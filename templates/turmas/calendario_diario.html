@@ -171,6 +171,7 @@
                     class="d-flex flex-column gap-2 js-sumario-form">
                 <input type="hidden" name="view" value="dia">
                 <input type="hidden" name="data_ref" value="{{ data_atual.isoformat() }}">
+                <input type="hidden" name="turma_filtro" value="{{ turma.id if turma else '' }}">
                 {% if periodo_atual %}
                   <input type="hidden" name="periodo_id" value="{{ periodo_atual.id }}">
                 {% elif a.periodo_id %}
