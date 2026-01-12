@@ -119,14 +119,21 @@
     {% for a in aulas %}
       {% set turma_fechada = anos_fechados.get(a.turma_id, False) %}
       {% set form_id = "previsao-semana-form-" ~ a.id %}
-      <h2 class="h5 mt-3">Turma {{ a.turma.nome if a.turma else '—' }}</h2>
       {% if turma_fechada %}
-        <div class="mb-3">{{ a.previsao|default('')|safe }}</div>
+        <div class="row g-3 align-items-start mb-3">
+          <div class="col-12 col-md-3">
+            <h2 class="h6 mb-1">Turma {{ a.turma.nome if a.turma else '—' }}</h2>
+            <div class="text-muted small">Guardado</div>
+          </div>
+          <div class="col-12 col-md-9">
+            <div class="mb-2">{{ a.previsao|default('')|safe }}</div>
+          </div>
+        </div>
       {% else %}
         <form method="post"
               id="{{ form_id }}"
               action="{{ url_for('calendario_update_sumario', turma_id=a.turma_id, aula_id=a.id) }}"
-              class="d-flex flex-column gap-2 js-sumario-form mb-3">
+              class="js-sumario-form mb-3">
           <input type="hidden" name="view" value="semana_previsao">
           <input type="hidden" name="data_ref" value="{{ semana_inicio.isoformat() }}">
           {% if turma %}
@@ -137,27 +144,32 @@
           {% elif a.periodo_id %}
             <input type="hidden" name="periodo_id" value="{{ a.periodo_id }}">
           {% endif %}
-          <div class="d-flex align-items-center gap-2 text-muted small flex-wrap">
-            <div class="d-flex align-items-center gap-2">
-              <span class="sumario-status-dot status-saved js-sumario-status" aria-hidden="true"></span>
-              <span class="js-sumario-status-text">Guardado</span>
+          <div class="row g-3 align-items-start">
+            <div class="col-12 col-md-3">
+              <h2 class="h6 mb-1">Turma {{ a.turma.nome if a.turma else '—' }}</h2>
+              <div class="d-flex align-items-center gap-2 text-muted small flex-wrap">
+                <span class="sumario-status-dot status-saved js-sumario-status" aria-hidden="true"></span>
+                <span class="js-sumario-status-text">Guardado</span>
+              </div>
             </div>
-          </div>
-          {% set previsao_id = "previsao-" ~ a.id %}
-          <div class="js-richtext-wrapper d-flex flex-column gap-1">
-            <div class="richtext-toolbar d-flex flex-wrap align-items-center gap-2">
-              <span class="small text-muted">Formatação:</span>
-              <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="bold"><strong>B</strong></button>
-              <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="italic"><em>I</em></button>
-              <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="backColor" data-value="#fff3cd"><span class="px-1" style="background: #fff3cd;">Realçar</span></button>
+            <div class="col-12 col-md-9">
+              {% set previsao_id = "previsao-" ~ a.id %}
+              <div class="js-richtext-wrapper d-flex flex-column gap-1">
+                <div class="richtext-toolbar d-flex flex-wrap align-items-center gap-2">
+                  <span class="small text-muted">Formatação:</span>
+                  <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="bold"><strong>B</strong></button>
+                  <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="italic"><em>I</em></button>
+                  <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="backColor" data-value="#fff3cd"><span class="px-1" style="background: #fff3cd;">Realçar</span></button>
+                </div>
+                <div
+                  class="form-control form-control-sm js-richtext-editor richtext-editor"
+                  contenteditable="true"
+                  data-target="#{{ previsao_id }}"
+                  aria-label="Previsão da aula"
+                >{{ a.previsao|default('')|safe }}</div>
+                <input type="hidden" name="previsao" id="{{ previsao_id }}" value="{{ a.previsao or '' }}">
+              </div>
             </div>
-            <div
-              class="form-control form-control-sm js-richtext-editor richtext-editor"
-              contenteditable="true"
-              data-target="#{{ previsao_id }}"
-              aria-label="Previsão da aula"
-            >{{ a.previsao|default('')|safe }}</div>
-            <input type="hidden" name="previsao" id="{{ previsao_id }}" value="{{ a.previsao or '' }}">
           </div>
         </form>
       {% endif %}
