@@ -102,7 +102,8 @@
 <div id="calendario-semanal">
 
 {% for dia in dias_semana %}
-  <h1 class="h4 mt-4">{{ dia.strftime('%d/%m/%Y') }}</h1>
+  <div class="p-3 mb-3 rounded-3 border bg-light">
+  <h1 class="h4 mt-0">{{ dia.strftime('%d/%m/%Y') }}</h1>
   <div class="text-muted mb-2">{{ ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"][dia.weekday()] }}</div>
   {% set aulas = aulas_por_data.get(dia, []) %}
   {% if aulas %}
@@ -288,6 +289,7 @@
   {% else %}
     <div class="alert alert-info">Não existem aulas para esta data.</div>
   {% endif %}
+  </div>
 {% endfor %}
 
 </div>
