@@ -85,6 +85,7 @@ class Turma(db.Model):
     tempo_quarta = db.Column(db.Integer, nullable=True)
     tempo_quinta = db.Column(db.Integer, nullable=True)
     tempo_sexta = db.Column(db.Integer, nullable=True)
+    letiva = db.Column(db.Boolean, nullable=False, default=True, server_default="1")
     # relação many-to-many com disciplina
     turmas_disciplinas = db.relationship(
         "TurmaDisciplina",

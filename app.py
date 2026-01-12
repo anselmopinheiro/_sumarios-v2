@@ -505,6 +505,13 @@ def create_app():
                 )
                 db.session.commit()
 
+        turmas_cols = {col["name"] for col in insp.get_columns("turmas")}
+        if "letiva" not in turmas_cols:
+            db.session.execute(
+                text("ALTER TABLE turmas ADD COLUMN letiva BOOLEAN NOT NULL DEFAULT 1")
+            )
+            db.session.commit()
+
         try:
             script = ScriptDirectory("migrations")
             head_revision = script.get_current_head()
@@ -994,6 +1001,7 @@ def create_app():
             tipo = request.form.get("tipo") or turma.tipo
             periodo_tipo = request.form.get("periodo_tipo") or turma.periodo_tipo or "anual"
             ano_id = request.form.get("ano_letivo_id", type=int)
+            letiva = request.form.get("letiva") == "1"
             carga_seg = request.form.get("carga_segunda", type=float)
             carga_ter = request.form.get("carga_terca", type=float)
             carga_qua = request.form.get("carga_quarta", type=float)
@@ -1053,6 +1061,7 @@ def create_app():
             turma.tipo = tipo
             turma.periodo_tipo = periodo_tipo
             turma.ano_letivo_id = ano_escolhido.id
+            turma.letiva = letiva
             turma.carga_segunda = carga_seg
             turma.carga_terca = carga_ter
             turma.carga_quarta = carga_qua
@@ -1120,6 +1129,7 @@ def create_app():
             tipo = request.form.get("tipo") or "regular"
             periodo_tipo = request.form.get("periodo_tipo") or "anual"
             ano_id = request.form.get("ano_letivo_id", type=int)
+            letiva = request.form.get("letiva") == "1"
             carga_seg = request.form.get("carga_segunda", type=float)
             carga_ter = request.form.get("carga_terca", type=float)
             carga_qua = request.form.get("carga_quarta", type=float)
@@ -1180,6 +1190,7 @@ def create_app():
                 tipo=tipo,
                 periodo_tipo=periodo_tipo,
                 ano_letivo_id=ano_escolhido.id,
+                letiva=letiva,
                 carga_segunda=carga_seg,
                 carga_terca=carga_ter,
                 carga_quarta=carga_qua,
@@ -2029,10 +2040,15 @@ def create_app():
 
     @app.route("/calendario/semana/previsao")
     def calendario_semana_previsao():
+        mostrar_todas = request.args.get("mostrar_todas") == "1"
         todas_turmas = turmas_abertas_ativas()
+        if not mostrar_todas:
+            todas_turmas = [t for t in todas_turmas if t.letiva]
 
         turma_id_param = request.args.get("turma_id", type=int)
         turma_selecionada = Turma.query.get(turma_id_param) if turma_id_param else None
+        if turma_selecionada and not mostrar_todas and not turma_selecionada.letiva:
+            turma_selecionada = None
 
         periodo_id = request.args.get("periodo_id", type=int)
         periodos_disponiveis = []
@@ -2077,6 +2093,8 @@ def create_app():
         )
         if turma_selecionada:
             query = query.filter(CalendarioAula.turma_id == turma_selecionada.id)
+        elif not mostrar_todas:
+            query = query.filter(Turma.letiva.is_(True))
         if periodo_atual:
             query = query.filter(CalendarioAula.periodo_id == periodo_atual.id)
 
@@ -2109,6 +2127,7 @@ def create_app():
             "turmas/calendario_previsao_semanal.html",
             turmas=todas_turmas,
             turma=turma_selecionada,
+            mostrar_todas=mostrar_todas,
             periodo_atual=periodo_atual,
             periodos_disponiveis=periodos_disponiveis,
             data_base=data_base,

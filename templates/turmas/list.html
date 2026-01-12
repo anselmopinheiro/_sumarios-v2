@@ -108,6 +108,7 @@
             <tr>
               <th>Nome</th>
               <th>Tipo</th>
+              <th>Letiva</th>
               <th>Carga (Seg–Sex)</th>
               <th>Tempos (Seg–Sex)</th>
               <th class="text-end" style="width: 260px;">Ações</th>
@@ -118,6 +119,13 @@
             <tr>
               <td class="fw-semibold">{{ turma.nome }}</td>
               <td>{{ turma.tipo }}</td>
+              <td>
+                {% if turma.letiva %}
+                  <span class="badge text-bg-success">Sim</span>
+                {% else %}
+                  <span class="badge text-bg-secondary">Não</span>
+                {% endif %}
+              </td>
               <td class="text-nowrap">{{ turma.carga_segunda or 0 }} /
                 {{ turma.carga_terca or 0 }} /
                 {{ turma.carga_quarta or 0 }} /

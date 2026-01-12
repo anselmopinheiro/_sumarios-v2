@@ -17,6 +17,13 @@
       {% endfor %}
     </select>
   </div>
+  <div class="col-12 col-md-4">
+    <div class="form-check mt-4">
+      <input class="form-check-input" type="checkbox" id="mostrar_todas" name="mostrar_todas" value="1"
+             {% if mostrar_todas %}checked{% endif %}>
+      <label class="form-check-label" for="mostrar_todas">Mostrar turmas não letivas</label>
+    </div>
+  </div>
   {% if turma and periodos_disponiveis %}
     <div class="col-12 col-md-4">
       <label class="form-label">Período</label>
@@ -45,9 +52,9 @@
 <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
   <div class="d-flex align-items-center gap-2">
     <a class="btn btn-outline-primary"
-       href="{{ url_for('calendario_semana_previsao', turma_id=turma.id if turma else None, data=semana_anterior.isoformat(), periodo_id=periodo_atual.id if periodo_atual else None) }}">◀ Semana anterior</a>
+       href="{{ url_for('calendario_semana_previsao', turma_id=turma.id if turma else None, data=semana_anterior.isoformat(), periodo_id=periodo_atual.id if periodo_atual else None, mostrar_todas=1 if mostrar_todas else None) }}">◀ Semana anterior</a>
     <a class="btn btn-outline-primary"
-       href="{{ url_for('calendario_semana_previsao', turma_id=turma.id if turma else None, data=semana_seguinte.isoformat(), periodo_id=periodo_atual.id if periodo_atual else None) }}">Semana seguinte ▶</a>
+       href="{{ url_for('calendario_semana_previsao', turma_id=turma.id if turma else None, data=semana_seguinte.isoformat(), periodo_id=periodo_atual.id if periodo_atual else None, mostrar_todas=1 if mostrar_todas else None) }}">Semana seguinte ▶</a>
   </div>
   <form method="get" class="d-flex align-items-center gap-2">
     {% if turma %}
@@ -55,6 +62,9 @@
     {% endif %}
     {% if periodo_atual %}
       <input type="hidden" name="periodo_id" value="{{ periodo_atual.id }}">
+    {% endif %}
+    {% if mostrar_todas %}
+      <input type="hidden" name="mostrar_todas" value="1">
     {% endif %}
     <label class="form-label mb-0">Ir para data:</label>
     <input type="date" name="data" class="form-control" value="{{ data_base.isoformat() }}">
@@ -64,9 +74,9 @@
 
 <div class="floating-nav" aria-label="Navegação semanal fixa">
   <a class="btn btn-outline-primary"
-     href="{{ url_for('calendario_semana_previsao', turma_id=turma.id if turma else None, data=semana_anterior.isoformat(), periodo_id=periodo_atual.id if periodo_atual else None) }}">◀ Semana anterior</a>
+     href="{{ url_for('calendario_semana_previsao', turma_id=turma.id if turma else None, data=semana_anterior.isoformat(), periodo_id=periodo_atual.id if periodo_atual else None, mostrar_todas=1 if mostrar_todas else None) }}">◀ Semana anterior</a>
   <a class="btn btn-outline-primary"
-     href="{{ url_for('calendario_semana_previsao', turma_id=turma.id if turma else None, data=semana_seguinte.isoformat(), periodo_id=periodo_atual.id if periodo_atual else None) }}">Semana seguinte ▶</a>
+     href="{{ url_for('calendario_semana_previsao', turma_id=turma.id if turma else None, data=semana_seguinte.isoformat(), periodo_id=periodo_atual.id if periodo_atual else None, mostrar_todas=1 if mostrar_todas else None) }}">Semana seguinte ▶</a>
 </div>
 
 {% set ns = namespace(editaveis=false) %}

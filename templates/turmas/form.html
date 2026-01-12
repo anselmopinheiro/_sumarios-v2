@@ -37,6 +37,14 @@
     </select>
   </div>
 
+  <div class="mb-3">
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" id="letiva" name="letiva" value="1"
+             {% if turma %}{% if turma.letiva %}checked{% endif %}{% else %}checked{% endif %}>
+      <label class="form-check-label" for="letiva">Turma letiva (tem aulas)</label>
+    </div>
+  </div>
+
   <div id="modulos-profissionais" class="mb-4" style="display: none;">
     <h5 class="mt-4">Módulos (ensino profissional)</h5>
     <p class="text-muted small">Indica o nome do módulo e a respetiva carga horária total.</p>
