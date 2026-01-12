@@ -79,6 +79,13 @@ class Turma(db.Model):
     carga_quarta = db.Column(db.Float, nullable=True)
     carga_quinta = db.Column(db.Float, nullable=True)
     carga_sexta = db.Column(db.Float, nullable=True)
+    # Tempo/horário por dia da semana (1.º a 12.º tempo)
+    tempo_segunda = db.Column(db.Integer, nullable=True)
+    tempo_terca = db.Column(db.Integer, nullable=True)
+    tempo_quarta = db.Column(db.Integer, nullable=True)
+    tempo_quinta = db.Column(db.Integer, nullable=True)
+    tempo_sexta = db.Column(db.Integer, nullable=True)
+    letiva = db.Column(db.Boolean, nullable=False, default=True, server_default="1")
     # relação many-to-many com disciplina
     turmas_disciplinas = db.relationship(
         "TurmaDisciplina",
@@ -365,6 +372,7 @@ class AulaAluno(db.Model):
     trabalho_autonomo = db.Column(db.Integer, default=3, server_default="3")
     portatil_material = db.Column(db.Integer, default=3, server_default="3")
     atividade = db.Column(db.Integer, default=3, server_default="3")
+    falta_disciplinar = db.Column(db.Integer, default=0, server_default="0", nullable=False)
 
     aula = db.relationship("CalendarioAula", back_populates="avaliacoes")
     aluno = db.relationship("Aluno", back_populates="avaliacoes")

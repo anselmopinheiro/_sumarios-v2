@@ -1,6 +1,8 @@
 import csv
 import io
 import json
+import os
+import shutil
 import unicodedata
 from collections import defaultdict
 from datetime import datetime, date, timedelta
@@ -12,7 +14,8 @@ from flask import (
     url_for,
     request,
     flash,
-    Response,   # se ainda estiveres a usar o JSON
+    Response,
+    jsonify,
 )
 
 from flask_migrate import Migrate
@@ -53,10 +56,9 @@ from calendario_service import (
     PERIODOS_TURMA_VALIDOS,
     exportar_sumarios_json,
     importar_sumarios_json,
-    importar_calendarios_json,
     importar_calendario_escolar_json,
-    exportar_outras_datas_json,
-    importar_outras_datas_json,
+    exportar_backup_ano,
+    importar_backup_ano,
     listar_aulas_especiais,
     calcular_mapa_avaliacao_diaria,
     listar_sumarios_pendentes,
@@ -78,6 +80,21 @@ TIPOS_ESPECIAIS = ["greve", "servico_oficial", "outros", "extra", "faltei"]
 # --------------------------------------------
 # Funções auxiliares fora da factory
 # --------------------------------------------
+def _slugify_filename(texto, fallback="ficheiro"):
+    if not texto:
+        return fallback
+
+    safe_nome = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode()
+    safe_nome = "_".join(
+        filter(
+            None,
+            ["".join(c if c.isalnum() else "_" for c in safe_nome).strip("_")],
+        )
+    )
+
+    return safe_nome or fallback
+
+
 def _easter_sunday(year: int) -> date:
     """Domingo de Páscoa (algoritmo de Meeus/Jones/Butcher)."""
     a = year % 19
@@ -195,6 +212,51 @@ def _mapear_alunos_em_falta(aulas):
     return resultados
 
 
+def _mapear_sumarios_anteriores(aulas):
+    if not aulas:
+        return {}
+
+    turma_ids = {
+        aula.turma_id for aula in aulas if getattr(aula, "turma_id", None) is not None
+    }
+    if turma_ids:
+        universo = (
+            CalendarioAula.query.filter(
+                CalendarioAula.apagado == False,  # noqa: E712
+                CalendarioAula.turma_id.in_(turma_ids),
+            )
+            .order_by(CalendarioAula.data.asc(), CalendarioAula.id.asc())
+            .all()
+        )
+    else:
+        universo = list(aulas)
+
+    grupos = defaultdict(list)
+    for aula in universo:
+        chave = (aula.turma_id, aula.modulo_id)
+        grupos[chave].append(aula)
+
+    anteriores: dict[int, str | None] = {}
+
+    for lista in grupos.values():
+        lista.sort(
+            key=lambda a: (
+                a.data or date.min,
+                a.total_geral or 0,
+                a.numero_modulo or 0,
+                a.id or 0,
+            )
+        )
+
+        ultimo_sumario: str | None = None
+        for aula in lista:
+            anteriores[aula.id] = ultimo_sumario
+            if aula.sumario and aula.sumario.strip():
+                ultimo_sumario = aula.sumario.strip()
+
+    return anteriores
+
+
 def _extrair_filtros_outras_datas(origem):
     tipo_bruto = origem.get("tipo") or origem.get("tipo_filtro")
     tipo_filtro = tipo_bruto if tipo_bruto in TIPOS_ESPECIAIS else None
@@ -266,6 +328,59 @@ def create_app():
     db.init_app(app)
     Migrate(app, db)
 
+    os.makedirs(app.instance_path, exist_ok=True)
+    export_options_path = os.path.join(app.instance_path, "export_options.json")
+
+    def _default_csv_dir():
+        return app.config.get("CSV_EXPORT_DIR") or os.path.join(app.root_path, "exports")
+
+    def _default_backup_json_dir():
+        return app.config.get("BACKUP_JSON_DIR") or os.path.join(
+            app.root_path, "exports", "backups"
+        )
+
+    def _load_export_options():
+        options = {
+            "csv_dest_dir": _default_csv_dir(),
+            "backup_json_dir": _default_backup_json_dir(),
+        }
+
+        try:
+            with open(export_options_path, "r", encoding="utf-8") as handle:
+                stored = json.load(handle)
+                if isinstance(stored, dict):
+                    if stored.get("csv_dest_dir"):
+                        options["csv_dest_dir"] = stored["csv_dest_dir"]
+                    if stored.get("backup_json_dir"):
+                        options["backup_json_dir"] = stored["backup_json_dir"]
+        except FileNotFoundError:
+            pass
+        except (OSError, json.JSONDecodeError) as exc:
+            app.logger.warning("Não foi possível ler opções de exportação: %s", exc)
+
+        app.config["CSV_EXPORT_DIR"] = options["csv_dest_dir"] or _default_csv_dir()
+        app.config["BACKUP_JSON_DIR"] = options.get("backup_json_dir") or _default_backup_json_dir()
+        return options
+
+    def _save_export_options(csv_dest_dir=None, backup_json_dir=None):
+        options = _load_export_options()
+        if csv_dest_dir is not None:
+            options["csv_dest_dir"] = csv_dest_dir
+        if backup_json_dir is not None:
+            options["backup_json_dir"] = backup_json_dir
+
+        try:
+            os.makedirs(os.path.dirname(export_options_path), exist_ok=True)
+            with open(export_options_path, "w", encoding="utf-8") as handle:
+                json.dump(options, handle, ensure_ascii=False, indent=2)
+        except OSError as exc:
+            app.logger.warning("Não foi possível gravar opções de exportação: %s", exc)
+
+        app.config["CSV_EXPORT_DIR"] = options["csv_dest_dir"] or _default_csv_dir()
+        app.config["BACKUP_JSON_DIR"] = options.get("backup_json_dir") or _default_backup_json_dir()
+
+    _load_export_options()
+
     # Garantir que colunas recentes existem em instalações que ainda não
     # aplicaram as migrações correspondentes (evita erros em bases de dados
     # antigas carregadas a partir de ficheiro).
@@ -317,6 +432,7 @@ def create_app():
                         trabalho_autonomo INTEGER DEFAULT 3,
                         portatil_material INTEGER DEFAULT 3,
                         atividade INTEGER DEFAULT 3,
+                        falta_disciplinar INTEGER NOT NULL DEFAULT 0,
                         CONSTRAINT fk_aula FOREIGN KEY(aula_id) REFERENCES calendario_aulas(id),
                         CONSTRAINT fk_aluno FOREIGN KEY(aluno_id) REFERENCES alunos(id),
                         CONSTRAINT uq_aula_aluno UNIQUE(aula_id, aluno_id)
@@ -357,12 +473,42 @@ def create_app():
             )
             db.session.commit()
 
+        colunas_alunos = {col["name"] for col in insp.get_columns("aulas_alunos")}
+        if "falta_disciplinar" not in colunas_alunos:
+            db.session.execute(
+                text(
+                    "ALTER TABLE aulas_alunos ADD COLUMN falta_disciplinar INTEGER NOT NULL DEFAULT 0"
+                )
+            )
+            db.session.commit()
+
         turmas_cols = {col["name"] for col in insp.get_columns("turmas")}
         if "periodo_tipo" not in turmas_cols:
             db.session.execute(
                 text(
                     "ALTER TABLE turmas ADD COLUMN periodo_tipo VARCHAR(20) NOT NULL DEFAULT 'anual'"
                 )
+            )
+            db.session.commit()
+
+        turmas_cols = {col["name"] for col in insp.get_columns("turmas")}
+        for nome_coluna in [
+            "tempo_segunda",
+            "tempo_terca",
+            "tempo_quarta",
+            "tempo_quinta",
+            "tempo_sexta",
+        ]:
+            if nome_coluna not in turmas_cols:
+                db.session.execute(
+                    text(f"ALTER TABLE turmas ADD COLUMN {nome_coluna} INTEGER")
+                )
+                db.session.commit()
+
+        turmas_cols = {col["name"] for col in insp.get_columns("turmas")}
+        if "letiva" not in turmas_cols:
+            db.session.execute(
+                text("ALTER TABLE turmas ADD COLUMN letiva BOOLEAN NOT NULL DEFAULT 1")
             )
             db.session.commit()
 
@@ -395,8 +541,38 @@ def create_app():
                     )
                     db.session.commit()
 
+    def _backup_database():
+        uri = app.config.get("SQLALCHEMY_DATABASE_URI")
+        backup_dir = app.config.get("BACKUP_DIR")
+
+        if not uri or not backup_dir:
+            return
+
+        if uri.startswith("sqlite:///"):
+            db_path = uri.replace("sqlite:///", "", 1)
+        else:
+            return
+
+        if not os.path.isfile(db_path):
+            return
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base_name, ext = os.path.splitext(os.path.basename(db_path))
+        backup_name = f"{base_name}_{timestamp}{ext or '.db'}"
+
+        try:
+            os.makedirs(backup_dir, exist_ok=True)
+            shutil.copy2(db_path, os.path.join(backup_dir, backup_name))
+        except OSError as exc:
+            app.logger.warning(
+                "Não foi possível criar backup da base de dados em %s: %s",
+                backup_dir,
+                exc,
+            )
+
     with app.app_context():
         _ensure_columns()
+        _backup_database()
 
     # ----------------------------------------
     # Helpers internos à app
@@ -430,6 +606,34 @@ def create_app():
             .filter(AnoLetivo.fechado == False)  # noqa: E712
             .order_by(Turma.nome)
             .all()
+        )
+
+    def _tempo_da_turma_no_dia(turma: Turma | None, data_ref: date | None):
+        if not turma or not data_ref:
+            return None
+
+        tempos = {
+            0: turma.tempo_segunda,
+            1: turma.tempo_terca,
+            2: turma.tempo_quarta,
+            3: turma.tempo_quinta,
+            4: turma.tempo_sexta,
+        }
+
+        return tempos.get(data_ref.weekday())
+
+    def _chave_ordenacao_aula(aula: CalendarioAula):
+        tempo = _tempo_da_turma_no_dia(aula.turma, aula.data)
+        tempo_ord = tempo if tempo is not None else 999
+        turma_nome = aula.turma.nome if aula.turma else ""
+
+        return (
+            aula.data or date.min,
+            tempo_ord,
+            turma_nome,
+            aula.numero_modulo or 0,
+            aula.total_geral or 0,
+            aula.id,
         )
 
     # ----------------------------------------
@@ -591,12 +795,192 @@ def create_app():
 
         turmas_abertas = [t for t in turmas if not (t.ano_letivo and t.ano_letivo.fechado)]
         turmas_fechadas = [t for t in turmas if t.ano_letivo and t.ano_letivo.fechado]
+        anos_letivos = (
+            AnoLetivo.query.order_by(AnoLetivo.data_inicio_ano.desc()).all()
+        )
 
         return render_template(
             "turmas/list.html",
             turmas_abertas=turmas_abertas,
             turmas_fechadas=turmas_fechadas,
+            csv_dest_dir=app.config.get("CSV_EXPORT_DIR"),
+            backup_json_dir=app.config.get("BACKUP_JSON_DIR"),
+            anos_letivos=anos_letivos,
         )
+
+    @app.route("/turmas/export/csv", methods=["POST"])
+    def turmas_export_csv():
+        acao = (request.form.get("acao") or "exportar").lower()
+        csv_dest_dir = (request.form.get("csv_dest_dir") or "").strip()
+
+        if not csv_dest_dir:
+            flash("Indica uma pasta de destino para os CSV.", "error")
+            return redirect(url_for("turmas_list"))
+
+        try:
+            os.makedirs(csv_dest_dir, exist_ok=True)
+        except OSError as exc:
+            flash(f"Não foi possível usar a pasta indicada: {exc}", "error")
+            return redirect(url_for("turmas_list"))
+
+        _save_export_options(csv_dest_dir=csv_dest_dir)
+        app.config["CSV_EXPORT_DIR"] = csv_dest_dir
+
+        if acao == "guardar":
+            flash("Pasta de destino atualizada.", "success")
+            return redirect(url_for("turmas_list"))
+
+        hoje = date.today()
+        data_export = hoje.strftime("%Y%m%d")
+        total_ficheiros = 0
+        falhas = []
+        turmas = (
+            Turma.query.options(joinedload(Turma.ano_letivo))
+            .outerjoin(AnoLetivo)
+            .order_by(
+                AnoLetivo.ativo.desc(),
+                AnoLetivo.fechado.asc(),
+                AnoLetivo.data_inicio_ano.desc(),
+                Turma.nome,
+            )
+            .all()
+        )
+
+        for turma in turmas:
+            dados = exportar_sumarios_json(turma.id)
+            linhas_validas = []
+
+            for linha in dados:
+                tipo = (linha.get("tipo") or "").lower()
+                if tipo not in {"normal", "extra"}:
+                    continue
+
+                data_txt = linha.get("data")
+                try:
+                    data_aula = datetime.fromisoformat(data_txt).date() if data_txt else None
+                except ValueError:
+                    data_aula = None
+
+                if data_aula and data_aula > hoje:
+                    continue
+
+                data_legivel = ""
+                if data_aula:
+                    data_legivel = data_aula.strftime("%d/%m/%Y")
+                elif data_txt:
+                    data_legivel = data_txt
+
+                linhas_validas.append(
+                    [
+                        data_legivel,
+                        linha.get("modulo_nome") or "",
+                        linha.get("sumarios") or "",
+                        linha.get("sumario") or "",
+                    ]
+                )
+
+            if not linhas_validas:
+                continue
+
+            filename = f"sumarios_{_slugify_filename(turma.nome, 'turma')}_{data_export}.csv"
+            destino = os.path.join(csv_dest_dir, filename)
+
+            try:
+                with open(destino, "w", newline="", encoding="utf-8-sig") as handle:
+                    writer = csv.writer(handle, delimiter=";")
+                    writer.writerow(["DATA", "MÓDULO", "N.º Sumário", "Sumário"])
+                    writer.writerows(linhas_validas)
+                total_ficheiros += 1
+            except OSError as exc:
+                falhas.append(f"{turma.nome}: {exc}")
+
+        if total_ficheiros:
+            flash(
+                f"Exportação concluída: {total_ficheiros} ficheiro(s) criado(s) em {csv_dest_dir}.",
+                "success",
+            )
+        else:
+            flash(
+                "Nenhum sumário elegível encontrado para exportar até à data de hoje.",
+                "warning",
+            )
+
+        if falhas:
+            flash("Falhas ao exportar: " + "; ".join(falhas), "error")
+
+        return redirect(url_for("turmas_list"))
+
+    @app.route("/backup/ano/export", methods=["POST"])
+    def backup_ano_export():
+        ano_id = request.form.get("ano_letivo_id", type=int)
+        ano = AnoLetivo.query.get(ano_id) if ano_id else None
+        backup_json_dir = (request.form.get("backup_json_dir") or "").strip()
+
+        if not ano:
+            flash("Escolhe um ano letivo para exportar.", "error")
+            return redirect(url_for("turmas_list"))
+
+        if not backup_json_dir:
+            flash("Indica uma pasta de destino para o backup.", "error")
+            return redirect(url_for("turmas_list"))
+
+        try:
+            os.makedirs(backup_json_dir, exist_ok=True)
+        except OSError as exc:
+            flash(f"Não foi possível usar a pasta indicada: {exc}", "error")
+            return redirect(url_for("turmas_list"))
+
+        try:
+            payload = exportar_backup_ano(ano)
+        except ValueError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("turmas_list"))
+
+        data_export = date.today().isoformat()
+        filename = f"backup_{_slugify_filename(ano.nome, 'ano')}_{data_export}.json"
+        destino = os.path.join(backup_json_dir, filename)
+
+        try:
+            with open(destino, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, ensure_ascii=False, indent=2)
+        except OSError as exc:
+            flash(f"Não foi possível gravar o backup: {exc}", "error")
+            return redirect(url_for("turmas_list"))
+
+        _save_export_options(backup_json_dir=backup_json_dir)
+        flash(f"Backup gravado em {destino}", "success")
+        return redirect(url_for("turmas_list"))
+
+    @app.route("/backup/ano/import", methods=["POST"])
+    def backup_ano_import():
+        ficheiro = request.files.get("ano_json")
+        substituir = bool(request.form.get("substituir"))
+
+        if not ficheiro or not ficheiro.filename:
+            flash("Seleciona um ficheiro JSON de backup.", "error")
+            return redirect(url_for("turmas_list"))
+
+        try:
+            conteudo = ficheiro.read().decode("utf-8", errors="ignore")
+            payload = json.loads(conteudo)
+        except Exception:
+            flash("Ficheiro JSON inválido ou corrompido.", "error")
+            return redirect(url_for("turmas_list"))
+
+        try:
+            resumo = importar_backup_ano(payload, substituir=substituir)
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            flash(str(exc), "error")
+            return redirect(url_for("turmas_list"))
+
+        mensagem = (
+            f"Backup importado para o ano '{resumo['ano']}' "
+            f"({resumo['turmas']} turmas, {resumo['alunos']} alunos, {resumo['disciplinas']} disciplinas)."
+        )
+        flash(mensagem, "success")
+        return redirect(url_for("turmas_list"))
 
     @app.route("/turmas/<int:turma_id>/edit", methods=["GET", "POST"])
     def turmas_edit(turma_id):
@@ -617,11 +1001,17 @@ def create_app():
             tipo = request.form.get("tipo") or turma.tipo
             periodo_tipo = request.form.get("periodo_tipo") or turma.periodo_tipo or "anual"
             ano_id = request.form.get("ano_letivo_id", type=int)
+            letiva = request.form.get("letiva") == "1"
             carga_seg = request.form.get("carga_segunda", type=float)
             carga_ter = request.form.get("carga_terca", type=float)
             carga_qua = request.form.get("carga_quarta", type=float)
             carga_qui = request.form.get("carga_quinta", type=float)
             carga_sex = request.form.get("carga_sexta", type=float)
+            tempo_seg = request.form.get("tempo_segunda", type=int)
+            tempo_ter = request.form.get("tempo_terca", type=int)
+            tempo_qua = request.form.get("tempo_quarta", type=int)
+            tempo_qui = request.form.get("tempo_quinta", type=int)
+            tempo_sex = request.form.get("tempo_sexta", type=int)
             modulos_form = _ler_modulos_form()
 
             if not nome:
@@ -671,11 +1061,17 @@ def create_app():
             turma.tipo = tipo
             turma.periodo_tipo = periodo_tipo
             turma.ano_letivo_id = ano_escolhido.id
+            turma.letiva = letiva
             turma.carga_segunda = carga_seg
             turma.carga_terca = carga_ter
             turma.carga_quarta = carga_qua
             turma.carga_quinta = carga_qui
             turma.carga_sexta = carga_sex
+            turma.tempo_segunda = tempo_seg
+            turma.tempo_terca = tempo_ter
+            turma.tempo_quarta = tempo_qua
+            turma.tempo_quinta = tempo_qui
+            turma.tempo_sexta = tempo_sex
 
             modulos_existentes = {
                 m.id: m for m in Modulo.query.filter_by(turma_id=turma.id).all()
@@ -733,11 +1129,17 @@ def create_app():
             tipo = request.form.get("tipo") or "regular"
             periodo_tipo = request.form.get("periodo_tipo") or "anual"
             ano_id = request.form.get("ano_letivo_id", type=int)
+            letiva = request.form.get("letiva") == "1"
             carga_seg = request.form.get("carga_segunda", type=float)
             carga_ter = request.form.get("carga_terca", type=float)
             carga_qua = request.form.get("carga_quarta", type=float)
             carga_qui = request.form.get("carga_quinta", type=float)
             carga_sex = request.form.get("carga_sexta", type=float)
+            tempo_seg = request.form.get("tempo_segunda", type=int)
+            tempo_ter = request.form.get("tempo_terca", type=int)
+            tempo_qua = request.form.get("tempo_quarta", type=int)
+            tempo_qui = request.form.get("tempo_quinta", type=int)
+            tempo_sex = request.form.get("tempo_sexta", type=int)
             modulos_form = _ler_modulos_form()
 
             if not nome:
@@ -788,11 +1190,17 @@ def create_app():
                 tipo=tipo,
                 periodo_tipo=periodo_tipo,
                 ano_letivo_id=ano_escolhido.id,
+                letiva=letiva,
                 carga_segunda=carga_seg,
                 carga_terca=carga_ter,
                 carga_quarta=carga_qua,
                 carga_quinta=carga_qui,
                 carga_sexta=carga_sex,
+                tempo_segunda=tempo_seg,
+                tempo_terca=tempo_ter,
+                tempo_quarta=tempo_qua,
+                tempo_quinta=tempo_qui,
+                tempo_sexta=tempo_sex,
             )
 
             db.session.add(turma)
@@ -1168,6 +1576,7 @@ def create_app():
             query_aulas = query_aulas.filter_by(periodo_id=periodo_atual.id)
         aulas = query_aulas.order_by(CalendarioAula.data).all()
         faltas_por_aula = _mapear_alunos_em_falta(aulas)
+        sumarios_anteriores = _mapear_sumarios_anteriores(aulas)
 
         calendario_existe = (
             db.session.query(CalendarioAula.id)
@@ -1183,6 +1592,7 @@ def create_app():
             ano_fechado=ano_fechado,
             aulas=aulas,
             faltas_por_aula=faltas_por_aula,
+            sumarios_anteriores=sumarios_anteriores,
             periodo_atual=periodo_atual,
             periodos_disponiveis=periodos_disponiveis,
             calendario_existe=calendario_existe,
@@ -1332,7 +1742,11 @@ def create_app():
             titulo = d["data"].strftime("%d/%m/%Y")
             if sumarios_txt:
                 titulo += f"<br>N.º {sumarios_txt}"
-            output.write(f"<th>{titulo}</th>")
+            if d.get("tem_falta_disciplinar"):
+                titulo += "<br><small style='color:#dc3545;font-weight:bold'>Falta disciplinar</small>"
+                output.write("<th style='background:#f8d7da;'>" + titulo + "</th>")
+            else:
+                output.write(f"<th>{titulo}</th>")
         output.write("<th>Faltas</th><th>Média</th></tr></thead><tbody>")
 
         for aluno in alunos:
@@ -1343,9 +1757,15 @@ def create_app():
             output.write(f"<td>{aluno.nome}</td>")
             for dia in dias:
                 media = dia["medias"].get(aluno.id)
+                falta_disc = dia.get("falta_disciplinar_por_aluno", {}).get(aluno.id)
                 if media is not None:
                     valores.append(media)
-                output.write(f"<td>{_media_formatada(media)}</td>")
+                estilo = (
+                    " style='background:#f8d7da;'"
+                    if falta_disc or dia.get("tem_falta_disciplinar")
+                    else ""
+                )
+                output.write(f"<td{estilo}>{_media_formatada(media)}</td>")
                 faltas_total += dia.get("faltas", {}).get(aluno.id, 0)
             output.write(f"<td>{faltas_total}</td>")
             if valores:
@@ -1468,12 +1888,18 @@ def create_app():
             .all()
         )
 
+        aulas.sort(key=_chave_ordenacao_aula)
+        tempos_por_aula = {
+            a.id: _tempo_da_turma_no_dia(a.turma, a.data) for a in aulas
+        }
+
         anos_fechados = {
             a.turma_id: bool(a.turma and a.turma.ano_letivo and a.turma.ano_letivo.fechado)
             for a in aulas
             if a.turma_id
         }
         faltas_por_aula = _mapear_alunos_em_falta(aulas)
+        sumarios_anteriores = _mapear_sumarios_anteriores(aulas)
 
         return render_template(
             "turmas/calendario_diario.html",
@@ -1482,6 +1908,8 @@ def create_app():
             periodos_disponiveis=periodos_disponiveis,
             aulas=aulas,
             faltas_por_aula=faltas_por_aula,
+            tempos_por_aula=tempos_por_aula,
+            sumarios_anteriores=sumarios_anteriores,
             data_atual=data_atual,
             dia_anterior=data_atual - timedelta(days=1),
             dia_seguinte=data_atual + timedelta(days=1),
@@ -1570,11 +1998,17 @@ def create_app():
             )
             .all()
         )
+        tempos_por_aula = {
+            a.id: _tempo_da_turma_no_dia(a.turma, a.data) for a in aulas
+        }
         faltas_por_aula = _mapear_alunos_em_falta(aulas)
+        sumarios_anteriores = _mapear_sumarios_anteriores(aulas)
 
         aulas_por_data = {}
         for aula in aulas:
             aulas_por_data.setdefault(aula.data, []).append(aula)
+        for lista in aulas_por_data.values():
+            lista.sort(key=_chave_ordenacao_aula)
 
         anos_fechados = {
             a.turma_id: bool(a.turma and a.turma.ano_letivo and a.turma.ano_letivo.fechado)
@@ -1596,9 +2030,112 @@ def create_app():
             semana_seguinte=semana_inicio + timedelta(days=7),
             aulas_por_data=aulas_por_data,
             faltas_por_aula=faltas_por_aula,
+            tempos_por_aula=tempos_por_aula,
+            sumarios_anteriores=sumarios_anteriores,
             tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
             tipos_aula=TIPOS_AULA,
             tipo_labels=dict(TIPOS_AULA),
+            anos_fechados=anos_fechados,
+        )
+
+    @app.route("/calendario/semana/previsao")
+    def calendario_semana_previsao():
+        mostrar_todas = request.args.get("mostrar_todas") == "1"
+        todas_turmas = turmas_abertas_ativas()
+        if not mostrar_todas:
+            todas_turmas = [t for t in todas_turmas if t.letiva]
+
+        turma_id_param = request.args.get("turma_id", type=int)
+        turma_selecionada = Turma.query.get(turma_id_param) if turma_id_param else None
+        if turma_selecionada and not mostrar_todas and not turma_selecionada.letiva:
+            turma_selecionada = None
+
+        periodo_id = request.args.get("periodo_id", type=int)
+        periodos_disponiveis = []
+        periodo_atual = None
+        if turma_selecionada:
+            periodos_disponiveis = filtrar_periodos_para_turma(
+                turma_selecionada,
+                (
+                    Periodo.query.filter_by(turma_id=turma_selecionada.id)
+                    .order_by(Periodo.data_inicio)
+                    .all()
+                ),
+            )
+            if periodo_id:
+                periodo_atual = next(
+                    (p for p in periodos_disponiveis if p.id == periodo_id), None
+                )
+            if not periodo_atual and periodos_disponiveis:
+                periodo_atual = periodos_disponiveis[0]
+
+        data_txt = request.args.get("data")
+        hoje = date.today()
+        try:
+            data_base = date.fromisoformat(data_txt) if data_txt else hoje
+        except ValueError:
+            data_base = hoje
+
+        semana_inicio = data_base - timedelta(days=data_base.weekday())
+        dias_semana = [semana_inicio + timedelta(days=i) for i in range(5)]
+        semana_fim = dias_semana[-1]
+
+        query = (
+            CalendarioAula.query.options(
+                joinedload(CalendarioAula.turma).joinedload(Turma.ano_letivo),
+            )
+            .filter_by(apagado=False)
+            .filter(
+                CalendarioAula.data >= semana_inicio,
+                CalendarioAula.data <= semana_fim,
+            )
+            .join(Turma)
+        )
+        if turma_selecionada:
+            query = query.filter(CalendarioAula.turma_id == turma_selecionada.id)
+        elif not mostrar_todas:
+            query = query.filter(Turma.letiva.is_(True))
+        if periodo_atual:
+            query = query.filter(CalendarioAula.periodo_id == periodo_atual.id)
+
+        aulas = (
+            query.order_by(
+                CalendarioAula.data.asc(),
+                Turma.nome.asc(),
+                CalendarioAula.numero_modulo.asc().nulls_last(),
+                CalendarioAula.total_geral.asc().nulls_last(),
+                CalendarioAula.id.asc(),
+            )
+            .all()
+        )
+
+        aulas_por_data = {}
+        for aula in aulas:
+            aulas_por_data.setdefault(aula.data, []).append(aula)
+        for lista in aulas_por_data.values():
+            lista.sort(key=_chave_ordenacao_aula)
+
+        anos_fechados = {
+            a.turma_id: bool(
+                a.turma and a.turma.ano_letivo and a.turma.ano_letivo.fechado
+            )
+            for a in aulas
+            if a.turma_id
+        }
+
+        return render_template(
+            "turmas/calendario_previsao_semanal.html",
+            turmas=todas_turmas,
+            turma=turma_selecionada,
+            mostrar_todas=mostrar_todas,
+            periodo_atual=periodo_atual,
+            periodos_disponiveis=periodos_disponiveis,
+            data_base=data_base,
+            semana_inicio=semana_inicio,
+            dias_semana=dias_semana,
+            semana_anterior=semana_inicio - timedelta(days=7),
+            semana_seguinte=semana_inicio + timedelta(days=7),
+            aulas_por_data=aulas_por_data,
             anos_fechados=anos_fechados,
         )
 
@@ -1617,6 +2154,7 @@ def create_app():
             for a in aulas
             if a.turma_id
         }
+        sumarios_anteriores = _mapear_sumarios_anteriores(aulas)
 
         return render_template(
             "turmas/sumarios_pendentes.html",
@@ -1625,108 +2163,13 @@ def create_app():
             turmas=turmas_abertas_ativas(),
             turma_selecionada=turma_selecionada,
             faltas_por_aula=faltas_por_aula,
+            sumarios_anteriores=sumarios_anteriores,
             tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
             tipos_aula=TIPOS_AULA,
             tipo_labels=dict(TIPOS_AULA),
             anos_fechados=anos_fechados,
         )
 
-
-    @app.route("/calendarios/import", methods=["GET", "POST"])
-    def calendarios_import():
-        turmas = turmas_abertas_ativas()
-
-        if request.method == "POST":
-            ficheiro = request.files.get("ficheiro")
-            conteudo = request.form.get("conteudo")
-            turma_padrao_id = request.form.get("turma_id_padrao", type=int)
-
-            bruto: str | None = None
-            if ficheiro and ficheiro.filename:
-                bruto = ficheiro.read().decode("utf-8", errors="ignore")
-            elif conteudo:
-                bruto = conteudo
-
-            if not bruto:
-                flash("Seleciona um ficheiro JSON para importar.", "error")
-                return redirect(url_for("calendarios_import"))
-
-            try:
-                payload = json.loads(bruto)
-            except ValueError:
-                flash("Ficheiro JSON inválido.", "error")
-                return redirect(url_for("calendarios_import"))
-
-            linhas: list[dict] = []
-
-            if isinstance(payload, dict) and "turmas" in payload:
-                for bloco in payload.get("turmas") or []:
-                    aulas = bloco.get("aulas") or []
-                    turma_info = bloco.get("turma") if isinstance(bloco.get("turma"), dict) else {}
-                    bloco_turma_id = bloco.get("turma_id") or bloco.get("id") or turma_info.get("id")
-                    bloco_turma_nome = bloco.get("turma_nome") or turma_info.get("nome")
-                    for aula in aulas:
-                        linha = dict(aula)
-                        if bloco_turma_id:
-                            linha.setdefault("turma_id", bloco_turma_id)
-                        if bloco_turma_nome:
-                            linha.setdefault("turma_nome", bloco_turma_nome)
-                        linhas.append(linha)
-            elif isinstance(payload, dict) and "aulas" in payload:
-                turma_info = payload.get("turma") if isinstance(payload.get("turma"), dict) else {}
-                turma_payload_id = payload.get("turma_id") or turma_info.get("id")
-                turma_payload_nome = payload.get("turma_nome") or turma_info.get("nome")
-                for aula in payload.get("aulas") or []:
-                    linha = dict(aula)
-                    if turma_payload_id:
-                        linha.setdefault("turma_id", turma_payload_id)
-                    if turma_payload_nome:
-                        linha.setdefault("turma_nome", turma_payload_nome)
-                    linhas.append(linha)
-            elif isinstance(payload, list):
-                linhas = list(payload)
-            else:
-                flash(
-                    "Formato de backup desconhecido: esperado lista de aulas ou objeto com 'aulas'.",
-                    "error",
-                )
-                return redirect(url_for("calendarios_import"))
-
-            if turma_padrao_id:
-                for linha in linhas:
-                    if not linha.get("turma_id") and not linha.get("turma_nome"):
-                        linha["turma_id"] = turma_padrao_id
-
-            if not linhas:
-                flash("Nenhuma linha de calendário encontrada no JSON.", "warning")
-                return redirect(url_for("calendarios_import"))
-
-            contadores, turmas_fechadas, turmas_inexistentes, _ = importar_calendarios_json(
-                linhas
-            )
-
-            flash(
-                "Importação concluída: "
-                f"{contadores['criados']} criadas, "
-                f"{contadores['atualizados']} atualizadas, "
-                f"{contadores['ignorados']} ignoradas.",
-                "success",
-            )
-
-            if turmas_fechadas:
-                flash(
-                    "Turmas ignoradas por ano letivo fechado: " + ", ".join(turmas_fechadas),
-                    "warning",
-                )
-            if turmas_inexistentes:
-                flash(
-                    "Turmas não encontradas no ficheiro: " + ", ".join(turmas_inexistentes),
-                    "warning",
-                )
-
-            return redirect(url_for("calendarios_import"))
-
-        return render_template("calendario_import.html", turmas=turmas)
 
     @app.route("/calendario/outras-datas")
     def calendario_outras_datas():
@@ -1737,11 +2180,13 @@ def create_app():
         turmas = turmas_abertas_ativas()
         aulas = listar_aulas_especiais(turma_filtro, tipo_filtro, data_inicio, data_fim)
         faltas_por_aula = _mapear_alunos_em_falta(aulas)
+        sumarios_anteriores = _mapear_sumarios_anteriores(aulas)
 
         return render_template(
             "turmas/outras_datas.html",
             aulas=aulas,
             faltas_por_aula=faltas_por_aula,
+            sumarios_anteriores=sumarios_anteriores,
             tipos_aula=TIPOS_AULA,
             tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
             tipo_labels=dict(TIPOS_AULA),
@@ -1887,244 +2332,6 @@ def create_app():
 
         return redirect(url_for("calendario_outras_datas", **filtros_limpos))
 
-    @app.route("/calendario/outras-datas/export/json")
-    def calendario_outras_datas_export_json():
-        tipo_filtro, turma_filtro, data_inicio, data_fim = _extrair_filtros_outras_datas(
-            request.args
-        )
-
-        dados = exportar_outras_datas_json(turma_filtro, tipo_filtro, data_inicio, data_fim)
-        filtros_meta = _filtros_outras_datas_redirect(
-            tipo_filtro, turma_filtro, data_inicio, data_fim
-        )
-
-        turma_info = None
-        if turma_filtro:
-            turma = Turma.query.get(turma_filtro)
-            if turma:
-                turma_info = {"id": turma.id, "nome": turma.nome}
-
-        payload = json.dumps(
-            {
-                "exportado_em": date.today().isoformat(),
-                "turma": turma_info,
-                "filtros": filtros_meta,
-                "aulas": dados,
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-
-        filename = f"outras_datas_{date.today().isoformat()}.json"
-        response = Response(payload, mimetype="application/json; charset=utf-8")
-        response.headers["Content-Disposition"] = f"attachment; filename={filename}"
-        return response
-
-    @app.route("/calendario/outras-datas/export/csv")
-    def calendario_outras_datas_export_csv():
-        tipo_filtro, turma_filtro, data_inicio, data_fim = _extrair_filtros_outras_datas(
-            request.args
-        )
-
-        dados = exportar_outras_datas_json(turma_filtro, tipo_filtro, data_inicio, data_fim)
-
-        buf = io.StringIO()
-        writer = csv.writer(buf, delimiter=";")
-        writer.writerow([
-            "Turma",
-            "Data",
-            "Tipo",
-            "N.º Sumário",
-            "Sumário",
-            "Previsão",
-            "Observações",
-        ])
-        for linha in dados:
-            data_txt = linha.get("data")
-            data_legivel = ""
-            try:
-                data_legivel = datetime.fromisoformat(data_txt).strftime("%d/%m/%Y") if data_txt else ""
-            except ValueError:
-                data_legivel = data_txt or ""
-
-            writer.writerow(
-                [
-                    linha.get("turma_nome") or "",
-                    data_legivel,
-                    dict(TIPOS_AULA).get(linha.get("tipo"), linha.get("tipo")),
-                    linha.get("sumarios") or "",
-                    linha.get("sumario") or "",
-                    linha.get("previsao") or "",
-                    linha.get("observacoes") or "",
-                ]
-            )
-
-        payload = "\ufeff" + buf.getvalue()
-        filename = f"outras_datas_{date.today().isoformat()}.csv"
-        response = Response(payload, mimetype="text/csv; charset=utf-8")
-        response.headers["Content-Disposition"] = f"attachment; filename={filename}"
-        return response
-
-    @app.route("/calendario/outras-datas/import/json", methods=["POST"])
-    def calendario_outras_datas_import_json():
-        tipo_filtro, turma_filtro, data_inicio, data_fim = _extrair_filtros_outras_datas(
-            request.form
-        )
-        filtros_limpos = _filtros_outras_datas_redirect(
-            tipo_filtro, turma_filtro, data_inicio, data_fim
-        )
-
-        ficheiro = request.files.get("ficheiro")
-        conteudo = request.form.get("conteudo")
-        bruto: str | None = None
-
-        if ficheiro and ficheiro.filename:
-            bruto = ficheiro.read().decode("utf-8", errors="ignore")
-        elif conteudo:
-            bruto = conteudo
-
-        if not bruto:
-            flash("Seleciona um ficheiro JSON para importar.", "error")
-            return redirect(url_for("calendario_outras_datas", **filtros_limpos))
-
-        try:
-            payload = json.loads(bruto)
-        except ValueError:
-            flash("Ficheiro JSON inválido.", "error")
-            return redirect(url_for("calendario_outras_datas", **filtros_limpos))
-
-        if isinstance(payload, dict) and "aulas" in payload:
-            linhas = payload.get("aulas") or []
-        elif isinstance(payload, list):
-            linhas = payload
-        else:
-            flash("Formato de backup desconhecido: esperado array JSON de aulas.", "error")
-            return redirect(url_for("calendario_outras_datas", **filtros_limpos))
-
-        contadores, turmas_fechadas, turmas_inexistentes, _ = importar_outras_datas_json(
-            linhas
-        )
-
-        msg = (
-            "Importação concluída: "
-            f"{contadores['criados']} criadas, "
-            f"{contadores['atualizados']} atualizadas, "
-            f"{contadores['ignorados']} ignoradas."
-        )
-        if turmas_fechadas:
-            msg += f" Turmas bloqueadas: {', '.join(sorted(set(turmas_fechadas)))}."
-        if turmas_inexistentes:
-            msg += f" Turmas não encontradas: {', '.join(sorted(set(turmas_inexistentes)))}."
-
-        flash(msg, "success")
-        return redirect(url_for("calendario_outras_datas", **filtros_limpos))
-
-    @app.route("/turmas/<int:turma_id>/calendario/export/json")
-    def turma_calendario_export_json(turma_id):
-        turma = Turma.query.get_or_404(turma_id)
-        periodo_id = request.args.get("periodo_id", type=int)
-
-        dados = exportar_sumarios_json(turma.id, periodo_id=periodo_id)
-        payload = json.dumps(
-            {
-                "turma": {"id": turma.id, "nome": turma.nome},
-                "aulas": dados,
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-
-        data_export = date.today().isoformat()
-        filename = f"calendario_{turma.nome}_sumarios_{data_export}.json"
-        response = Response(payload, mimetype="application/json; charset=utf-8")
-        response.headers["Content-Disposition"] = f"attachment; filename={filename}"
-        return response
-
-    @app.route("/turmas/<int:turma_id>/calendario/export/csv")
-    def turma_calendario_export_csv(turma_id):
-        turma = Turma.query.get_or_404(turma_id)
-        periodo_id = request.args.get("periodo_id", type=int)
-
-        dados = exportar_sumarios_json(turma.id, periodo_id=periodo_id)
-        linhas_validas = [
-            linha for linha in dados if (linha.get("tipo") or "").lower() in {"normal", "extra"}
-        ]
-
-        buf = io.StringIO()
-        writer = csv.writer(buf, delimiter=";")
-        writer.writerow(["DATA", "MÓDULO", "N.º Sumário", "Sumário"])
-        for linha in linhas_validas:
-            data_txt = linha.get("data")
-            data_legivel = ""
-            try:
-                data_legivel = datetime.fromisoformat(data_txt).strftime("%d/%m/%Y") if data_txt else ""
-            except ValueError:
-                data_legivel = data_txt or ""
-
-            writer.writerow(
-                [
-                    data_legivel,
-                    linha.get("modulo_nome") or "",
-                    linha.get("sumarios") or "",
-                    linha.get("sumario") or "",
-                ]
-            )
-
-        payload = "\ufeff" + buf.getvalue()
-        data_export = date.today().isoformat()
-        filename = f"calendario_{turma.nome}_sumarios_{data_export}.csv"
-        response = Response(payload, mimetype="text/csv; charset=utf-8")
-        response.headers["Content-Disposition"] = f"attachment; filename={filename}"
-        return response
-
-    @app.route("/turmas/<int:turma_id>/calendario/import/json", methods=["POST"])
-    def turma_calendario_import_json(turma_id):
-        turma = Turma.query.get_or_404(turma_id)
-        ano = turma.ano_letivo
-        if ano and ano.fechado:
-            flash("Ano letivo fechado: não é possível editar o calendário.", "error")
-            return redirect(url_for("turma_calendario", turma_id=turma.id))
-
-        ficheiro = request.files.get("ficheiro")
-        conteudo = request.form.get("conteudo")
-        bruto: str | None = None
-
-        if ficheiro and ficheiro.filename:
-            bruto = ficheiro.read().decode("utf-8", errors="ignore")
-        elif conteudo:
-            bruto = conteudo
-
-        if not bruto:
-            flash("Seleciona um ficheiro JSON para importar.", "error")
-            return redirect(url_for("turma_calendario", turma_id=turma.id))
-
-        try:
-            payload = json.loads(bruto)
-        except ValueError:
-            flash("Ficheiro JSON inválido.", "error")
-            return redirect(url_for("turma_calendario", turma_id=turma.id))
-
-        if isinstance(payload, dict) and "aulas" in payload:
-            linhas = payload.get("aulas") or []
-        elif isinstance(payload, list):
-            linhas = payload
-        else:
-            flash("Formato de backup desconhecido: esperado array JSON de aulas.", "error")
-            return redirect(url_for("turma_calendario", turma_id=turma.id))
-
-        contadores = importar_sumarios_json(turma, linhas)
-        renumerar_calendario_turma(turma.id)
-
-        flash(
-            "Importação concluída: "
-            f"{contadores['criados']} criadas, "
-            f"{contadores['atualizados']} atualizadas, "
-            f"{contadores['ignorados']} ignoradas.",
-            "success",
-        )
-
-        return redirect(url_for("turma_calendario", turma_id=turma.id))
-
     @app.route("/turmas/<int:turma_id>/calendario/gerar", methods=["POST"])
     def turma_calendario_gerar(turma_id):
         turma = Turma.query.get_or_404(turma_id)
@@ -2252,6 +2459,7 @@ def create_app():
                     modulos=modulos,
                     aula=None,
                     tipos_aula=TIPOS_AULA,
+                    sumario_anterior=None,
                 )
 
             aula = CalendarioAula(
@@ -2300,6 +2508,7 @@ def create_app():
             modulos=modulos,
             aula=None,
             tipos_aula=TIPOS_AULA,
+            sumario_anterior=None,
         )
 
 
@@ -2336,6 +2545,27 @@ def create_app():
         if aula.turma_id != turma.id:
             flash("Linha de calendário não pertence a esta turma.", "error")
             return redirect(url_for("turma_calendario", turma_id=turma.id))
+
+        aulas_mesma_disciplina_query = CalendarioAula.query.filter_by(
+            turma_id=turma.id,
+            apagado=False,
+        )
+        if aula.modulo_id:
+            aulas_mesma_disciplina_query = aulas_mesma_disciplina_query.filter_by(
+                modulo_id=aula.modulo_id
+            )
+        else:
+            aulas_mesma_disciplina_query = aulas_mesma_disciplina_query.filter(
+                CalendarioAula.modulo_id.is_(None)
+            )
+        aulas_mesma_disciplina = (
+            aulas_mesma_disciplina_query
+            .order_by(CalendarioAula.data.asc(), CalendarioAula.id.asc())
+            .all()
+        )
+        sumario_anterior = _mapear_sumarios_anteriores(aulas_mesma_disciplina).get(
+            aula.id
+        )
 
         periodo = Periodo.query.get_or_404(aula.periodo_id)
         redirect_view = request.values.get("view")
@@ -2383,6 +2613,7 @@ def create_app():
                     data_ref=data_ref,
                     tipos_aula=TIPOS_AULA,
                     tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
+                    sumario_anterior=sumario_anterior,
                 )
 
             aula.data = data
@@ -2442,6 +2673,7 @@ def create_app():
             data_ref=data_ref,
             tipos_aula=TIPOS_AULA,
             tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
+            sumario_anterior=sumario_anterior,
         )
 
     @app.route("/turmas/<int:turma_id>/calendario/<int:aula_id>/delete", methods=["POST"])
@@ -2533,6 +2765,12 @@ def create_app():
                 return default_val
             return _clamp_int(valor, min_val=1, max_val=5)
 
+        def _parse_falta_disciplinar(field_name):
+            valor = request.form.get(field_name)
+            if valor in (None, ""):
+                return 0
+            return _clamp_int(valor, min_val=1, max_val=2)
+
         if request.method == "POST":
             if ano_fechado:
                 flash("Ano letivo fechado: apenas leitura.", "error")
@@ -2562,6 +2800,9 @@ def create_app():
                 avaliacao.trabalho_autonomo = _parse_nota(f"trabalho_autonomo_{aluno.id}")
                 avaliacao.portatil_material = _parse_nota(f"portatil_material_{aluno.id}")
                 avaliacao.atividade = _parse_nota(f"atividade_{aluno.id}")
+                avaliacao.falta_disciplinar = _parse_falta_disciplinar(
+                    f"falta_disciplinar_{aluno.id}"
+                )
 
             db.session.commit()
             flash("Avaliações de alunos guardadas.", "success")
@@ -2596,6 +2837,8 @@ def create_app():
         if aula.turma_id != turma.id:
             flash("Linha de calendário não pertence a esta turma.", "error")
             return redirect(url_for("turma_calendario", turma_id=turma.id))
+
+        aceita_json = request.headers.get("X-Requested-With") == "XMLHttpRequest"
 
         sumario_txt = request.form.get("sumario")
         if sumario_txt is not None:
@@ -2640,6 +2883,8 @@ def create_app():
 
         db.session.commit()
 
+        mensagem = "Sumário atualizado."
+
         if novo_tipo != tipo_original or mudou_tempos:
             renumerar_calendario_turma(turma.id)
             novas = completar_modulos_profissionais(
@@ -2649,19 +2894,30 @@ def create_app():
             )
             if novas:
                 renumerar_calendario_turma(turma.id)
-                flash(
+                mensagem = (
                     "Tipo de aula atualizado e "
-                    f"{novas} aula(s) adicionadas para cumprir o total do módulo.",
-                    "success",
+                    f"{novas} aula(s) adicionadas para cumprir o total do módulo."
                 )
             else:
-                flash("Sumário e contagens atualizados.", "success")
+                mensagem = "Sumário e contagens atualizados."
+
+        if not aceita_json:
+            flash(mensagem, "success")
         else:
-            flash("Sumário atualizado.", "success")
+            return jsonify(
+                {
+                    "status": "ok",
+                    "sumario": aula.sumario or "",
+                    "previsao": aula.previsao or "",
+                    "tipo": aula.tipo,
+                    "tempos_sem_aula": aula.tempos_sem_aula or 0,
+                }
+            )
 
         periodo_id = request.form.get("periodo_id", type=int)
         redirect_view = request.form.get("view")
         data_ref = request.form.get("data_ref")
+        turma_filtro = request.form.get("turma_filtro", type=int)
 
         if redirect_view == "pendentes":
             filtros = {}
@@ -2681,14 +2937,18 @@ def create_app():
             return redirect(url_for("calendario_outras_datas", **filtros_limpos))
 
         if redirect_view == "dia" and data_ref:
-            return redirect(
-                url_for(
-                    "turma_calendario_dia",
-                    turma_id=turma.id,
-                    data=data_ref,
-                    periodo_id=periodo_id,
+            destino = {"data": data_ref}
+            if periodo_id:
+                destino["periodo_id"] = periodo_id
+            if turma_filtro:
+                return redirect(
+                    url_for(
+                        "turma_calendario_dia",
+                        turma_id=turma_filtro,
+                        **destino,
+                    )
                 )
-            )
+            return redirect(url_for("turma_calendario_dia", **destino))
         if redirect_view == "semana":
             filtros = {}
             if data_ref:
@@ -2699,6 +2959,16 @@ def create_app():
             if periodo_id:
                 filtros["periodo_id"] = periodo_id
             return redirect(url_for("calendario_semana", **filtros))
+        if redirect_view == "semana_previsao":
+            filtros = {}
+            if data_ref:
+                filtros["data"] = data_ref
+            turma_filtro = request.form.get("turma_id", type=int)
+            if turma_filtro:
+                filtros["turma_id"] = turma_filtro
+            if periodo_id:
+                filtros["periodo_id"] = periodo_id
+            return redirect(url_for("calendario_semana_previsao", **filtros))
 
         return redirect(
             url_for("turma_calendario", turma_id=turma.id, periodo_id=periodo_id)

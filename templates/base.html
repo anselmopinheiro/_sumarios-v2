@@ -14,6 +14,72 @@
         z-index: 1100;
         box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
       }
+
+      .floating-nav {
+        position: fixed;
+        left: 1.5rem;
+        bottom: 1.5rem;
+        z-index: 1100;
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+
+      .sumario-status-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        display: inline-block;
+      }
+
+      .sumario-status-dot.status-saved {
+        background-color: #198754;
+      }
+
+      .sumario-status-dot.status-unsaved {
+        background-color: #dc3545;
+      }
+
+      .sumario-status-dot.status-saving {
+        background-color: #ffc107;
+      }
+
+      .table-sticky-wrapper {
+        position: relative;
+        max-height: 70vh;
+        overflow: auto;
+      }
+
+      .table-sticky-header thead th {
+        position: sticky;
+        top: 0;
+        z-index: 3;
+        background-color: var(--bs-body-bg);
+      }
+
+      .table-sticky-header thead.table-dark th {
+        background-color: #212529;
+        color: #fff;
+      }
+
+      .table-sticky-header thead.table-secondary th {
+        background-color: #e9ecef;
+      }
+
+      .richtext-editor {
+        min-height: 80px;
+        white-space: pre-wrap;
+      }
+
+      .richtext-toolbar .btn {
+        padding-top: 0.15rem;
+        padding-bottom: 0.15rem;
+        line-height: 1.1;
+      }
+
+      .richtext-highlight {
+        background-color: #fff3cd;
+      }
     </style>
 </head>
 
@@ -25,12 +91,10 @@
 
         <ul class="navbar-nav ms-auto">
             <li class="nav-item"><a class="nav-link" href="/anos-letivos">Anos Letivos</a></li>
-            <li class="nav-item"><a class="nav-link" href="/calendario-escolar">Calendário Escolar</a></li>
             <li class="nav-item"><a class="nav-link" href="/calendario/semana">Calendário Semanal</a></li>
             <li class="nav-item"><a class="nav-link" href="/calendario/dia">Calendário Diário</a></li>
             <li class="nav-item"><a class="nav-link" href="/calendario/sumarios-pendentes">Sumários pendentes</a></li>
             <li class="nav-item"><a class="nav-link" href="/calendario/outras-datas">Outras datas</a></li>
-            <li class="nav-item"><a class="nav-link" href="/calendarios/import">Importar calendário</a></li>
             <li class="nav-item"><a class="nav-link" href="/turmas">Turmas</a></li>
         </ul>
     </div>
@@ -106,16 +170,219 @@
       restoreScroll();
     }
 
+    const sanitizeRichtext = (html) => {
+      const allowed = new Set([
+        'STRONG',
+        'B',
+        'EM',
+        'I',
+        'MARK',
+        'BR',
+        'SPAN',
+        'DIV',
+        'TABLE',
+        'TBODY',
+        'THEAD',
+        'TFOOT',
+        'TR',
+        'TH',
+        'TD',
+      ]);
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = html || '';
+
+      const cleanNode = (node) => {
+        [...node.childNodes].forEach((child) => {
+          if (child.nodeType === Node.TEXT_NODE) return;
+          if (child.nodeType !== Node.ELEMENT_NODE) {
+            child.remove();
+            return;
+          }
+
+          if (!allowed.has(child.tagName)) {
+            const fragment = document.createDocumentFragment();
+            [...child.childNodes].forEach((grandchild) => fragment.appendChild(grandchild));
+            child.replaceWith(fragment);
+            cleanNode(fragment);
+            return;
+          }
+
+          const shouldHighlight =
+            child.tagName === 'MARK' ||
+            child.classList?.contains('richtext-highlight') ||
+            (child.tagName === 'SPAN' && (child.style.backgroundColor || child.style.background));
+
+          [...child.attributes].forEach((attr) => child.removeAttribute(attr.name));
+          if (shouldHighlight) {
+            child.classList.add('richtext-highlight');
+          }
+
+          if (child.tagName === 'SPAN' && !shouldHighlight) {
+            const fragment = document.createDocumentFragment();
+            [...child.childNodes].forEach((grandchild) => fragment.appendChild(grandchild));
+            child.replaceWith(fragment);
+            cleanNode(fragment);
+            return;
+          }
+
+          cleanNode(child);
+        });
+      };
+
+      cleanNode(wrapper);
+      return wrapper.innerHTML;
+    };
+
+    const syncRichtext = (editor) => {
+      if (!editor) return;
+      const target = editor.dataset.target ? document.querySelector(editor.dataset.target) : null;
+      const sanitized = sanitizeRichtext(editor.innerHTML);
+      if (sanitized !== editor.innerHTML) {
+        editor.innerHTML = sanitized;
+      }
+      if (target) {
+        target.value = sanitized;
+      }
+    };
+
+    const bindRichtextEditors = () => {
+      document.querySelectorAll('.js-richtext-editor').forEach((editor) => {
+        if (editor._richtextBound) return;
+
+        const target = editor.dataset.target ? document.querySelector(editor.dataset.target) : null;
+        const initial = target?.value || editor.innerHTML || '';
+        const sanitized = sanitizeRichtext(initial);
+        editor.innerHTML = sanitized;
+        if (target) target.value = sanitized;
+
+        const form = editor.closest('form');
+        const sync = () => syncRichtext(editor);
+        const isAutosaveForm = form && form.classList.contains('js-sumario-form');
+        const marcarPorGuardar = () => {
+          if (!isAutosaveForm) return;
+          setEstadoSumario(form, 'unsaved', 'Alterações por guardar', editor);
+        };
+
+        editor.addEventListener('input', () => {
+          sync();
+          marcarPorGuardar();
+        });
+        editor.addEventListener('blur', () => {
+          sync();
+          if (isAutosaveForm) {
+            guardarAutomatico(form, editor);
+          }
+        });
+
+        if (form) {
+          form.addEventListener('submit', () => sync());
+        }
+
+        editor._richtextBound = true;
+      });
+    };
+
+    const aplicarComandoRichtext = (btn) => {
+      if (!btn) return;
+      const wrapper = btn.closest('.js-richtext-wrapper');
+      const editor = wrapper?.querySelector('.js-richtext-editor');
+      if (!editor) return;
+
+      const command = btn.dataset.command;
+      const value = btn.dataset.value || null;
+      editor.focus();
+      document.execCommand(command, false, value);
+      syncRichtext(editor);
+    };
+
+    const bindRichtextToolbar = () => {
+      document.removeEventListener('click', document._richtextToolbarHandler || (() => {}));
+      const handler = (ev) => {
+        const target = ev.target.closest('.js-richtext-cmd');
+        if (target) {
+          ev.preventDefault();
+          aplicarComandoRichtext(target);
+        }
+      };
+      document._richtextToolbarHandler = handler;
+      document.addEventListener('click', handler);
+    };
+
+    const bindRichtext = () => {
+      bindRichtextEditors();
+      bindRichtextToolbar();
+    };
+
     const copiarPrevisao = (btn) => {
       if (!btn) return;
       const form = btn.closest('form');
       if (!form) return;
-      const previsao = form.querySelector('textarea[name="previsao"]');
+      const previsao = form.querySelector('[name="previsao"]');
       const sumario = form.querySelector('textarea[name="sumario"]');
       if (!previsao || !sumario) return;
 
       sumario.value = previsao.value || '';
       sumario.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+
+    const copiarSumario = async (btn) => {
+      if (!btn) return;
+      const form = obterForm(btn) || btn.closest('.js-sumario-form');
+      const alvo = btn.dataset.target ? document.querySelector(btn.dataset.target) : null;
+      const sumario = alvo || form?.querySelector('textarea[name="sumario"]');
+      if (!sumario) return;
+
+      const original = btn.innerHTML;
+      try {
+        await navigator.clipboard.writeText(sumario.value || '');
+        btn.innerHTML = 'Copiado!';
+      } catch (err) {
+        console.error(err);
+        btn.innerHTML = 'Erro ao copiar';
+      } finally {
+        setTimeout(() => {
+          btn.innerHTML = original;
+        }, 1500);
+      }
+    };
+
+    const bindCopiarSumario = () => {
+      document.removeEventListener('click', document._copiarSumarioHandler || (() => {}));
+      const handler = (ev) => {
+        const target = ev.target.closest('.js-copy-sumario');
+        if (target) {
+          ev.preventDefault();
+          copiarSumario(target);
+        }
+      };
+      document._copiarSumarioHandler = handler;
+      document.addEventListener('click', handler);
+    };
+
+    const aplicarSumarioAnterior = (btn) => {
+      if (!btn) return;
+      const form = obterForm(btn) || btn.closest('.js-sumario-form');
+      const sumario = form?.querySelector('textarea[name="sumario"]');
+      if (!sumario) return;
+
+      const conteudo = btn.dataset.sumarioAnterior;
+      sumario.value = conteudo || '';
+      sumario.dispatchEvent(new Event('input', { bubbles: true }));
+      sumario.dispatchEvent(new Event('change', { bubbles: true }));
+      setEstadoSumario(form, 'unsaved', 'Alterações por guardar', btn);
+    };
+
+    const bindSumarioAnterior = () => {
+      document.removeEventListener('click', document._usarSumarioAnteriorHandler || (() => {}));
+      const handler = (ev) => {
+        const target = ev.target.closest('.js-use-prev-sumario');
+        if (target) {
+          ev.preventDefault();
+          aplicarSumarioAnterior(target);
+        }
+      };
+      document._usarSumarioAnteriorHandler = handler;
+      document.addEventListener('click', handler);
     };
 
     const bindCopias = () => {
@@ -129,6 +396,84 @@
       };
       document._copiaPrevisaoHandler = handler;
       document.addEventListener('click', handler);
+    };
+
+    const obterForm = (elemento) => {
+      if (!elemento) return null;
+      const direto = elemento.closest('form');
+      if (direto) return direto;
+      if (elemento.form) return elemento.form;
+      const idForm = elemento.getAttribute('form');
+      return idForm ? document.getElementById(idForm) : null;
+    };
+
+    const setEstadoSumario = (form, estado, label, origem) => {
+      const scope = form || origem?.closest('.js-sumario-form') || origem?.closest('tr');
+      if (!scope) return;
+      const dot = scope.querySelector('.js-sumario-status');
+      const texto = scope.querySelector('.js-sumario-status-text');
+      if (!dot || !texto) return;
+
+      dot.classList.remove('status-saved', 'status-unsaved', 'status-saving');
+      dot.classList.add(`status-${estado}`);
+      texto.textContent = label;
+    };
+
+    const guardarAutomatico = async (form, origem) => {
+      if (!form || form._savingSumario) return;
+      form._savingSumario = true;
+      setEstadoSumario(form, 'saving', 'A guardar...', origem);
+
+      try {
+        const resp = await fetch(form.action, {
+          method: (form.method || 'post').toUpperCase(),
+          body: new FormData(form),
+          headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            Accept: 'application/json',
+          },
+        });
+
+        if (!resp.ok) {
+          throw new Error('Resposta inválida ao guardar');
+        }
+
+        setEstadoSumario(form, 'saved', 'Guardado', origem);
+      } catch (err) {
+        console.error(err);
+        setEstadoSumario(form, 'unsaved', 'Erro ao guardar', origem);
+      } finally {
+        form._savingSumario = false;
+      }
+    };
+
+    const bindAutosave = () => {
+      document.querySelectorAll('form.js-sumario-form').forEach((form) => {
+        if (form._autosaveBound) return;
+        const sumario = form.querySelector('textarea[name="sumario"]');
+        if (!sumario) return;
+
+        const marcarPorGuardar = () => setEstadoSumario(form, 'unsaved', 'Alterações por guardar');
+
+        sumario.addEventListener('input', marcarPorGuardar);
+        sumario.addEventListener('change', marcarPorGuardar);
+        sumario.addEventListener('blur', () => guardarAutomatico(form, sumario));
+
+        form._autosaveBound = true;
+      });
+
+      document.querySelectorAll('select[name="tipo"]').forEach((select) => {
+        if (select._autosaveBound) return;
+        const form = obterForm(select);
+        if (!form) return;
+
+        select.addEventListener('change', () => {
+          setEstadoSumario(form, 'unsaved', 'Alterações por guardar', select);
+          guardarAutomatico(form, select);
+        });
+
+        select._autosaveBound = true;
+      });
     };
 
     const guardarTodos = async (btn) => {
@@ -187,7 +532,11 @@
 
     const onReady = () => {
       bindCopias();
+      bindCopiarSumario();
       bindGuardarTodos();
+      bindSumarioAnterior();
+      bindRichtext();
+      bindAutosave();
     };
 
     if (document.readyState === 'loading') {

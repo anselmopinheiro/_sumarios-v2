@@ -61,39 +61,10 @@
 <div class="card mb-3">
   <div class="card-body">
     <div class="row g-3 align-items-end">
-      <div class="col-md-6">
-        <label class="form-label fw-bold">Backup de sumários</label>
-        <div class="d-flex flex-wrap gap-2">
-          <form method="get" action="{{ url_for('turma_calendario_export_json', turma_id=turma.id) }}">
-            {% if periodo_atual %}
-              <input type="hidden" name="periodo_id" value="{{ periodo_atual.id }}">
-            {% endif %}
-            <button class="btn btn-outline-primary" type="submit">Exportar JSON</button>
-          </form>
-          <form method="get" action="{{ url_for('turma_calendario_export_csv', turma_id=turma.id) }}">
-            {% if periodo_atual %}
-              <input type="hidden" name="periodo_id" value="{{ periodo_atual.id }}">
-            {% endif %}
-            <button class="btn btn-outline-secondary" type="submit">Exportar CSV</button>
-          </form>
+      <div class="col-12">
+        <div class="alert alert-info mb-0">
+          Os backups de calendário são geridos através do <strong>Backup anual (JSON)</strong> disponível na lista de turmas.
         </div>
-      </div>
-      <div class="col-md-6">
-        <form method="post"
-              enctype="multipart/form-data"
-              class="d-flex flex-wrap gap-2 align-items-center"
-              action="{{ url_for('turma_calendario_import_json', turma_id=turma.id) }}">
-          <div class="flex-grow-1">
-            <label class="form-label fw-bold mb-1">Importar sumários (JSON)</label>
-            <input type="file" name="ficheiro" accept="application/json" class="form-control" {% if ano_fechado %}disabled{% endif %}>
-          </div>
-          <div class="pb-2">
-            <button class="btn btn-success" type="submit" {% if ano_fechado %}disabled{% endif %}>Importar</button>
-          </div>
-        </form>
-        {% if ano_fechado %}
-          <div class="text-muted small mt-2">Ano letivo fechado: apenas exportação disponível.</div>
-        {% endif %}
       </div>
     </div>
   </div>
@@ -144,6 +115,7 @@
         {% set sem_aula_total = sem_aula and faltas >= total_previsto %}
         {% set aulas_contam = total_previsto - faltas if sem_aula else total_previsto %}
         {% set tipo_label = tipo_labels.get(a.tipo, a.tipo) if tipo_labels is defined else a.tipo %}
+        {% set sumario_anterior = sumarios_anteriores.get(a.id) if sumarios_anteriores is defined else None %}
         <tr>
           <td class="w-100">
             <div class="d-flex flex-wrap gap-1 mb-2">
@@ -175,7 +147,7 @@
             {% if ano_fechado %}
               <div class="mb-1">{{ a.sumario or '' }}</div>
               {% if a.previsao %}
-                <div class="text-muted small">Previsão: {{ a.previsao }}</div>
+                <div class="text-muted small">Previsão: {{ a.previsao|safe }}</div>
               {% endif %}
             {% else %}
               {% set form_id = "sumario-form-" ~ a.id %}
@@ -186,30 +158,57 @@
                 {% if periodo_atual %}
                   <input type="hidden" name="periodo_id" value="{{ periodo_atual.id }}">
                 {% endif %}
-                <div class="d-flex align-items-start gap-2">
+                <div class="d-flex align-items-center gap-2 text-muted small flex-wrap">
+                <div class="d-flex align-items-center gap-2">
+                  <span class="sumario-status-dot status-saved js-sumario-status" aria-hidden="true"></span>
+                  <span class="js-sumario-status-text">Guardado</span>
+                </div>
+                <button type="button" class="btn btn-outline-secondary btn-sm py-0 js-copy-sumario">Copiar sumário</button>
+                {% if sumario_anterior %}
+                  <button type="button"
+                          class="btn btn-outline-info btn-sm py-0 js-use-prev-sumario"
+                          data-sumario-anterior="{{ sumario_anterior }}">
+                    Usar sumário anterior
+                  </button>
+                {% endif %}
+              </div>
+              {% set previsao_id = "previsao-" ~ a.id %}
+              <div class="d-flex align-items-start gap-2">
                 <textarea name="sumario"
                           class="form-control form-control-sm js-autoresize"
                           rows="2"
                           placeholder="Escrever sumário...">{{ a.sumario or '' }}</textarea>
-                  <div class="d-flex flex-column" style="width: 120px;">
-                    <label class="form-label form-label-sm mb-1">Tempos (sem aula)</label>
-                    {% set pode_editar_tempos = a.tipo in tipos_sem_aula %}
-                    <input type="number"
-                           name="tempos_sem_aula"
-                           form="{{ form_id }}"
-                           class="form-control form-control-sm {% if not pode_editar_tempos %}bg-light text-muted{% endif %}"
-                           min="0"
-                           value="{{ faltas if sem_aula else 0 }}"
-                           data-total-previsto="{{ total_previsto }}"
-                           data-tempos-atual="{{ faltas if sem_aula else 0 }}"
-                           {% if not pode_editar_tempos %}readonly{% endif %}>
-                  </div>
+                <div class="d-flex flex-column" style="width: 120px;">
+                  <label class="form-label form-label-sm mb-1">Tempos (sem aula)</label>
+                  {% set pode_editar_tempos = a.tipo in tipos_sem_aula %}
+                  <input type="number"
+                         name="tempos_sem_aula"
+                         form="{{ form_id }}"
+                         class="form-control form-control-sm {% if not pode_editar_tempos %}bg-light text-muted{% endif %}"
+                         min="0"
+                         value="{{ faltas if sem_aula else 0 }}"
+                         data-total-previsto="{{ total_previsto }}"
+                         data-tempos-atual="{{ faltas if sem_aula else 0 }}"
+                         {% if not pode_editar_tempos %}readonly{% endif %}>
                 </div>
-                <textarea name="previsao"
-                          class="form-control form-control-sm js-autoresize"
-                          rows="2"
-                          placeholder="Previsão da aula (planeamento)...">{{ a.previsao or '' }}</textarea>
-                <button type="button" class="btn btn-link btn-sm ps-0 js-copy-previsao">Copiar previsão para sumário</button>
+              </div>
+              <div class="js-richtext-wrapper d-flex flex-column gap-1">
+                <div class="richtext-toolbar d-flex flex-wrap align-items-center gap-2">
+                  <span class="small text-muted">Formatação:</span>
+                  <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="bold"><strong>B</strong></button>
+                  <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="italic"><em>I</em></button>
+                  <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="backColor" data-value="#fff3cd"><span class="px-1" style="background: #fff3cd;">Realçar</span></button>
+                </div>
+                <div
+                  class="form-control form-control-sm js-richtext-editor richtext-editor"
+                  contenteditable="true"
+                  data-target="#{{ previsao_id }}"
+                  aria-label="Previsão da aula"
+                >{{ a.previsao|default('')|safe }}</div>
+                <input type="hidden" name="previsao" id="{{ previsao_id }}" value="{{ a.previsao or '' }}">
+                <div class="form-text">Suporta negrito, itálico e destaque amarelo.</div>
+              </div>
+              <button type="button" class="btn btn-link btn-sm ps-0 js-copy-previsao">Copiar previsão para sumário</button>
               </form>
             {% endif %}
             {% set faltas_alunos = faltas_por_aula.get(a.id) if faltas_por_aula else [] %}
