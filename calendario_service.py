@@ -1840,6 +1840,8 @@ def calcular_mapa_avaliacao_diaria(
                 tempos_aula = _total_previsto_para_aula(aula)
                 faltas_aluno += max(0, min(avaliacao.faltas or 0, tempos_aula))
                 if avaliacao.falta_disciplinar:
+                    faltas_aluno += avaliacao.falta_disciplinar
+                if avaliacao.falta_disciplinar:
                     tem_falta_disciplinar = True
 
             faltas[aluno.id] = faltas_aluno
