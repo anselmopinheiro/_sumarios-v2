@@ -2027,6 +2027,99 @@ def create_app():
             anos_fechados=anos_fechados,
         )
 
+    @app.route("/calendario/semana/previsao")
+    def calendario_semana_previsao():
+        todas_turmas = turmas_abertas_ativas()
+
+        turma_id_param = request.args.get("turma_id", type=int)
+        turma_selecionada = Turma.query.get(turma_id_param) if turma_id_param else None
+
+        periodo_id = request.args.get("periodo_id", type=int)
+        periodos_disponiveis = []
+        periodo_atual = None
+        if turma_selecionada:
+            periodos_disponiveis = filtrar_periodos_para_turma(
+                turma_selecionada,
+                (
+                    Periodo.query.filter_by(turma_id=turma_selecionada.id)
+                    .order_by(Periodo.data_inicio)
+                    .all()
+                ),
+            )
+            if periodo_id:
+                periodo_atual = next(
+                    (p for p in periodos_disponiveis if p.id == periodo_id), None
+                )
+            if not periodo_atual and periodos_disponiveis:
+                periodo_atual = periodos_disponiveis[0]
+
+        data_txt = request.args.get("data")
+        hoje = date.today()
+        try:
+            data_base = date.fromisoformat(data_txt) if data_txt else hoje
+        except ValueError:
+            data_base = hoje
+
+        semana_inicio = data_base - timedelta(days=data_base.weekday())
+        dias_semana = [semana_inicio + timedelta(days=i) for i in range(5)]
+        semana_fim = dias_semana[-1]
+
+        query = (
+            CalendarioAula.query.options(
+                joinedload(CalendarioAula.turma).joinedload(Turma.ano_letivo),
+            )
+            .filter_by(apagado=False)
+            .filter(
+                CalendarioAula.data >= semana_inicio,
+                CalendarioAula.data <= semana_fim,
+            )
+            .join(Turma)
+        )
+        if turma_selecionada:
+            query = query.filter(CalendarioAula.turma_id == turma_selecionada.id)
+        if periodo_atual:
+            query = query.filter(CalendarioAula.periodo_id == periodo_atual.id)
+
+        aulas = (
+            query.order_by(
+                CalendarioAula.data.asc(),
+                Turma.nome.asc(),
+                CalendarioAula.numero_modulo.asc().nulls_last(),
+                CalendarioAula.total_geral.asc().nulls_last(),
+                CalendarioAula.id.asc(),
+            )
+            .all()
+        )
+
+        aulas_por_data = {}
+        for aula in aulas:
+            aulas_por_data.setdefault(aula.data, []).append(aula)
+        for lista in aulas_por_data.values():
+            lista.sort(key=_chave_ordenacao_aula)
+
+        anos_fechados = {
+            a.turma_id: bool(
+                a.turma and a.turma.ano_letivo and a.turma.ano_letivo.fechado
+            )
+            for a in aulas
+            if a.turma_id
+        }
+
+        return render_template(
+            "turmas/calendario_previsao_semanal.html",
+            turmas=todas_turmas,
+            turma=turma_selecionada,
+            periodo_atual=periodo_atual,
+            periodos_disponiveis=periodos_disponiveis,
+            data_base=data_base,
+            semana_inicio=semana_inicio,
+            dias_semana=dias_semana,
+            semana_anterior=semana_inicio - timedelta(days=7),
+            semana_seguinte=semana_inicio + timedelta(days=7),
+            aulas_por_data=aulas_por_data,
+            anos_fechados=anos_fechados,
+        )
+
     @app.route("/calendario/sumarios-pendentes")
     def calendario_sumarios_pendentes():
         hoje = date.today()
@@ -2847,6 +2940,16 @@ def create_app():
             if periodo_id:
                 filtros["periodo_id"] = periodo_id
             return redirect(url_for("calendario_semana", **filtros))
+        if redirect_view == "semana_previsao":
+            filtros = {}
+            if data_ref:
+                filtros["data"] = data_ref
+            turma_filtro = request.form.get("turma_id", type=int)
+            if turma_filtro:
+                filtros["turma_id"] = turma_filtro
+            if periodo_id:
+                filtros["periodo_id"] = periodo_id
+            return redirect(url_for("calendario_semana_previsao", **filtros))
 
         return redirect(
             url_for("turma_calendario", turma_id=turma.id, periodo_id=periodo_id)
