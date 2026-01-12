@@ -1747,7 +1747,7 @@ def create_app():
             for dia in dias:
                 media = dia["medias"].get(aluno.id)
                 falta_disc = dia.get("falta_disciplinar_por_aluno", {}).get(aluno.id)
-                if media is not None and not falta_disc:
+                if media is not None:
                     valores.append(media)
                 estilo = (
                     " style='background:#f8d7da;'"
