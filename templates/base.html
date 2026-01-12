@@ -255,11 +255,25 @@
         editor.innerHTML = sanitized;
         if (target) target.value = sanitized;
 
-        const sync = () => syncRichtext(editor);
-        editor.addEventListener('input', sync);
-        editor.addEventListener('blur', sync);
-
         const form = editor.closest('form');
+        const sync = () => syncRichtext(editor);
+        const isAutosaveForm = form && form.classList.contains('js-sumario-form');
+        const marcarPorGuardar = () => {
+          if (!isAutosaveForm) return;
+          setEstadoSumario(form, 'unsaved', 'Alterações por guardar', editor);
+        };
+
+        editor.addEventListener('input', () => {
+          sync();
+          marcarPorGuardar();
+        });
+        editor.addEventListener('blur', () => {
+          sync();
+          if (isAutosaveForm) {
+            guardarAutomatico(form, editor);
+          }
+        });
+
         if (form) {
           form.addEventListener('submit', () => sync());
         }
