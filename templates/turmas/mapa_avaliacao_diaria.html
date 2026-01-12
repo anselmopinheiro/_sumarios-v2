@@ -55,6 +55,10 @@
 {% if dias %}
   {% set datas = dias %}
   <h4 class="mt-4">Mapa diário (Responsabilidade, Comportamento, Participação, Trabalho autónomo, Portátil/Material)</h4>
+  <div class="small text-muted mb-2">
+    <span class="badge bg-danger-subtle text-danger border border-danger-subtle">Legenda</span>
+    Células a vermelho indicam falta disciplinar (média automática de 1, não conta para a média final).
+  </div>
   <div class="table-responsive table-sticky-wrapper mt-3">
     <table class="table table-striped table-bordered table-hover align-middle table-sticky-header">
       <thead class="table-dark">
@@ -80,9 +84,10 @@
             <td>{{ aluno.numero if aluno.numero is not none else '--' }}</td>
             <td>{{ aluno.nome }}</td>
             {% for dia in dias %}
-              {% set danger = 'table-danger' if dia.tem_falta_disciplinar else '' %}
+              {% set falta_disc = dia.get('falta_disciplinar_por_aluno', {}).get(aluno.id) %}
+              {% set danger = 'table-danger' if falta_disc else '' %}
               {% set media = dia.medias.get(aluno.id) %}
-              {% if media is not none %}
+              {% if media is not none and not falta_disc %}
                 {% set _ = ns.valores.append(media) %}
               {% endif %}
               <td class="text-center {{ danger }}">

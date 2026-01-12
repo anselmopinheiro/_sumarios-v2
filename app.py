@@ -1746,9 +1746,14 @@ def create_app():
             output.write(f"<td>{aluno.nome}</td>")
             for dia in dias:
                 media = dia["medias"].get(aluno.id)
-                if media is not None:
+                falta_disc = dia.get("falta_disciplinar_por_aluno", {}).get(aluno.id)
+                if media is not None and not falta_disc:
                     valores.append(media)
-                estilo = " style='background:#f8d7da;'" if dia.get("tem_falta_disciplinar") else ""
+                estilo = (
+                    " style='background:#f8d7da;'"
+                    if falta_disc or dia.get("tem_falta_disciplinar")
+                    else ""
+                )
                 output.write(f"<td{estilo}>{_media_formatada(media)}</td>")
                 faltas_total += dia.get("faltas", {}).get(aluno.id, 0)
             output.write(f"<td>{faltas_total}</td>")
