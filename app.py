@@ -784,6 +784,15 @@ def create_app():
     # ----------------------------------------
     # TURMAS
     # ----------------------------------------
+    def _gerar_nome_turma_copia(nome_base: str) -> str:
+        base = nome_base.strip() or "Turma"
+        candidato = f"{base} (Cópia)"
+        contador = 2
+        while Turma.query.filter_by(nome=candidato).first():
+            candidato = f"{base} (Cópia {contador})"
+            contador += 1
+        return candidato
+
     @app.route("/turmas")
     def turmas_list():
         turmas = (
@@ -807,6 +816,83 @@ def create_app():
             backup_json_dir=app.config.get("BACKUP_JSON_DIR"),
             anos_letivos=anos_letivos,
         )
+
+    @app.route("/turmas/<int:turma_id>/clone", methods=["POST"])
+    def turmas_clone(turma_id):
+        turma = Turma.query.get_or_404(turma_id)
+        ano = turma.ano_letivo
+        if ano and ano.fechado:
+            flash("Ano letivo fechado: não é possível clonar esta turma.", "error")
+            return redirect(url_for("turmas_list"))
+
+        nome_copia = _gerar_nome_turma_copia(turma.nome)
+        nova = Turma(
+            nome=nome_copia,
+            tipo=turma.tipo,
+            periodo_tipo=turma.periodo_tipo,
+            ano_letivo_id=turma.ano_letivo_id,
+            letiva=turma.letiva,
+            carga_segunda=turma.carga_segunda,
+            carga_terca=turma.carga_terca,
+            carga_quarta=turma.carga_quarta,
+            carga_quinta=turma.carga_quinta,
+            carga_sexta=turma.carga_sexta,
+            tempo_segunda=turma.tempo_segunda,
+            tempo_terca=turma.tempo_terca,
+            tempo_quarta=turma.tempo_quarta,
+            tempo_quinta=turma.tempo_quinta,
+            tempo_sexta=turma.tempo_sexta,
+        )
+        db.session.add(nova)
+        db.session.flush()
+
+        for livro in turma.livros:
+            nova.livros.append(livro)
+
+        for rel in TurmaDisciplina.query.filter_by(turma_id=turma.id).all():
+            db.session.add(
+                TurmaDisciplina(
+                    turma_id=nova.id,
+                    disciplina_id=rel.disciplina_id,
+                    horas_semanais=rel.horas_semanais,
+                )
+            )
+
+        for mod in Modulo.query.filter_by(turma_id=turma.id).all():
+            db.session.add(
+                Modulo(
+                    turma_id=nova.id,
+                    nome=mod.nome,
+                    total_aulas=mod.total_aulas,
+                    tolerancia=mod.tolerancia,
+                )
+            )
+
+        for horario in Horario.query.filter_by(turma_id=turma.id).all():
+            db.session.add(
+                Horario(
+                    turma_id=nova.id,
+                    weekday=horario.weekday,
+                    horas=horario.horas,
+                )
+            )
+
+        for aluno in Aluno.query.filter_by(turma_id=turma.id).all():
+            db.session.add(
+                Aluno(
+                    turma_id=nova.id,
+                    processo=aluno.processo,
+                    numero=aluno.numero,
+                    nome=aluno.nome,
+                    nome_curto=aluno.nome_curto,
+                    nee=aluno.nee,
+                    observacoes=aluno.observacoes,
+                )
+            )
+
+        db.session.commit()
+        flash(f"Turma clonada como '{nova.nome}'.", "success")
+        return redirect(url_for("turmas_list"))
 
     @app.route("/turmas/export/csv", methods=["POST"])
     def turmas_export_csv():

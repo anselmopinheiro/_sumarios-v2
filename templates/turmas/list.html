@@ -142,6 +142,12 @@
                   <a href="{{ url_for('turma_calendario', turma_id=turma.id) }}" class="btn btn-sm btn-outline-info">Calendário</a>
                   <a href="{{ url_for('turmas_edit', turma_id=turma.id) }}" class="btn btn-sm btn-outline-warning">Editar</a>
                   <form method="post"
+                        action="{{ url_for('turmas_clone', turma_id=turma.id) }}"
+                        class="d-inline"
+                        onsubmit="return confirm('Clonar esta turma com os alunos?');">
+                    <button type="submit" class="btn btn-sm btn-outline-primary">Clonar</button>
+                  </form>
+                  <form method="post"
                         action="{{ url_for('turmas_delete', turma_id=turma.id) }}"
                         class="d-inline"
                         onsubmit="return confirm('Eliminar turma?')">
