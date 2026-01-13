@@ -128,7 +128,8 @@
 
   <button type="submit" class="btn btn-success">Guardar</button>
   {% if redirect_view == 'dia' and data_ref %}
-    <a href="{{ url_for('turma_calendario_dia', turma_id=turma.id, data=data_ref) }}"
+    {% set turma_hidden = request.values.get('turma_filtro') %}
+    <a href="{{ url_for('turma_calendario_dia', data=data_ref, turma_id=turma_hidden) }}"
        class="btn btn-secondary">
       Cancelar
     </a>

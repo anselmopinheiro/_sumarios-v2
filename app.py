@@ -2570,6 +2570,7 @@ def create_app():
         periodo = Periodo.query.get_or_404(aula.periodo_id)
         redirect_view = request.values.get("view")
         data_ref = request.values.get("data_ref")
+        turma_filtro = request.values.get("turma_filtro", type=int)
 
         modulos = garantir_modulos_para_turma(turma)
         if not modulos:
@@ -2643,9 +2644,14 @@ def create_app():
             else:
                 flash("Linha de calendário atualizada.", "success")
             if redirect_view == "dia" and data_ref:
-                return redirect(
-                    url_for("turma_calendario_dia", turma_id=turma.id, data=data_ref)
-                )
+                destino = {"data": data_ref}
+                if periodo and periodo.id:
+                    destino["periodo_id"] = periodo.id
+                if turma_filtro:
+                    return redirect(
+                        url_for("turma_calendario_dia", turma_id=turma_filtro, **destino)
+                    )
+                return redirect(url_for("turma_calendario_dia", **destino))
             if redirect_view == "semana":
                 filtros = {}
                 if data_ref:
