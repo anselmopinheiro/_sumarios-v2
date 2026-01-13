@@ -103,9 +103,9 @@
   <table class="table table-striped table-hover align-middle">
     <thead class="table-light">
       <tr>
-        <th style="width: 50%;">Sumário</th>
-        <th>Tipo</th>
-        <th style="width: 160px;">Ações</th>
+        <th style="width: 22%;">Turma</th>
+        <th style="width: 53%;">Sumário e previsão</th>
+        <th style="width: 25%;">Tipo e ações</th>
       </tr>
     </thead>
     <tbody>
@@ -125,44 +125,30 @@
         {% set sumario_anterior = sumarios_anteriores.get(a.id) if sumarios_anteriores is defined else None %}
         {% set form_id = "sumario-form-" ~ a.id %}
         <tr>
-          <td class="w-50">
-            <div class="d-flex flex-column gap-1 mb-2">
-              <div class="d-flex flex-wrap gap-1 align-items-center">
-                <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">Turma {{ a.turma.nome if a.turma else (turma.nome if turma else '') }}</span>
-                <span class="badge rounded-pill {% if sem_aula %}bg-danger text-light{% else %}bg-body-secondary text-dark border border-secondary-subtle{% endif %}">{{ tipo_label }}</span>
-                {% if a.atividade %}
-                  <a class="badge rounded-pill bg-success text-light text-decoration-none" href="{{ url_for('turma_mapa_avaliacao_diaria', turma_id=a.turma_id) }}#mapa-atividades">Atividade</a>
-                {% endif %}
-                <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
-                  Nº Sumário {% if sem_aula_total %}—{% else %}{{ a.sumarios or '—' }}{% endif %}
-                </span>
-              </div>
-              <div class="d-flex flex-wrap gap-1 align-items-center">
-                {% if a.data %}
-                  <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
-                    {{ a.data.strftime("%d/%m/%Y") }}
-                    <small class="text-muted ms-1">{{ ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"][a.data.weekday()] }}</small>
-                  </span>
-                {% endif %}
-                <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
-                  {% if a.modulo %}{{ a.modulo.nome }}{% else %}Sem módulo{% endif %}
-                </span>
-                <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
-                  Aula {% if sem_aula_total %}—{% else %}{{ a.numero_modulo }}{% endif %}
-                </span>
-                <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
-                  Total {% if sem_aula_total %}—{% else %}{{ a.total_geral }}{% endif %}
-                </span>
-                <div class="ms-auto d-flex gap-1 flex-wrap">
-                  {% set tempo = tempos_por_aula.get(a.id) if tempos_por_aula is defined else None %}
-                  {% if tempo %}
-                    <span class="badge rounded-pill text-dark" style="background-color: #0dcaf0;">{{ tempo }}.º Tempo</span>
-                  {% else %}
-                    <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">Tempo —</span>
-                  {% endif %}
-                </div>
-              </div>
+          <td>
+            <div class="fw-semibold">{{ a.turma.nome if a.turma else (turma.nome if turma else '') }}</div>
+            <div class="mt-2 d-flex flex-column gap-1">
+              <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
+                Nº Sumário {% if sem_aula_total %}—{% else %}{{ a.sumarios or '—' }}{% endif %}
+              </span>
+              <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
+                {% if a.modulo %}{{ a.modulo.nome }}{% else %}Sem módulo{% endif %}
+              </span>
+              <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
+                Aula {% if sem_aula_total %}—{% else %}{{ a.numero_modulo }}{% endif %}
+              </span>
+              <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
+                Total {% if sem_aula_total %}—{% else %}{{ a.total_geral }}{% endif %}
+              </span>
+              <span class="badge rounded-pill {% if sem_aula %}bg-danger text-light{% else %}bg-body-secondary text-dark border border-secondary-subtle{% endif %}">
+                {{ tipo_label }}
+              </span>
+              {% if a.atividade %}
+                <span class="badge rounded-pill bg-success text-light">Atividade</span>
+              {% endif %}
             </div>
+          </td>
+          <td>
             {% if turma_fechada %}
               <div class="mb-1">{{ a.sumario or '' }}</div>
               {% if a.previsao %}
@@ -182,26 +168,60 @@
                   <input type="hidden" name="periodo_id" value="{{ a.periodo_id }}">
                 {% endif %}
                 <div class="d-flex align-items-center gap-2 text-muted small flex-wrap">
-                <div class="d-flex align-items-center gap-2">
-                  <span class="sumario-status-dot status-saved js-sumario-status" aria-hidden="true"></span>
-                  <span class="js-sumario-status-text">Guardado</span>
+                  <div class="d-flex align-items-center gap-2">
+                    <span class="sumario-status-dot status-saved js-sumario-status" aria-hidden="true"></span>
+                    <span class="js-sumario-status-text">Guardado</span>
+                  </div>
+                  <button type="button" class="btn btn-outline-secondary btn-sm py-0 js-copy-sumario">Copiar sumário</button>
+                  {% if sumario_anterior %}
+                    <button type="button"
+                            class="btn btn-outline-info btn-sm py-0 js-use-prev-sumario"
+                            data-sumario-anterior="{{ sumario_anterior }}">
+                      Usar sumário anterior
+                    </button>
+                  {% endif %}
                 </div>
-                <button type="button" class="btn btn-outline-secondary btn-sm py-0 js-copy-sumario">Copiar sumário</button>
-                {% if sumario_anterior %}
-                  <button type="button"
-                          class="btn btn-outline-info btn-sm py-0 js-use-prev-sumario"
-                          data-sumario-anterior="{{ sumario_anterior }}">
-                    Usar sumário anterior
-                  </button>
-                {% endif %}
-              </div>
-              {% set previsao_id = "previsao-" ~ a.id %}
-              <div class="d-flex align-items-start gap-2">
+                {% set previsao_id = "previsao-" ~ a.id %}
                 <textarea name="sumario"
                           class="form-control form-control-sm js-autoresize"
                           rows="2"
                           placeholder="Escrever sumário...">{{ a.sumario or '' }}</textarea>
-                <div class="d-flex flex-column" style="width: 120px;">
+                <div class="js-richtext-wrapper d-flex flex-column gap-1">
+                  <div class="richtext-toolbar d-flex flex-wrap align-items-center gap-2">
+                    <span class="small text-muted">Formatação:</span>
+                    <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="bold"><strong>B</strong></button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="italic"><em>I</em></button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="backColor" data-value="#fff3cd"><span class="px-1" style="background: #fff3cd;">Realçar</span></button>
+                  </div>
+                  <div
+                    class="form-control form-control-sm js-richtext-editor richtext-editor"
+                    contenteditable="true"
+                    data-target="#{{ previsao_id }}"
+                    aria-label="Previsão da aula"
+                  >{{ a.previsao|default('')|safe }}</div>
+                  <input type="hidden" name="previsao" id="{{ previsao_id }}" value="{{ a.previsao or '' }}">
+                </div>
+                <button type="button" class="btn btn-link btn-sm ps-0 js-copy-previsao">Copiar previsão para sumário</button>
+              </form>
+            {% endif %}
+            {% set faltas_alunos = faltas_por_aula.get(a.id) if faltas_por_aula else [] %}
+            {% if faltas_alunos %}
+              <div class="small text-danger">Em falta: {{ faltas_alunos|join('; ') }}</div>
+            {% endif %}
+          </td>
+          <td>
+            {% if turma_fechada %}
+              <span class="text-muted">—</span>
+            {% else %}
+              <div class="d-flex flex-column gap-2">
+                <select name="tipo"
+                        form="{{ form_id }}"
+                        class="form-select form-select-sm">
+                  {% for valor, label in tipos_aula %}
+                    <option value="{{ valor }}" {% if a.tipo == valor %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+                <div>
                   <label class="form-label form-label-sm mb-1">Tempos (sem aula)</label>
                   {% set pode_editar_tempos = a.tipo in tipos_sem_aula %}
                   <input type="number"
@@ -214,72 +234,15 @@
                          data-tempos-atual="{{ faltas if sem_aula else 0 }}"
                          {% if not pode_editar_tempos %}readonly{% endif %}>
                 </div>
-              </div>
-              <div class="js-richtext-wrapper d-flex flex-column gap-1">
-                <div class="richtext-toolbar d-flex flex-wrap align-items-center gap-2">
-                  <span class="small text-muted">Formatação:</span>
-                  <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="bold"><strong>B</strong></button>
-                  <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="italic"><em>I</em></button>
-                  <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="backColor" data-value="#fff3cd"><span class="px-1" style="background: #fff3cd;">Realçar</span></button>
-                </div>
-                <div
-                  class="form-control form-control-sm js-richtext-editor richtext-editor"
-                  contenteditable="true"
-                  data-target="#{{ previsao_id }}"
-                  aria-label="Previsão da aula"
-                >{{ a.previsao|default('')|safe }}</div>
-                <input type="hidden" name="previsao" id="{{ previsao_id }}" value="{{ a.previsao or '' }}">
-                <div class="form-text">Suporta negrito, itálico e destaque amarelo.</div>
-              </div>
-              <button type="button" class="btn btn-link btn-sm ps-0 js-copy-previsao">Copiar previsão para sumário</button>
-            </form>
-            {% endif %}
-            {% set faltas_alunos = faltas_por_aula.get(a.id) if faltas_por_aula else [] %}
-            {% if faltas_alunos %}
-              <div class="small text-danger">Em falta: {{ faltas_alunos|join('; ') }}</div>
-            {% endif %}
-          </td>
-          <td>
-            {% if turma_fechada %}
-              {{ a.tipo }}
-            {% else %}
-              <div class="d-flex align-items-start gap-2">
-                <select name="tipo"
-                        form="{{ form_id }}"
-                        class="form-select form-select-sm">
-                  {% for valor, label in tipos_aula %}
-                    <option value="{{ valor }}" {% if a.tipo == valor %}selected{% endif %}>{{ label }}</option>
-                  {% endfor %}
-                </select>
-                <button type="submit" form="{{ form_id }}" class="btn btn-sm btn-primary">Guardar</button>
+                <a href="{{ url_for('calendario_aula_alunos', turma_id=a.turma_id, aula_id=a.id, return_url=request.full_path) }}"
+                   class="btn btn-sm btn-outline-info">Alunos</a>
+                <a href="{{ url_for('calendario_edit', turma_id=a.turma_id, aula_id=a.id, view='dia', data_ref=data_atual.isoformat(), periodo_id=periodo_atual.id if periodo_atual else None) }}"
+                   class="btn btn-sm btn-warning">
+                  Editar
+                </a>
               </div>
             {% endif %}
           </td>
-
-          {% if not turma_fechada %}
-            <td>
-              <a href="{{ url_for('calendario_aula_alunos', turma_id=a.turma_id, aula_id=a.id, return_url=request.full_path) }}"
-                 class="btn btn-sm btn-outline-info mb-1">Alunos</a>
-              <a href="{{ url_for('calendario_edit', turma_id=a.turma_id, aula_id=a.id, view='dia', data_ref=data_atual.isoformat(), periodo_id=periodo_atual.id if periodo_atual else None) }}"
-                class="btn btn-sm btn-warning">
-                Editar
-              </a>
-
-              <form method="post"
-                    action="{{ url_for('calendario_delete', turma_id=a.turma_id, aula_id=a.id) }}"
-                    style="display:inline"
-                    onsubmit="return confirm('Apagar esta linha de calendário?');">
-                <input type="hidden" name="view" value="dia">
-                <input type="hidden" name="data_ref" value="{{ data_atual.isoformat() }}">
-                {% if periodo_atual %}
-                  <input type="hidden" name="periodo_id" value="{{ periodo_atual.id }}">
-                {% endif %}
-                <button type="submit" class="btn btn-sm btn-danger">Apagar</button>
-              </form>
-            </td>
-          {% else %}
-            <td class="text-muted">—</td>
-          {% endif %}
         </tr>
       {% endfor %}
     </tbody>
