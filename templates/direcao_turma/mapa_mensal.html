@@ -83,11 +83,13 @@
         </thead>
         <tbody>
           {% for aluno in alunos %}
+            {% set nome_parts = (aluno.nome or '').split() %}
+            {% set nome_curto = aluno.nome_curto or (nome_parts[0] ~ ' ' ~ nome_parts[-1] if nome_parts|length > 1 else aluno.nome) %}
             <tr>
               <td class="fw-semibold dt-sticky-col"
                   title="{{ aluno.nome }}">
                 {{ '%02d'|format(aluno.numero) if aluno.numero is not none else '—' }}
-                {{ aluno.nome_curto or aluno.nome }}
+                {{ nome_curto }}
               </td>
               {% for dia in dias %}
                 {% set justif = mapa_justificacoes.get(aluno.id, {}).get(dia) %}
