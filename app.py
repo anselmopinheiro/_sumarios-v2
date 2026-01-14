@@ -1271,6 +1271,70 @@ def create_app():
             mapa_justificacoes=mapa_justificacoes,
         )
 
+    @app.route("/direcao-turma/<int:dt_id>/mapa-mensal/atualizar", methods=["POST"])
+    def direcao_turma_mapa_mensal_atualizar(dt_id):
+        dt_turma = DTTurma.query.options(
+            joinedload(DTTurma.ano_letivo),
+        ).get_or_404(dt_id)
+
+        if dt_turma.ano_letivo and dt_turma.ano_letivo.fechado:
+            flash("Ano letivo fechado: apenas consulta.", "error")
+            return redirect(url_for("direcao_turma_mapa_mensal", dt_id=dt_id))
+
+        hoje = date.today()
+        year = _clamp_int(request.form.get("ano"), default=hoje.year, min_val=2000, max_val=2100)
+        month = _clamp_int(request.form.get("mes"), default=hoje.month, min_val=1, max_val=12)
+        aluno_id = request.form.get("dt_aluno_id", type=int)
+
+        if not aluno_id:
+            flash("Aluno inválido.", "error")
+            return redirect(url_for("direcao_turma_mapa_mensal", dt_id=dt_id))
+
+        aluno = DTAluno.query.filter_by(id=aluno_id, dt_turma_id=dt_turma.id).first()
+        if not aluno:
+            flash("Aluno não encontrado nesta Direção de Turma.", "error")
+            return redirect(url_for("direcao_turma_mapa_mensal", dt_id=dt_id))
+
+        ultimo_dia = calendar.monthrange(year, month)[1]
+        dias = [date(year, month, dia) for dia in range(1, ultimo_dia + 1)]
+        existentes = {
+            justificacao.data: justificacao
+            for justificacao in DTJustificacao.query.filter(
+                DTJustificacao.dt_aluno_id == aluno.id,
+                DTJustificacao.data >= dias[0],
+                DTJustificacao.data <= dias[-1],
+            ).all()
+        }
+
+        for dia in dias:
+            chave = dia.isoformat()
+            marcado = request.form.get(f"dia_{aluno_id}_{chave}") == "1"
+            motivo = (request.form.get(f"motivo_{aluno_id}_{chave}") or "").strip()
+            tipo = (request.form.get(f"tipo_{aluno_id}_{chave}") or "falta").strip()
+
+            justificacao = existentes.get(dia)
+
+            if not marcado and not motivo:
+                if justificacao:
+                    db.session.delete(justificacao)
+                continue
+
+            if not justificacao:
+                justificacao = DTJustificacao(
+                    dt_aluno_id=aluno.id,
+                    data=dia,
+                )
+                db.session.add(justificacao)
+
+            justificacao.tipo = tipo or "falta"
+            justificacao.motivo = motivo or None
+
+        db.session.commit()
+        flash("Mapa mensal atualizado.", "success")
+        return redirect(
+            url_for("direcao_turma_mapa_mensal", dt_id=dt_id, ano=year, mes=month)
+        )
+
     @app.route("/direcao-turma/<int:dt_id>/alunos")
     def direcao_turma_alunos(dt_id):
         dt_turma = DTTurma.query.options(

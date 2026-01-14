@@ -25,38 +25,81 @@
 </div>
 
 {% if alunos %}
-  <div class="table-responsive">
-    <table class="table table-striped align-middle">
-      <thead class="table-light">
-        <tr>
-          <th style="width: 240px;">Aluno</th>
-          {% for dia in dias %}
-            <th class="text-center" style="min-width: 40px;">{{ dia.day }}</th>
-          {% endfor %}
-        </tr>
-      </thead>
-      <tbody>
-        {% for aluno in alunos %}
+  <form method="post" action="{{ url_for('direcao_turma_mapa_mensal_atualizar', dt_id=dt_turma.id) }}">
+    <input type="hidden" name="ano" value="{{ ano_mes.year }}">
+    <input type="hidden" name="mes" value="{{ ano_mes.month }}">
+    <div class="table-responsive">
+      <table class="table table-striped align-middle">
+        <thead class="table-light">
           <tr>
-            <td class="fw-semibold">
-              {{ '%02d'|format(aluno.numero) if aluno.numero is not none else '—' }}
-              {{ aluno.nome }}
-            </td>
+            <th style="width: 260px;">Aluno</th>
             {% for dia in dias %}
-              {% set justif = mapa_justificacoes.get(aluno.id, {}).get(dia) %}
-              <td class="text-center">
-                {% if justif %}
-                  <span class="badge text-bg-success" title="{{ justif.tipo }}{% if justif.motivo %}: {{ justif.motivo }}{% endif %}">J</span>
-                {% else %}
-                  <span class="text-muted">—</span>
-                {% endif %}
-              </td>
+              <th class="text-center" style="min-width: 64px;">{{ dia.day }}</th>
             {% endfor %}
+            <th class="text-end" style="width: 140px;">Ações</th>
           </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+        </thead>
+        <tbody>
+          {% for aluno in alunos %}
+            <tr>
+              <td class="fw-semibold">
+                {{ '%02d'|format(aluno.numero) if aluno.numero is not none else '—' }}
+                {{ aluno.nome }}
+              </td>
+              {% for dia in dias %}
+                {% set justif = mapa_justificacoes.get(aluno.id, {}).get(dia) %}
+                {% set dia_key = dia.isoformat() %}
+                <td class="text-center">
+                  <div class="d-flex flex-column align-items-center gap-1">
+                    <div class="form-check m-0">
+                      <input class="form-check-input"
+                             type="checkbox"
+                             name="dia_{{ aluno.id }}_{{ dia_key }}"
+                             value="1"
+                             id="dia-{{ aluno.id }}-{{ dia_key }}"
+                             {% if justif %}checked{% endif %}>
+                    </div>
+                    <button class="btn btn-link p-0 text-decoration-none"
+                            type="button"
+                            data-bs-toggle="collapse"
+                            data-bs-target="#motivo-{{ aluno.id }}-{{ dia_key }}">
+                      {% if justif and (justif.motivo or justif.tipo == 'atividade') %}
+                        <span class="badge text-bg-info">i</span>
+                      {% else %}
+                        <span class="text-muted small">motivo</span>
+                      {% endif %}
+                    </button>
+                    <div class="collapse" id="motivo-{{ aluno.id }}-{{ dia_key }}">
+                      <div class="input-group input-group-sm">
+                        <select class="form-select" name="tipo_{{ aluno.id }}_{{ dia_key }}">
+                          <option value="falta" {% if not justif or justif.tipo == 'falta' %}selected{% endif %}>Falta</option>
+                          <option value="atividade" {% if justif and justif.tipo == 'atividade' %}selected{% endif %}>Atividade</option>
+                        </select>
+                        <input class="form-control"
+                               type="text"
+                               name="motivo_{{ aluno.id }}_{{ dia_key }}"
+                               placeholder="Motivo"
+                               value="{{ justif.motivo if justif else '' }}">
+                      </div>
+                      <div class="form-text">Pode marcar atividade futura.</div>
+                    </div>
+                  </div>
+                </td>
+              {% endfor %}
+              <td class="text-end">
+                <button type="submit"
+                        class="btn btn-sm btn-primary"
+                        name="dt_aluno_id"
+                        value="{{ aluno.id }}">
+                  Guardar
+                </button>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
 {% else %}
   <div class="alert alert-secondary">Ainda não existem alunos associados a esta Direção de Turma.</div>
 {% endif %}
