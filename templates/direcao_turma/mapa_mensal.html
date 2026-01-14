@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h2>Mapa mensal de justificações</h2>
+    <div class="text-muted">{{ dt_turma.turma.nome if dt_turma.turma else 'Turma' }} — {{ dt_turma.ano_letivo.nome if dt_turma.ano_letivo else 'Ano letivo' }}</div>
+  </div>
+  <a href="{{ url_for('direcao_turma_list') }}" class="btn btn-secondary">Voltar</a>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <form class="row gy-2 gx-3 align-items-end" method="get">
+      <div class="col-auto">
+        <label class="form-label" for="mes">Mês</label>
+        <input class="form-control" type="month" id="mes" name="mes_ano" value="{{ ano_mes.strftime('%Y-%m') }}">
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-primary">Atualizar</button>
+      </div>
+    </form>
+    <div class="form-text mt-2">Seleciona o mês para ver as justificações registadas.</div>
+  </div>
+</div>
+
+{% if alunos %}
+  <div class="table-responsive">
+    <table class="table table-striped align-middle">
+      <thead class="table-light">
+        <tr>
+          <th style="width: 240px;">Aluno</th>
+          {% for dia in dias %}
+            <th class="text-center" style="min-width: 40px;">{{ dia.day }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for aluno in alunos %}
+          <tr>
+            <td class="fw-semibold">
+              {{ '%02d'|format(aluno.numero) if aluno.numero is not none else '—' }}
+              {{ aluno.nome }}
+            </td>
+            {% for dia in dias %}
+              {% set justif = mapa_justificacoes.get(aluno.id, {}).get(dia) %}
+              <td class="text-center">
+                {% if justif %}
+                  <span class="badge text-bg-success" title="{{ justif.tipo }}{% if justif.motivo %}: {{ justif.motivo }}{% endif %}">J</span>
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="alert alert-secondary">Ainda não existem alunos associados a esta Direção de Turma.</div>
+{% endif %}
+
+<script>
+  (() => {
+    const input = document.getElementById('mes');
+    if (!input) return;
+    input.addEventListener('change', () => {
+      const [ano, mes] = (input.value || '').split('-');
+      if (!ano || !mes) return;
+      const url = new URL(window.location.href);
+      url.searchParams.set('ano', ano);
+      url.searchParams.set('mes', mes);
+      window.location.href = url.toString();
+    });
+  })();
+</script>
+
+{% endblock %}

@@ -1,3 +1,4 @@
+import calendar
 import csv
 import io
 import json
@@ -1220,6 +1221,54 @@ def create_app():
             dt_turma=dt_turma,
             anos_letivos=anos_letivos,
             turmas=turmas,
+        )
+
+    @app.route("/direcao-turma/<int:dt_id>/mapa-mensal")
+    def direcao_turma_mapa_mensal(dt_id):
+        dt_turma = DTTurma.query.options(
+            joinedload(DTTurma.turma),
+            joinedload(DTTurma.ano_letivo),
+            joinedload(DTTurma.alunos),
+        ).get_or_404(dt_id)
+
+        hoje = date.today()
+        mes_ano = request.args.get("mes_ano") or ""
+        ano_txt, mes_txt = (mes_ano.split("-", 1) + ["", ""])[:2]
+        year = _clamp_int(request.args.get("ano") or ano_txt, default=hoje.year, min_val=2000, max_val=2100)
+        month = _clamp_int(request.args.get("mes") or mes_txt, default=hoje.month, min_val=1, max_val=12)
+        ano_mes = date(year, month, 1)
+        ultimo_dia = calendar.monthrange(year, month)[1]
+        dias = [date(year, month, dia) for dia in range(1, ultimo_dia + 1)]
+
+        justificacoes = (
+            DTJustificacao.query.join(DTAluno)
+            .filter(
+                DTAluno.dt_turma_id == dt_turma.id,
+                DTJustificacao.data >= dias[0],
+                DTJustificacao.data <= dias[-1],
+            )
+            .all()
+        )
+        mapa_justificacoes = defaultdict(dict)
+        for justificacao in justificacoes:
+            mapa_justificacoes[justificacao.dt_aluno_id][justificacao.data] = justificacao
+
+        alunos = sorted(
+            dt_turma.alunos,
+            key=lambda aluno: (
+                aluno.numero is None,
+                aluno.numero or 0,
+                aluno.nome or "",
+            ),
+        )
+
+        return render_template(
+            "direcao_turma/mapa_mensal.html",
+            dt_turma=dt_turma,
+            alunos=alunos,
+            dias=dias,
+            ano_mes=ano_mes,
+            mapa_justificacoes=mapa_justificacoes,
         )
 
     @app.route("/direcao-turma/<int:dt_id>/delete", methods=["POST"])
