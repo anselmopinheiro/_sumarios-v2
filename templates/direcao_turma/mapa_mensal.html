@@ -28,6 +28,8 @@
   <form method="post" action="{{ url_for('direcao_turma_mapa_mensal_atualizar', dt_id=dt_turma.id) }}">
     <input type="hidden" name="ano" value="{{ ano_mes.year }}">
     <input type="hidden" name="mes" value="{{ ano_mes.month }}">
+    <input type="hidden" name="dt_aluno_id" value="">
+    <input type="hidden" name="dia" value="">
     <div class="table-responsive">
       <table class="table table-striped align-middle">
         <thead class="table-light">
@@ -37,6 +39,25 @@
               <th class="text-center" style="min-width: 64px;">{{ dia.day }}</th>
             {% endfor %}
             <th class="text-end" style="width: 140px;">Ações</th>
+          </tr>
+          <tr>
+            <th class="small text-muted">Motivo (por dia)</th>
+            {% for dia in dias %}
+              {% set dia_key = dia.isoformat() %}
+              <th class="text-center">
+                <div class="input-group input-group-sm">
+                  <select class="form-select" name="tipo_{{ dia_key }}">
+                    <option value="falta">Falta</option>
+                    <option value="atividade">Atividade</option>
+                  </select>
+                  <input class="form-control"
+                         type="text"
+                         name="motivo_{{ dia_key }}"
+                         placeholder="Motivo">
+                </div>
+              </th>
+            {% endfor %}
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -59,40 +80,14 @@
                              id="dia-{{ aluno.id }}-{{ dia_key }}"
                              {% if justif %}checked{% endif %}>
                     </div>
-                    <button class="btn btn-link p-0 text-decoration-none"
-                            type="button"
-                            data-bs-toggle="collapse"
-                            data-bs-target="#motivo-{{ aluno.id }}-{{ dia_key }}">
-                      {% if justif and (justif.motivo or justif.tipo == 'atividade') %}
-                        <span class="badge text-bg-info">i</span>
-                      {% else %}
-                        <span class="text-muted small">motivo</span>
-                      {% endif %}
-                    </button>
-                    <div class="collapse" id="motivo-{{ aluno.id }}-{{ dia_key }}">
-                      <div class="input-group input-group-sm">
-                        <select class="form-select" name="tipo_{{ aluno.id }}_{{ dia_key }}">
-                          <option value="falta" {% if not justif or justif.tipo == 'falta' %}selected{% endif %}>Falta</option>
-                          <option value="atividade" {% if justif and justif.tipo == 'atividade' %}selected{% endif %}>Atividade</option>
-                        </select>
-                        <input class="form-control"
-                               type="text"
-                               name="motivo_{{ aluno.id }}_{{ dia_key }}"
-                               placeholder="Motivo"
-                               value="{{ justif.motivo if justif else '' }}">
-                      </div>
-                      <div class="form-text">Pode marcar atividade futura.</div>
-                    </div>
+                    {% if justif and (justif.motivo or justif.tipo == 'atividade') %}
+                      <span class="badge text-bg-info">i</span>
+                    {% endif %}
                   </div>
                 </td>
               {% endfor %}
               <td class="text-end">
-                <button type="submit"
-                        class="btn btn-sm btn-primary"
-                        name="dt_aluno_id"
-                        value="{{ aluno.id }}">
-                  Guardar
-                </button>
+                <span class="text-muted small">Auto</span>
               </td>
             </tr>
           {% endfor %}
@@ -107,14 +102,31 @@
 <script>
   (() => {
     const input = document.getElementById('mes');
-    if (!input) return;
-    input.addEventListener('change', () => {
-      const [ano, mes] = (input.value || '').split('-');
-      if (!ano || !mes) return;
-      const url = new URL(window.location.href);
-      url.searchParams.set('ano', ano);
-      url.searchParams.set('mes', mes);
-      window.location.href = url.toString();
+    if (input) {
+      input.addEventListener('change', () => {
+        const [ano, mes] = (input.value || '').split('-');
+        if (!ano || !mes) return;
+        const url = new URL(window.location.href);
+        url.searchParams.set('ano', ano);
+        url.searchParams.set('mes', mes);
+        window.location.href = url.toString();
+      });
+    }
+
+    const form = document.querySelector('form[action*=\"mapa-mensal/atualizar\"]');
+    if (!form) return;
+    const alunoField = form.querySelector('input[name=\"dt_aluno_id\"]');
+    const diaField = form.querySelector('input[name=\"dia\"]');
+
+    form.querySelectorAll('input[type=\"checkbox\"][name^=\"dia_\"]').forEach((checkbox) => {
+      checkbox.addEventListener('change', () => {
+        const parts = checkbox.name.split('_');
+        const alunoId = parts[1];
+        const dia = parts.slice(2).join('_');
+        if (alunoField) alunoField.value = alunoId;
+        if (diaField) diaField.value = dia;
+        form.submit();
+      });
     });
   })();
 </script>

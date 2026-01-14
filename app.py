@@ -1285,8 +1285,9 @@ def create_app():
         year = _clamp_int(request.form.get("ano"), default=hoje.year, min_val=2000, max_val=2100)
         month = _clamp_int(request.form.get("mes"), default=hoje.month, min_val=1, max_val=12)
         aluno_id = request.form.get("dt_aluno_id", type=int)
+        dia_txt = request.form.get("dia")
 
-        if not aluno_id:
+        if not aluno_id or not dia_txt:
             flash("Aluno inválido.", "error")
             return redirect(url_for("direcao_turma_mapa_mensal", dt_id=dt_id))
 
@@ -1295,30 +1296,29 @@ def create_app():
             flash("Aluno não encontrado nesta Direção de Turma.", "error")
             return redirect(url_for("direcao_turma_mapa_mensal", dt_id=dt_id))
 
-        ultimo_dia = calendar.monthrange(year, month)[1]
-        dias = [date(year, month, dia) for dia in range(1, ultimo_dia + 1)]
-        existentes = {
-            justificacao.data: justificacao
-            for justificacao in DTJustificacao.query.filter(
-                DTJustificacao.dt_aluno_id == aluno.id,
-                DTJustificacao.data >= dias[0],
-                DTJustificacao.data <= dias[-1],
-            ).all()
-        }
+        try:
+            dia = datetime.strptime(dia_txt, "%Y-%m-%d").date()
+        except ValueError:
+            flash("Dia inválido.", "error")
+            return redirect(url_for("direcao_turma_mapa_mensal", dt_id=dt_id))
 
-        for dia in dias:
-            chave = dia.isoformat()
-            marcado = request.form.get(f"dia_{aluno_id}_{chave}") == "1"
-            motivo = (request.form.get(f"motivo_{aluno_id}_{chave}") or "").strip()
-            tipo = (request.form.get(f"tipo_{aluno_id}_{chave}") or "falta").strip()
+        if dia.year != year or dia.month != month:
+            flash("Dia fora do mês selecionado.", "error")
+            return redirect(url_for("direcao_turma_mapa_mensal", dt_id=dt_id))
 
-            justificacao = existentes.get(dia)
+        marcado = request.form.get(f"dia_{aluno_id}_{dia_txt}") == "1"
+        motivo = (request.form.get(f"motivo_{dia_txt}") or "").strip()
+        tipo = (request.form.get(f"tipo_{dia_txt}") or "falta").strip()
 
-            if not marcado and not motivo:
-                if justificacao:
-                    db.session.delete(justificacao)
-                continue
+        justificacao = DTJustificacao.query.filter_by(
+            dt_aluno_id=aluno.id,
+            data=dia,
+        ).first()
 
+        if not marcado and not motivo:
+            if justificacao:
+                db.session.delete(justificacao)
+        else:
             if not justificacao:
                 justificacao = DTJustificacao(
                     dt_aluno_id=aluno.id,
