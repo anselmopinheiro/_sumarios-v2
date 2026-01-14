@@ -41,6 +41,9 @@ from models import (
     TurmaDisciplina,
     Aluno,
     AulaAluno,
+    DTTurma,
+    DTAluno,
+    DTJustificacao,
 )
 
 from calendario_service import (
@@ -436,6 +439,63 @@ def create_app():
                         CONSTRAINT fk_aula FOREIGN KEY(aula_id) REFERENCES calendario_aulas(id),
                         CONSTRAINT fk_aluno FOREIGN KEY(aluno_id) REFERENCES alunos(id),
                         CONSTRAINT uq_aula_aluno UNIQUE(aula_id, aluno_id)
+                    )
+                    """
+                )
+            )
+            db.session.commit()
+
+        if "dt_turmas" not in tabelas:
+            db.session.execute(
+                text(
+                    """
+                    CREATE TABLE dt_turmas (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        turma_id INTEGER NOT NULL,
+                        ano_letivo_id INTEGER NOT NULL,
+                        observacoes TEXT,
+                        CONSTRAINT fk_dt_turma FOREIGN KEY(turma_id) REFERENCES turmas(id),
+                        CONSTRAINT fk_dt_ano FOREIGN KEY(ano_letivo_id) REFERENCES anos_letivos(id),
+                        CONSTRAINT uq_dt_turma_ano UNIQUE(turma_id, ano_letivo_id)
+                    )
+                    """
+                )
+            )
+            db.session.commit()
+
+        if "dt_alunos" not in tabelas:
+            db.session.execute(
+                text(
+                    """
+                    CREATE TABLE dt_alunos (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        dt_turma_id INTEGER NOT NULL,
+                        origem_turma_id INTEGER,
+                        processo VARCHAR(50),
+                        numero INTEGER,
+                        nome VARCHAR(255) NOT NULL,
+                        nome_curto VARCHAR(100),
+                        nee TEXT,
+                        observacoes TEXT,
+                        CONSTRAINT fk_dt_turma FOREIGN KEY(dt_turma_id) REFERENCES dt_turmas(id),
+                        CONSTRAINT fk_dt_origem_turma FOREIGN KEY(origem_turma_id) REFERENCES turmas(id)
+                    )
+                    """
+                )
+            )
+            db.session.commit()
+
+        if "dt_justificacoes" not in tabelas:
+            db.session.execute(
+                text(
+                    """
+                    CREATE TABLE dt_justificacoes (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        dt_aluno_id INTEGER NOT NULL,
+                        data DATE NOT NULL,
+                        tipo VARCHAR(20) NOT NULL DEFAULT 'falta',
+                        motivo TEXT,
+                        CONSTRAINT fk_dt_aluno FOREIGN KEY(dt_aluno_id) REFERENCES dt_alunos(id)
                     )
                     """
                 )
@@ -995,6 +1055,185 @@ def create_app():
             flash("Falhas ao exportar: " + "; ".join(falhas), "error")
 
         return redirect(url_for("turmas_list"))
+
+    # ----------------------------------------
+    # DIREÇÃO DE TURMA
+    # ----------------------------------------
+    def _validar_dt_turma(turma_id, ano_letivo_id):
+        if not turma_id:
+            flash("Seleciona uma turma válida.", "error")
+            return None, None
+
+        turma = Turma.query.options(joinedload(Turma.ano_letivo)).get(turma_id)
+        if not turma:
+            flash("Turma inválida.", "error")
+            return None, None
+
+        if turma.ano_letivo_id:
+            if ano_letivo_id and turma.ano_letivo_id != ano_letivo_id:
+                flash(
+                    "A turma selecionada não pertence ao ano letivo escolhido.",
+                    "error",
+                )
+                return None, None
+            ano_letivo_id = turma.ano_letivo_id
+
+        if not ano_letivo_id:
+            flash("Seleciona um ano letivo válido.", "error")
+            return None, None
+
+        ano = AnoLetivo.query.get(ano_letivo_id)
+        if not ano:
+            flash("Ano letivo inválido.", "error")
+            return None, None
+
+        if ano.fechado:
+            flash("Ano letivo fechado: apenas consulta.", "error")
+            return None, None
+
+        return turma, ano
+
+    @app.route("/direcao-turma")
+    def direcao_turma_list():
+        dt_turmas = (
+            DTTurma.query.options(
+                joinedload(DTTurma.turma),
+                joinedload(DTTurma.ano_letivo),
+            )
+            .outerjoin(AnoLetivo, DTTurma.ano_letivo_id == AnoLetivo.id)
+            .outerjoin(Turma, DTTurma.turma_id == Turma.id)
+            .order_by(
+                AnoLetivo.ativo.desc(),
+                AnoLetivo.fechado.asc(),
+                AnoLetivo.data_inicio_ano.desc(),
+                Turma.nome,
+            )
+            .all()
+        )
+
+        dt_abertas = [
+            dt for dt in dt_turmas if not (dt.ano_letivo and dt.ano_letivo.fechado)
+        ]
+        dt_fechadas = [
+            dt for dt in dt_turmas if dt.ano_letivo and dt.ano_letivo.fechado
+        ]
+
+        return render_template(
+            "direcao_turma/list.html",
+            dt_abertas=dt_abertas,
+            dt_fechadas=dt_fechadas,
+        )
+
+    @app.route("/direcao-turma/add", methods=["GET", "POST"])
+    def direcao_turma_add():
+        anos_letivos = AnoLetivo.query.order_by(AnoLetivo.data_inicio_ano.desc()).all()
+        turmas = (
+            Turma.query.options(joinedload(Turma.ano_letivo))
+            .order_by(Turma.nome)
+            .all()
+        )
+
+        if request.method == "POST":
+            turma_id = request.form.get("turma_id", type=int)
+            ano_letivo_id = request.form.get("ano_letivo_id", type=int)
+            observacoes = request.form.get("observacoes") or None
+
+            turma, ano = _validar_dt_turma(turma_id, ano_letivo_id)
+            if not turma:
+                return redirect(url_for("direcao_turma_add"))
+
+            existente = DTTurma.query.filter_by(
+                turma_id=turma.id,
+                ano_letivo_id=ano.id,
+            ).first()
+            if existente:
+                flash("Já existe uma Direção de Turma para esta turma/ano.", "error")
+                return redirect(url_for("direcao_turma_add"))
+
+            dt_turma = DTTurma(
+                turma_id=turma.id,
+                ano_letivo_id=ano.id,
+                observacoes=observacoes,
+            )
+            db.session.add(dt_turma)
+            db.session.commit()
+            flash("Direção de Turma criada.", "success")
+            return redirect(url_for("direcao_turma_list"))
+
+        return render_template(
+            "direcao_turma/form.html",
+            titulo="Nova Direção de Turma",
+            dt_turma=None,
+            anos_letivos=anos_letivos,
+            turmas=turmas,
+        )
+
+    @app.route("/direcao-turma/<int:dt_id>/edit", methods=["GET", "POST"])
+    def direcao_turma_edit(dt_id):
+        dt_turma = DTTurma.query.options(
+            joinedload(DTTurma.turma),
+            joinedload(DTTurma.ano_letivo),
+        ).get_or_404(dt_id)
+
+        if dt_turma.ano_letivo and dt_turma.ano_letivo.fechado:
+            flash("Ano letivo fechado: apenas consulta.", "error")
+            return redirect(url_for("direcao_turma_list"))
+
+        anos_letivos = AnoLetivo.query.order_by(AnoLetivo.data_inicio_ano.desc()).all()
+        turmas = (
+            Turma.query.options(joinedload(Turma.ano_letivo))
+            .order_by(Turma.nome)
+            .all()
+        )
+
+        if request.method == "POST":
+            turma_id = request.form.get("turma_id", type=int)
+            ano_letivo_id = request.form.get("ano_letivo_id", type=int)
+            observacoes = request.form.get("observacoes") or None
+
+            turma, ano = _validar_dt_turma(turma_id, ano_letivo_id)
+            if not turma:
+                return redirect(url_for("direcao_turma_edit", dt_id=dt_turma.id))
+
+            existente = (
+                DTTurma.query.filter_by(
+                    turma_id=turma.id,
+                    ano_letivo_id=ano.id,
+                )
+                .filter(DTTurma.id != dt_turma.id)
+                .first()
+            )
+            if existente:
+                flash("Já existe uma Direção de Turma para esta turma/ano.", "error")
+                return redirect(url_for("direcao_turma_edit", dt_id=dt_turma.id))
+
+            dt_turma.turma_id = turma.id
+            dt_turma.ano_letivo_id = ano.id
+            dt_turma.observacoes = observacoes
+            db.session.commit()
+            flash("Direção de Turma atualizada.", "success")
+            return redirect(url_for("direcao_turma_list"))
+
+        return render_template(
+            "direcao_turma/form.html",
+            titulo="Editar Direção de Turma",
+            dt_turma=dt_turma,
+            anos_letivos=anos_letivos,
+            turmas=turmas,
+        )
+
+    @app.route("/direcao-turma/<int:dt_id>/delete", methods=["POST"])
+    def direcao_turma_delete(dt_id):
+        dt_turma = DTTurma.query.options(joinedload(DTTurma.ano_letivo)).get_or_404(dt_id)
+
+        if dt_turma.ano_letivo and dt_turma.ano_letivo.fechado:
+            flash("Ano letivo fechado: apenas consulta.", "error")
+            return redirect(url_for("direcao_turma_list"))
+
+        db.session.delete(dt_turma)
+        db.session.commit()
+        flash("Direção de Turma removida.", "success")
+        return redirect(url_for("direcao_turma_list"))
 
     @app.route("/backup/ano/export", methods=["POST"])
     def backup_ano_export():

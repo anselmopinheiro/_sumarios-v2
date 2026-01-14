@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2>Direção de Turma</h2>
+  <a href="{{ url_for('direcao_turma_add') }}" class="btn btn-primary">+ Nova Direção de Turma</a>
+</div>
+
+<p class="text-muted">As Direções de Turma em anos letivos fechados ficam apenas para consulta.</p>
+
+{% macro render_dt_card(dt_turmas, titulo, badge_class) %}
+  <div class="card shadow-sm mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <div class="fw-semibold">{{ titulo }}</div>
+      <span class="badge {{ badge_class }}">{{ dt_turmas|length }} registo(s)</span>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-striped align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Turma</th>
+            <th>Ano letivo</th>
+            <th>Observações</th>
+            <th class="text-end" style="width: 200px;">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for dt in dt_turmas %}
+          <tr>
+            <td class="fw-semibold">{{ dt.turma.nome if dt.turma else '—' }}</td>
+            <td>
+              {% if dt.ano_letivo %}
+                {{ dt.ano_letivo.nome }}
+                {% if dt.ano_letivo.fechado %}
+                  <span class="badge text-bg-secondary ms-2">Fechado</span>
+                {% endif %}
+              {% else %}
+                —
+              {% endif %}
+            </td>
+            <td class="text-muted">{{ dt.observacoes or '—' }}</td>
+            <td class="text-end">
+              {% set bloqueado = dt.ano_letivo and dt.ano_letivo.fechado %}
+              <div class="btn-group" role="group">
+                <a href="{{ url_for('direcao_turma_edit', dt_id=dt.id) }}"
+                   class="btn btn-sm btn-outline-warning {% if bloqueado %}disabled{% endif %}">
+                  Editar
+                </a>
+                <form method="post"
+                      action="{{ url_for('direcao_turma_delete', dt_id=dt.id) }}"
+                      class="d-inline"
+                      onsubmit="return confirm('Eliminar Direção de Turma?');">
+                  <button type="submit" class="btn btn-sm btn-outline-danger" {% if bloqueado %}disabled{% endif %}>Eliminar</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endmacro %}
+
+{% if dt_abertas %}
+  {{ render_dt_card(dt_abertas, 'Direções de Turma (anos ativos/abertos)', 'text-bg-primary') }}
+{% endif %}
+
+{% if dt_fechadas %}
+  {{ render_dt_card(dt_fechadas, 'Direções de Turma (anos fechados)', 'text-bg-secondary') }}
+{% endif %}
+
+{% if not dt_abertas and not dt_fechadas %}
+  <div class="alert alert-secondary">Nenhuma Direção de Turma registada.</div>
+{% endif %}
+
+{% endblock %}

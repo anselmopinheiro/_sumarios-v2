@@ -188,6 +188,65 @@ class Aluno(db.Model):
     )
 
 
+class DTTurma(db.Model):
+    __tablename__ = "dt_turmas"
+
+    id = db.Column(db.Integer, primary_key=True)
+    turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), nullable=False)
+    ano_letivo_id = db.Column(db.Integer, db.ForeignKey("anos_letivos.id"), nullable=False)
+    observacoes = db.Column(db.Text)
+
+    turma = db.relationship("Turma", backref="dt_turmas")
+    ano_letivo = db.relationship("AnoLetivo", backref="dt_turmas")
+    alunos = db.relationship(
+        "DTAluno",
+        back_populates="dt_turma",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint("turma_id", "ano_letivo_id", name="uq_dt_turma_ano"),
+    )
+
+
+class DTAluno(db.Model):
+    __tablename__ = "dt_alunos"
+
+    id = db.Column(db.Integer, primary_key=True)
+    dt_turma_id = db.Column(db.Integer, db.ForeignKey("dt_turmas.id"), nullable=False)
+    origem_turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"))
+    processo = db.Column(db.String(50))
+    numero = db.Column(db.Integer)
+    nome = db.Column(db.String(255), nullable=False)
+    nome_curto = db.Column(db.String(100))
+    nee = db.Column(db.Text)
+    observacoes = db.Column(db.Text)
+
+    dt_turma = db.relationship("DTTurma", back_populates="alunos")
+    origem_turma = db.relationship("Turma")
+    justificacoes = db.relationship(
+        "DTJustificacao",
+        back_populates="dt_aluno",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        db.Index("ix_dt_alunos_turma_numero", "dt_turma_id", "numero"),
+    )
+
+
+class DTJustificacao(db.Model):
+    __tablename__ = "dt_justificacoes"
+
+    id = db.Column(db.Integer, primary_key=True)
+    dt_aluno_id = db.Column(db.Integer, db.ForeignKey("dt_alunos.id"), nullable=False)
+    data = db.Column(db.Date, nullable=False)
+    tipo = db.Column(db.String(20), nullable=False, default="falta")
+    motivo = db.Column(db.Text)
+
+    dt_aluno = db.relationship("DTAluno", back_populates="justificacoes")
+
+
 class Modulo(db.Model):
     __tablename__ = "modulos"
     id = db.Column(db.Integer, primary_key=True)
