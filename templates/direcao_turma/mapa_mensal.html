@@ -126,7 +126,7 @@
     });
 
     form.querySelectorAll('.js-motivo-dia').forEach((inputEl) => {
-      inputEl.addEventListener('change', () => {
+      inputEl.addEventListener('blur', () => {
         if (alunoField) alunoField.value = '';
         if (diaField) diaField.value = inputEl.dataset.dia || '';
         form.submit();
