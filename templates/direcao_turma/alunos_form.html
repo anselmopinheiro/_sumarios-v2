@@ -13,27 +13,27 @@
   <div class="row g-3">
     <div class="col-md-3">
       <label class="form-label">N.º</label>
-      <input type="number" class="form-control" name="numero" min="1" value="{{ dt_aluno.numero if dt_aluno.numero is not none else '' }}">
+      <input type="number" class="form-control" name="numero" min="1" value="{{ dt_aluno.aluno.numero if dt_aluno.aluno and dt_aluno.aluno.numero is not none else '' }}">
     </div>
     <div class="col-md-4">
       <label class="form-label">Processo</label>
-      <input type="text" class="form-control" name="processo" value="{{ dt_aluno.processo or '' }}">
+      <input type="text" class="form-control" name="processo" value="{{ dt_aluno.aluno.processo if dt_aluno.aluno else '' }}">
     </div>
     <div class="col-12">
       <label class="form-label">Nome completo</label>
-      <input type="text" class="form-control" name="nome" value="{{ dt_aluno.nome }}" required>
+      <input type="text" class="form-control" name="nome" value="{{ dt_aluno.aluno.nome if dt_aluno.aluno else '' }}" required>
     </div>
     <div class="col-12">
       <label class="form-label">Nome curto</label>
-      <input type="text" class="form-control" name="nome_curto" value="{{ dt_aluno.nome_curto or '' }}">
+      <input type="text" class="form-control" name="nome_curto" value="{{ dt_aluno.aluno.nome_curto if dt_aluno.aluno else '' }}">
     </div>
     <div class="col-12">
       <label class="form-label">NEE</label>
-      <textarea class="form-control" name="nee" rows="2">{{ dt_aluno.nee or '' }}</textarea>
+      <textarea class="form-control" name="nee" rows="2">{{ dt_aluno.aluno.nee if dt_aluno.aluno else '' }}</textarea>
     </div>
     <div class="col-12">
       <label class="form-label">Observações</label>
-      <textarea class="form-control" name="observacoes" rows="3">{{ dt_aluno.observacoes or '' }}</textarea>
+      <textarea class="form-control" name="observacoes" rows="3">{{ dt_aluno.aluno.observacoes if dt_aluno.aluno else '' }}</textarea>
     </div>
   </div>
 

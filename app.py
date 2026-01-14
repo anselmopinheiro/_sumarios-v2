@@ -472,6 +472,7 @@ def create_app():
                     CREATE TABLE dt_alunos (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         dt_turma_id INTEGER NOT NULL,
+                        aluno_id INTEGER,
                         origem_turma_id INTEGER,
                         processo VARCHAR(50),
                         numero INTEGER,
@@ -480,6 +481,7 @@ def create_app():
                         nee TEXT,
                         observacoes TEXT,
                         CONSTRAINT fk_dt_turma FOREIGN KEY(dt_turma_id) REFERENCES dt_turmas(id),
+                        CONSTRAINT fk_dt_aluno FOREIGN KEY(aluno_id) REFERENCES alunos(id),
                         CONSTRAINT fk_dt_origem_turma FOREIGN KEY(origem_turma_id) REFERENCES turmas(id)
                     )
                     """
@@ -501,6 +503,13 @@ def create_app():
                     )
                     """
                 )
+            )
+            db.session.commit()
+
+        dt_alunos_cols = {col["name"] for col in insp.get_columns("dt_alunos")}
+        if "aluno_id" not in dt_alunos_cols:
+            db.session.execute(
+                text("ALTER TABLE dt_alunos ADD COLUMN aluno_id INTEGER")
             )
             db.session.commit()
 
@@ -1283,19 +1292,23 @@ def create_app():
         for justificacao in justificacoes:
             mapa_justificacoes[justificacao.dt_aluno_id][justificacao.data] = justificacao
 
-        alunos = sorted(
-            dt_turma.alunos,
-            key=lambda aluno: (
-                aluno.numero is None,
-                aluno.numero or 0,
-                aluno.nome or "",
-            ),
+        dt_alunos = (
+            DTAluno.query.options(joinedload(DTAluno.aluno))
+            .filter_by(dt_turma_id=dt_turma.id)
+            .all()
+        )
+        dt_alunos.sort(
+            key=lambda dt_aluno: (
+                (dt_aluno.aluno.numero if dt_aluno.aluno else dt_aluno.numero) is None,
+                dt_aluno.aluno.numero if dt_aluno.aluno else (dt_aluno.numero or 0),
+                (dt_aluno.aluno.nome if dt_aluno.aluno else dt_aluno.nome) or "",
+            )
         )
 
         return render_template(
             "direcao_turma/mapa_mensal.html",
             dt_turma=dt_turma,
-            alunos=alunos,
+            alunos=dt_alunos,
             dias=dias,
             ano_mes=ano_mes,
             mapa_justificacoes=mapa_justificacoes,
@@ -1401,20 +1414,24 @@ def create_app():
             joinedload(DTTurma.alunos),
         ).get_or_404(dt_id)
 
-        alunos = sorted(
-            dt_turma.alunos,
-            key=lambda aluno: (
-                aluno.numero is None,
-                aluno.numero or 0,
-                aluno.nome or "",
-            ),
+        dt_alunos = (
+            DTAluno.query.options(joinedload(DTAluno.aluno))
+            .filter_by(dt_turma_id=dt_turma.id)
+            .all()
+        )
+        dt_alunos.sort(
+            key=lambda dt_aluno: (
+                (dt_aluno.aluno.numero if dt_aluno.aluno else dt_aluno.numero) is None,
+                dt_aluno.aluno.numero if dt_aluno.aluno else (dt_aluno.numero or 0),
+                (dt_aluno.aluno.nome if dt_aluno.aluno else dt_aluno.nome) or "",
+            )
         )
         bloqueado = bool(dt_turma.ano_letivo and dt_turma.ano_letivo.fechado)
 
         return render_template(
             "direcao_turma/alunos.html",
             dt_turma=dt_turma,
-            alunos=alunos,
+            alunos=dt_alunos,
             bloqueado=bloqueado,
         )
 
@@ -1431,18 +1448,19 @@ def create_app():
 
         alunos_turma = Aluno.query.filter_by(turma_id=dt_turma.turma_id).all()
         existentes = {
-            (aluno.processo, aluno.numero, aluno.nome)
+            aluno.aluno_id
             for aluno in DTAluno.query.filter_by(dt_turma_id=dt_turma.id).all()
+            if aluno.aluno_id
         }
 
         novos = 0
         for aluno in alunos_turma:
-            chave = (aluno.processo, aluno.numero, aluno.nome)
-            if chave in existentes:
+            if aluno.id in existentes:
                 continue
             db.session.add(
                 DTAluno(
                     dt_turma_id=dt_turma.id,
+                    aluno_id=aluno.id,
                     origem_turma_id=dt_turma.turma_id,
                     processo=aluno.processo,
                     numero=aluno.numero,
@@ -1475,7 +1493,7 @@ def create_app():
             flash("Nenhum aluno selecionado.", "error")
             return redirect(url_for("direcao_turma_alunos", dt_id=dt_id))
 
-        alunos = DTAluno.query.filter(
+        alunos = DTAluno.query.options(joinedload(DTAluno.aluno)).filter(
             DTAluno.dt_turma_id == dt_turma.id,
             DTAluno.id.in_(ids),
         ).all()
@@ -1486,7 +1504,8 @@ def create_app():
             if not aluno:
                 continue
             nome_curto = (request.form.get(f"nome_curto_{aluno_id}") or "").strip()
-            aluno.nome_curto = nome_curto or None
+            if aluno.aluno:
+                aluno.aluno.nome_curto = nome_curto or None
 
         db.session.commit()
         flash("Nomes curtos atualizados.", "success")
@@ -1502,12 +1521,15 @@ def create_app():
         if dt_turma.ano_letivo and dt_turma.ano_letivo.fechado:
             return jsonify({"status": "error", "message": "Ano letivo fechado."}), 403
 
-        dt_aluno = DTAluno.query.filter_by(id=dt_aluno_id, dt_turma_id=dt_turma.id).first()
-        if not dt_aluno:
+        dt_aluno = DTAluno.query.options(joinedload(DTAluno.aluno)).filter_by(
+            id=dt_aluno_id,
+            dt_turma_id=dt_turma.id,
+        ).first()
+        if not dt_aluno or not dt_aluno.aluno:
             return jsonify({"status": "error", "message": "Aluno não encontrado."}), 404
 
         nome_curto = (request.form.get("nome_curto") or "").strip()
-        dt_aluno.nome_curto = nome_curto or None
+        dt_aluno.aluno.nome_curto = nome_curto or None
         db.session.commit()
         return jsonify({"status": "ok"})
 
@@ -1537,20 +1559,24 @@ def create_app():
             flash("Ano letivo fechado: apenas consulta.", "error")
             return redirect(url_for("direcao_turma_alunos", dt_id=dt_id))
 
-        dt_aluno = DTAluno.query.filter_by(id=dt_aluno_id, dt_turma_id=dt_turma.id).first()
-        if not dt_aluno:
+        dt_aluno = DTAluno.query.options(joinedload(DTAluno.aluno)).filter_by(
+            id=dt_aluno_id,
+            dt_turma_id=dt_turma.id,
+        ).first()
+        if not dt_aluno or not dt_aluno.aluno:
             flash("Aluno não encontrado nesta Direção de Turma.", "error")
             return redirect(url_for("direcao_turma_alunos", dt_id=dt_id))
 
         if request.method == "POST":
-            dt_aluno.numero = _clamp_int(request.form.get("numero"), default=None, min_val=1)
-            dt_aluno.processo = request.form.get("processo") or None
-            dt_aluno.nome = (request.form.get("nome") or "").strip()
-            dt_aluno.nome_curto = (request.form.get("nome_curto") or "").strip() or None
-            dt_aluno.nee = request.form.get("nee") or None
-            dt_aluno.observacoes = request.form.get("observacoes") or None
+            aluno = dt_aluno.aluno
+            aluno.numero = _clamp_int(request.form.get("numero"), default=None, min_val=1)
+            aluno.processo = request.form.get("processo") or None
+            aluno.nome = (request.form.get("nome") or "").strip()
+            aluno.nome_curto = (request.form.get("nome_curto") or "").strip() or None
+            aluno.nee = request.form.get("nee") or None
+            aluno.observacoes = request.form.get("observacoes") or None
 
-            if not dt_aluno.nome:
+            if not aluno.nome:
                 flash("O nome do aluno é obrigatório.", "error")
                 return redirect(
                     url_for("direcao_turma_alunos_edit", dt_id=dt_id, dt_aluno_id=dt_aluno_id)

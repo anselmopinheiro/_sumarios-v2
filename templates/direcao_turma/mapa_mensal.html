@@ -82,24 +82,25 @@
           </tr>
         </thead>
         <tbody>
-          {% for aluno in alunos %}
+          {% for dt_aluno in alunos %}
+            {% set aluno = dt_aluno.aluno %}
             <tr>
               <td class="fw-semibold dt-sticky-col"
-                  title="{{ aluno.nome }}">
-                {{ '%02d'|format(aluno.numero) if aluno.numero is not none else '—' }}
-                {{ aluno.nome_curto or aluno.nome }}
+                  title="{{ aluno.nome if aluno else '' }}">
+                {{ '%02d'|format(aluno.numero) if aluno and aluno.numero is not none else '—' }}
+                {{ aluno.nome_curto or aluno.nome if aluno else '—' }}
               </td>
               {% for dia in dias %}
-                {% set justif = mapa_justificacoes.get(aluno.id, {}).get(dia) %}
+                {% set justif = mapa_justificacoes.get(dt_aluno.id, {}).get(dia) %}
                 {% set dia_key = dia.isoformat() %}
                 <td class="text-center">
                   <div class="d-flex flex-column align-items-center gap-1">
                     <div class="form-check m-0">
                       <input class="form-check-input"
                              type="checkbox"
-                             name="dia_{{ aluno.id }}_{{ dia_key }}"
+                             name="dia_{{ dt_aluno.id }}_{{ dia_key }}"
                              value="1"
-                             id="dia-{{ aluno.id }}-{{ dia_key }}"
+                             id="dia-{{ dt_aluno.id }}-{{ dia_key }}"
                              {% if justif %}checked{% endif %}>
                     </div>
                   </div>

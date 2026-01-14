@@ -38,30 +38,31 @@
           </tr>
         </thead>
         <tbody>
-          {% for aluno in alunos %}
+          {% for dt_aluno in alunos %}
+            {% set aluno = dt_aluno.aluno %}
             <tr>
-              <td>{{ '%02d'|format(aluno.numero) if aluno.numero is not none else '—' }}</td>
-              <td class="fw-semibold">{{ aluno.nome }}</td>
+              <td>{{ '%02d'|format(aluno.numero) if aluno and aluno.numero is not none else '—' }}</td>
+              <td class="fw-semibold">{{ aluno.nome if aluno else '—' }}</td>
               <td>
-                <input type="hidden" name="aluno_ids" value="{{ aluno.id }}">
+                <input type="hidden" name="aluno_ids" value="{{ dt_aluno.id }}">
                 <input type="text"
                        class="form-control form-control-sm js-nome-curto"
-                       name="nome_curto_{{ aluno.id }}"
-                       data-aluno-id="{{ aluno.id }}"
-                       data-url="{{ url_for('direcao_turma_alunos_nome_curto', dt_id=dt_turma.id, dt_aluno_id=aluno.id) }}"
-                       value="{{ aluno.nome_curto or '' }}"
+                       name="nome_curto_{{ dt_aluno.id }}"
+                       data-aluno-id="{{ dt_aluno.id }}"
+                       data-url="{{ url_for('direcao_turma_alunos_nome_curto', dt_id=dt_turma.id, dt_aluno_id=dt_aluno.id) }}"
+                       value="{{ aluno.nome_curto if aluno else '' }}"
                        {% if bloqueado %}disabled{% endif %}>
               </td>
-              <td>{{ aluno.processo or '—' }}</td>
-              <td>{{ aluno.origem_turma.nome if aluno.origem_turma else '—' }}</td>
+              <td>{{ aluno.processo if aluno and aluno.processo else '—' }}</td>
+              <td>{{ aluno.turma.nome if aluno and aluno.turma else '—' }}</td>
               <td class="text-end">
-                <a href="{{ url_for('direcao_turma_alunos_edit', dt_id=dt_turma.id, dt_aluno_id=aluno.id) }}"
+                <a href="{{ url_for('direcao_turma_alunos_edit', dt_id=dt_turma.id, dt_aluno_id=dt_aluno.id) }}"
                    class="btn btn-sm btn-outline-warning {% if bloqueado %}disabled{% endif %}">
                   Editar
                 </a>
                 <button type="submit"
                         class="btn btn-sm btn-outline-danger"
-                        formaction="{{ url_for('direcao_turma_alunos_delete', dt_id=dt_turma.id, dt_aluno_id=aluno.id) }}"
+                        formaction="{{ url_for('direcao_turma_alunos_delete', dt_id=dt_turma.id, dt_aluno_id=dt_aluno.id) }}"
                         formmethod="post"
                         formnovalidate
                         onclick="return confirm('Remover aluno da Direção de Turma?');"
