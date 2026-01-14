@@ -45,6 +45,7 @@ from models import (
     DTTurma,
     DTAluno,
     DTJustificacao,
+    DTMotivoDia,
 )
 
 from calendario_service import (
@@ -497,6 +498,23 @@ def create_app():
                         tipo VARCHAR(20) NOT NULL DEFAULT 'falta',
                         motivo TEXT,
                         CONSTRAINT fk_dt_aluno FOREIGN KEY(dt_aluno_id) REFERENCES dt_alunos(id)
+                    )
+                    """
+                )
+            )
+            db.session.commit()
+
+        if "dt_motivos_dia" not in tabelas:
+            db.session.execute(
+                text(
+                    """
+                    CREATE TABLE dt_motivos_dia (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        dt_turma_id INTEGER NOT NULL,
+                        data DATE NOT NULL,
+                        motivo TEXT,
+                        CONSTRAINT fk_dt_motivo_turma FOREIGN KEY(dt_turma_id) REFERENCES dt_turmas(id),
+                        CONSTRAINT uq_dt_motivo_dia UNIQUE(dt_turma_id, data)
                     )
                     """
                 )
@@ -1254,11 +1272,16 @@ def create_app():
             .all()
         )
         mapa_justificacoes = defaultdict(dict)
-        mapa_motivos_dia = {}
+        mapa_motivos_dia = {
+            motivo.data: motivo.motivo
+            for motivo in DTMotivoDia.query.filter(
+                DTMotivoDia.dt_turma_id == dt_turma.id,
+                DTMotivoDia.data >= dias[0],
+                DTMotivoDia.data <= dias[-1],
+            ).all()
+        }
         for justificacao in justificacoes:
             mapa_justificacoes[justificacao.dt_aluno_id][justificacao.data] = justificacao
-            if justificacao.motivo and justificacao.data not in mapa_motivos_dia:
-                mapa_motivos_dia[justificacao.data] = justificacao.motivo
 
         alunos = sorted(
             dt_turma.alunos,
@@ -1315,16 +1338,23 @@ def create_app():
 
         motivo = (request.form.get(f"motivo_{dia_txt}") or "").strip()
         if not aluno_id:
-            justificacoes = (
-                DTJustificacao.query.join(DTAluno)
-                .filter(
-                    DTAluno.dt_turma_id == dt_turma.id,
-                    DTJustificacao.data == dia,
-                )
-                .all()
-            )
-            for justificacao in justificacoes:
-                justificacao.motivo = motivo or None
+            motivo_dia = DTMotivoDia.query.filter_by(
+                dt_turma_id=dt_turma.id,
+                data=dia,
+            ).first()
+
+            if motivo:
+                if not motivo_dia:
+                    motivo_dia = DTMotivoDia(
+                        dt_turma_id=dt_turma.id,
+                        data=dia,
+                        motivo=motivo,
+                    )
+                    db.session.add(motivo_dia)
+                else:
+                    motivo_dia.motivo = motivo
+            elif motivo_dia:
+                db.session.delete(motivo_dia)
 
             db.session.commit()
             flash("Motivo atualizado.", "success")

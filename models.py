@@ -247,6 +247,21 @@ class DTJustificacao(db.Model):
     dt_aluno = db.relationship("DTAluno", back_populates="justificacoes")
 
 
+class DTMotivoDia(db.Model):
+    __tablename__ = "dt_motivos_dia"
+
+    id = db.Column(db.Integer, primary_key=True)
+    dt_turma_id = db.Column(db.Integer, db.ForeignKey("dt_turmas.id"), nullable=False)
+    data = db.Column(db.Date, nullable=False)
+    motivo = db.Column(db.Text)
+
+    dt_turma = db.relationship("DTTurma", backref="motivos_dia")
+
+    __table_args__ = (
+        db.UniqueConstraint("dt_turma_id", "data", name="uq_dt_motivo_dia"),
+    )
+
+
 class Modulo(db.Model):
     __tablename__ = "modulos"
     id = db.Column(db.Integer, primary_key=True)

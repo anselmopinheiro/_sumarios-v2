@@ -1,6 +1,31 @@
 {% extends "base.html" %}
 {% block content %}
 
+<style>
+  .dt-mapa-wrapper {
+    max-height: 70vh;
+    overflow: auto;
+  }
+
+  .dt-mapa-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: var(--bs-body-bg);
+  }
+
+  .dt-mapa-table .dt-sticky-col {
+    position: sticky;
+    left: 0;
+    z-index: 4;
+    background: var(--bs-body-bg);
+  }
+
+  .dt-mapa-table thead .dt-sticky-col {
+    z-index: 5;
+  }
+</style>
+
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div>
     <h2>Mapa mensal de justificações</h2>
@@ -30,18 +55,18 @@
     <input type="hidden" name="mes" value="{{ ano_mes.month }}">
     <input type="hidden" name="dt_aluno_id" value="">
     <input type="hidden" name="dia" value="">
-    <div class="table-responsive">
-      <table class="table table-striped align-middle">
+    <div class="dt-mapa-wrapper">
+      <table class="table table-striped align-middle dt-mapa-table">
         <thead class="table-light">
           <tr>
-            <th style="width: 260px;">Aluno</th>
+            <th class="dt-sticky-col" style="width: 260px;">Aluno</th>
             {% for dia in dias %}
               <th class="text-center" style="min-width: 64px;">{{ dia.day }}</th>
             {% endfor %}
             <th class="text-end" style="width: 140px;">Ações</th>
           </tr>
           <tr>
-            <th class="small text-muted">Motivo (por dia)</th>
+            <th class="small text-muted dt-sticky-col">Motivo (por dia)</th>
             {% for dia in dias %}
               {% set dia_key = dia.isoformat() %}
               <th class="text-center">
@@ -59,7 +84,7 @@
         <tbody>
           {% for aluno in alunos %}
             <tr>
-              <td class="fw-semibold">
+              <td class="fw-semibold dt-sticky-col">
                 {{ '%02d'|format(aluno.numero) if aluno.numero is not none else '—' }}
                 {{ aluno.nome }}
               </td>
