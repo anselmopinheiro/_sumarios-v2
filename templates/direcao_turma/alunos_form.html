@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h2>Editar aluno (DT)</h2>
+    <div class="text-muted">{{ dt_turma.turma.nome if dt_turma.turma else 'Turma' }} — {{ dt_turma.ano_letivo.nome if dt_turma.ano_letivo else 'Ano letivo' }}</div>
+  </div>
+  <a href="{{ url_for('direcao_turma_alunos', dt_id=dt_turma.id) }}" class="btn btn-secondary">Voltar</a>
+</div>
+
+<form method="post">
+  <div class="row g-3">
+    <div class="col-md-3">
+      <label class="form-label">N.º</label>
+      <input type="number" class="form-control" name="numero" min="1" value="{{ dt_aluno.numero if dt_aluno.numero is not none else '' }}">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Processo</label>
+      <input type="text" class="form-control" name="processo" value="{{ dt_aluno.processo or '' }}">
+    </div>
+    <div class="col-12">
+      <label class="form-label">Nome completo</label>
+      <input type="text" class="form-control" name="nome" value="{{ dt_aluno.nome }}" required>
+    </div>
+    <div class="col-12">
+      <label class="form-label">Nome curto</label>
+      <input type="text" class="form-control" name="nome_curto" value="{{ dt_aluno.nome_curto or '' }}">
+    </div>
+    <div class="col-12">
+      <label class="form-label">NEE</label>
+      <textarea class="form-control" name="nee" rows="2">{{ dt_aluno.nee or '' }}</textarea>
+    </div>
+    <div class="col-12">
+      <label class="form-label">Observações</label>
+      <textarea class="form-control" name="observacoes" rows="3">{{ dt_aluno.observacoes or '' }}</textarea>
+    </div>
+  </div>
+
+  <div class="mt-4">
+    <button type="submit" class="btn btn-primary">Guardar</button>
+    <a href="{{ url_for('direcao_turma_alunos', dt_id=dt_turma.id) }}" class="btn btn-secondary">Cancelar</a>
+  </div>
+</form>
+
+{% endblock %}

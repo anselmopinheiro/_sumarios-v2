@@ -1480,6 +1480,43 @@ def create_app():
         flash("Aluno removido da Direção de Turma.", "success")
         return redirect(url_for("direcao_turma_alunos", dt_id=dt_id))
 
+    @app.route("/direcao-turma/<int:dt_id>/alunos/<int:dt_aluno_id>/edit", methods=["GET", "POST"])
+    def direcao_turma_alunos_edit(dt_id, dt_aluno_id):
+        dt_turma = DTTurma.query.options(joinedload(DTTurma.ano_letivo)).get_or_404(dt_id)
+
+        if dt_turma.ano_letivo and dt_turma.ano_letivo.fechado:
+            flash("Ano letivo fechado: apenas consulta.", "error")
+            return redirect(url_for("direcao_turma_alunos", dt_id=dt_id))
+
+        dt_aluno = DTAluno.query.filter_by(id=dt_aluno_id, dt_turma_id=dt_turma.id).first()
+        if not dt_aluno:
+            flash("Aluno não encontrado nesta Direção de Turma.", "error")
+            return redirect(url_for("direcao_turma_alunos", dt_id=dt_id))
+
+        if request.method == "POST":
+            dt_aluno.numero = _clamp_int(request.form.get("numero"), default=None, min_val=1)
+            dt_aluno.processo = request.form.get("processo") or None
+            dt_aluno.nome = (request.form.get("nome") or "").strip()
+            dt_aluno.nome_curto = (request.form.get("nome_curto") or "").strip() or None
+            dt_aluno.nee = request.form.get("nee") or None
+            dt_aluno.observacoes = request.form.get("observacoes") or None
+
+            if not dt_aluno.nome:
+                flash("O nome do aluno é obrigatório.", "error")
+                return redirect(
+                    url_for("direcao_turma_alunos_edit", dt_id=dt_id, dt_aluno_id=dt_aluno_id)
+                )
+
+            db.session.commit()
+            flash("Aluno atualizado.", "success")
+            return redirect(url_for("direcao_turma_alunos", dt_id=dt_id))
+
+        return render_template(
+            "direcao_turma/alunos_form.html",
+            dt_turma=dt_turma,
+            dt_aluno=dt_aluno,
+        )
+
     @app.route("/direcao-turma/<int:dt_id>/delete", methods=["POST"])
     def direcao_turma_delete(dt_id):
         dt_turma = DTTurma.query.options(joinedload(DTTurma.ano_letivo)).get_or_404(dt_id)

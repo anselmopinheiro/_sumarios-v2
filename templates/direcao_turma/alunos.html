@@ -29,7 +29,7 @@
           <th>Nome</th>
           <th>Processo</th>
           <th>Origem</th>
-          <th class="text-end" style="width: 140px;">Ações</th>
+          <th class="text-end" style="width: 200px;">Ações</th>
         </tr>
       </thead>
       <tbody>
@@ -40,6 +40,10 @@
             <td>{{ aluno.processo or '—' }}</td>
             <td>{{ aluno.origem_turma.nome if aluno.origem_turma else '—' }}</td>
             <td class="text-end">
+              <a href="{{ url_for('direcao_turma_alunos_edit', dt_id=dt_turma.id, dt_aluno_id=aluno.id) }}"
+                 class="btn btn-sm btn-outline-warning {% if bloqueado %}disabled{% endif %}">
+                Editar
+              </a>
               <form method="post"
                     action="{{ url_for('direcao_turma_alunos_delete', dt_id=dt_turma.id, dt_aluno_id=aluno.id) }}"
                     class="d-inline"
