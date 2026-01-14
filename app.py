@@ -1462,6 +1462,55 @@ def create_app():
 
         return redirect(url_for("direcao_turma_alunos", dt_id=dt_turma.id))
 
+    @app.route("/direcao-turma/<int:dt_id>/alunos/guardar", methods=["POST"])
+    def direcao_turma_alunos_guardar(dt_id):
+        dt_turma = DTTurma.query.options(joinedload(DTTurma.ano_letivo)).get_or_404(dt_id)
+
+        if dt_turma.ano_letivo and dt_turma.ano_letivo.fechado:
+            flash("Ano letivo fechado: apenas consulta.", "error")
+            return redirect(url_for("direcao_turma_alunos", dt_id=dt_id))
+
+        ids = request.form.getlist("aluno_ids")
+        if not ids:
+            flash("Nenhum aluno selecionado.", "error")
+            return redirect(url_for("direcao_turma_alunos", dt_id=dt_id))
+
+        alunos = DTAluno.query.filter(
+            DTAluno.dt_turma_id == dt_turma.id,
+            DTAluno.id.in_(ids),
+        ).all()
+        alunos_map = {str(aluno.id): aluno for aluno in alunos}
+
+        for aluno_id in ids:
+            aluno = alunos_map.get(aluno_id)
+            if not aluno:
+                continue
+            nome_curto = (request.form.get(f"nome_curto_{aluno_id}") or "").strip()
+            aluno.nome_curto = nome_curto or None
+
+        db.session.commit()
+        flash("Nomes curtos atualizados.", "success")
+        return redirect(url_for("direcao_turma_alunos", dt_id=dt_id))
+
+    @app.route(
+        "/direcao-turma/<int:dt_id>/alunos/<int:dt_aluno_id>/nome-curto",
+        methods=["POST"],
+    )
+    def direcao_turma_alunos_nome_curto(dt_id, dt_aluno_id):
+        dt_turma = DTTurma.query.options(joinedload(DTTurma.ano_letivo)).get_or_404(dt_id)
+
+        if dt_turma.ano_letivo and dt_turma.ano_letivo.fechado:
+            return jsonify({"status": "error", "message": "Ano letivo fechado."}), 403
+
+        dt_aluno = DTAluno.query.filter_by(id=dt_aluno_id, dt_turma_id=dt_turma.id).first()
+        if not dt_aluno:
+            return jsonify({"status": "error", "message": "Aluno não encontrado."}), 404
+
+        nome_curto = (request.form.get("nome_curto") or "").strip()
+        dt_aluno.nome_curto = nome_curto or None
+        db.session.commit()
+        return jsonify({"status": "ok"})
+
     @app.route("/direcao-turma/<int:dt_id>/alunos/<int:dt_aluno_id>/delete", methods=["POST"])
     def direcao_turma_alunos_delete(dt_id, dt_aluno_id):
         dt_turma = DTTurma.query.options(joinedload(DTTurma.ano_letivo)).get_or_404(dt_id)
