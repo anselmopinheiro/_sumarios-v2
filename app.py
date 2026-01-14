@@ -1271,6 +1271,93 @@ def create_app():
             mapa_justificacoes=mapa_justificacoes,
         )
 
+    @app.route("/direcao-turma/<int:dt_id>/alunos")
+    def direcao_turma_alunos(dt_id):
+        dt_turma = DTTurma.query.options(
+            joinedload(DTTurma.turma),
+            joinedload(DTTurma.ano_letivo),
+            joinedload(DTTurma.alunos),
+        ).get_or_404(dt_id)
+
+        alunos = sorted(
+            dt_turma.alunos,
+            key=lambda aluno: (
+                aluno.numero is None,
+                aluno.numero or 0,
+                aluno.nome or "",
+            ),
+        )
+        bloqueado = bool(dt_turma.ano_letivo and dt_turma.ano_letivo.fechado)
+
+        return render_template(
+            "direcao_turma/alunos.html",
+            dt_turma=dt_turma,
+            alunos=alunos,
+            bloqueado=bloqueado,
+        )
+
+    @app.route("/direcao-turma/<int:dt_id>/alunos/importar", methods=["POST"])
+    def direcao_turma_alunos_importar(dt_id):
+        dt_turma = DTTurma.query.options(
+            joinedload(DTTurma.turma),
+            joinedload(DTTurma.ano_letivo),
+        ).get_or_404(dt_id)
+
+        if dt_turma.ano_letivo and dt_turma.ano_letivo.fechado:
+            flash("Ano letivo fechado: apenas consulta.", "error")
+            return redirect(url_for("direcao_turma_alunos", dt_id=dt_id))
+
+        alunos_turma = Aluno.query.filter_by(turma_id=dt_turma.turma_id).all()
+        existentes = {
+            (aluno.processo, aluno.numero, aluno.nome)
+            for aluno in DTAluno.query.filter_by(dt_turma_id=dt_turma.id).all()
+        }
+
+        novos = 0
+        for aluno in alunos_turma:
+            chave = (aluno.processo, aluno.numero, aluno.nome)
+            if chave in existentes:
+                continue
+            db.session.add(
+                DTAluno(
+                    dt_turma_id=dt_turma.id,
+                    origem_turma_id=dt_turma.turma_id,
+                    processo=aluno.processo,
+                    numero=aluno.numero,
+                    nome=aluno.nome,
+                    nome_curto=aluno.nome_curto,
+                    nee=aluno.nee,
+                    observacoes=aluno.observacoes,
+                )
+            )
+            novos += 1
+
+        db.session.commit()
+        if novos:
+            flash(f"{novos} aluno(s) importado(s) para a Direção de Turma.", "success")
+        else:
+            flash("Não há novos alunos para importar.", "info")
+
+        return redirect(url_for("direcao_turma_alunos", dt_id=dt_turma.id))
+
+    @app.route("/direcao-turma/<int:dt_id>/alunos/<int:dt_aluno_id>/delete", methods=["POST"])
+    def direcao_turma_alunos_delete(dt_id, dt_aluno_id):
+        dt_turma = DTTurma.query.options(joinedload(DTTurma.ano_letivo)).get_or_404(dt_id)
+
+        if dt_turma.ano_letivo and dt_turma.ano_letivo.fechado:
+            flash("Ano letivo fechado: apenas consulta.", "error")
+            return redirect(url_for("direcao_turma_alunos", dt_id=dt_id))
+
+        dt_aluno = DTAluno.query.filter_by(id=dt_aluno_id, dt_turma_id=dt_turma.id).first()
+        if not dt_aluno:
+            flash("Aluno não encontrado nesta Direção de Turma.", "error")
+            return redirect(url_for("direcao_turma_alunos", dt_id=dt_id))
+
+        db.session.delete(dt_aluno)
+        db.session.commit()
+        flash("Aluno removido da Direção de Turma.", "success")
+        return redirect(url_for("direcao_turma_alunos", dt_id=dt_id))
+
     @app.route("/direcao-turma/<int:dt_id>/delete", methods=["POST"])
     def direcao_turma_delete(dt_id):
         dt_turma = DTTurma.query.options(joinedload(DTTurma.ano_letivo)).get_or_404(dt_id)

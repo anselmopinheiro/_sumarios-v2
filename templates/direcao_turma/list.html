@@ -42,6 +42,10 @@
             <td class="text-end">
               {% set bloqueado = dt.ano_letivo and dt.ano_letivo.fechado %}
               <div class="btn-group" role="group">
+                <a href="{{ url_for('direcao_turma_alunos', dt_id=dt.id) }}"
+                   class="btn btn-sm btn-outline-secondary">
+                  Alunos
+                </a>
                 <a href="{{ url_for('direcao_turma_mapa_mensal', dt_id=dt.id) }}"
                    class="btn btn-sm btn-outline-info">
                   Mapa mensal
