@@ -45,16 +45,12 @@
             {% for dia in dias %}
               {% set dia_key = dia.isoformat() %}
               <th class="text-center">
-                <div class="input-group input-group-sm">
-                  <select class="form-select" name="tipo_{{ dia_key }}">
-                    <option value="falta">Falta</option>
-                    <option value="atividade">Atividade</option>
-                  </select>
-                  <input class="form-control"
-                         type="text"
-                         name="motivo_{{ dia_key }}"
-                         placeholder="Motivo">
-                </div>
+                <input class="form-control form-control-sm text-center js-motivo-dia"
+                       type="text"
+                       name="motivo_{{ dia_key }}"
+                       data-dia="{{ dia_key }}"
+                       placeholder="Motivo"
+                       value="{{ mapa_motivos_dia.get(dia) or '' }}">
               </th>
             {% endfor %}
             <th></th>
@@ -80,7 +76,7 @@
                              id="dia-{{ aluno.id }}-{{ dia_key }}"
                              {% if justif %}checked{% endif %}>
                     </div>
-                    {% if justif and (justif.motivo or justif.tipo == 'atividade') %}
+                    {% if justif and justif.motivo %}
                       <span class="badge text-bg-info">i</span>
                     {% endif %}
                   </div>
@@ -125,6 +121,14 @@
         const dia = parts.slice(2).join('_');
         if (alunoField) alunoField.value = alunoId;
         if (diaField) diaField.value = dia;
+        form.submit();
+      });
+    });
+
+    form.querySelectorAll('.js-motivo-dia').forEach((inputEl) => {
+      inputEl.addEventListener('change', () => {
+        if (alunoField) alunoField.value = '';
+        if (diaField) diaField.value = inputEl.dataset.dia || '';
         form.submit();
       });
     });

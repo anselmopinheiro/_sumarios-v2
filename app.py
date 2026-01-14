@@ -1238,7 +1238,11 @@ def create_app():
         month = _clamp_int(request.args.get("mes") or mes_txt, default=hoje.month, min_val=1, max_val=12)
         ano_mes = date(year, month, 1)
         ultimo_dia = calendar.monthrange(year, month)[1]
-        dias = [date(year, month, dia) for dia in range(1, ultimo_dia + 1)]
+        dias = [
+            date(year, month, dia)
+            for dia in range(1, ultimo_dia + 1)
+            if date(year, month, dia).weekday() < 5
+        ]
 
         justificacoes = (
             DTJustificacao.query.join(DTAluno)
@@ -1250,8 +1254,11 @@ def create_app():
             .all()
         )
         mapa_justificacoes = defaultdict(dict)
+        mapa_motivos_dia = {}
         for justificacao in justificacoes:
             mapa_justificacoes[justificacao.dt_aluno_id][justificacao.data] = justificacao
+            if justificacao.motivo and justificacao.data not in mapa_motivos_dia:
+                mapa_motivos_dia[justificacao.data] = justificacao.motivo
 
         alunos = sorted(
             dt_turma.alunos,
@@ -1269,6 +1276,7 @@ def create_app():
             dias=dias,
             ano_mes=ano_mes,
             mapa_justificacoes=mapa_justificacoes,
+            mapa_motivos_dia=mapa_motivos_dia,
         )
 
     @app.route("/direcao-turma/<int:dt_id>/mapa-mensal/atualizar", methods=["POST"])
@@ -1287,13 +1295,8 @@ def create_app():
         aluno_id = request.form.get("dt_aluno_id", type=int)
         dia_txt = request.form.get("dia")
 
-        if not aluno_id or not dia_txt:
-            flash("Aluno inválido.", "error")
-            return redirect(url_for("direcao_turma_mapa_mensal", dt_id=dt_id))
-
-        aluno = DTAluno.query.filter_by(id=aluno_id, dt_turma_id=dt_turma.id).first()
-        if not aluno:
-            flash("Aluno não encontrado nesta Direção de Turma.", "error")
+        if not dia_txt:
+            flash("Dia inválido.", "error")
             return redirect(url_for("direcao_turma_mapa_mensal", dt_id=dt_id))
 
         try:
@@ -1306,9 +1309,35 @@ def create_app():
             flash("Dia fora do mês selecionado.", "error")
             return redirect(url_for("direcao_turma_mapa_mensal", dt_id=dt_id))
 
-        marcado = request.form.get(f"dia_{aluno_id}_{dia_txt}") == "1"
+        if dia.weekday() >= 5:
+            flash("Dia inválido.", "error")
+            return redirect(url_for("direcao_turma_mapa_mensal", dt_id=dt_id))
+
         motivo = (request.form.get(f"motivo_{dia_txt}") or "").strip()
-        tipo = (request.form.get(f"tipo_{dia_txt}") or "falta").strip()
+        if not aluno_id:
+            justificacoes = (
+                DTJustificacao.query.join(DTAluno)
+                .filter(
+                    DTAluno.dt_turma_id == dt_turma.id,
+                    DTJustificacao.data == dia,
+                )
+                .all()
+            )
+            for justificacao in justificacoes:
+                justificacao.motivo = motivo or None
+
+            db.session.commit()
+            flash("Motivo atualizado.", "success")
+            return redirect(
+                url_for("direcao_turma_mapa_mensal", dt_id=dt_id, ano=year, mes=month)
+            )
+
+        aluno = DTAluno.query.filter_by(id=aluno_id, dt_turma_id=dt_turma.id).first()
+        if not aluno:
+            flash("Aluno não encontrado nesta Direção de Turma.", "error")
+            return redirect(url_for("direcao_turma_mapa_mensal", dt_id=dt_id))
+
+        marcado = request.form.get(f"dia_{aluno_id}_{dia_txt}") == "1"
 
         justificacao = DTJustificacao.query.filter_by(
             dt_aluno_id=aluno.id,
@@ -1326,7 +1355,6 @@ def create_app():
                 )
                 db.session.add(justificacao)
 
-            justificacao.tipo = tipo or "falta"
             justificacao.motivo = motivo or None
 
         db.session.commit()
