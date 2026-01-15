@@ -472,17 +472,9 @@ def create_app():
                     CREATE TABLE dt_alunos (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         dt_turma_id INTEGER NOT NULL,
-                        aluno_id INTEGER,
-                        origem_turma_id INTEGER,
-                        processo VARCHAR(50),
-                        numero INTEGER,
-                        nome VARCHAR(255) NOT NULL,
-                        nome_curto VARCHAR(100),
-                        nee TEXT,
-                        observacoes TEXT,
+                        aluno_id INTEGER NOT NULL,
                         CONSTRAINT fk_dt_turma FOREIGN KEY(dt_turma_id) REFERENCES dt_turmas(id),
-                        CONSTRAINT fk_dt_aluno FOREIGN KEY(aluno_id) REFERENCES alunos(id),
-                        CONSTRAINT fk_dt_origem_turma FOREIGN KEY(origem_turma_id) REFERENCES turmas(id)
+                        CONSTRAINT fk_dt_aluno FOREIGN KEY(aluno_id) REFERENCES alunos(id)
                     )
                     """
                 )
@@ -1299,9 +1291,9 @@ def create_app():
         )
         dt_alunos.sort(
             key=lambda dt_aluno: (
-                (dt_aluno.aluno.numero if dt_aluno.aluno else dt_aluno.numero) is None,
-                dt_aluno.aluno.numero if dt_aluno.aluno else (dt_aluno.numero or 0),
-                (dt_aluno.aluno.nome if dt_aluno.aluno else dt_aluno.nome) or "",
+                dt_aluno.aluno.numero is None,
+                dt_aluno.aluno.numero or 0,
+                dt_aluno.aluno.nome or "",
             )
         )
 
@@ -1421,9 +1413,9 @@ def create_app():
         )
         dt_alunos.sort(
             key=lambda dt_aluno: (
-                (dt_aluno.aluno.numero if dt_aluno.aluno else dt_aluno.numero) is None,
-                dt_aluno.aluno.numero if dt_aluno.aluno else (dt_aluno.numero or 0),
-                (dt_aluno.aluno.nome if dt_aluno.aluno else dt_aluno.nome) or "",
+                dt_aluno.aluno.numero is None,
+                dt_aluno.aluno.numero or 0,
+                dt_aluno.aluno.nome or "",
             )
         )
         bloqueado = bool(dt_turma.ano_letivo and dt_turma.ano_letivo.fechado)
@@ -1449,40 +1441,15 @@ def create_app():
         alunos_turma = Aluno.query.filter_by(turma_id=dt_turma.turma_id).all()
         dt_existentes = DTAluno.query.filter_by(dt_turma_id=dt_turma.id).all()
         existentes = {aluno.aluno_id for aluno in dt_existentes if aluno.aluno_id}
-        existentes_por_chave = {
-            (aluno.processo, aluno.numero, aluno.nome): aluno
-            for aluno in dt_existentes
-            if aluno.aluno_id is None
-        }
 
         novos = 0
         for aluno in alunos_turma:
             if aluno.id in existentes:
                 continue
-            chave = (aluno.processo, aluno.numero, aluno.nome)
-            match = existentes_por_chave.get(chave)
-            if match:
-                match.aluno_id = aluno.id
-                match.origem_turma_id = dt_turma.turma_id
-                match.processo = aluno.processo
-                match.numero = aluno.numero
-                match.nome = aluno.nome
-                match.nome_curto = aluno.nome_curto
-                match.nee = aluno.nee
-                match.observacoes = aluno.observacoes
-                novos += 1
-                continue
             db.session.add(
                 DTAluno(
                     dt_turma_id=dt_turma.id,
                     aluno_id=aluno.id,
-                    origem_turma_id=dt_turma.turma_id,
-                    processo=aluno.processo,
-                    numero=aluno.numero,
-                    nome=aluno.nome,
-                    nome_curto=aluno.nome_curto,
-                    nee=aluno.nee,
-                    observacoes=aluno.observacoes,
                 )
             )
             novos += 1

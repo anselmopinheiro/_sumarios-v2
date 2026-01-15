@@ -41,8 +41,8 @@
           {% for dt_aluno in alunos %}
             {% set aluno = dt_aluno.aluno %}
             <tr>
-              <td>{{ '%02d'|format(aluno.numero) if aluno and aluno.numero is not none else (dt_aluno.numero or '—') }}</td>
-              <td class="fw-semibold">{{ aluno.nome if aluno else dt_aluno.nome }}</td>
+              <td>{{ '%02d'|format(aluno.numero) if aluno and aluno.numero is not none else '—' }}</td>
+              <td class="fw-semibold">{{ aluno.nome if aluno else '—' }}</td>
               <td>
                 <input type="hidden" name="aluno_ids" value="{{ dt_aluno.id }}">
                 <input type="text"
@@ -50,11 +50,11 @@
                        name="nome_curto_{{ dt_aluno.id }}"
                        data-aluno-id="{{ dt_aluno.id }}"
                        data-url="{{ url_for('direcao_turma_alunos_nome_curto', dt_id=dt_turma.id, dt_aluno_id=dt_aluno.id) }}"
-                       value="{{ aluno.nome_curto if aluno else (dt_aluno.nome_curto or '') }}"
+                       value="{{ aluno.nome_curto if aluno else '' }}"
                        {% if bloqueado %}disabled{% endif %}>
               </td>
-              <td>{{ aluno.processo if aluno and aluno.processo else (dt_aluno.processo or '—') }}</td>
-              <td>{{ aluno.turma.nome if aluno and aluno.turma else (dt_aluno.origem_turma.nome if dt_aluno.origem_turma else '—') }}</td>
+              <td>{{ aluno.processo if aluno and aluno.processo else '—' }}</td>
+              <td>{{ aluno.turma.nome if aluno and aluno.turma else '—' }}</td>
               <td class="text-end">
                 <a href="{{ url_for('direcao_turma_alunos_edit', dt_id=dt_turma.id, dt_aluno_id=dt_aluno.id) }}"
                    class="btn btn-sm btn-outline-warning {% if bloqueado %}disabled{% endif %}">

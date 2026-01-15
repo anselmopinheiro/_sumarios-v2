@@ -214,17 +214,9 @@ class DTAluno(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     dt_turma_id = db.Column(db.Integer, db.ForeignKey("dt_turmas.id"), nullable=False)
-    aluno_id = db.Column(db.Integer, db.ForeignKey("alunos.id"))
-    origem_turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"))
-    processo = db.Column(db.String(50))
-    numero = db.Column(db.Integer)
-    nome = db.Column(db.String(255), nullable=False)
-    nome_curto = db.Column(db.String(100))
-    nee = db.Column(db.Text)
-    observacoes = db.Column(db.Text)
+    aluno_id = db.Column(db.Integer, db.ForeignKey("alunos.id"), nullable=False)
 
     dt_turma = db.relationship("DTTurma", back_populates="alunos")
-    origem_turma = db.relationship("Turma")
     aluno = db.relationship("Aluno")
     justificacoes = db.relationship(
         "DTJustificacao",
@@ -233,7 +225,6 @@ class DTAluno(db.Model):
     )
 
     __table_args__ = (
-        db.Index("ix_dt_alunos_turma_numero", "dt_turma_id", "numero"),
         db.Index("ix_dt_alunos_turma_aluno", "dt_turma_id", "aluno_id"),
     )
 
