@@ -74,12 +74,13 @@
             </th>
           {% endfor %}
           <th class="text-center" style="width: 120px;">Faltas</th>
+          <th class="text-center" style="width: 140px;">Pontualidade</th>
           <th class="text-end" style="width: 140px;">Média</th>
         </tr>
       </thead>
       <tbody>
         {% for aluno in alunos %}
-          {% set ns = namespace(valores=[], faltas_total=0) %}
+          {% set ns = namespace(valores=[], faltas_total=0, atrasos_total=0) %}
           <tr>
             <td>{{ aluno.numero if aluno.numero is not none else '--' }}</td>
             <td>{{ aluno.nome }}</td>
@@ -98,8 +99,10 @@
                 {% endif %}
               </td>
               {% set ns.faltas_total = ns.faltas_total + (dia.faltas.get(aluno.id) or 0) %}
+              {% set ns.atrasos_total = ns.atrasos_total + (dia.atrasos.get(aluno.id) or 0) %}
             {% endfor %}
             <td class="text-center">{{ ns.faltas_total }}</td>
+            <td class="text-center">{{ ns.atrasos_total }}</td>
             <td class="text-end fw-semibold">
               {% if ns.valores %}
                 {{ '%.2f'|format((ns.valores | sum) / (ns.valores | length)) }}

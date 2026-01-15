@@ -1820,6 +1820,7 @@ def calcular_mapa_avaliacao_diaria(
             medias[aluno.id] = media
             falta_disciplinar_por_aluno[aluno.id] = falta_disc
         faltas = {}
+        atrasos = {}
         sumarios_dia: List[str] = []
         tem_falta_disciplinar = False
 
@@ -1832,6 +1833,7 @@ def calcular_mapa_avaliacao_diaria(
 
         for aluno in alunos:
             faltas_aluno = 0
+            atrasos_aluno = 0
             for aula in aulas_dia:
                 avaliacao = next(
                     (av for av in aula.avaliacoes if av.aluno_id == aluno.id), None
@@ -1841,12 +1843,15 @@ def calcular_mapa_avaliacao_diaria(
 
                 tempos_aula = _total_previsto_para_aula(aula)
                 faltas_aluno += max(0, min(avaliacao.faltas or 0, tempos_aula))
+                if avaliacao.atraso:
+                    atrasos_aluno += 1
                 if avaliacao.falta_disciplinar:
                     faltas_aluno += avaliacao.falta_disciplinar
                 if avaliacao.falta_disciplinar:
                     tem_falta_disciplinar = True
 
             faltas[aluno.id] = faltas_aluno
+            atrasos[aluno.id] = atrasos_aluno
 
         dias.append(
             {
@@ -1854,6 +1859,7 @@ def calcular_mapa_avaliacao_diaria(
                 "medias": medias,
                 "falta_disciplinar_por_aluno": falta_disciplinar_por_aluno,
                 "faltas": faltas,
+                "atrasos": atrasos,
                 "sumarios": ", ".join(sumarios_dia),
                 "tem_falta_disciplinar": tem_falta_disciplinar,
             }
