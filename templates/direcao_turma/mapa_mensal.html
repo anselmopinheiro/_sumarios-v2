@@ -86,9 +86,9 @@
             {% set aluno = dt_aluno.aluno %}
             <tr>
               <td class="fw-semibold dt-sticky-col"
-                  title="{{ aluno.nome if aluno else '' }}">
-                {{ '%02d'|format(aluno.numero) if aluno and aluno.numero is not none else '—' }}
-                {{ aluno.nome_curto or aluno.nome if aluno else '—' }}
+                  title="{{ aluno.nome if aluno else (dt_aluno.nome or '') }}">
+                {{ '%02d'|format(aluno.numero) if aluno and aluno.numero is not none else (dt_aluno.numero or '—') }}
+                {{ aluno.nome_curto or aluno.nome if aluno else (dt_aluno.nome_curto or dt_aluno.nome or '—') }}
               </td>
               {% for dia in dias %}
                 {% set justif = mapa_justificacoes.get(dt_aluno.id, {}).get(dia) %}

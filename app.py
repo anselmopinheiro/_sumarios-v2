@@ -1447,15 +1447,30 @@ def create_app():
             return redirect(url_for("direcao_turma_alunos", dt_id=dt_id))
 
         alunos_turma = Aluno.query.filter_by(turma_id=dt_turma.turma_id).all()
-        existentes = {
-            aluno.aluno_id
-            for aluno in DTAluno.query.filter_by(dt_turma_id=dt_turma.id).all()
-            if aluno.aluno_id
+        dt_existentes = DTAluno.query.filter_by(dt_turma_id=dt_turma.id).all()
+        existentes = {aluno.aluno_id for aluno in dt_existentes if aluno.aluno_id}
+        existentes_por_chave = {
+            (aluno.processo, aluno.numero, aluno.nome): aluno
+            for aluno in dt_existentes
+            if aluno.aluno_id is None
         }
 
         novos = 0
         for aluno in alunos_turma:
             if aluno.id in existentes:
+                continue
+            chave = (aluno.processo, aluno.numero, aluno.nome)
+            match = existentes_por_chave.get(chave)
+            if match:
+                match.aluno_id = aluno.id
+                match.origem_turma_id = dt_turma.turma_id
+                match.processo = aluno.processo
+                match.numero = aluno.numero
+                match.nome = aluno.nome
+                match.nome_curto = aluno.nome_curto
+                match.nee = aluno.nee
+                match.observacoes = aluno.observacoes
+                novos += 1
                 continue
             db.session.add(
                 DTAluno(
