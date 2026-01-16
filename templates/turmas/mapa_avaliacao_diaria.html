@@ -10,7 +10,10 @@
     <label class="form-label">Período</label>
     <select name="periodo_id" class="form-select" id="periodo-select" onchange="this.form.submit()">
       {% for p in periodos_disponiveis %}
-        <option value="{{ p.id }}" {% if periodo_atual and p.id == periodo_atual.id %}selected{% endif %}>
+        <option value="{{ p.id }}"
+                data-inicio="{{ p.data_inicio.isoformat() if p.data_inicio else '' }}"
+                data-fim="{{ p.data_fim.isoformat() if p.data_fim else '' }}"
+                {% if periodo_atual and p.id == periodo_atual.id %}selected{% endif %}>
           {{ p.nome }} ({{ p.data_inicio.strftime('%d/%m/%Y') }} – {{ p.data_fim.strftime('%d/%m/%Y') }})
         </option>
       {% endfor %}
@@ -46,8 +49,10 @@
     if (!periodoSelect || !dataInicio || !dataFim) return;
 
     periodoSelect.addEventListener('change', () => {
-      dataInicio.value = '';
-      dataFim.value = '';
+      const selected = periodoSelect.options[periodoSelect.selectedIndex];
+      if (!selected) return;
+      dataInicio.value = selected.dataset.inicio || '';
+      dataFim.value = selected.dataset.fim || '';
     });
   });
 </script>
