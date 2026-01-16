@@ -91,6 +91,7 @@
               {{ dia.data.strftime('%d/%m/%Y') }}
               {% if dia.sumarios %}<br><small>N.º {{ dia.sumarios }}</small>{% endif %}
               {% if dia.tem_falta_disciplinar %}<br><small class="text-danger fw-semibold">Falta disciplinar</small>{% endif %}
+              {% if dia.tem_avaliacao_negativa %}<br><small class="text-danger fw-semibold">Avaliação negativa</small>{% endif %}
             </th>
           {% endfor %}
           <th class="text-center col-faltas" style="width: 120px;">Faltas</th>
@@ -106,7 +107,8 @@
             <td class="sticky-col">{{ aluno.nome }}</td>
             {% for dia in dias %}
               {% set falta_disc = dia.get('falta_disciplinar_por_aluno', {}).get(aluno.id) %}
-              {% set danger = 'table-danger' if falta_disc else '' %}
+              {% set avaliacao_negativa = dia.get('avaliacao_negativa_por_aluno', {}).get(aluno.id) %}
+              {% set danger = 'table-danger' if falta_disc or avaliacao_negativa else '' %}
               {% set media = dia.medias.get(aluno.id) %}
               {% if media is not none %}
                 {% set _ = ns.valores.append(media) %}
@@ -116,6 +118,9 @@
                   —
                 {% else %}
                   {{ '%.2f'|format(media) }}
+                  {% if avaliacao_negativa %}
+                    <div class="text-danger small">Negativa</div>
+                  {% endif %}
                 {% endif %}
               </td>
               {% set ns.faltas_total = ns.faltas_total + (dia.faltas.get(aluno.id) or 0) %}

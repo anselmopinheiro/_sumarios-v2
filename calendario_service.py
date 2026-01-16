@@ -1765,13 +1765,14 @@ def calcular_mapa_avaliacao_diaria(
 
     def _media_para_aluno(
         aluno_id: int, aulas_dia: List[CalendarioAula]
-    ) -> tuple[Optional[float], bool]:
+    ) -> tuple[Optional[float], bool, bool]:
         total_previsto = 0
         faltas_total = 0
         soma_notas = 0
         total_campos = 0
         teve_avaliacao = False
         tem_falta_disciplinar = False
+        tem_avaliacao_negativa = False
 
         for aula in aulas_dia:
             avaliacao = next((av for av in aula.avaliacoes if av.aluno_id == aluno_id), None)
@@ -1789,6 +1790,9 @@ def calcular_mapa_avaliacao_diaria(
                 faltas_total += faltas
                 continue
 
+            if (avaliacao.responsabilidade or 3) < 3 or (avaliacao.comportamento or 3) < 3:
+                tem_avaliacao_negativa = True
+
             notas = [
                 avaliacao.responsabilidade or 3,
                 avaliacao.comportamento or 3,
@@ -1800,29 +1804,35 @@ def calcular_mapa_avaliacao_diaria(
             total_campos += len(notas)
 
         if tem_falta_disciplinar:
-            return 1.0, True
+            return 1.0, True, True
+
+        if tem_avaliacao_negativa:
+            return 1.0, False, True
 
         if total_campos:
-            return round(soma_notas / total_campos, 2), False
+            return round(soma_notas / total_campos, 2), False, False
 
         if teve_avaliacao and total_previsto and faltas_total >= total_previsto:
-            return 0.0, False
+            return 0.0, False, False
 
-        return None, False
+        return None, False, False
 
     dias = []
     for data_ref in sorted(aulas_por_data.keys()):
         aulas_dia = aulas_por_data[data_ref]
         medias = {}
         falta_disciplinar_por_aluno = {}
+        avaliacao_negativa_por_aluno = {}
         for aluno in alunos:
-            media, falta_disc = _media_para_aluno(aluno.id, aulas_dia)
+            media, falta_disc, avaliacao_negativa = _media_para_aluno(aluno.id, aulas_dia)
             medias[aluno.id] = media
             falta_disciplinar_por_aluno[aluno.id] = falta_disc
+            avaliacao_negativa_por_aluno[aluno.id] = avaliacao_negativa
         faltas = {}
         atrasos = {}
         sumarios_dia: List[str] = []
         tem_falta_disciplinar = False
+        tem_avaliacao_negativa = False
 
         for aula in aulas_dia:
             sumarios_aula = [
@@ -1849,6 +1859,8 @@ def calcular_mapa_avaliacao_diaria(
                     faltas_aluno += avaliacao.falta_disciplinar
                 if avaliacao.falta_disciplinar:
                     tem_falta_disciplinar = True
+                if (avaliacao.responsabilidade or 3) < 3 or (avaliacao.comportamento or 3) < 3:
+                    tem_avaliacao_negativa = True
 
             faltas[aluno.id] = faltas_aluno
             atrasos[aluno.id] = atrasos_aluno
@@ -1858,10 +1870,12 @@ def calcular_mapa_avaliacao_diaria(
                 "data": data_ref,
                 "medias": medias,
                 "falta_disciplinar_por_aluno": falta_disciplinar_por_aluno,
+                "avaliacao_negativa_por_aluno": avaliacao_negativa_por_aluno,
                 "faltas": faltas,
                 "atrasos": atrasos,
                 "sumarios": ", ".join(sumarios_dia),
                 "tem_falta_disciplinar": tem_falta_disciplinar,
+                "tem_avaliacao_negativa": tem_avaliacao_negativa,
             }
         )
 

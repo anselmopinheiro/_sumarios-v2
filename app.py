@@ -2540,8 +2540,11 @@ def create_app():
             titulo = d["data"].strftime("%d/%m/%Y")
             if sumarios_txt:
                 titulo += f"<br>N.º {sumarios_txt}"
-            if d.get("tem_falta_disciplinar"):
-                titulo += "<br><small style='color:#dc3545;font-weight:bold'>Falta disciplinar</small>"
+            if d.get("tem_falta_disciplinar") or d.get("tem_avaliacao_negativa"):
+                if d.get("tem_falta_disciplinar"):
+                    titulo += "<br><small style='color:#dc3545;font-weight:bold'>Falta disciplinar</small>"
+                if d.get("tem_avaliacao_negativa"):
+                    titulo += "<br><small style='color:#dc3545;font-weight:bold'>Avaliação negativa</small>"
                 output.write("<th style='background:#f8d7da;'>" + titulo + "</th>")
             else:
                 output.write(f"<th>{titulo}</th>")
@@ -2556,11 +2559,15 @@ def create_app():
             for dia in dias:
                 media = dia["medias"].get(aluno.id)
                 falta_disc = dia.get("falta_disciplinar_por_aluno", {}).get(aluno.id)
+                avaliacao_negativa = dia.get("avaliacao_negativa_por_aluno", {}).get(aluno.id)
                 if media is not None:
                     valores.append(media)
                 estilo = (
                     " style='background:#f8d7da;'"
-                    if falta_disc or dia.get("tem_falta_disciplinar")
+                    if falta_disc
+                    or avaliacao_negativa
+                    or dia.get("tem_falta_disciplinar")
+                    or dia.get("tem_avaliacao_negativa")
                     else ""
                 )
                 output.write(f"<td{estilo}>{_media_formatada(media)}</td>")
