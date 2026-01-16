@@ -2448,12 +2448,16 @@ def create_app():
             .all()
         )
 
+        periodo_filtro_id = periodo_atual.id if periodo_atual else None
+        if turma.periodo_tipo == "anual" and periodo_atual and periodo_atual.tipo in ("semestre1", "semestre2"):
+            periodo_filtro_id = None
+
         mapa = calcular_mapa_avaliacao_diaria(
             turma,
             alunos,
             data_inicio=data_inicio,
             data_fim=data_fim,
-            periodo_id=periodo_atual.id if periodo_atual else None,
+            periodo_id=periodo_filtro_id,
             modulo_id=modulo_id,
         )
         dias = mapa.get("dias", [])
@@ -2522,12 +2526,16 @@ def create_app():
             .all()
         )
 
+        periodo_filtro_id = periodo_atual.id if periodo_atual else None
+        if turma.periodo_tipo == "anual" and periodo_atual and periodo_atual.tipo in ("semestre1", "semestre2"):
+            periodo_filtro_id = None
+
         mapa = calcular_mapa_avaliacao_diaria(
             turma,
             alunos,
             data_inicio=data_inicio,
             data_fim=data_fim,
-            periodo_id=periodo_atual.id if periodo_atual else None,
+            periodo_id=periodo_filtro_id,
             modulo_id=modulo_id,
         )
         dias = mapa.get("dias", [])
