@@ -8,7 +8,7 @@
 <form method="get" class="row g-3 mb-3">
   <div class="col-md-3">
     <label class="form-label">Período</label>
-    <select name="periodo_id" class="form-select" id="periodo-select" onchange="this.form.submit()">
+    <select name="periodo_id" class="form-select" id="periodo-select">
       {% for p in periodos_disponiveis %}
         <option value="{{ p.id }}"
                 data-inicio="{{ p.data_inicio.isoformat() if p.data_inicio else '' }}"
@@ -53,6 +53,7 @@
       if (!selected) return;
       dataInicio.value = selected.dataset.inicio || '';
       dataFim.value = selected.dataset.fim || '';
+      periodoSelect.form?.submit();
     });
   });
 </script>
