@@ -2410,14 +2410,21 @@ def create_app():
             .all()
         )
 
-        periodos_disponiveis = filtrar_periodos_para_turma(
-            turma,
-            (
-                Periodo.query.filter_by(turma_id=turma.id)
-                .order_by(Periodo.data_inicio)
-                .all()
-            ),
+        periodos_base = (
+            Periodo.query.filter_by(turma_id=turma.id)
+            .order_by(Periodo.data_inicio)
+            .all()
         )
+        periodos_disponiveis = filtrar_periodos_para_turma(turma, periodos_base)
+        if turma.periodo_tipo == "anual":
+            extras = [p for p in periodos_base if p.tipo in ("semestre1", "semestre2")]
+            periodos_map = {p.id: p for p in periodos_disponiveis}
+            for periodo in extras:
+                periodos_map.setdefault(periodo.id, periodo)
+            periodos_disponiveis = sorted(
+                periodos_map.values(),
+                key=lambda p: (p.data_inicio or date.min, p.data_fim or date.min),
+            )
 
         periodo_id = request.args.get("periodo_id", type=int)
         modulo_id = request.args.get("modulo_id", type=int)
@@ -2477,14 +2484,21 @@ def create_app():
             .all()
         )
 
-        periodos_disponiveis = filtrar_periodos_para_turma(
-            turma,
-            (
-                Periodo.query.filter_by(turma_id=turma.id)
-                .order_by(Periodo.data_inicio)
-                .all()
-            ),
+        periodos_base = (
+            Periodo.query.filter_by(turma_id=turma.id)
+            .order_by(Periodo.data_inicio)
+            .all()
         )
+        periodos_disponiveis = filtrar_periodos_para_turma(turma, periodos_base)
+        if turma.periodo_tipo == "anual":
+            extras = [p for p in periodos_base if p.tipo in ("semestre1", "semestre2")]
+            periodos_map = {p.id: p for p in periodos_disponiveis}
+            for periodo in extras:
+                periodos_map.setdefault(periodo.id, periodo)
+            periodos_disponiveis = sorted(
+                periodos_map.values(),
+                key=lambda p: (p.data_inicio or date.min, p.data_fim or date.min),
+            )
 
         periodo_id = request.args.get("periodo_id", type=int)
         modulo_id = request.args.get("modulo_id", type=int)
