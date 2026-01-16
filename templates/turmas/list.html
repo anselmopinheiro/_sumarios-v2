@@ -7,6 +7,94 @@
 
 </div>
 
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-semibold">Opções de exportação</div>
+  <div class="card-body">
+    <form class="row gy-2 gx-3 align-items-end" method="post" action="{{ url_for('turmas_export_csv') }}">
+      <div class="col-12 col-md-6">
+        <label class="form-label" for="csv_dest_dir">Pasta de destino dos CSV</label>
+        <input
+          type="text"
+          class="form-control"
+          id="csv_dest_dir"
+          name="csv_dest_dir"
+          value="{{ csv_dest_dir or '' }}"
+          placeholder="/caminho/para/pasta"
+          required
+        >
+        <div class="form-text">Os ficheiros são gravados em UTF-8 (com BOM) e um por turma.</div>
+      </div>
+      <div class="col-12 col-md-6 d-flex gap-2">
+        <button type="submit" name="acao" value="guardar" class="btn btn-outline-secondary">Guardar pasta</button>
+        <button type="submit" name="acao" value="exportar" class="btn btn-success">Exportar CSV por turma</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% set anos_ativos = anos_letivos|selectattr('ativo')|list %}
+{% set ano_destaque = anos_ativos[0] if anos_ativos else (anos_letivos[0] if anos_letivos else None) %}
+{% if ano_destaque %}
+  <h2 class="h4">Ano letivo: {{ ano_destaque.nome }}</h2>
+{% endif %}
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-semibold">Backup anual (JSON)</div>
+  <div class="card-body">
+    <div class="row gy-3">
+      <div class="col-12 col-lg-6">
+        <form class="row gy-2 gx-3 align-items-end" method="post" action="{{ url_for('backup_ano_export') }}">
+          <div class="col-12">
+            <label class="form-label" for="ano_letivo_id">Ano letivo</label>
+            <select id="ano_letivo_id" name="ano_letivo_id" class="form-select" required>
+              <option value="">Seleciona um ano</option>
+              {% for ano in anos_letivos %}
+                <option value="{{ ano.id }}">{{ ano.nome }}{% if ano.ativo %} (ativo){% endif %}{% if ano.fechado %} (fechado){% endif %}</option>
+              {% endfor %}
+            </select>
+            <div class="form-text">Exporta todos os dados do ano escolhido, incluindo turmas, alunos, calendários e avaliações.</div>
+          </div>
+          <div class="col-12">
+            <label class="form-label" for="backup_json_dir">Pasta de destino do backup</label>
+            <input
+              class="form-control"
+              type="text"
+              id="backup_json_dir"
+              name="backup_json_dir"
+              value="{{ backup_json_dir or '' }}"
+              placeholder="/caminho/para/guardar"
+              required
+            >
+            <div class="form-text">O ficheiro JSON será gravado nesta pasta.</div>
+          </div>
+          <div class="col-12">
+            <button type="submit" class="btn btn-outline-primary">Exportar backup</button>
+          </div>
+        </form>
+      </div>
+      <div class="col-12 col-lg-6">
+        <form class="row gy-2 gx-3 align-items-end" method="post" enctype="multipart/form-data" action="{{ url_for('backup_ano_import') }}">
+          <div class="col-12">
+            <label class="form-label" for="ano_json">Importar backup anual</label>
+            <input class="form-control" type="file" id="ano_json" name="ano_json" accept="application/json" required>
+            <div class="form-text">Restaurar todos os dados de um ano letivo a partir de um ficheiro JSON.</div>
+          </div>
+          <div class="col-12">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="substituir" name="substituir" value="1">
+              <label class="form-check-label" for="substituir">Substituir dados caso o ano já exista</label>
+            </div>
+            <div class="form-text">Se ativo, o ano existente com o mesmo nome será limpo antes da reposição.</div>
+          </div>
+          <div class="col-12">
+            <button type="submit" class="btn btn-success w-100">Importar backup</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% if turmas_abertas or turmas_fechadas %}
   {% macro render_turmas_card(turmas, titulo, badge_class) %}
     <div class="card shadow-sm mb-4">
@@ -20,8 +108,9 @@
             <tr>
               <th>Nome</th>
               <th>Tipo</th>
-              <th>Ano Letivo</th>
+              <th>Letiva</th>
               <th>Carga (Seg–Sex)</th>
+              <th>Tempos (Seg–Sex)</th>
               <th class="text-end" style="width: 260px;">Ações</th>
             </tr>
           </thead>
@@ -31,22 +120,10 @@
               <td class="fw-semibold">{{ turma.nome }}</td>
               <td>{{ turma.tipo }}</td>
               <td>
-                {% if turma.ano_letivo %}
-                  <div class="fw-semibold">{{ turma.ano_letivo.nome }}</div>
-                  <div class="small text-muted">
-                    {% if turma.ano_letivo.ativo %}
-                      <span class="badge text-bg-success">Ativo</span>
-                    {% else %}
-                      <span class="badge text-bg-secondary">Inativo</span>
-                    {% endif %}
-                    {% if turma.ano_letivo.fechado %}
-                      <span class="badge text-bg-danger">Fechado</span>
-                    {% else %}
-                      <span class="badge text-bg-info text-dark">Aberto</span>
-                    {% endif %}
-                  </div>
+                {% if turma.letiva %}
+                  <span class="badge text-bg-success">Sim</span>
                 {% else %}
-                  <span class="text-muted">—</span>
+                  <span class="badge text-bg-secondary">Não</span>
                 {% endif %}
               </td>
               <td class="text-nowrap">{{ turma.carga_segunda or 0 }} /
@@ -54,11 +131,22 @@
                 {{ turma.carga_quarta or 0 }} /
                 {{ turma.carga_quinta or 0 }} /
                 {{ turma.carga_sexta or 0 }}</td>
+              <td class="text-nowrap">{{ turma.tempo_segunda or '—' }} /
+                {{ turma.tempo_terca or '—' }} /
+                {{ turma.tempo_quarta or '—' }} /
+                {{ turma.tempo_quinta or '—' }} /
+                {{ turma.tempo_sexta or '—' }}</td>
               <td class="text-end">
                 <div class="btn-group" role="group">
                   <a href="{{ url_for('turma_alunos', turma_id=turma.id) }}" class="btn btn-sm btn-outline-secondary">Alunos</a>
                   <a href="{{ url_for('turma_calendario', turma_id=turma.id) }}" class="btn btn-sm btn-outline-info">Calendário</a>
                   <a href="{{ url_for('turmas_edit', turma_id=turma.id) }}" class="btn btn-sm btn-outline-warning">Editar</a>
+                  <form method="post"
+                        action="{{ url_for('turmas_clone', turma_id=turma.id) }}"
+                        class="d-inline"
+                        onsubmit="return confirm('Clonar esta turma com os alunos?');">
+                    <button type="submit" class="btn btn-sm btn-outline-primary">Clonar</button>
+                  </form>
                   <form method="post"
                         action="{{ url_for('turmas_delete', turma_id=turma.id) }}"
                         class="d-inline"

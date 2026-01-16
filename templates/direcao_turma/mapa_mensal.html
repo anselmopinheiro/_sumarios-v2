@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% block content %}
+
+<style>
+  .dt-mapa-wrapper {
+    max-height: 70vh;
+    overflow: auto;
+  }
+
+  .dt-mapa-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: var(--bs-body-bg);
+  }
+
+  .dt-mapa-table .dt-sticky-col {
+    position: sticky;
+    left: 0;
+    z-index: 4;
+    background: var(--bs-body-bg);
+  }
+
+  .dt-mapa-table thead .dt-sticky-col {
+    z-index: 5;
+  }
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h2>Mapa mensal de justificações</h2>
+    <div class="text-muted">{{ dt_turma.turma.nome if dt_turma.turma else 'Turma' }} — {{ dt_turma.ano_letivo.nome if dt_turma.ano_letivo else 'Ano letivo' }}</div>
+  </div>
+  <a href="{{ url_for('direcao_turma_list') }}" class="btn btn-secondary">Voltar</a>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <form class="row gy-2 gx-3 align-items-end" method="get">
+      <div class="col-auto">
+        <label class="form-label" for="mes">Mês</label>
+        <input class="form-control" type="month" id="mes" name="mes_ano" value="{{ ano_mes.strftime('%Y-%m') }}">
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-primary">Atualizar</button>
+      </div>
+    </form>
+    <div class="form-text mt-2">Seleciona o mês para ver as justificações registadas.</div>
+  </div>
+</div>
+
+{% if alunos %}
+  <form method="post" action="{{ url_for('direcao_turma_mapa_mensal_atualizar', dt_id=dt_turma.id) }}">
+    <input type="hidden" name="ano" value="{{ ano_mes.year }}">
+    <input type="hidden" name="mes" value="{{ ano_mes.month }}">
+    <input type="hidden" name="dt_aluno_id" value="">
+    <input type="hidden" name="dia" value="">
+    <div class="dt-mapa-wrapper">
+      <table class="table table-striped align-middle dt-mapa-table">
+        <thead class="table-light">
+          <tr>
+            <th class="dt-sticky-col" style="width: 260px;">Aluno</th>
+            {% for dia in dias %}
+              <th class="text-center" style="min-width: 64px;">{{ dia.day }}</th>
+            {% endfor %}
+            <th class="text-end" style="width: 140px;">Ações</th>
+          </tr>
+          <tr>
+            <th class="small text-muted dt-sticky-col">Motivo (por dia)</th>
+            {% for dia in dias %}
+              {% set dia_key = dia.isoformat() %}
+              <th class="text-center">
+                <input class="form-control form-control-sm text-center js-motivo-dia"
+                       type="text"
+                       name="motivo_{{ dia_key }}"
+                       data-dia="{{ dia_key }}"
+                       placeholder="Motivo"
+                       value="{{ mapa_motivos_dia.get(dia) or '' }}">
+              </th>
+            {% endfor %}
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for dt_aluno in alunos %}
+            {% set aluno = dt_aluno.aluno %}
+            <tr>
+              <td class="fw-semibold dt-sticky-col"
+                  title="{{ aluno.nome if aluno else '' }}">
+                {{ '%02d'|format(aluno.numero) if aluno and aluno.numero is not none else '—' }}
+                {{ aluno.nome_curto or aluno.nome if aluno else '—' }}
+              </td>
+              {% for dia in dias %}
+                {% set justif = mapa_justificacoes.get(dt_aluno.id, {}).get(dia) %}
+                {% set dia_key = dia.isoformat() %}
+                <td class="text-center">
+                  <div class="d-flex flex-column align-items-center gap-1">
+                    <div class="form-check m-0">
+                      <input class="form-check-input"
+                             type="checkbox"
+                             name="dia_{{ dt_aluno.id }}_{{ dia_key }}"
+                             value="1"
+                             id="dia-{{ dt_aluno.id }}-{{ dia_key }}"
+                             {% if justif %}checked{% endif %}>
+                    </div>
+                  </div>
+                </td>
+              {% endfor %}
+              <td class="text-end">
+                <span class="text-muted small">Auto</span>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
+{% else %}
+  <div class="alert alert-secondary">Ainda não existem alunos associados a esta Direção de Turma.</div>
+{% endif %}
+
+<script>
+  (() => {
+    const input = document.getElementById('mes');
+    if (input) {
+      input.addEventListener('change', () => {
+        const [ano, mes] = (input.value || '').split('-');
+        if (!ano || !mes) return;
+        const url = new URL(window.location.href);
+        url.searchParams.set('ano', ano);
+        url.searchParams.set('mes', mes);
+        window.location.href = url.toString();
+      });
+    }
+
+    const form = document.querySelector('form[action*=\"mapa-mensal/atualizar\"]');
+    if (!form) return;
+    const alunoField = form.querySelector('input[name=\"dt_aluno_id\"]');
+    const diaField = form.querySelector('input[name=\"dia\"]');
+
+    form.querySelectorAll('input[type=\"checkbox\"][name^=\"dia_\"]').forEach((checkbox) => {
+      checkbox.addEventListener('change', () => {
+        const parts = checkbox.name.split('_');
+        const alunoId = parts[1];
+        const dia = parts.slice(2).join('_');
+        if (alunoField) alunoField.value = alunoId;
+        if (diaField) diaField.value = dia;
+        form.submit();
+      });
+    });
+
+    form.querySelectorAll('.js-motivo-dia').forEach((inputEl) => {
+      inputEl.addEventListener('blur', () => {
+        if (alunoField) alunoField.value = '';
+        if (diaField) diaField.value = inputEl.dataset.dia || '';
+        form.submit();
+      });
+    });
+  })();
+</script>
+
+{% endblock %}

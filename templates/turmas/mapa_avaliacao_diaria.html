@@ -55,34 +55,63 @@
 {% if dias %}
   {% set datas = dias %}
   <h4 class="mt-4">Mapa diário (Responsabilidade, Comportamento, Participação, Trabalho autónomo, Portátil/Material)</h4>
-  <div class="table-responsive mt-3">
-    <table class="table table-striped table-bordered align-middle">
+  <div class="small text-muted mb-2">
+    <span class="badge bg-danger-subtle text-danger border border-danger-subtle">Legenda</span>
+    Células a vermelho indicam falta disciplinar (média automática de 1, conta para a média final).
+  </div>
+  <style>
+    .mapa-avaliacao-table .sticky-col {
+      position: sticky;
+      left: 0;
+      z-index: 2;
+      background: var(--bs-body-bg);
+    }
+
+    .mapa-avaliacao-table thead .sticky-col {
+      z-index: 4;
+    }
+
+    .mapa-avaliacao-table .col-faltas {
+      background-color: #f8d7da;
+    }
+
+    .mapa-avaliacao-table .col-pontualidade {
+      background-color: #fff3cd;
+    }
+  </style>
+  <div class="table-responsive table-sticky-wrapper mt-3">
+    <table class="table table-striped table-bordered table-hover align-middle table-sticky-header mapa-avaliacao-table">
       <thead class="table-dark">
         <tr>
-          <th style="width: 70px;">#</th>
-          <th style="min-width: 240px;">Aluno</th>
+          <th class="sticky-col" style="width: 70px;">#</th>
+          <th class="sticky-col" style="min-width: 240px;">Aluno</th>
           {% for dia in datas %}
-            <th class="text-center">
+            {% set danger = 'table-danger' if dia.tem_falta_disciplinar else '' %}
+            <th class="text-center {{ danger }}">
               {{ dia.data.strftime('%d/%m/%Y') }}
               {% if dia.sumarios %}<br><small>N.º {{ dia.sumarios }}</small>{% endif %}
+              {% if dia.tem_falta_disciplinar %}<br><small class="text-danger fw-semibold">Falta disciplinar</small>{% endif %}
             </th>
           {% endfor %}
-          <th class="text-center" style="width: 120px;">Faltas</th>
+          <th class="text-center col-faltas" style="width: 120px;">Faltas</th>
+          <th class="text-center col-pontualidade" style="width: 140px;">Pontualidade</th>
           <th class="text-end" style="width: 140px;">Média</th>
         </tr>
       </thead>
       <tbody>
         {% for aluno in alunos %}
-          {% set ns = namespace(valores=[], faltas_total=0) %}
+          {% set ns = namespace(valores=[], faltas_total=0, atrasos_total=0) %}
           <tr>
-            <td>{{ aluno.numero if aluno.numero is not none else '--' }}</td>
-            <td>{{ aluno.nome }}</td>
+            <td class="sticky-col">{{ aluno.numero if aluno.numero is not none else '--' }}</td>
+            <td class="sticky-col">{{ aluno.nome }}</td>
             {% for dia in dias %}
+              {% set falta_disc = dia.get('falta_disciplinar_por_aluno', {}).get(aluno.id) %}
+              {% set danger = 'table-danger' if falta_disc else '' %}
               {% set media = dia.medias.get(aluno.id) %}
               {% if media is not none %}
                 {% set _ = ns.valores.append(media) %}
               {% endif %}
-              <td class="text-center">
+              <td class="text-center {{ danger }}">
                 {% if media is none %}
                   —
                 {% else %}
@@ -90,8 +119,10 @@
                 {% endif %}
               </td>
               {% set ns.faltas_total = ns.faltas_total + (dia.faltas.get(aluno.id) or 0) %}
+              {% set ns.atrasos_total = ns.atrasos_total + (dia.atrasos.get(aluno.id) or 0) %}
             {% endfor %}
-            <td class="text-center">{{ ns.faltas_total }}</td>
+            <td class="text-center col-faltas">{{ ns.faltas_total }}</td>
+            <td class="text-center col-pontualidade">{{ ns.atrasos_total }}</td>
             <td class="text-end fw-semibold">
               {% if ns.valores %}
                 {{ '%.2f'|format((ns.valores | sum) / (ns.valores | length)) }}
@@ -108,8 +139,8 @@
 
 {% if atividades %}
   <h4 class="mt-4" id="mapa-atividades">Mapa de atividades</h4>
-  <div class="table-responsive mt-3">
-    <table class="table table-striped table-bordered align-middle">
+  <div class="table-responsive table-sticky-wrapper mt-3">
+    <table class="table table-striped table-bordered table-hover align-middle table-sticky-header">
       <thead class="table-secondary">
         <tr>
           <th style="width: 70px;">#</th>

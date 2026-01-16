@@ -31,11 +31,11 @@
             </div>
             <div class="col-md-4">
                 <label class="form-label">Nome</label>
-                <input type="text" name="nome" class="form-control" required {% if ano_fechado %}disabled{% endif %}>
+                <input type="text" name="nome" class="form-control js-nome-principal" required {% if ano_fechado %}disabled{% endif %}>
             </div>
             <div class="col-md-4">
                 <label class="form-label">Nome curto</label>
-                <input type="text" name="nome_curto" class="form-control" {% if ano_fechado %}disabled{% endif %}>
+                <input type="text" name="nome_curto" class="form-control js-nome-curto-principal" {% if ano_fechado %}disabled{% endif %}>
             </div>
             <div class="col-md-6">
                 <label class="form-label">NEE</label>
@@ -120,22 +120,22 @@
                 <input class="form-check-input" type="checkbox" name="aluno_ids" value="{{ aluno.id }}" form="transfer-form">
             </td>
             <td>
-                <input type="text" class="form-control form-control-sm" name="processo" value="{{ aluno.processo or '' }}" form="aluno-{{ aluno.id }}" {% if ano_fechado %}disabled{% endif %}>
+                <input type="text" class="form-control form-control-sm js-aluno-autosave" name="processo" value="{{ aluno.processo or '' }}" form="aluno-{{ aluno.id }}" {% if ano_fechado %}disabled{% endif %}>
             </td>
             <td style="max-width: 100px;">
-                <input type="number" class="form-control form-control-sm" min="0" name="numero" value="{{ aluno.numero if aluno.numero is not none else '' }}" form="aluno-{{ aluno.id }}" {% if ano_fechado %}disabled{% endif %}>
+                <input type="number" class="form-control form-control-sm js-aluno-autosave" min="0" name="numero" value="{{ aluno.numero if aluno.numero is not none else '' }}" form="aluno-{{ aluno.id }}" {% if ano_fechado %}disabled{% endif %}>
             </td>
             <td>
-                <input type="text" class="form-control form-control-sm" name="nome" value="{{ aluno.nome }}" required form="aluno-{{ aluno.id }}" {% if ano_fechado %}disabled{% endif %}>
+                <input type="text" class="form-control form-control-sm js-aluno-autosave js-aluno-nome" name="nome" value="{{ aluno.nome }}" required form="aluno-{{ aluno.id }}" {% if ano_fechado %}disabled{% endif %}>
             </td>
             <td>
-                <input type="text" class="form-control form-control-sm" name="nome_curto" value="{{ aluno.nome_curto or '' }}" form="aluno-{{ aluno.id }}" {% if ano_fechado %}disabled{% endif %}>
+                <input type="text" class="form-control form-control-sm js-aluno-autosave js-aluno-nome-curto" name="nome_curto" value="{{ aluno.nome_curto or '' }}" form="aluno-{{ aluno.id }}" {% if ano_fechado %}disabled{% endif %}>
             </td>
             <td style="min-width: 180px;">
-                <textarea name="nee" class="form-control form-control-sm js-autoresize" rows="1" form="aluno-{{ aluno.id }}" {% if ano_fechado %}disabled{% endif %}>{{ aluno.nee or '' }}</textarea>
+                <textarea name="nee" class="form-control form-control-sm js-autoresize js-aluno-autosave" rows="1" form="aluno-{{ aluno.id }}" {% if ano_fechado %}disabled{% endif %}>{{ aluno.nee or '' }}</textarea>
             </td>
             <td style="min-width: 180px;">
-                <textarea name="observacoes" class="form-control form-control-sm js-autoresize" rows="1" form="aluno-{{ aluno.id }}" {% if ano_fechado %}disabled{% endif %}>{{ aluno.observacoes or '' }}</textarea>
+                <textarea name="observacoes" class="form-control form-control-sm js-autoresize js-aluno-autosave" rows="1" form="aluno-{{ aluno.id }}" {% if ano_fechado %}disabled{% endif %}>{{ aluno.observacoes or '' }}</textarea>
             </td>
             <td class="text-end">
                 <div class="d-flex gap-2 justify-content-end">
@@ -163,6 +163,69 @@
             const boxes = document.querySelectorAll('input[type="checkbox"][name="aluno_ids"]');
             const shouldCheck = Array.from(boxes).some((b) => !b.checked);
             boxes.forEach((b) => b.checked = shouldCheck);
+        });
+
+        const getPrimeiroNome = (nome) => {
+            const partes = (nome || '').trim().split(/\s+/).filter(Boolean);
+            return partes.length ? partes[0] : '';
+        };
+
+        const preencherNomeCurto = (nomeInput, curtoInput) => {
+            if (!nomeInput || !curtoInput) return;
+            const atual = (curtoInput.value || '').trim().toLowerCase();
+            if (atual && atual !== 'none' && atual !== 'null') return;
+            const primeiro = getPrimeiroNome(nomeInput.value);
+            if (primeiro) {
+                curtoInput.value = primeiro;
+            }
+        };
+
+        const nomePrincipal = document.querySelector('.js-nome-principal');
+        const nomeCurtoPrincipal = document.querySelector('.js-nome-curto-principal');
+        if (nomePrincipal && nomeCurtoPrincipal) {
+            nomePrincipal.addEventListener('input', () => {
+                preencherNomeCurto(nomePrincipal, nomeCurtoPrincipal);
+            });
+        }
+
+        document.querySelectorAll('form[id^="aluno-"]').forEach((form) => {
+            const nomeInput = form.querySelector('.js-aluno-nome');
+            const curtoInput = form.querySelector('.js-aluno-nome-curto');
+            if (nomeInput && curtoInput) {
+                nomeInput.addEventListener('input', () => preencherNomeCurto(nomeInput, curtoInput));
+            }
+        });
+
+        const guardarAutomatico = async (form) => {
+            if (!form || form._saving) return;
+            form._saving = true;
+            try {
+                await fetch(form.action, {
+                    method: 'POST',
+                    body: new FormData(form),
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        Accept: 'application/json',
+                    },
+                });
+            } catch (err) {
+                console.error('Falha ao guardar aluno', err);
+            } finally {
+                form._saving = false;
+            }
+        };
+
+        const agendarGuardar = (form) => {
+            if (!form) return;
+            if (form._autosaveTimer) {
+                clearTimeout(form._autosaveTimer);
+            }
+            form._autosaveTimer = setTimeout(() => guardarAutomatico(form), 600);
+        };
+
+        document.querySelectorAll('.js-aluno-autosave').forEach((input) => {
+            input.addEventListener('change', () => agendarGuardar(input.form));
+            input.addEventListener('blur', () => agendarGuardar(input.form));
         });
     });
 </script>

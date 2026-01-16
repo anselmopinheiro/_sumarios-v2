@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import re
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from typing import List, Dict, Set, Tuple, Optional
 from collections import defaultdict
+from uuid import uuid4
 
 from sqlalchemy import func, or_
 from sqlalchemy.orm import joinedload
@@ -19,6 +20,12 @@ from models import (
     InterrupcaoLetiva,
     Feriado,
     Horario,
+    TurmaDisciplina,
+    Disciplina,
+    Aluno,
+    Exclusao,
+    Extra,
+    Livro,
 )
 
 
@@ -798,6 +805,629 @@ def exportar_sumarios_json(
     return resultado
 
 
+BACKUP_VERSAO = 1
+
+
+def _parse_iso_date(data_txt: str | None):
+    if not data_txt:
+        return None
+    try:
+        return date.fromisoformat(data_txt)
+    except (TypeError, ValueError):
+        return None
+
+
+def _limpar_ano_existente(ano: AnoLetivo):
+    """Remove dados ligados ao ano letivo indicado para permitir reposição."""
+
+    turmas = Turma.query.filter_by(ano_letivo_id=ano.id).all()
+    for turma in turmas:
+        for aula in CalendarioAula.query.filter_by(turma_id=turma.id).all():
+            db.session.delete(aula)
+
+        Horario.query.filter_by(turma_id=turma.id).delete(synchronize_session=False)
+        Exclusao.query.filter_by(turma_id=turma.id).delete(synchronize_session=False)
+        Extra.query.filter_by(turma_id=turma.id).delete(synchronize_session=False)
+        Periodo.query.filter_by(turma_id=turma.id).delete(synchronize_session=False)
+        Modulo.query.filter_by(turma_id=turma.id).delete(synchronize_session=False)
+
+        db.session.delete(turma)
+
+    Feriado.query.filter_by(ano_letivo_id=ano.id).delete(synchronize_session=False)
+    InterrupcaoLetiva.query.filter_by(ano_letivo_id=ano.id).delete(
+        synchronize_session=False
+    )
+    Disciplina.query.filter_by(ano_letivo_id=ano.id).delete(synchronize_session=False)
+
+    db.session.delete(ano)
+    db.session.flush()
+
+
+def exportar_backup_ano(ano: AnoLetivo) -> Dict[str, object]:
+    """Cria um backup completo do ano letivo fornecido."""
+
+    if not ano:
+        raise ValueError("Ano letivo inválido para exportação.")
+
+    uid_map: dict[tuple[str, int], str] = {}
+
+    def uid(tipo: str, pk: int | None) -> str | None:
+        if pk is None:
+            return None
+        chave = (tipo, pk)
+        if chave not in uid_map:
+            uid_map[chave] = str(uuid4())
+        return uid_map[chave]
+
+    ano_uuid = uid("ano", ano.id)
+
+    disciplinas = (
+        Disciplina.query.filter_by(ano_letivo_id=ano.id)
+        .order_by(Disciplina.nome)
+        .all()
+    )
+
+    turmas = (
+        Turma.query.options(
+            joinedload(Turma.livros),
+            joinedload(Turma.turmas_disciplinas).joinedload(TurmaDisciplina.disciplina),
+        )
+        .filter_by(ano_letivo_id=ano.id)
+        .order_by(Turma.nome)
+        .all()
+    )
+
+    livros_set = {}
+    for turma in turmas:
+        for livro in turma.livros:
+            livros_set[livro.id] = livro
+
+    livros = list(livros_set.values())
+
+    resultado = {
+        "versao": BACKUP_VERSAO,
+        "gerado_em": datetime.now().isoformat(),
+        "ano_letivo": {
+            "uuid": ano_uuid,
+            "nome": ano.nome,
+            "descricao": ano.descricao,
+            "data_inicio_ano": ano.data_inicio_ano.isoformat()
+            if ano.data_inicio_ano
+            else None,
+            "data_fim_ano": ano.data_fim_ano.isoformat() if ano.data_fim_ano else None,
+            "data_fim_semestre1": ano.data_fim_semestre1.isoformat()
+            if ano.data_fim_semestre1
+            else None,
+            "data_inicio_semestre2": ano.data_inicio_semestre2.isoformat()
+            if ano.data_inicio_semestre2
+            else None,
+            "ativo": bool(ano.ativo),
+            "fechado": bool(ano.fechado),
+        },
+        "disciplinas": [
+            {
+                "uuid": uid("disciplina", disc.id),
+                "nome": disc.nome,
+                "sigla": disc.sigla,
+            }
+            for disc in disciplinas
+        ],
+        "livros": [
+            {
+                "uuid": uid("livro", livro.id),
+                "nome": livro.nome,
+            }
+            for livro in livros
+        ],
+        "turmas": [],
+        "feriados": [
+            {
+                "uuid": uid("feriado", feriado.id),
+                "nome": feriado.nome,
+                "data": feriado.data.isoformat() if feriado.data else None,
+                "data_text": feriado.data_text,
+            }
+            for feriado in Feriado.query.filter_by(ano_letivo_id=ano.id)
+            .order_by(Feriado.data)
+            .all()
+        ],
+        "interrupcoes": [
+            {
+                "uuid": uid("interrupcao", intr.id),
+                "tipo": intr.tipo,
+                "data_inicio": intr.data_inicio.isoformat() if intr.data_inicio else None,
+                "data_fim": intr.data_fim.isoformat() if intr.data_fim else None,
+                "data_text": intr.data_text,
+                "descricao": intr.descricao,
+            }
+            for intr in InterrupcaoLetiva.query.filter_by(ano_letivo_id=ano.id)
+            .order_by(InterrupcaoLetiva.data_inicio)
+            .all()
+        ],
+    }
+
+    disciplina_uuid_map = {disc.id: uid("disciplina", disc.id) for disc in disciplinas}
+    livro_uuid_map = {livro.id: uid("livro", livro.id) for livro in livros}
+
+    for turma in turmas:
+        turma_uuid = uid("turma", turma.id)
+
+        modulos = (
+            Modulo.query.filter_by(turma_id=turma.id).order_by(Modulo.id).all()
+        )
+        mod_uuid_map = {mod.id: uid("modulo", mod.id) for mod in modulos}
+
+        periodos = (
+            Periodo.query.filter_by(turma_id=turma.id).order_by(Periodo.data_inicio).all()
+        )
+        periodo_uuid_map = {p.id: uid("periodo", p.id) for p in periodos}
+
+        alunos = (
+            Aluno.query.filter_by(turma_id=turma.id)
+            .order_by(Aluno.numero.is_(None), Aluno.numero, Aluno.nome)
+            .all()
+        )
+        aluno_uuid_map = {aluno.id: uid("aluno", aluno.id) for aluno in alunos}
+
+        turma_dict = {
+            "uuid": turma_uuid,
+            "ano_letivo_uuid": ano_uuid,
+            "nome": turma.nome,
+            "tipo": turma.tipo,
+            "periodo_tipo": turma.periodo_tipo,
+            "letiva": bool(getattr(turma, "letiva", True)),
+            "carga_segunda": turma.carga_segunda,
+            "carga_terca": turma.carga_terca,
+            "carga_quarta": turma.carga_quarta,
+            "carga_quinta": turma.carga_quinta,
+            "carga_sexta": turma.carga_sexta,
+            "tempo_segunda": turma.tempo_segunda,
+            "tempo_terca": turma.tempo_terca,
+            "tempo_quarta": turma.tempo_quarta,
+            "tempo_quinta": turma.tempo_quinta,
+            "tempo_sexta": turma.tempo_sexta,
+            "livros": [
+                {"livro_uuid": livro_uuid_map.get(livro.id)} for livro in turma.livros
+            ],
+            "disciplinas": [
+                {
+                    "uuid": uid("turma_disciplina", rel.id),
+                    "disciplina_uuid": disciplina_uuid_map.get(rel.disciplina_id),
+                    "horas_semanais": rel.horas_semanais,
+                }
+                for rel in turma.turmas_disciplinas
+                if rel.disciplina_id in disciplina_uuid_map
+            ],
+            "modulos": [
+                {
+                    "uuid": mod_uuid_map.get(mod.id),
+                    "nome": mod.nome,
+                    "total_aulas": mod.total_aulas,
+                    "tolerancia": mod.tolerancia,
+                }
+                for mod in modulos
+            ],
+            "periodos": [
+                {
+                    "uuid": periodo_uuid_map.get(per.id),
+                    "nome": per.nome,
+                    "tipo": per.tipo,
+                    "data_inicio": per.data_inicio.isoformat()
+                    if per.data_inicio
+                    else None,
+                    "data_fim": per.data_fim.isoformat() if per.data_fim else None,
+                    "modulo_uuid": mod_uuid_map.get(per.modulo_id),
+                }
+                for per in periodos
+            ],
+            "horarios": [
+                {"weekday": h.weekday, "horas": h.horas}
+                for h in Horario.query.filter_by(turma_id=turma.id)
+                .order_by(Horario.weekday)
+                .all()
+            ],
+            "exclusoes": [
+                {
+                    "data": exc.data.isoformat() if exc.data else None,
+                    "data_text": exc.data_text,
+                    "motivo": exc.motivo,
+                    "tipo": exc.tipo,
+                }
+                for exc in Exclusao.query.filter_by(turma_id=turma.id)
+                .order_by(Exclusao.data)
+                .all()
+            ],
+            "extras": [
+                {
+                    "data": ext.data.isoformat() if ext.data else None,
+                    "data_text": ext.data_text,
+                    "motivo": ext.motivo,
+                    "aulas": ext.aulas,
+                    "modulo_nome": ext.modulo_nome,
+                    "tipo": ext.tipo,
+                }
+                for ext in Extra.query.filter_by(turma_id=turma.id)
+                .order_by(Extra.data)
+                .all()
+            ],
+            "alunos": [
+                {
+                    "uuid": aluno_uuid_map.get(aluno.id),
+                    "processo": aluno.processo,
+                    "numero": aluno.numero,
+                    "nome": aluno.nome,
+                    "nome_curto": aluno.nome_curto,
+                    "nee": aluno.nee,
+                    "observacoes": aluno.observacoes,
+                }
+                for aluno in alunos
+            ],
+            "calendario": [],
+        }
+
+        aulas = (
+            CalendarioAula.query.options(
+                joinedload(CalendarioAula.avaliacoes).joinedload(AulaAluno.aluno)
+            )
+            .filter_by(turma_id=turma.id)
+            .order_by(CalendarioAula.data, CalendarioAula.id)
+            .all()
+        )
+
+        for aula in aulas:
+            turma_dict["calendario"].append(
+                {
+                    "uuid": uid("aula", aula.id),
+                    "data": aula.data.isoformat() if aula.data else None,
+                    "weekday": aula.weekday,
+                    "modulo_uuid": mod_uuid_map.get(aula.modulo_id),
+                    "numero_modulo": aula.numero_modulo,
+                    "total_geral": aula.total_geral,
+                    "sumarios": aula.sumarios,
+                    "sumario": aula.sumario,
+                    "previsao": aula.previsao,
+                    "observacoes": aula.observacoes,
+                    "tipo": aula.tipo,
+                    "apagado": aula.apagado,
+                    "periodo_uuid": periodo_uuid_map.get(aula.periodo_id),
+                    "tempos_sem_aula": aula.tempos_sem_aula,
+                    "atividade": aula.atividade,
+                    "atividade_nome": aula.atividade_nome,
+                    "avaliacoes": [
+                        {
+                            "uuid": uid("avaliacao", avaliacao.id),
+                            "aluno_uuid": aluno_uuid_map.get(avaliacao.aluno_id),
+                            "atraso": avaliacao.atraso,
+                            "faltas": avaliacao.faltas,
+                            "responsabilidade": avaliacao.responsabilidade,
+                            "comportamento": avaliacao.comportamento,
+                            "participacao": avaliacao.participacao,
+                            "trabalho_autonomo": avaliacao.trabalho_autonomo,
+                            "portatil_material": avaliacao.portatil_material,
+                            "atividade": avaliacao.atividade,
+                            "falta_disciplinar": avaliacao.falta_disciplinar,
+                        }
+                        for avaliacao in aula.avaliacoes
+                        if avaliacao.aluno_id in aluno_uuid_map
+                    ],
+                }
+            )
+
+        resultado["turmas"].append(turma_dict)
+
+    return resultado
+
+
+def importar_backup_ano(payload: dict, substituir: bool = False) -> Dict[str, int]:
+    """Reconstroi um ano letivo completo a partir de um backup JSON."""
+
+    if not isinstance(payload, dict):
+        raise ValueError("Formato de backup desconhecido.")
+
+    versao = payload.get("versao", 1)
+    if versao > BACKUP_VERSAO:
+        raise ValueError("Versão de backup incompatível com esta aplicação.")
+
+    ano_info = payload.get("ano_letivo")
+    if not isinstance(ano_info, dict):
+        raise ValueError("Secção 'ano_letivo' em falta no backup.")
+
+    nome_ano = (ano_info.get("nome") or "").strip()
+    if not nome_ano:
+        raise ValueError("Nome do ano letivo em falta no backup.")
+
+    ano_existente = AnoLetivo.query.filter_by(nome=nome_ano).first()
+    if ano_existente:
+        if not substituir:
+            raise ValueError(
+                "Já existe um ano letivo com esse nome. Ativa a opção de substituir para continuar."
+            )
+        _limpar_ano_existente(ano_existente)
+
+    novo_ano = AnoLetivo(
+        nome=nome_ano,
+        descricao=ano_info.get("descricao"),
+        data_inicio_ano=_parse_iso_date(ano_info.get("data_inicio_ano")),
+        data_fim_ano=_parse_iso_date(ano_info.get("data_fim_ano")),
+        data_fim_semestre1=_parse_iso_date(ano_info.get("data_fim_semestre1")),
+        data_inicio_semestre2=_parse_iso_date(ano_info.get("data_inicio_semestre2")),
+        ativo=bool(ano_info.get("ativo")),
+        fechado=bool(ano_info.get("fechado")),
+    )
+    db.session.add(novo_ano)
+    db.session.flush()
+
+    livros_map: dict[str, Livro] = {}
+    for entrada in payload.get("livros", []) or []:
+        if not isinstance(entrada, dict):
+            continue
+        nome = (entrada.get("nome") or "").strip()
+        if not nome:
+            continue
+        uuid_val = entrada.get("uuid")
+        existente = Livro.query.filter_by(nome=nome).first()
+        livro = existente or Livro(nome=nome)
+        db.session.add(livro)
+        db.session.flush()
+        if uuid_val:
+            livros_map[str(uuid_val)] = livro
+
+    disciplinas_map: dict[str, Disciplina] = {}
+    for entrada in payload.get("disciplinas", []) or []:
+        if not isinstance(entrada, dict):
+            continue
+        nome = (entrada.get("nome") or "").strip()
+        if not nome:
+            continue
+        disc = Disciplina(
+            nome=nome,
+            sigla=entrada.get("sigla"),
+            ano_letivo_id=novo_ano.id,
+        )
+        db.session.add(disc)
+        db.session.flush()
+        uuid_val = entrada.get("uuid")
+        if uuid_val:
+            disciplinas_map[str(uuid_val)] = disc
+
+    feriados = payload.get("feriados", []) or []
+    for entrada in feriados:
+        if not isinstance(entrada, dict):
+            continue
+        feriado = Feriado(
+            ano_letivo_id=novo_ano.id,
+            nome=entrada.get("nome"),
+            data=_parse_iso_date(entrada.get("data")),
+            data_text=entrada.get("data_text"),
+        )
+        db.session.add(feriado)
+
+    interrupcoes = payload.get("interrupcoes", []) or []
+    for entrada in interrupcoes:
+        if not isinstance(entrada, dict):
+            continue
+        interrupcao = InterrupcaoLetiva(
+            ano_letivo_id=novo_ano.id,
+            tipo=entrada.get("tipo") or "outros",
+            data_inicio=_parse_iso_date(entrada.get("data_inicio")),
+            data_fim=_parse_iso_date(entrada.get("data_fim")),
+            data_text=entrada.get("data_text"),
+            descricao=entrada.get("descricao"),
+        )
+        db.session.add(interrupcao)
+
+    db.session.flush()
+
+    aluno_uuid_map: dict[str, Aluno] = {}
+
+    turmas_payload = payload.get("turmas", []) or []
+    for turma_data in turmas_payload:
+        if not isinstance(turma_data, dict):
+            continue
+
+        turma = Turma(
+            nome=turma_data.get("nome") or "Turma",
+            tipo=turma_data.get("tipo") or "regular",
+            periodo_tipo=turma_data.get("periodo_tipo") or "anual",
+            ano_letivo_id=novo_ano.id,
+            letiva=bool(turma_data.get("letiva", True)),
+            carga_segunda=turma_data.get("carga_segunda"),
+            carga_terca=turma_data.get("carga_terca"),
+            carga_quarta=turma_data.get("carga_quarta"),
+            carga_quinta=turma_data.get("carga_quinta"),
+            carga_sexta=turma_data.get("carga_sexta"),
+            tempo_segunda=turma_data.get("tempo_segunda"),
+            tempo_terca=turma_data.get("tempo_terca"),
+            tempo_quarta=turma_data.get("tempo_quarta"),
+            tempo_quinta=turma_data.get("tempo_quinta"),
+            tempo_sexta=turma_data.get("tempo_sexta"),
+        )
+        db.session.add(turma)
+        db.session.flush()
+
+        for livro_ref in turma_data.get("livros", []) or []:
+            if not isinstance(livro_ref, dict):
+                continue
+            livro_uuid = livro_ref.get("livro_uuid")
+            if livro_uuid and livro_uuid in livros_map:
+                if livros_map[livro_uuid] not in turma.livros:
+                    turma.livros.append(livros_map[livro_uuid])
+
+        for disc_ref in turma_data.get("disciplinas", []) or []:
+            if not isinstance(disc_ref, dict):
+                continue
+            disciplina_uuid = disc_ref.get("disciplina_uuid")
+            disciplina = disciplinas_map.get(disciplina_uuid)
+            if not disciplina:
+                continue
+            rel = TurmaDisciplina(
+                turma_id=turma.id,
+                disciplina_id=disciplina.id,
+                horas_semanais=disc_ref.get("horas_semanais"),
+            )
+            db.session.add(rel)
+
+        alunos_payload = turma_data.get("alunos", []) or []
+        for aluno_data in alunos_payload:
+            if not isinstance(aluno_data, dict):
+                continue
+            aluno = Aluno(
+                turma_id=turma.id,
+                processo=aluno_data.get("processo"),
+                numero=aluno_data.get("numero"),
+                nome=aluno_data.get("nome") or "Aluno",
+                nome_curto=aluno_data.get("nome_curto"),
+                nee=aluno_data.get("nee"),
+                observacoes=aluno_data.get("observacoes"),
+            )
+            db.session.add(aluno)
+            db.session.flush()
+
+            aluno_uuid = aluno_data.get("uuid")
+            if aluno_uuid:
+                aluno_uuid_map[str(aluno_uuid)] = aluno
+
+        mod_uuid_map: dict[str, Modulo] = {}
+        for mod_data in turma_data.get("modulos", []) or []:
+            if not isinstance(mod_data, dict):
+                continue
+            mod = Modulo(
+                turma_id=turma.id,
+                nome=mod_data.get("nome") or "Módulo",
+                total_aulas=mod_data.get("total_aulas") or 0,
+                tolerancia=mod_data.get("tolerancia") or 0,
+            )
+            db.session.add(mod)
+            db.session.flush()
+            if mod_data.get("uuid"):
+                mod_uuid_map[str(mod_data.get("uuid"))] = mod
+
+        periodo_uuid_map: dict[str, Periodo] = {}
+        for per_data in turma_data.get("periodos", []) or []:
+            if not isinstance(per_data, dict):
+                continue
+            periodo = Periodo(
+                turma_id=turma.id,
+                nome=per_data.get("nome") or "Período",
+                tipo=per_data.get("tipo") or "anual",
+                data_inicio=_parse_iso_date(per_data.get("data_inicio")),
+                data_fim=_parse_iso_date(per_data.get("data_fim")),
+                modulo_id=(
+                    mod_uuid_map[per_data.get("modulo_uuid")].id
+                    if per_data.get("modulo_uuid") in mod_uuid_map
+                    else None
+                ),
+            )
+            db.session.add(periodo)
+            db.session.flush()
+            if per_data.get("uuid"):
+                periodo_uuid_map[str(per_data.get("uuid"))] = periodo
+
+        for horario in turma_data.get("horarios", []) or []:
+            if not isinstance(horario, dict):
+                continue
+            db.session.add(
+                Horario(
+                    turma_id=turma.id,
+                    weekday=horario.get("weekday") or 0,
+                    horas=horario.get("horas") or 0,
+                )
+            )
+
+        for exc in turma_data.get("exclusoes", []) or []:
+            if not isinstance(exc, dict):
+                continue
+            db.session.add(
+                Exclusao(
+                    turma_id=turma.id,
+                    data=_parse_iso_date(exc.get("data")),
+                    data_text=exc.get("data_text"),
+                    motivo=exc.get("motivo"),
+                    tipo=exc.get("tipo"),
+                )
+            )
+
+        for ext in turma_data.get("extras", []) or []:
+            if not isinstance(ext, dict):
+                continue
+            db.session.add(
+                Extra(
+                    turma_id=turma.id,
+                    data=_parse_iso_date(ext.get("data")),
+                    data_text=ext.get("data_text"),
+                    motivo=ext.get("motivo"),
+                    aulas=ext.get("aulas") or 0,
+                    modulo_nome=ext.get("modulo_nome"),
+                    tipo=ext.get("tipo"),
+                )
+            )
+
+        aulas_payload = turma_data.get("calendario", []) or []
+        for aula_data in aulas_payload:
+            if not isinstance(aula_data, dict):
+                continue
+
+            aula = CalendarioAula(
+                turma_id=turma.id,
+                periodo_id=(
+                    periodo_uuid_map[aula_data.get("periodo_uuid")].id
+                    if aula_data.get("periodo_uuid") in periodo_uuid_map
+                    else None
+                ),
+                data=_parse_iso_date(aula_data.get("data")) or date.today(),
+                weekday=aula_data.get("weekday") or 0,
+                modulo_id=(
+                    mod_uuid_map[aula_data.get("modulo_uuid")].id
+                    if aula_data.get("modulo_uuid") in mod_uuid_map
+                    else None
+                ),
+                numero_modulo=aula_data.get("numero_modulo"),
+                total_geral=aula_data.get("total_geral"),
+                sumarios=aula_data.get("sumarios"),
+                sumario=aula_data.get("sumario"),
+                previsao=aula_data.get("previsao"),
+                observacoes=aula_data.get("observacoes"),
+                tipo=aula_data.get("tipo") or "normal",
+                apagado=bool(aula_data.get("apagado")),
+                tempos_sem_aula=aula_data.get("tempos_sem_aula") or 0,
+                atividade=bool(aula_data.get("atividade")),
+                atividade_nome=aula_data.get("atividade_nome"),
+            )
+            db.session.add(aula)
+            db.session.flush()
+
+            for avaliacao_data in aula_data.get("avaliacoes", []) or []:
+                if not isinstance(avaliacao_data, dict):
+                    continue
+                aluno_uuid = avaliacao_data.get("aluno_uuid")
+                aluno = aluno_uuid_map.get(aluno_uuid)
+                if not aluno:
+                    continue
+                avaliacao = AulaAluno(
+                    aula_id=aula.id,
+                    aluno_id=aluno.id,
+                    atraso=bool(avaliacao_data.get("atraso")),
+                    faltas=avaliacao_data.get("faltas") or 0,
+                    responsabilidade=avaliacao_data.get("responsabilidade") or 0,
+                    comportamento=avaliacao_data.get("comportamento") or 0,
+                    participacao=avaliacao_data.get("participacao") or 0,
+                    trabalho_autonomo=avaliacao_data.get("trabalho_autonomo") or 0,
+                    portatil_material=avaliacao_data.get("portatil_material") or 0,
+                    atividade=avaliacao_data.get("atividade") or 0,
+                    falta_disciplinar=avaliacao_data.get("falta_disciplinar") or 0,
+                )
+                db.session.add(avaliacao)
+
+    db.session.flush()
+
+    return {
+        "ano": novo_ano.nome,
+        "turmas": len(turmas_payload),
+        "alunos": len(aluno_uuid_map),
+        "disciplinas": len(disciplinas_map),
+    }
+
+
 def listar_aulas_especiais(
     turma_id: int | None = None,
     tipo: str | None = None,
@@ -863,165 +1493,6 @@ def listar_sumarios_pendentes(data_limite: date, turma_id: int | None = None) ->
     return query.order_by(CalendarioAula.data, CalendarioAula.turma_id, CalendarioAula.id).all()
 
 
-def exportar_outras_datas_json(
-    turma_id: int | None = None,
-    tipo: str | None = None,
-    data_inicio: date | None = None,
-    data_fim: date | None = None,
-) -> List[Dict[str, object]]:
-    aulas = listar_aulas_especiais(turma_id, tipo, data_inicio, data_fim)
-
-    resultado: List[Dict[str, object]] = []
-    for aula in aulas:
-        resultado.append(
-            {
-                "turma_id": aula.turma_id,
-                "turma_nome": aula.turma.nome if aula.turma else None,
-                "data": aula.data.isoformat() if aula.data else None,
-                "weekday": aula.weekday,
-                "modulo_id": aula.modulo_id,
-                "modulo_nome": aula.modulo.nome if aula.modulo else None,
-                "numero_modulo": aula.numero_modulo,
-                "total_geral": aula.total_geral,
-                "sumarios": aula.sumarios,
-                "sumario": aula.sumario,
-                "previsao": aula.previsao,
-                "observacoes": aula.observacoes,
-                "tipo": aula.tipo,
-                "periodo_id": aula.periodo_id,
-                "tempos_sem_aula": aula.tempos_sem_aula,
-            }
-        )
-
-    return resultado
-
-
-def importar_outras_datas_json(
-    linhas: List[Dict[str, object]],
-) -> tuple[Dict[str, int], list[str], list[str], set[int]]:
-    contadores = {"criados": 0, "atualizados": 0, "ignorados": 0}
-    turmas_fechadas: list[str] = []
-    turmas_inexistentes: list[str] = []
-    turmas_para_renumerar: set[int] = set()
-
-    linhas_por_turma: Dict[int, List[Dict[str, object]]] = defaultdict(list)
-
-    for linha in linhas:
-        tipo = (linha.get("tipo") or "").strip() or "normal"
-        if tipo not in TIPOS_ESPECIAIS:
-            contadores["ignorados"] += 1
-            continue
-
-        turma_id = linha.get("turma_id") or None
-        turma_nome = None
-        turma_payload = linha.get("turma") if isinstance(linha.get("turma"), dict) else None
-        if turma_payload:
-            turma_nome = turma_payload.get("nome")
-            turma_id = turma_id or turma_payload.get("id")
-        if not turma_id:
-            turma_nome = turma_nome or linha.get("turma_nome")
-
-        turma: Turma | None = None
-        if turma_id:
-            turma = Turma.query.get(turma_id)
-        if not turma and turma_nome:
-            turma = Turma.query.filter(func.lower(Turma.nome) == str(turma_nome).lower()).first()
-
-        if not turma:
-            contadores["ignorados"] += 1
-            if turma_nome:
-                turmas_inexistentes.append(str(turma_nome))
-            continue
-
-        ano = turma.ano_letivo
-        if ano and ano.fechado:
-            contadores["ignorados"] += 1
-            turmas_fechadas.append(turma.nome)
-            continue
-
-        linha = dict(linha)
-        linha["tipo"] = tipo
-        linhas_por_turma[turma.id].append(linha)
-
-    for turma_id, linhas_turma in linhas_por_turma.items():
-        turma = Turma.query.get(turma_id)
-        if not turma:
-            continue
-
-        resultado = importar_sumarios_json(turma, linhas_turma)
-        contadores["criados"] += resultado.get("criados", 0)
-        contadores["atualizados"] += resultado.get("atualizados", 0)
-        contadores["ignorados"] += resultado.get("ignorados", 0)
-        turmas_para_renumerar.add(turma_id)
-
-    for turma_id in turmas_para_renumerar:
-        renumerar_calendario_turma(turma_id)
-
-    return contadores, turmas_fechadas, turmas_inexistentes, turmas_para_renumerar
-
-
-def importar_calendarios_json(
-    linhas: List[Dict[str, object]]
-) -> tuple[Dict[str, int], list[str], list[str], set[int]]:
-    """Importa backups de calendários (normal/extra/etc.) agrupando por turma.
-
-    Aceita linhas com ``turma_id`` ou ``turma_nome``; linhas sem essa informação
-    são ignoradas. Turmas com ano letivo fechado também são ignoradas. No final,
-    efetua renumeração das turmas importadas.
-    """
-
-    contadores = {"criados": 0, "atualizados": 0, "ignorados": 0}
-    turmas_fechadas: set[str] = set()
-    turmas_inexistentes: set[str] = set()
-    turmas_para_renumerar: set[int] = set()
-    linhas_por_turma: Dict[int, List[Dict[str, object]]] = defaultdict(list)
-
-    for linha in linhas:
-        turma_id = linha.get("turma_id") or None
-        turma_nome = (linha.get("turma_nome") or "").strip()
-
-        turma: Turma | None = None
-        if turma_id:
-            turma = Turma.query.get(turma_id)
-        if not turma and turma_nome:
-            turma = Turma.query.filter(func.lower(Turma.nome) == turma_nome.lower()).first()
-
-        if not turma:
-            contadores["ignorados"] += 1
-            if turma_nome:
-                turmas_inexistentes.add(turma_nome)
-            continue
-
-        ano = turma.ano_letivo
-        if ano and ano.fechado:
-            contadores["ignorados"] += 1
-            turmas_fechadas.add(turma.nome)
-            continue
-
-        linha_copy = dict(linha)
-        linha_copy.pop("turma_nome", None)
-        linhas_por_turma[turma.id].append(linha_copy)
-
-    for turma_id, linhas_turma in linhas_por_turma.items():
-        turma = Turma.query.get(turma_id)
-        if not turma:
-            continue
-
-        resultado = importar_sumarios_json(turma, linhas_turma)
-        contadores["criados"] += resultado.get("criados", 0)
-        contadores["atualizados"] += resultado.get("atualizados", 0)
-        contadores["ignorados"] += resultado.get("ignorados", 0)
-        turmas_para_renumerar.add(turma_id)
-
-    for turma_id in turmas_para_renumerar:
-        renumerar_calendario_turma(turma_id)
-
-    return (
-        contadores,
-        sorted(turmas_fechadas),
-        sorted(turmas_inexistentes),
-        turmas_para_renumerar,
-    )
 
 
 def importar_sumarios_json(turma: Turma, linhas: List[Dict[str, object]]) -> Dict[str, int]:
@@ -1292,12 +1763,15 @@ def calcular_mapa_avaliacao_diaria(
     for aula in aulas:
         aulas_por_data[aula.data].append(aula)
 
-    def _media_para_aluno(aluno_id: int, aulas_dia: List[CalendarioAula]) -> Optional[float]:
+    def _media_para_aluno(
+        aluno_id: int, aulas_dia: List[CalendarioAula]
+    ) -> tuple[Optional[float], bool]:
         total_previsto = 0
         faltas_total = 0
         soma_notas = 0
         total_campos = 0
         teve_avaliacao = False
+        tem_falta_disciplinar = False
 
         for aula in aulas_dia:
             avaliacao = next((av for av in aula.avaliacoes if av.aluno_id == aluno_id), None)
@@ -1307,6 +1781,8 @@ def calcular_mapa_avaliacao_diaria(
             teve_avaliacao = True
             tempos_aula = _total_previsto_para_aula(aula)
             total_previsto += tempos_aula
+            if avaliacao.falta_disciplinar:
+                tem_falta_disciplinar = True
 
             faltas = max(0, min(avaliacao.faltas or 0, tempos_aula))
             if faltas >= tempos_aula:
@@ -1323,20 +1799,30 @@ def calcular_mapa_avaliacao_diaria(
             soma_notas += sum(notas)
             total_campos += len(notas)
 
+        if tem_falta_disciplinar:
+            return 1.0, True
+
         if total_campos:
-            return round(soma_notas / total_campos, 2)
+            return round(soma_notas / total_campos, 2), False
 
         if teve_avaliacao and total_previsto and faltas_total >= total_previsto:
-            return 0.0
+            return 0.0, False
 
-        return None
+        return None, False
 
     dias = []
     for data_ref in sorted(aulas_por_data.keys()):
         aulas_dia = aulas_por_data[data_ref]
-        medias = {aluno.id: _media_para_aluno(aluno.id, aulas_dia) for aluno in alunos}
+        medias = {}
+        falta_disciplinar_por_aluno = {}
+        for aluno in alunos:
+            media, falta_disc = _media_para_aluno(aluno.id, aulas_dia)
+            medias[aluno.id] = media
+            falta_disciplinar_por_aluno[aluno.id] = falta_disc
         faltas = {}
+        atrasos = {}
         sumarios_dia: List[str] = []
+        tem_falta_disciplinar = False
 
         for aula in aulas_dia:
             sumarios_aula = [
@@ -1347,6 +1833,7 @@ def calcular_mapa_avaliacao_diaria(
 
         for aluno in alunos:
             faltas_aluno = 0
+            atrasos_aluno = 0
             for aula in aulas_dia:
                 avaliacao = next(
                     (av for av in aula.avaliacoes if av.aluno_id == aluno.id), None
@@ -1356,15 +1843,25 @@ def calcular_mapa_avaliacao_diaria(
 
                 tempos_aula = _total_previsto_para_aula(aula)
                 faltas_aluno += max(0, min(avaliacao.faltas or 0, tempos_aula))
+                if avaliacao.atraso:
+                    atrasos_aluno += 1
+                if avaliacao.falta_disciplinar:
+                    faltas_aluno += avaliacao.falta_disciplinar
+                if avaliacao.falta_disciplinar:
+                    tem_falta_disciplinar = True
 
             faltas[aluno.id] = faltas_aluno
+            atrasos[aluno.id] = atrasos_aluno
 
         dias.append(
             {
                 "data": data_ref,
                 "medias": medias,
+                "falta_disciplinar_por_aluno": falta_disciplinar_por_aluno,
                 "faltas": faltas,
+                "atrasos": atrasos,
                 "sumarios": ", ".join(sumarios_dia),
+                "tem_falta_disciplinar": tem_falta_disciplinar,
             }
         )
 
