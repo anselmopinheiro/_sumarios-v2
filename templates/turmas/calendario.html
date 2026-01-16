@@ -119,10 +119,12 @@
           <td>
             <div class="fw-semibold">{{ turma.nome }}</div>
             <div class="mt-2 d-flex flex-column gap-1">
-              <span class="badge rounded-pill {% if alunos_abertos %}border border-success text-success bg-white{% else %}bg-danger text-light{% endif %}"
-                    title="{% if alunos_abertos %}Janela alunos já aberta{% else %}Janela alunos ainda não aberta{% endif %}">
-                {% if alunos_abertos %}○{% else %}✖{% endif %}
-              </span>
+              {% if a.turma and a.turma.letiva %}
+                <span class="badge rounded-pill {% if alunos_abertos %}border border-success text-success bg-white{% else %}bg-danger text-light{% endif %}"
+                      title="{% if alunos_abertos %}Janela alunos já aberta{% else %}Janela alunos ainda não aberta{% endif %}">
+                  {% if alunos_abertos %}○{% else %}✖{% endif %}
+                </span>
+              {% endif %}
               <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
                 Nº Sumário {% if sem_aula %}—{% else %}{{ a.sumarios or '—' }}{% endif %}
               </span>
@@ -227,10 +229,12 @@
                          data-tempos-atual="{{ faltas if sem_aula else 0 }}"
                          {% if not pode_editar_tempos %}readonly{% endif %}>
                 </div>
-                <a href="{{ url_for('calendario_aula_alunos', turma_id=turma.id, aula_id=a.id, return_url=request.full_path) }}"
-                  class="btn btn-sm btn-outline-info">
-                  Alunos
-                </a>
+                {% if turma.letiva %}
+                  <a href="{{ url_for('calendario_aula_alunos', turma_id=turma.id, aula_id=a.id, return_url=request.full_path) }}"
+                    class="btn btn-sm btn-outline-info">
+                    Alunos
+                  </a>
+                {% endif %}
                 <a href="{{ url_for('calendario_edit', turma_id=turma.id, aula_id=a.id) }}"
                   class="btn btn-sm btn-warning">
                   Editar

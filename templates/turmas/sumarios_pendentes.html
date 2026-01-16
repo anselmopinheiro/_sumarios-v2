@@ -68,10 +68,12 @@
           <tr>
             <td class="w-100">
               <div class="d-flex flex-wrap gap-1 mb-2">
-                <span class="badge rounded-pill {% if alunos_abertos %}border border-success text-success bg-white{% else %}bg-danger text-light{% endif %}"
-                      title="{% if alunos_abertos %}Janela alunos já aberta{% else %}Janela alunos ainda não aberta{% endif %}">
-                  {% if alunos_abertos %}○{% else %}✖{% endif %}
-                </span>
+                {% if a.turma and a.turma.letiva %}
+                  <span class="badge rounded-pill {% if alunos_abertos %}border border-success text-success bg-white{% else %}bg-danger text-light{% endif %}"
+                        title="{% if alunos_abertos %}Janela alunos já aberta{% else %}Janela alunos ainda não aberta{% endif %}">
+                    {% if alunos_abertos %}○{% else %}✖{% endif %}
+                  </span>
+                {% endif %}
                 <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">Turma {{ a.turma.nome if a.turma else a.turma_id }}</span>
                 {% if a.atividade %}
                   <a class="badge rounded-pill bg-success text-light text-decoration-none" href="{{ url_for('turma_mapa_avaliacao_diaria', turma_id=a.turma_id) }}#mapa-atividades">Atividade</a>
@@ -188,8 +190,10 @@
               {% if turma_fechada %}
                 <span class="badge bg-secondary">Ano letivo fechado</span>
               {% else %}
-                <a href="{{ url_for('calendario_aula_alunos', turma_id=a.turma_id, aula_id=a.id, return_url=request.full_path) }}"
-                   class="btn btn-sm btn-outline-info mb-1">Alunos</a>
+                {% if a.turma and a.turma.letiva %}
+                  <a href="{{ url_for('calendario_aula_alunos', turma_id=a.turma_id, aula_id=a.id, return_url=request.full_path) }}"
+                     class="btn btn-sm btn-outline-info mb-1">Alunos</a>
+                {% endif %}
                 <a href="{{ url_for('calendario_edit', turma_id=a.turma_id, aula_id=a.id, view='pendentes', data_ref=a.data.isoformat() if a.data else None, periodo_id=a.periodo_id) }}"
                    class="btn btn-sm btn-warning mb-1">Editar</a>
               {% endif %}

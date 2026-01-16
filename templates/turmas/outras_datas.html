@@ -165,10 +165,12 @@
           <tr>
             <td class="fw-semibold">
               <div class="d-flex align-items-center gap-2">
-                <span class="badge rounded-pill {% if alunos_abertos %}border border-success text-success bg-white{% else %}bg-danger text-light{% endif %}"
-                      title="{% if alunos_abertos %}Janela alunos já aberta{% else %}Janela alunos ainda não aberta{% endif %}">
-                  {% if alunos_abertos %}○{% else %}✖{% endif %}
-                </span>
+                {% if a.turma and a.turma.letiva %}
+                  <span class="badge rounded-pill {% if alunos_abertos %}border border-success text-success bg-white{% else %}bg-danger text-light{% endif %}"
+                        title="{% if alunos_abertos %}Janela alunos já aberta{% else %}Janela alunos ainda não aberta{% endif %}">
+                    {% if alunos_abertos %}○{% else %}✖{% endif %}
+                  </span>
+                {% endif %}
                 <span>{{ a.turma.nome if a.turma else '—' }}</span>
               </div>
             </td>
