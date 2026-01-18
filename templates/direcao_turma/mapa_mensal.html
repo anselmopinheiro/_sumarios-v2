@@ -61,7 +61,16 @@
           <tr>
             <th class="dt-sticky-col" style="width: 260px;">Aluno</th>
             {% for dia in dias %}
-              <th class="text-center" style="min-width: 64px;">{{ dia.day }}</th>
+              {% set motivo = mapa_motivos_dia.get(dia) or '' %}
+              <th class="text-center" style="min-width: 64px;">
+                <span>{{ dia.day }}</span>
+                {% if motivo %}
+                  <span class="badge rounded-pill bg-info text-dark ms-1"
+                        title="{{ motivo }}">i</span>
+                {% else %}
+                  <span class="badge rounded-pill bg-light text-muted border ms-1">i</span>
+                {% endif %}
+              </th>
             {% endfor %}
             <th class="text-end" style="width: 140px;">Ações</th>
           </tr>
@@ -76,7 +85,7 @@
                        class="js-motivo-dia"
                        data-dia="{{ dia_key }}"
                        value="{{ motivo }}">
-                <div class="d-flex justify-content-center align-items-center gap-1">
+                <div class="d-flex justify-content-center">
                   <button type="button"
                           class="btn btn-outline-secondary btn-sm js-motivo-btn"
                           data-dia="{{ dia_key }}"
@@ -84,12 +93,6 @@
                           aria-label="Definir motivo do dia">
                     Motivo
                   </button>
-                  {% if motivo %}
-                    <span class="badge rounded-pill bg-info text-dark"
-                          title="{{ motivo }}">i</span>
-                  {% else %}
-                    <span class="badge rounded-pill bg-light text-muted border">i</span>
-                  {% endif %}
                 </div>
               </th>
             {% endfor %}
