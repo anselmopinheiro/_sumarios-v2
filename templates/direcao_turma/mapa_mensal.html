@@ -69,13 +69,28 @@
             <th class="small text-muted dt-sticky-col">Motivo (por dia)</th>
             {% for dia in dias %}
               {% set dia_key = dia.isoformat() %}
+              {% set motivo = mapa_motivos_dia.get(dia) or '' %}
               <th class="text-center">
-                <input class="form-control form-control-sm text-center js-motivo-dia"
-                       type="text"
+                <input type="hidden"
                        name="motivo_{{ dia_key }}"
+                       class="js-motivo-dia"
                        data-dia="{{ dia_key }}"
-                       placeholder="Motivo"
-                       value="{{ mapa_motivos_dia.get(dia) or '' }}">
+                       value="{{ motivo }}">
+                <div class="d-flex justify-content-center align-items-center gap-1">
+                  <button type="button"
+                          class="btn btn-outline-secondary btn-sm js-motivo-btn"
+                          data-dia="{{ dia_key }}"
+                          data-motivo="{{ motivo }}"
+                          aria-label="Definir motivo do dia">
+                    Motivo
+                  </button>
+                  {% if motivo %}
+                    <span class="badge rounded-pill bg-info text-dark"
+                          title="{{ motivo }}">i</span>
+                  {% else %}
+                    <span class="badge rounded-pill bg-light text-muted border">i</span>
+                  {% endif %}
+                </div>
               </th>
             {% endfor %}
             <th></th>
@@ -149,10 +164,17 @@
       });
     });
 
-    form.querySelectorAll('.js-motivo-dia').forEach((inputEl) => {
-      inputEl.addEventListener('blur', () => {
+    form.querySelectorAll('.js-motivo-btn').forEach((button) => {
+      button.addEventListener('click', () => {
+        const dia = button.dataset.dia || '';
+        const inputEl = form.querySelector(`.js-motivo-dia[data-dia="${dia}"]`);
+        const atual = inputEl ? inputEl.value : (button.dataset.motivo || '');
+        const motivo = window.prompt('Motivo por dia:', atual || '');
+        if (motivo === null) return;
+        const novo = motivo.trim();
+        if (inputEl) inputEl.value = novo;
         if (alunoField) alunoField.value = '';
-        if (diaField) diaField.value = inputEl.dataset.dia || '';
+        if (diaField) diaField.value = dia;
         form.submit();
       });
     });
