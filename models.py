@@ -79,6 +79,13 @@ class Turma(db.Model):
     carga_quarta = db.Column(db.Float, nullable=True)
     carga_quinta = db.Column(db.Float, nullable=True)
     carga_sexta = db.Column(db.Float, nullable=True)
+    # Tempo/horário por dia da semana (1.º a 12.º tempo)
+    tempo_segunda = db.Column(db.Integer, nullable=True)
+    tempo_terca = db.Column(db.Integer, nullable=True)
+    tempo_quarta = db.Column(db.Integer, nullable=True)
+    tempo_quinta = db.Column(db.Integer, nullable=True)
+    tempo_sexta = db.Column(db.Integer, nullable=True)
+    letiva = db.Column(db.Boolean, nullable=False, default=True, server_default="1")
     # relação many-to-many com disciplina
     turmas_disciplinas = db.relationship(
         "TurmaDisciplina",
@@ -178,6 +185,74 @@ class Aluno(db.Model):
 
     __table_args__ = (
         db.Index("ix_alunos_turma_numero", "turma_id", "numero"),
+    )
+
+
+class DTTurma(db.Model):
+    __tablename__ = "dt_turmas"
+
+    id = db.Column(db.Integer, primary_key=True)
+    turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), nullable=False)
+    ano_letivo_id = db.Column(db.Integer, db.ForeignKey("anos_letivos.id"), nullable=False)
+    observacoes = db.Column(db.Text)
+
+    turma = db.relationship("Turma", backref="dt_turmas")
+    ano_letivo = db.relationship("AnoLetivo", backref="dt_turmas")
+    alunos = db.relationship(
+        "DTAluno",
+        back_populates="dt_turma",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint("turma_id", "ano_letivo_id", name="uq_dt_turma_ano"),
+    )
+
+
+class DTAluno(db.Model):
+    __tablename__ = "dt_alunos"
+
+    id = db.Column(db.Integer, primary_key=True)
+    dt_turma_id = db.Column(db.Integer, db.ForeignKey("dt_turmas.id"), nullable=False)
+    aluno_id = db.Column(db.Integer, db.ForeignKey("alunos.id"), nullable=False)
+
+    dt_turma = db.relationship("DTTurma", back_populates="alunos")
+    aluno = db.relationship("Aluno")
+    justificacoes = db.relationship(
+        "DTJustificacao",
+        back_populates="dt_aluno",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        db.Index("ix_dt_alunos_turma_aluno", "dt_turma_id", "aluno_id"),
+    )
+
+
+class DTJustificacao(db.Model):
+    __tablename__ = "dt_justificacoes"
+
+    id = db.Column(db.Integer, primary_key=True)
+    dt_aluno_id = db.Column(db.Integer, db.ForeignKey("dt_alunos.id"), nullable=False)
+    data = db.Column(db.Date, nullable=False)
+    tipo = db.Column(db.String(20), nullable=False, default="falta")
+    motivo = db.Column(db.Text)
+
+    dt_aluno = db.relationship("DTAluno", back_populates="justificacoes")
+
+
+class DTMotivoDia(db.Model):
+    __tablename__ = "dt_motivos_dia"
+
+    id = db.Column(db.Integer, primary_key=True)
+    dt_turma_id = db.Column(db.Integer, db.ForeignKey("dt_turmas.id"), nullable=False)
+    data = db.Column(db.Date, nullable=False)
+    motivo = db.Column(db.Text)
+
+    dt_turma = db.relationship("DTTurma", backref="motivos_dia")
+
+    __table_args__ = (
+        db.UniqueConstraint("dt_turma_id", "data", name="uq_dt_motivo_dia"),
     )
 
 
@@ -365,6 +440,7 @@ class AulaAluno(db.Model):
     trabalho_autonomo = db.Column(db.Integer, default=3, server_default="3")
     portatil_material = db.Column(db.Integer, default=3, server_default="3")
     atividade = db.Column(db.Integer, default=3, server_default="3")
+    falta_disciplinar = db.Column(db.Integer, default=0, server_default="0", nullable=False)
 
     aula = db.relationship("CalendarioAula", back_populates="avaliacoes")
     aluno = db.relationship("Aluno", back_populates="avaliacoes")

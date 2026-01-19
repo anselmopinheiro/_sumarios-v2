@@ -1,3 +1,11 @@
 *.pyc
 *.db
 gestor_lectivo.db
+*.bin
+*.exe
+*.dll
+*.so
+*.dylib
+*.class
+*.o
+*.a

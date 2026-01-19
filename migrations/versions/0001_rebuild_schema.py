@@ -57,6 +57,12 @@ def upgrade():
         sa.Column("carga_quarta", sa.Float()),
         sa.Column("carga_quinta", sa.Float()),
         sa.Column("carga_sexta", sa.Float()),
+        sa.Column("tempo_segunda", sa.Integer()),
+        sa.Column("tempo_terca", sa.Integer()),
+        sa.Column("tempo_quarta", sa.Integer()),
+        sa.Column("tempo_quinta", sa.Integer()),
+        sa.Column("tempo_sexta", sa.Integer()),
+        sa.Column("letiva", sa.Boolean(), nullable=False, server_default="1"),
     )
 
     op.create_table(
