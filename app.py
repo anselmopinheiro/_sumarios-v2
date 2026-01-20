@@ -1183,6 +1183,77 @@ def create_app():
 
         return redirect(url_for("turmas_list"))
 
+    @app.route("/turmas/<int:turma_id>/sumarios/export/csv", methods=["POST"])
+    def turma_sumarios_export_csv(turma_id):
+        turma = Turma.query.get_or_404(turma_id)
+        periodos = (
+            Periodo.query.filter_by(turma_id=turma.id)
+            .order_by(Periodo.data_inicio)
+            .all()
+        )
+        periodo_id = request.form.get("periodo_id", type=int)
+        periodo = next((p for p in periodos if p.id == periodo_id), None)
+
+        data_inicio = _parse_date_form(request.form.get("data_inicio"))
+        data_fim = _parse_date_form(request.form.get("data_fim"))
+        if periodo:
+            data_inicio = data_inicio or periodo.data_inicio
+            data_fim = data_fim or periodo.data_fim
+
+        dados = exportar_sumarios_json(turma.id)
+        linhas_validas = []
+
+        for linha in dados:
+            tipo = (linha.get("tipo") or "").lower()
+            if tipo not in {"normal", "extra"}:
+                continue
+
+            data_txt = linha.get("data")
+            try:
+                data_aula = datetime.fromisoformat(data_txt).date() if data_txt else None
+            except ValueError:
+                data_aula = None
+
+            if not data_aula:
+                continue
+
+            if data_inicio and data_aula < data_inicio:
+                continue
+            if data_fim and data_aula > data_fim:
+                continue
+
+            linhas_validas.append(
+                [
+                    data_aula.strftime("%d/%m/%Y"),
+                    linha.get("modulo_nome") or "",
+                    linha.get("sumarios") or "",
+                    linha.get("sumario") or "",
+                ]
+            )
+
+        if not linhas_validas:
+            flash("Nenhum sumário encontrado para o intervalo selecionado.", "warning")
+            return redirect(url_for("turma_calendario", turma_id=turma.id))
+
+        range_label = "todas"
+        if data_inicio or data_fim:
+            inicio_txt = data_inicio.strftime("%Y%m%d") if data_inicio else "inicio"
+            fim_txt = data_fim.strftime("%Y%m%d") if data_fim else "fim"
+            range_label = f"{inicio_txt}_{fim_txt}"
+        filename = f"sumarios_{_slugify_filename(turma.nome, 'turma')}_{range_label}.csv"
+
+        output = io.StringIO()
+        writer = csv.writer(output, delimiter=";")
+        writer.writerow(["DATA", "MÓDULO", "N.º Sumário", "Sumário"])
+        writer.writerows(linhas_validas)
+        csv_data = output.getvalue()
+
+        return Response(
+            csv_data,
+            mimetype="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+
     # ----------------------------------------
     # DIREÇÃO DE TURMA
     # ----------------------------------------
@@ -2348,15 +2419,23 @@ def create_app():
         ano = turma.ano_letivo
         ano_fechado = bool(ano and ano.fechado)
 
-        periodos_disponiveis = filtrar_periodos_para_turma(
-            turma,
-            (
-                Periodo.query
-                .filter_by(turma_id=turma.id)
-                .order_by(Periodo.data_inicio)
-                .all()
-            ),
+        periodos_base = (
+            Periodo.query
+            .filter_by(turma_id=turma.id)
+            .order_by(Periodo.data_inicio)
+            .all()
         )
+        periodos_disponiveis = filtrar_periodos_para_turma(turma, periodos_base)
+        periodos_export = list(periodos_disponiveis)
+        if turma.periodo_tipo == "anual":
+            extras = [p for p in periodos_base if p.tipo in ("semestre1", "semestre2")]
+            periodos_map = {p.id: p for p in periodos_export}
+            for periodo in extras:
+                periodos_map.setdefault(periodo.id, periodo)
+            periodos_export = sorted(
+                periodos_map.values(),
+                key=lambda p: (p.data_inicio or date.min, p.data_fim or date.min),
+            )
 
         periodo_id = request.args.get("periodo_id", type=int)
         periodo_atual = None
@@ -2393,6 +2472,7 @@ def create_app():
             sumarios_anteriores=sumarios_anteriores,
             periodo_atual=periodo_atual,
             periodos_disponiveis=periodos_disponiveis,
+            periodos_export=periodos_export,
             calendario_existe=calendario_existe,
             tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
             tipos_aula=TIPOS_AULA,

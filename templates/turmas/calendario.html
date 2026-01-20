@@ -26,6 +26,37 @@
   </div>
 </form>
 
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <h5 class="card-title">Exportar sumários (CSV)</h5>
+    <form method="post" action="{{ url_for('turma_sumarios_export_csv', turma_id=turma.id) }}" class="row gy-2 gx-3 align-items-end">
+      <div class="col-12 col-md-4">
+        <label class="form-label">Período</label>
+        <select name="periodo_id" class="form-select">
+          <option value="">Todo o ano</option>
+          {% for p in periodos_export %}
+            <option value="{{ p.id }}">{{ p.nome }} ({{ p.data_inicio.strftime('%d/%m/%Y') }} – {{ p.data_fim.strftime('%d/%m/%Y') }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-3">
+        <label class="form-label">Data inicial</label>
+        <input type="date" name="data_inicio" class="form-control">
+      </div>
+      <div class="col-6 col-md-3">
+        <label class="form-label">Data final</label>
+        <input type="date" name="data_fim" class="form-control">
+      </div>
+      <div class="col-12 col-md-2 d-flex">
+        <button type="submit" class="btn btn-outline-success w-100">Exportar CSV</button>
+      </div>
+      <div class="col-12">
+        <div class="form-text">Selecione um período, um intervalo de datas ou ambos.</div>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div class="mb-3">
   <a href="{{ url_for('turmas_list') }}" class="btn btn-secondary">← Voltar às turmas</a>
 
