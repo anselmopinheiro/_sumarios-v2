@@ -1240,17 +1240,24 @@ def create_app():
             inicio_txt = data_inicio.strftime("%Y%m%d") if data_inicio else "inicio"
             fim_txt = data_fim.strftime("%Y%m%d") if data_fim else "fim"
             range_label = f"{inicio_txt}_{fim_txt}"
-        filename = f"sumarios_{_slugify_filename(turma.nome, 'turma')}_{range_label}.csv"
+        filename = f"sumarios_{_slugify_filename(turma.nome, 'turma')}_{range_label}.xls"
 
         output = io.StringIO()
-        writer = csv.writer(output, delimiter=";")
-        writer.writerow(["DATA", "MÓDULO", "N.º Sumário", "Sumário"])
-        writer.writerows(linhas_validas)
-        csv_data = output.getvalue()
+        output.write("<html><head><meta charset='utf-8'></head><body>")
+        output.write("<table border='1'>")
+        output.write("<thead><tr><th>DATA</th><th>MÓDULO</th><th>N.º Sumário</th><th>Sumário</th></tr></thead><tbody>")
+        for data_legivel, modulo, sumarios, sumario in linhas_validas:
+            output.write("<tr>")
+            output.write(f"<td>{data_legivel}</td>")
+            output.write(f"<td>{modulo}</td>")
+            output.write(f"<td>{sumarios}</td>")
+            output.write(f"<td>{sumario}</td>")
+            output.write("</tr>")
+        output.write("</tbody></table></body></html>")
 
         return Response(
-            csv_data,
-            mimetype="text/csv; charset=utf-8",
+            output.getvalue(),
+            mimetype="application/vnd.ms-excel",
             headers={"Content-Disposition": f"attachment; filename={filename}"},
         )
 
