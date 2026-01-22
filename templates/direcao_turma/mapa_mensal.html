@@ -9,9 +9,16 @@
 
   .dt-mapa-table thead th {
     position: sticky;
-    top: 0;
     z-index: 3;
     background: var(--bs-body-bg);
+  }
+
+  .dt-mapa-table thead tr:first-child th {
+    top: 0;
+  }
+
+  .dt-mapa-table thead tr:nth-child(2) th {
+    top: var(--dt-mapa-header-height, 44px);
   }
 
   .dt-mapa-table .dt-sticky-col {
