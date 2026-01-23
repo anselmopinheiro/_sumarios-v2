@@ -160,6 +160,30 @@
 
     const form = document.querySelector('form[action*=\"mapa-mensal/atualizar\"]');
     if (!form) return;
+    const wrapper = document.querySelector('.dt-mapa-wrapper');
+    const scrollKey = `dt-mapa-scroll-${form.action}-{{ dt_turma.id }}-{{ ano_mes.year }}-{{ ano_mes.month }}`;
+    const saveScroll = () => {
+      if (!wrapper) return;
+      sessionStorage.setItem(scrollKey, JSON.stringify({
+        top: wrapper.scrollTop,
+        left: wrapper.scrollLeft,
+      }));
+    };
+    if (wrapper) {
+      const saved = sessionStorage.getItem(scrollKey);
+      if (saved) {
+        try {
+          const { top, left } = JSON.parse(saved);
+          if (typeof top === 'number') wrapper.scrollTop = top;
+          if (typeof left === 'number') wrapper.scrollLeft = left;
+        } catch (error) {
+          sessionStorage.removeItem(scrollKey);
+        }
+      }
+      wrapper.addEventListener('scroll', () => {
+        saveScroll();
+      }, { passive: true });
+    }
     const alunoField = form.querySelector('input[name=\"dt_aluno_id\"]');
     const diaField = form.querySelector('input[name=\"dia\"]');
 
@@ -170,6 +194,7 @@
         const dia = parts.slice(2).join('_');
         if (alunoField) alunoField.value = alunoId;
         if (diaField) diaField.value = dia;
+        saveScroll();
         form.submit();
       });
     });
@@ -185,6 +210,7 @@
         if (inputEl) inputEl.value = novo;
         if (alunoField) alunoField.value = '';
         if (diaField) diaField.value = dia;
+        saveScroll();
         form.submit();
       });
     });
