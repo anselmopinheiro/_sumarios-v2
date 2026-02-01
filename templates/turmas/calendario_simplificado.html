@@ -45,6 +45,8 @@
           <th>N.º Sumário</th>
           <th>Módulo</th>
           <th>Aula do módulo</th>
+          <th>Sumário</th>
+          <th>Previsão</th>
         </tr>
       </thead>
       <tbody>
@@ -59,6 +61,8 @@
             </td>
             <td>{% if a.modulo %}{{ a.modulo.nome }}{% else %}Sem módulo{% endif %}</td>
             <td>{{ a.numero_modulo or '—' }}</td>
+            <td>{{ a.sumario or '—' }}</td>
+            <td>{{ a.previsao or '—' }}</td>
           </tr>
         {% endfor %}
       </tbody>
