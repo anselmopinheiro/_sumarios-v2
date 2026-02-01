@@ -3839,6 +3839,7 @@ def create_app():
                     "previsao": aula.previsao or "",
                     "tipo": aula.tipo,
                     "tempos_sem_aula": aula.tempos_sem_aula or 0,
+                    "last_save": _formatar_data_hora(_load_last_save()),
                 }
             )
 
