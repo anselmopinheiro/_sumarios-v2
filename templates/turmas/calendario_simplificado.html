@@ -81,14 +81,14 @@
             <td>{{ a.numero_modulo or '—' }}</td>
             <td>
               {% if a.sumario %}
-                <div class="simplificado-richtext">{{ a.sumario|safe }}</div>
+                <div class="simplificado-richtext">{{ a.sumario|striptags }}</div>
               {% else %}
                 —
               {% endif %}
             </td>
             <td>
               {% if a.previsao %}
-                <div class="simplificado-richtext">{{ a.previsao|safe }}</div>
+                <div class="simplificado-richtext">{{ a.previsao|striptags }}</div>
               {% else %}
                 —
               {% endif %}
