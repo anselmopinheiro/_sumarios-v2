@@ -64,6 +64,10 @@
     Ver por dia
   </a>
 
+  <a href="{{ url_for('turma_calendario_simplificado', turma_id=turma.id, periodo_id=periodo_atual.id if periodo_atual else None) }}" class="btn btn-outline-secondary ms-1">
+    Versão simplificada
+  </a>
+
   <a href="{{ url_for('turma_mapa_avaliacao_diaria', turma_id=turma.id, periodo_id=periodo_atual.id if periodo_atual else None) }}" class="btn btn-outline-secondary ms-1">
     Mapa diário de avaliação
   </a>

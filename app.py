@@ -2486,6 +2486,43 @@ def create_app():
             tipo_labels=dict(TIPOS_AULA),
         )
 
+    @app.route("/turmas/<int:turma_id>/calendario/simplificado")
+    def turma_calendario_simplificado(turma_id):
+        turma = Turma.query.get_or_404(turma_id)
+        ano = turma.ano_letivo
+        ano_fechado = bool(ano and ano.fechado)
+
+        periodos_base = (
+            Periodo.query.filter_by(turma_id=turma.id)
+            .order_by(Periodo.data_inicio)
+            .all()
+        )
+        periodos_disponiveis = filtrar_periodos_para_turma(turma, periodos_base)
+
+        periodo_id = request.args.get("periodo_id", type=int)
+        periodo_atual = None
+        if periodo_id:
+            periodo_atual = Periodo.query.get(periodo_id)
+        elif periodos_disponiveis:
+            periodo_atual = periodos_disponiveis[0]
+
+        query_aulas = CalendarioAula.query.filter_by(
+            turma_id=turma.id, apagado=False
+        )
+        if periodo_atual:
+            query_aulas = query_aulas.filter_by(periodo_id=periodo_atual.id)
+        aulas = query_aulas.order_by(CalendarioAula.data).all()
+
+        return render_template(
+            "turmas/calendario_simplificado.html",
+            turma=turma,
+            ano=ano,
+            ano_fechado=ano_fechado,
+            aulas=aulas,
+            periodo_atual=periodo_atual,
+            periodos_disponiveis=periodos_disponiveis,
+        )
+
     @app.route("/turmas/<int:turma_id>/mapa-avaliacao-diaria")
     def turma_mapa_avaliacao_diaria(turma_id):
         turma = Turma.query.get_or_404(turma_id)
