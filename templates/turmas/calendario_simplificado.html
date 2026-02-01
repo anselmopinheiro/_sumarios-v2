@@ -1,6 +1,24 @@
 {% extends "base.html" %}
 {% block content %}
 
+<style>
+  .simplificado-richtext {
+    max-width: 420px;
+    word-break: break-word;
+  }
+
+  .simplificado-richtext table {
+    width: 100%;
+    display: block;
+    overflow-x: auto;
+  }
+
+  .simplificado-richtext th,
+  .simplificado-richtext td {
+    padding: 2px 4px;
+  }
+</style>
+
 <h2>Calendário simplificado — Turma {{ turma.nome }}</h2>
 
 {% if ano %}
@@ -61,8 +79,20 @@
             </td>
             <td>{% if a.modulo %}{{ a.modulo.nome }}{% else %}Sem módulo{% endif %}</td>
             <td>{{ a.numero_modulo or '—' }}</td>
-            <td>{{ a.sumario|safe if a.sumario else '—' }}</td>
-            <td>{{ a.previsao|safe if a.previsao else '—' }}</td>
+            <td>
+              {% if a.sumario %}
+                <div class="simplificado-richtext">{{ a.sumario|safe }}</div>
+              {% else %}
+                —
+              {% endif %}
+            </td>
+            <td>
+              {% if a.previsao %}
+                <div class="simplificado-richtext">{{ a.previsao|safe }}</div>
+              {% else %}
+                —
+              {% endif %}
+            </td>
           </tr>
         {% endfor %}
       </tbody>
