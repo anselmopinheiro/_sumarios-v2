@@ -61,8 +61,8 @@
             </td>
             <td>{% if a.modulo %}{{ a.modulo.nome }}{% else %}Sem módulo{% endif %}</td>
             <td>{{ a.numero_modulo or '—' }}</td>
-            <td>{{ a.sumario or '—' }}</td>
-            <td>{{ a.previsao or '—' }}</td>
+            <td>{{ a.sumario|safe if a.sumario else '—' }}</td>
+            <td>{{ a.previsao|safe if a.previsao else '—' }}</td>
           </tr>
         {% endfor %}
       </tbody>
