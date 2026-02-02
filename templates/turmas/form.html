@@ -37,6 +37,14 @@
     </select>
   </div>
 
+  <div class="mb-3">
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" id="letiva" name="letiva" value="1"
+             {% if turma %}{% if turma.letiva %}checked{% endif %}{% else %}checked{% endif %}>
+      <label class="form-check-label" for="letiva">Turma letiva (tem aulas)</label>
+    </div>
+  </div>
+
   <div id="modulos-profissionais" class="mb-4" style="display: none;">
     <h5 class="mt-4">Módulos (ensino profissional)</h5>
     <p class="text-muted small">Indica o nome do módulo e a respetiva carga horária total.</p>
@@ -130,6 +138,44 @@
   </div>
 
   <div class="mb-3">
+    <h5 class="mt-4">Tempo/horário por dia</h5>
+    <p class="text-muted small">(1.º a 12.º tempo; usado para ordenar o calendário)</p>
+
+    <div class="row g-3">
+      <div class="col-md-2">
+        <label for="tempo-segunda" class="form-label">Segunda</label>
+        <input type="number" min="1" max="12" class="form-control" id="tempo-segunda"
+               name="tempo_segunda"
+               value="{{ turma.tempo_segunda if turma else '' }}">
+      </div>
+      <div class="col-md-2">
+        <label for="tempo-terca" class="form-label">Terça</label>
+        <input type="number" min="1" max="12" class="form-control" id="tempo-terca"
+               name="tempo_terca"
+               value="{{ turma.tempo_terca if turma else '' }}">
+      </div>
+      <div class="col-md-2">
+        <label for="tempo-quarta" class="form-label">Quarta</label>
+        <input type="number" min="1" max="12" class="form-control" id="tempo-quarta"
+               name="tempo_quarta"
+               value="{{ turma.tempo_quarta if turma else '' }}">
+      </div>
+      <div class="col-md-2">
+        <label for="tempo-quinta" class="form-label">Quinta</label>
+        <input type="number" min="1" max="12" class="form-control" id="tempo-quinta"
+               name="tempo_quinta"
+               value="{{ turma.tempo_quinta if turma else '' }}">
+      </div>
+      <div class="col-md-2">
+        <label for="tempo-sexta" class="form-label">Sexta</label>
+        <input type="number" min="1" max="12" class="form-control" id="tempo-sexta"
+               name="tempo_sexta"
+               value="{{ turma.tempo_sexta if turma else '' }}">
+      </div>
+    </div>
+  </div>
+
+  <div class="mb-3">
     <label class="form-label">Ano Letivo</label>
     <select name="ano_letivo_id" class="form-control" required>
       {% for ano in anos_letivos %}
@@ -148,6 +194,14 @@
   <button type="submit" class="btn btn-success">Guardar</button>
   <a href="{{ url_for('turmas_list') }}" class="btn btn-secondary">Cancelar</a>
 </form>
+{% if turma %}
+  <form method="post"
+        action="{{ url_for('turmas_delete', turma_id=turma.id) }}"
+        class="d-inline"
+        onsubmit="return confirm('Eliminar turma?')">
+    <button type="submit" class="btn btn-outline-danger">Eliminar</button>
+  </form>
+{% endif %}
 
 <script>
   const seletorTipo = document.querySelector('select[name="tipo"]');

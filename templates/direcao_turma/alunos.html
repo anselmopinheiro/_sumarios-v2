@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h2>Alunos – Direção de Turma</h2>
+    <div class="text-muted">{{ dt_turma.turma.nome if dt_turma.turma else 'Turma' }} — {{ dt_turma.ano_letivo.nome if dt_turma.ano_letivo else 'Ano letivo' }}</div>
+  </div>
+  <a href="{{ url_for('direcao_turma_list') }}" class="btn btn-secondary">Voltar</a>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body d-flex flex-wrap gap-2 align-items-center">
+    <form method="post" action="{{ url_for('direcao_turma_alunos_importar', dt_id=dt_turma.id) }}">
+      <button type="submit" class="btn btn-primary" {% if bloqueado %}disabled{% endif %}>Importar alunos da turma</button>
+    </form>
+    <form method="post" action="{{ url_for('direcao_turma_alunos_guardar', dt_id=dt_turma.id) }}">
+      <button type="submit" class="btn btn-success" {% if bloqueado %}disabled{% endif %}>Guardar tudo</button>
+    </form>
+    {% if bloqueado %}
+      <span class="text-muted">Ano letivo fechado: apenas consulta.</span>
+    {% endif %}
+  </div>
+</div>
+
+{% if alunos %}
+  <form method="post" action="{{ url_for('direcao_turma_alunos_guardar', dt_id=dt_turma.id) }}">
+    <div class="table-responsive">
+      <table class="table table-striped align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>N.º</th>
+            <th>Nome</th>
+            <th>Nome curto</th>
+            <th>Processo</th>
+            <th>Origem</th>
+            <th class="text-end" style="width: 200px;">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for dt_aluno in alunos %}
+            {% set aluno = dt_aluno.aluno %}
+            <tr>
+              <td>{{ '%02d'|format(aluno.numero) if aluno and aluno.numero is not none else '—' }}</td>
+              <td class="fw-semibold">{{ aluno.nome if aluno else '—' }}</td>
+              <td>
+                <input type="hidden" name="aluno_ids" value="{{ dt_aluno.id }}">
+                <input type="text"
+                       class="form-control form-control-sm js-nome-curto"
+                       name="nome_curto_{{ dt_aluno.id }}"
+                       data-aluno-id="{{ dt_aluno.id }}"
+                       data-url="{{ url_for('direcao_turma_alunos_nome_curto', dt_id=dt_turma.id, dt_aluno_id=dt_aluno.id) }}"
+                       value="{{ aluno.nome_curto if aluno else '' }}"
+                       {% if bloqueado %}disabled{% endif %}>
+              </td>
+              <td>{{ aluno.processo if aluno and aluno.processo else '—' }}</td>
+              <td>{{ aluno.turma.nome if aluno and aluno.turma else '—' }}</td>
+              <td class="text-end">
+                <a href="{{ url_for('direcao_turma_alunos_edit', dt_id=dt_turma.id, dt_aluno_id=dt_aluno.id) }}"
+                   class="btn btn-sm btn-outline-warning {% if bloqueado %}disabled{% endif %}">
+                  Editar
+                </a>
+                <button type="submit"
+                        class="btn btn-sm btn-outline-danger"
+                        formaction="{{ url_for('direcao_turma_alunos_delete', dt_id=dt_turma.id, dt_aluno_id=dt_aluno.id) }}"
+                        formmethod="post"
+                        formnovalidate
+                        onclick="return confirm('Remover aluno da Direção de Turma?');"
+                        {% if bloqueado %}disabled{% endif %}>
+                  Remover
+                </button>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
+{% else %}
+  <div class="alert alert-secondary">Ainda não existem alunos associados a esta Direção de Turma.</div>
+{% endif %}
+
+<script>
+  (() => {
+    const inputs = document.querySelectorAll('.js-nome-curto');
+    if (!inputs.length) return;
+    inputs.forEach((inputEl) => {
+      inputEl.addEventListener('blur', async () => {
+        if (inputEl.disabled) return;
+        const url = inputEl.dataset.url;
+        if (!url) return;
+        const formData = new FormData();
+        formData.append('nome_curto', inputEl.value || '');
+        try {
+          await fetch(url, {
+            method: 'POST',
+            body: formData,
+            headers: {
+              'X-Requested-With': 'XMLHttpRequest',
+            },
+          });
+        } catch (err) {
+          console.error('Falha ao guardar nome curto', err);
+        }
+      });
+    });
+  })();
+</script>
+
+{% endblock %}
