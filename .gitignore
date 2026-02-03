@@ -1,5 +1,9 @@
+__pycache__/
 *.pyc
+instance/
 *.db
+migrations/__pycache__/
+migrations/versions/__pycache__/
 gestor_lectivo.db
 *.bin
 *.exe
