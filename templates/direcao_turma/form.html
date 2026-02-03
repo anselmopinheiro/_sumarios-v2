@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>{{ titulo }}</h2>
+
+<form method="post">
+  <div class="mb-3">
+    <label class="form-label">Ano letivo</label>
+    <select name="ano_letivo_id" class="form-control" required>
+      <option value="">Seleciona um ano letivo</option>
+      {% for ano in anos_letivos %}
+        <option value="{{ ano.id }}"
+          {% if dt_turma and dt_turma.ano_letivo_id == ano.id %}selected{% endif %}>
+          {{ ano.nome }}{% if ano.ativo %} (ativo){% endif %}{% if ano.fechado %} (fechado){% endif %}
+        </option>
+      {% endfor %}
+    </select>
+    <div class="form-text">Anos fechados ficam apenas para consulta.</div>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Turma</label>
+    <select name="turma_id" class="form-control" required>
+      <option value="">Seleciona uma turma</option>
+      {% for turma in turmas %}
+        <option value="{{ turma.id }}"
+          {% if dt_turma and dt_turma.turma_id == turma.id %}selected{% endif %}>
+          {{ turma.nome }}{% if turma.ano_letivo %} — {{ turma.ano_letivo.nome }}{% endif %}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Observações</label>
+    <textarea name="observacoes" class="form-control" rows="3">{{ dt_turma.observacoes if dt_turma else '' }}</textarea>
+  </div>
+
+  <button type="submit" class="btn btn-success">Guardar</button>
+  <a href="{{ url_for('direcao_turma_list') }}" class="btn btn-secondary">Cancelar</a>
+</form>
+
+{% endblock %}

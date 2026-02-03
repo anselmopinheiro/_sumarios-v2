@@ -88,20 +88,48 @@
 
     <div class="col-md-6 mb-3">
       <label class="form-label">Sumário (descrição da aula)</label>
-      <textarea name="sumario" class="form-control js-autoresize" rows="3"
-                placeholder="Breve descrição da aula">{{ aula.sumario if aula and aula.sumario else '' }}</textarea>
+      <div class="d-flex flex-column gap-2">
+        <textarea name="sumario" class="form-control js-autoresize" rows="3"
+                  placeholder="Breve descrição da aula">{{ aula.sumario if aula and aula.sumario else '' }}</textarea>
+        <div class="d-flex gap-2 flex-wrap">
+          <button type="button" class="btn btn-outline-secondary btn-sm js-copy-sumario">Copiar sumário</button>
+          {% if sumario_anterior %}
+            <button type="button"
+                    class="btn btn-outline-info btn-sm js-use-prev-sumario"
+                    data-sumario-anterior="{{ sumario_anterior }}">
+              Usar sumário anterior
+            </button>
+          {% endif %}
+        </div>
+      </div>
     </div>
     <div class="col-md-6 mb-3">
       <label class="form-label">Previsão (planeamento)</label>
-  <textarea name="previsao" class="form-control js-autoresize" rows="3"
-            placeholder="Plano para a aula">{{ aula.previsao if aula and aula.previsao else '' }}</textarea>
-  <button type="button" class="btn btn-link btn-sm ps-0 js-copy-previsao">Copiar previsão para sumário</button>
-</div>
+      {% set previsao_id = "previsao-" ~ (aula.id if aula else 'nova') %}
+      <div class="js-richtext-wrapper d-flex flex-column gap-1">
+        <div class="richtext-toolbar d-flex flex-wrap align-items-center gap-2">
+          <span class="small text-muted">Formatação:</span>
+          <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="bold"><strong>B</strong></button>
+          <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="italic"><em>I</em></button>
+          <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="backColor" data-value="#fff3cd"><span class="px-1" style="background: #fff3cd;">Realçar</span></button>
+        </div>
+        <div
+          class="form-control js-richtext-editor richtext-editor"
+          contenteditable="true"
+          data-target="#{{ previsao_id }}"
+          aria-label="Plano para a aula"
+        >{{ aula.previsao if aula and aula.previsao else '' }}</div>
+        <input type="hidden" name="previsao" id="{{ previsao_id }}" value="{{ aula.previsao if aula and aula.previsao else '' }}">
+        <div class="form-text">Suporta negrito, itálico e destaque amarelo.</div>
+      </div>
+      <button type="button" class="btn btn-link btn-sm ps-0 js-copy-previsao">Copiar previsão para sumário</button>
+    </div>
   </div>
 
   <button type="submit" class="btn btn-success">Guardar</button>
   {% if redirect_view == 'dia' and data_ref %}
-    <a href="{{ url_for('turma_calendario_dia', turma_id=turma.id, data=data_ref) }}"
+    {% set turma_hidden = request.values.get('turma_filtro') %}
+    <a href="{{ url_for('turma_calendario_dia', data=data_ref, turma_id=turma_hidden) }}"
        class="btn btn-secondary">
       Cancelar
     </a>

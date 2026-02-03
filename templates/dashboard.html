@@ -12,11 +12,33 @@
 </p>
 
 <h3>Turmas</h3>
-<ul>
-  {% for turma in turmas %}
-    <li>{{ turma.nome }} ({{ turma.tipo }})</li>
-  {% else %}
-    <li>(Nenhuma turma registada)</li>
-  {% endfor %}
-</ul>
+{% if turmas %}
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th>Turma</th>
+          <th class="text-end">Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for turma in turmas %}
+          <tr>
+            <td class="fw-semibold">{{ turma.nome }} <small class="text-muted">({{ turma.tipo }})</small></td>
+            <td class="text-end">
+              <div class="btn-group" role="group">
+                <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('turma_alunos', turma_id=turma.id) }}">Alunos</a>
+                <a class="btn btn-sm btn-outline-info" href="{{ url_for('turma_calendario', turma_id=turma.id) }}">Calendário</a>
+                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('turma_calendario_simplificado', turma_id=turma.id) }}">Calendário simplificado</a>
+                <a class="btn btn-sm btn-outline-success" href="{{ url_for('turma_mapa_avaliacao_diaria', turma_id=turma.id) }}">Mapa avaliações</a>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="alert alert-secondary">Nenhuma turma registada.</div>
+{% endif %}
 {% endblock %}
