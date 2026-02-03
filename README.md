@@ -95,11 +95,16 @@ instance/
 
 **Como é criado**
 - Cópia integral do ficheiro SQLite.
-- Nome baseado em data e hora (`YYYY-MM-DD_HH-MM-SS.db`).
+- Nome baseado em data/hora e hostname (`YYYY-MM-DD_HH-MM-SS__HOSTNAME.db`).
 - Preservação de permissões e metadata.
+- Rotação automática (mantém os últimos 30 backups por defeito).
 
 **Localização**
 - `instance/backups/`
+
+### Interface de backups
+- A rota `/backups` lista os backups disponíveis, mostra o último backup e permite descarregar.
+- O restauro é sempre manual (não existe qualquer automatismo de reposição).
 
 ### Fluxo de trabalho entre computadores
 **Computador A**

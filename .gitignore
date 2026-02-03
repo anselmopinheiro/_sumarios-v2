@@ -1,6 +1,8 @@
 __pycache__/
 *.pyc
 instance/
+instance/gestor_lectivo.db
+instance/backups/
 *.db
 migrations/__pycache__/
 migrations/versions/__pycache__/

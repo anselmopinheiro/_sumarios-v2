@@ -3,7 +3,10 @@ import csv
 import io
 import json
 import os
+import re
 import shutil
+import socket
+import sqlite3
 import subprocess
 import unicodedata
 from collections import defaultdict
@@ -18,6 +21,8 @@ from flask import (
     flash,
     Response,
     jsonify,
+    send_from_directory,
+    abort,
 )
 
 from flask_migrate import Migrate
@@ -264,6 +269,23 @@ def _formatar_data_hora(valor):
     return None
 
 
+def _formatar_tamanho_bytes(valor):
+    if valor is None:
+        return None
+    try:
+        tamanho = float(valor)
+    except (TypeError, ValueError):
+        return None
+    unidades = ["B", "KB", "MB", "GB", "TB"]
+    for unidade in unidades:
+        if tamanho < 1024 or unidade == unidades[-1]:
+            if unidade == "B":
+                return f"{int(tamanho)} {unidade}"
+            return f"{tamanho:.1f} {unidade}"
+        tamanho /= 1024
+    return None
+
+
 def _mapear_sumarios_anteriores(aulas):
     if not aulas:
         return {}
@@ -485,6 +507,8 @@ def create_app():
         if not session.info.pop("has_changes", False):
             return
         _save_last_save(datetime.now().isoformat(timespec="seconds"))
+        if app.config.get("BACKUP_ON_COMMIT", True):
+            _backup_database(reason="commit")
 
     @app.context_processor
     def inject_footer_info():
@@ -728,38 +752,135 @@ def create_app():
                     )
                     db.session.commit()
 
-    def _backup_database():
+    def _get_db_path():
         uri = app.config.get("SQLALCHEMY_DATABASE_URI")
+        if not uri or not uri.startswith("sqlite:///"):
+            return None
+        return uri.replace("sqlite:///", "", 1)
+
+    def _parse_backup_filename(filename):
+        pattern = re.compile(
+            r"^(?P<ts>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})__(?P<host>[^/\\\\]+)\\.db$"
+        )
+        match = pattern.match(filename)
+        if not match:
+            return None
+        try:
+            timestamp = datetime.strptime(match.group("ts"), "%Y-%m-%d_%H-%M-%S")
+        except ValueError:
+            return None
+        return {
+            "filename": filename,
+            "timestamp": timestamp,
+            "hostname": match.group("host"),
+        }
+
+    def _rotate_backups(backup_dir, keep):
+        if keep is None:
+            return
+        try:
+            keep = int(keep)
+        except (TypeError, ValueError):
+            return
+        if keep <= 0:
+            return
+        entries = []
+        try:
+            for filename in os.listdir(backup_dir):
+                parsed = _parse_backup_filename(filename)
+                if not parsed:
+                    continue
+                parsed["path"] = os.path.join(backup_dir, filename)
+                entries.append(parsed)
+        except FileNotFoundError:
+            return
+        entries.sort(key=lambda item: item["timestamp"], reverse=True)
+        for entry in entries[keep:]:
+            try:
+                os.remove(entry["path"])
+            except OSError:
+                app.logger.warning(
+                    "Não foi possível remover backup antigo: %s", entry["path"]
+                )
+
+    def _write_backup_vacuum(db_path, tmp_path):
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("VACUUM INTO ?", (tmp_path,))
+
+    def _write_backup_copy(db_path, tmp_path):
+        shutil.copy2(db_path, tmp_path)
+
+    def _backup_database(reason="manual"):
         backup_dir = app.config.get("BACKUP_DIR")
+        db_path = _get_db_path()
 
-        if not uri or not backup_dir:
-            return
-
-        if uri.startswith("sqlite:///"):
-            db_path = uri.replace("sqlite:///", "", 1)
-        else:
-            return
+        if not backup_dir or not db_path:
+            return False
 
         if not os.path.isfile(db_path):
-            return
+            return False
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        base_name, ext = os.path.splitext(os.path.basename(db_path))
-        backup_name = f"{base_name}_{timestamp}{ext or '.db'}"
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        hostname = socket.gethostname() or "HOST"
+        backup_name = f"{timestamp}__{hostname}.db"
+        destination = os.path.join(backup_dir, backup_name)
+        tmp_path = f"{destination}.tmp"
 
         try:
             os.makedirs(backup_dir, exist_ok=True)
-            shutil.copy2(db_path, os.path.join(backup_dir, backup_name))
+            try:
+                _write_backup_vacuum(db_path, tmp_path)
+            except Exception:
+                _write_backup_copy(db_path, tmp_path)
+            os.replace(tmp_path, destination)
+            _rotate_backups(backup_dir, app.config.get("BACKUP_KEEP", 30))
+            app.logger.info("Backup da base de dados criado (%s): %s", reason, backup_name)
+            return True
         except OSError as exc:
             app.logger.warning(
                 "Não foi possível criar backup da base de dados em %s: %s",
                 backup_dir,
                 exc,
             )
+        finally:
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except OSError:
+                app.logger.warning("Não foi possível limpar o ficheiro temporário: %s", tmp_path)
+        return False
+
+    def _list_backups():
+        backup_dir = app.config.get("BACKUP_DIR")
+        entries = []
+        if not backup_dir:
+            return entries
+        try:
+            for filename in os.listdir(backup_dir):
+                parsed = _parse_backup_filename(filename)
+                if not parsed:
+                    continue
+                path = os.path.join(backup_dir, filename)
+                try:
+                    size = os.path.getsize(path)
+                except OSError:
+                    size = None
+                entries.append(
+                    {
+                        **parsed,
+                        "size": size,
+                        "size_label": _formatar_tamanho_bytes(size),
+                    }
+                )
+        except FileNotFoundError:
+            return entries
+        entries.sort(key=lambda item: item["timestamp"], reverse=True)
+        return entries
 
     with app.app_context():
         _ensure_columns()
-        _backup_database()
+        if app.config.get("BACKUP_ON_STARTUP", True):
+            _backup_database(reason="startup")
 
     # ----------------------------------------
     # Helpers internos à app
@@ -835,6 +956,36 @@ def create_app():
             turmas=turmas,
             ano_atual=ano_atual,
         )
+
+    @app.route("/backups")
+    def backups_list():
+        backups = _list_backups()
+        db_path = _get_db_path()
+        db_exists = bool(db_path and os.path.isfile(db_path))
+        return render_template(
+            "backups/list.html",
+            title="Backups",
+            backups=backups,
+            last_backup=backups[0] if backups else None,
+            hostname=socket.gethostname(),
+            db_exists=db_exists,
+        )
+
+    @app.route("/backups/<filename>")
+    def backups_download(filename):
+        backup_dir = app.config.get("BACKUP_DIR")
+        if not backup_dir:
+            abort(404)
+        if filename != os.path.basename(filename):
+            abort(404)
+        if os.path.sep in filename or (os.path.altsep and os.path.altsep in filename):
+            abort(404)
+        if not _parse_backup_filename(filename):
+            abort(404)
+        path = os.path.join(backup_dir, filename)
+        if not os.path.isfile(path):
+            abort(404)
+        return send_from_directory(backup_dir, filename, as_attachment=True)
 
     # ----------------------------------------
     # LIVROS
