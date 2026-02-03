@@ -28,7 +28,7 @@ Aplicação Flask para gestão de turmas, calendários de aulas, sumários e ava
    - `FLASK_ENV=development` (para reloading automático)
 
 4. **Criar base de dados**
-   - Por omissão é usado `sqlite:///gestor_lectivo.db` na raiz do projeto.
+   - Por omissão é usado `sqlite:///instance/gestor_lectivo.db` (sempre local).
    - Para um arranque limpo basta executar:
      ```bash
      flask db upgrade
@@ -63,3 +63,65 @@ Aplicação Flask para gestão de turmas, calendários de aulas, sumários e ava
 - Índices adicionados às tabelas de calendários, alunos e avaliações para acelerar listagens e mapas.
 - Criação automática de tabelas/colunas novas e sincronização do `alembic_version` em bases antigas, reduzindo erros de arranque.
 - Seletores de turmas filtram para anos letivos ativos e abertos em formulários de extras, calendário global e importações, evitando ações sobre anos fechados.
+
+## Estratégia de Salvaguarda de Dados — Versão 2
+
+### Problema a resolver
+O SQLite não é adequado à sincronização concorrente de ficheiros binários. Sincronizar a base de dados ativa via OneDrive/Google Drive/Dropbox pode gerar conflitos e corrupção.
+
+### Princípios adotados
+- O ficheiro da base de dados ativa **nunca é sincronizado**.
+- Cada computador trabalha sempre com **uma base de dados local**.
+- A salvaguarda é feita através de **backups automáticos versionados**.
+- **Apenas os backups** são sincronizados entre computadores.
+- O **restauro é sempre manual e consciente**.
+
+### Arquitetura (V2)
+```
+instance/
+  gestor_lectivo.db          ← base de dados ativa (local)
+  backups/
+    2026-02-01_22-15-00.db
+    2026-02-02_08-30-12.db
+```
+
+### Exclusões obrigatórias
+- `instance/gestor_lectivo.db` nunca é sincronizado nem versionado em Git.
+- `instance/backups/` pode ser sincronizada via cloud.
+
+### Política de backups
+**Quando é criado um backup**
+- No arranque da aplicação (uma vez por sessão).
+
+**Como é criado**
+- Cópia integral do ficheiro SQLite.
+- Nome baseado em data e hora (`YYYY-MM-DD_HH-MM-SS.db`).
+- Preservação de permissões e metadata.
+
+**Localização**
+- `instance/backups/`
+
+### Fluxo de trabalho entre computadores
+**Computador A**
+1. Trabalha normalmente.
+2. A aplicação cria backups automáticos.
+3. Apenas a pasta `instance/backups/` é sincronizada para a cloud.
+
+**Computador B**
+1. Recebe os backups via cloud.
+2. O utilizador escolhe manualmente o backup pretendido.
+3. O ficheiro escolhido é copiado para `instance/gestor_lectivo.db`.
+4. A aplicação é iniciada normalmente.
+
+### Decisões técnicas explícitas
+- Não é permitido abrir a aplicação diretamente sobre uma base de dados sincronizada.
+- Não é permitida escrita concorrente sobre o mesmo ficheiro SQLite.
+- O Git é utilizado apenas para código, nunca para dados.
+- O OneDrive é utilizado apenas para transporte de backups, não como sistema de base de dados.
+
+### Evolução prevista (futura)
+Está prevista a migração para um sistema servidor (MySQL/PostgreSQL), permitindo:
+- Acesso simultâneo.
+- Histórico imutável.
+- Conformidade legal reforçada.
+- Backups transacionais.
