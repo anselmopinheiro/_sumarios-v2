@@ -955,10 +955,25 @@ def create_app():
     def dashboard():
         turmas = turmas_abertas_ativas()
         ano_atual = get_ano_letivo_atual()
+        termo = (request.args.get("q") or "").strip()
+        resultados_sumarios = []
+        if termo:
+            like = f"%{termo}%"
+            resultados_sumarios = (
+                CalendarioAula.query
+                .filter(CalendarioAula.apagado == False)  # noqa: E712
+                .filter(CalendarioAula.sumario.isnot(None))
+                .filter(CalendarioAula.sumario.ilike(like))
+                .order_by(CalendarioAula.data.desc(), CalendarioAula.id.desc())
+                .limit(50)
+                .all()
+            )
         return render_template(
             "dashboard.html",
             turmas=turmas,
             ano_atual=ano_atual,
+            termo=termo,
+            resultados_sumarios=resultados_sumarios,
         )
 
     @app.route("/backups")
