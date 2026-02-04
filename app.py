@@ -760,7 +760,7 @@ def create_app():
 
     def _parse_backup_filename(filename):
         pattern = re.compile(
-            r"^(?P<ts>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})__(?P<host>[^/\\\\]+)\\.db$"
+            r"^(?P<ts>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})__(?P<host>[^/\\\\]+?)(?P<manual>_manual)?\\.db$"
         )
         match = pattern.match(filename)
         if not match:
@@ -773,6 +773,7 @@ def create_app():
             "filename": filename,
             "timestamp": timestamp,
             "hostname": match.group("host"),
+            "is_manual": bool(match.group("manual")),
         }
 
     def _rotate_backups(backup_dir, keep):
@@ -822,7 +823,8 @@ def create_app():
 
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         hostname = socket.gethostname() or "HOST"
-        backup_name = f"{timestamp}__{hostname}.db"
+        manual_suffix = "_manual" if reason == "manual" else ""
+        backup_name = f"{timestamp}__{hostname}{manual_suffix}.db"
         destination = os.path.join(backup_dir, backup_name)
         tmp_path = f"{destination}.tmp"
 
@@ -875,7 +877,7 @@ def create_app():
         except FileNotFoundError:
             return entries
         entries.sort(key=lambda item: item["timestamp"], reverse=True)
-        return entries
+        return entries[:20]
 
     with app.app_context():
         _ensure_columns()
