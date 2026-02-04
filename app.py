@@ -403,6 +403,8 @@ def create_app():
     Migrate(app, db)
 
     os.makedirs(app.instance_path, exist_ok=True)
+    if not os.environ.get("DB_BACKUP_DIR"):
+        app.config["BACKUP_DIR"] = os.path.join(app.instance_path, "backups")
     export_options_path = os.path.join(app.instance_path, "export_options.json")
 
     def _default_csv_dir():
