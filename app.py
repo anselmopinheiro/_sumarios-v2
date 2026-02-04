@@ -815,10 +815,10 @@ def create_app():
         db_path = _get_db_path()
 
         if not backup_dir or not db_path:
-            return False
+            return {"ok": False, "error": "Configuração de backup em falta."}
 
         if not os.path.isfile(db_path):
-            return False
+            return {"ok": False, "error": "Base de dados não encontrada."}
 
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         hostname = socket.gethostname() or "HOST"
@@ -835,7 +835,7 @@ def create_app():
             os.replace(tmp_path, destination)
             _rotate_backups(backup_dir, app.config.get("BACKUP_KEEP", 30))
             app.logger.info("Backup da base de dados criado (%s): %s", reason, backup_name)
-            return True
+            return {"ok": True, "filename": backup_name}
         except OSError as exc:
             app.logger.warning(
                 "Não foi possível criar backup da base de dados em %s: %s",
@@ -848,7 +848,7 @@ def create_app():
                     os.remove(tmp_path)
             except OSError:
                 app.logger.warning("Não foi possível limpar o ficheiro temporário: %s", tmp_path)
-        return False
+        return {"ok": False, "error": "Não foi possível criar backup."}
 
     def _list_backups():
         backup_dir = app.config.get("BACKUP_DIR")
@@ -986,6 +986,15 @@ def create_app():
         if not os.path.isfile(path):
             abort(404)
         return send_from_directory(backup_dir, filename, as_attachment=True)
+
+    @app.route("/backups/trigger", methods=["POST"])
+    def backups_trigger():
+        resultado = _backup_database(reason="manual")
+        if resultado.get("ok"):
+            flash(f"Backup criado: {resultado.get('filename')}", "success")
+        else:
+            flash(resultado.get("error") or "Não foi possível criar backup.", "error")
+        return redirect(request.referrer or url_for("dashboard"))
 
     # ----------------------------------------
     # LIVROS
