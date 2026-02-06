@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h1 class="h3 mb-1">Backups da base de dados</h1>
+    <p class="text-muted mb-0">Backups locais com histórico por computador e data.</p>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-lg-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="h6 text-muted">Hostname atual</h2>
+        <p class="fw-semibold mb-0">{{ hostname or '—' }}</p>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="h6 text-muted">Estado da base de dados</h2>
+        <p class="mb-0">
+          {% if db_exists %}
+            <span class="badge text-bg-success">Disponível</span>
+            <span class="ms-2 text-muted small">instance/gestor_lectivo.db</span>
+          {% else %}
+            <span class="badge text-bg-warning">Não encontrada</span>
+            <span class="ms-2 text-muted small">Sem ficheiro local</span>
+          {% endif %}
+        </p>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h2 class="h6 text-muted">Último backup</h2>
+        {% if last_backup %}
+          <p class="fw-semibold mb-0">{{ last_backup.timestamp.strftime("%d/%m/%Y %H:%M") }}</p>
+          <p class="text-muted small mb-0">{{ last_backup.hostname }}</p>
+        {% else %}
+          <p class="text-muted mb-0">Sem backups registados.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header bg-white">
+    <strong>Backups disponíveis</strong>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-striped mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Ficheiro</th>
+            <th>Data/Hora</th>
+            <th>Hostname</th>
+            <th class="text-end">Tamanho</th>
+            <th class="text-end">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if backups %}
+            {% for backup in backups %}
+              <tr>
+                <td class="font-monospace small">{{ backup.filename }}</td>
+                <td>{{ backup.timestamp.strftime("%d/%m/%Y %H:%M") }}</td>
+                <td>{{ backup.hostname }}</td>
+                <td class="text-end">{{ backup.size_label or '—' }}</td>
+                <td class="text-end">
+                  <a class="btn btn-sm btn-outline-primary" href="{{ url_for('backups_download', filename=backup.filename) }}">
+                    Descarregar
+                  </a>
+                </td>
+              </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="5" class="text-center text-muted py-4">Ainda não existem backups.</td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-header bg-white">
+    <strong>Instruções de restauro</strong>
+  </div>
+  <div class="card-body">
+    <ol class="mb-0">
+      <li>Fecha a aplicação.</li>
+      <li>Escolhe o backup pretendido na lista (data + hostname) e descarrega-o.</li>
+      <li>Copia o ficheiro descarregado para <code>instance/gestor_lectivo.db</code>, substituindo o atual.</li>
+      <li>Reabre a aplicação.</li>
+    </ol>
+  </div>
+</div>
+{% endblock %}
