@@ -1,5 +1,6 @@
 import calendar
 import csv
+import gc
 import io
 import json
 import os
@@ -8,6 +9,8 @@ import shutil
 import socket
 import sqlite3
 import subprocess
+import time
+import uuid
 import unicodedata
 from collections import defaultdict
 from datetime import datetime, date, timedelta
@@ -396,16 +399,22 @@ def criar_periodo_modular_para_modulo(modulo: Modulo) -> Periodo:
 
 
 def create_app():
-    app = Flask(__name__)
+    app = Flask(__name__, instance_relative_config=True)
     app.config.from_object(Config)
 
     db.init_app(app)
     Migrate(app, db)
 
     os.makedirs(app.instance_path, exist_ok=True)
-    if not os.environ.get("DB_BACKUP_DIR"):
+    app.config["DB_PATH"] = os.path.join(app.instance_path, "gestor_lectivo.db")
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + app.config["DB_PATH"]
+    backup_override = os.environ.get("DB_BACKUP_DIR")
+    if backup_override and os.path.isabs(backup_override):
+        app.config["BACKUP_DIR"] = backup_override
+    else:
         app.config["BACKUP_DIR"] = os.path.join(app.instance_path, "backups")
     export_options_path = os.path.join(app.instance_path, "export_options.json")
+    backup_status_path = os.path.join(app.instance_path, "backup_status.json")
 
     def _default_csv_dir():
         return app.config.get("CSV_EXPORT_DIR") or os.path.join(app.root_path, "exports")
@@ -755,6 +764,9 @@ def create_app():
                     db.session.commit()
 
     def _get_db_path():
+        db_path = app.config.get("DB_PATH")
+        if db_path:
+            return db_path
         uri = app.config.get("SQLALCHEMY_DATABASE_URI")
         if not uri or not uri.startswith("sqlite:///"):
             return None
@@ -810,38 +822,225 @@ def create_app():
         with sqlite3.connect(db_path) as conn:
             conn.execute("VACUUM INTO ?", (tmp_path,))
 
+    def _write_backup_api(db_path, tmp_path):
+        with sqlite3.connect(db_path) as source:
+            with sqlite3.connect(tmp_path) as target:
+                source.backup(target)
+
     def _write_backup_copy(db_path, tmp_path):
         shutil.copy2(db_path, tmp_path)
 
+    def _validar_backup_sqlite(path):
+        try:
+            with sqlite3.connect(path) as conn:
+                cursor = conn.execute("PRAGMA integrity_check;")
+                resultado = cursor.fetchone()
+                if not resultado or resultado[0] != "ok":
+                    return False, "Falha no integrity_check."
+                conn.execute("SELECT name FROM sqlite_master LIMIT 1;")
+        except sqlite3.Error as exc:
+            return False, f"Erro SQLite ao validar: {exc}"
+        return True, None
+
+    def _safe_remove(path, tentativas=6, atraso=0.2):
+        ultimo_erro = None
+        for tentativa in range(tentativas):
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+                return True, None
+            except OSError as exc:
+                app.logger.warning("Falha ao remover %s (tentativa %s): %s", path, tentativa + 1, exc)
+                gc.collect()
+                time.sleep(atraso * (2 ** tentativa))
+                ultimo_erro = exc
+        return False, ultimo_erro
+
+    def _safe_replace(src, dst, tentativas=6, atraso=0.2):
+        ultimo_erro = None
+        for tentativa in range(tentativas):
+            try:
+                os.replace(src, dst)
+                return True, None
+            except OSError as exc:
+                app.logger.warning(
+                    "Falha ao substituir %s -> %s (tentativa %s): %s",
+                    src,
+                    dst,
+                    tentativa + 1,
+                    exc,
+                )
+                gc.collect()
+                time.sleep(atraso * (2 ** tentativa))
+                ultimo_erro = exc
+        return False, ultimo_erro
+
+    def _obter_lock_backup(backup_dir):
+        lock_path = os.path.join(backup_dir, ".backup.lock")
+        try:
+            handle = open(lock_path, "x", encoding="utf-8")
+            handle.write(f"{os.getpid()}\n{socket.gethostname()}\n{datetime.now().isoformat()}\n")
+            handle.flush()
+            return lock_path, handle, None
+        except FileExistsError as exc:
+            return lock_path, None, "Backup já em execução."
+        except OSError as exc:
+            return lock_path, None, f"Não foi possível criar lock: {exc}"
+
+    def _libertar_lock_backup(lock_path, handle):
+        try:
+            if handle:
+                handle.close()
+            if lock_path and os.path.exists(lock_path):
+                _safe_remove(lock_path)
+        except OSError:
+            app.logger.warning("Não foi possível remover lock de backup: %s", lock_path)
+
+    def _registar_backup_status(payload):
+        try:
+            os.makedirs(os.path.dirname(backup_status_path), exist_ok=True)
+            with open(backup_status_path, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, ensure_ascii=False, indent=2)
+        except OSError as exc:
+            app.logger.warning("Não foi possível gravar estado do backup: %s", exc)
+
+    def _carregar_backup_status():
+        try:
+            with open(backup_status_path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+                if isinstance(payload, dict):
+                    return payload
+        except FileNotFoundError:
+            return None
+        except (OSError, json.JSONDecodeError):
+            return None
+        return None
+
     def _backup_database(reason="manual"):
+        inicio = time.monotonic()
         backup_dir = app.config.get("BACKUP_DIR")
         db_path = _get_db_path()
+        status_payload = {
+            "last_backup_at": datetime.now().isoformat(timespec="seconds"),
+            "last_backup_ok": False,
+            "last_backup_filename": None,
+            "last_backup_error": None,
+            "hostname": socket.gethostname(),
+            "db_path": db_path,
+            "backup_dir": backup_dir,
+            "tmp_path": None,
+            "method": None,
+            "duration_s": None,
+        }
 
         if not backup_dir or not db_path:
-            return {"ok": False, "error": "Configuração de backup em falta."}
+            status_payload["last_backup_error"] = "Configuração de backup em falta."
+            status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
+            _registar_backup_status(status_payload)
+            return {"ok": False, "error": status_payload["last_backup_error"]}
 
         if not os.path.isfile(db_path):
-            return {"ok": False, "error": "Base de dados não encontrada."}
+            status_payload["last_backup_error"] = "Base de dados não encontrada."
+            status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
+            _registar_backup_status(status_payload)
+            return {"ok": False, "error": status_payload["last_backup_error"]}
 
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         hostname = socket.gethostname() or "HOST"
         manual_suffix = "_manual" if reason == "manual" else ""
         backup_name = f"{timestamp}__{hostname}{manual_suffix}.db"
         destination = os.path.join(backup_dir, backup_name)
-        tmp_path = f"{destination}.tmp"
+        tmp_path = f"{destination}.{os.getpid()}.{uuid.uuid4().hex[:6]}.tmp"
+        status_payload["tmp_path"] = tmp_path
 
         try:
             os.makedirs(backup_dir, exist_ok=True)
+            app.logger.info(
+                "Início backup (%s): db=%s | backup_dir=%s | dest=%s | tmp=%s | pid=%s",
+                reason,
+                db_path,
+                backup_dir,
+                destination,
+                tmp_path,
+                os.getpid(),
+            )
+            lock_path, lock_handle, lock_error = _obter_lock_backup(backup_dir)
+            if lock_error:
+                status_payload["last_backup_error"] = lock_error
+                status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
+                _registar_backup_status(status_payload)
+                return {"ok": False, "error": lock_error}
             try:
-                _write_backup_vacuum(db_path, tmp_path)
-            except Exception:
-                _write_backup_copy(db_path, tmp_path)
-            os.replace(tmp_path, destination)
-            _rotate_backups(backup_dir, app.config.get("BACKUP_KEEP", 30))
-            app.logger.info("Backup da base de dados criado (%s): %s", reason, backup_name)
+                if os.path.exists(tmp_path):
+                    ok, erro_remover = _safe_remove(tmp_path)
+                    if not ok:
+                        status_payload["last_backup_error"] = (
+                            f"Não foi possível limpar ficheiro temporário: {erro_remover}"
+                        )
+                        status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
+                        _registar_backup_status(status_payload)
+                        return {"ok": False, "error": status_payload["last_backup_error"]}
+                db.session.remove()
+                if db.session.is_active:
+                    db.session.rollback()
+                try:
+                    _write_backup_vacuum(db_path, tmp_path)
+                    status_payload["method"] = "vacuum_into"
+                except sqlite3.Error as exc:
+                    app.logger.warning("VACUUM INTO falhou, a tentar backup API: %s", exc)
+                    try:
+                        _write_backup_api(db_path, tmp_path)
+                        status_payload["method"] = "sqlite_backup_api"
+                    except sqlite3.Error as exc_api:
+                        app.logger.warning("Backup API falhou, a tentar copy2: %s", exc_api)
+                        _write_backup_copy(db_path, tmp_path)
+                        status_payload["method"] = "copy2"
+                if not os.path.exists(tmp_path):
+                    status_payload["last_backup_error"] = "O ficheiro temporário não foi criado."
+                    status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
+                    _registar_backup_status(status_payload)
+                    return {"ok": False, "error": status_payload["last_backup_error"]}
+                if os.path.getsize(tmp_path) <= 0:
+                    status_payload["last_backup_error"] = "O ficheiro de backup está vazio."
+                    status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
+                    _registar_backup_status(status_payload)
+                    return {"ok": False, "error": status_payload["last_backup_error"]}
+                valido, erro_sqlite = _validar_backup_sqlite(tmp_path)
+                if not valido:
+                    status_payload["last_backup_error"] = erro_sqlite or "Backup inválido."
+                    status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
+                    _registar_backup_status(status_payload)
+                    return {"ok": False, "error": status_payload["last_backup_error"]}
+                ok, erro_replace = _safe_replace(tmp_path, destination)
+                if not ok:
+                    status_payload["last_backup_error"] = f"Não foi possível gravar backup: {erro_replace}"
+                    status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
+                    _registar_backup_status(status_payload)
+                    return {"ok": False, "error": status_payload["last_backup_error"]}
+                _rotate_backups(backup_dir, app.config.get("BACKUP_KEEP", 30))
+            finally:
+                _libertar_lock_backup(lock_path, lock_handle)
+            status_payload["last_backup_ok"] = True
+            status_payload["last_backup_filename"] = backup_name
+            status_payload["last_backup_error"] = None
+            status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
+            _registar_backup_status(status_payload)
+            app.logger.info(
+                "Backup criado (%s): %s | método=%s | db=%s | dest=%s | tmp=%s | %.3fs",
+                reason,
+                backup_name,
+                status_payload["method"],
+                db_path,
+                destination,
+                tmp_path,
+                status_payload["duration_s"],
+            )
             return {"ok": True, "filename": backup_name}
-        except OSError as exc:
-            app.logger.warning(
+        except (OSError, sqlite3.Error) as exc:
+            status_payload["last_backup_error"] = str(exc)
+            status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
+            _registar_backup_status(status_payload)
+            app.logger.exception(
                 "Não foi possível criar backup da base de dados em %s: %s",
                 backup_dir,
                 exc,
@@ -849,7 +1048,10 @@ def create_app():
         finally:
             try:
                 if os.path.exists(tmp_path):
-                    os.remove(tmp_path)
+                    ok, erro_remover = _safe_remove(tmp_path)
+                    if not ok:
+                        stale = f"{tmp_path}.stale.{timestamp}"
+                        _safe_replace(tmp_path, stale)
             except OSError:
                 app.logger.warning("Não foi possível limpar o ficheiro temporário: %s", tmp_path)
         return {"ok": False, "error": "Não foi possível criar backup."}
@@ -981,6 +1183,7 @@ def create_app():
         backups = _list_backups()
         db_path = _get_db_path()
         db_exists = bool(db_path and os.path.isfile(db_path))
+        backup_status = _carregar_backup_status()
         return render_template(
             "backups/list.html",
             title="Backups",
@@ -988,6 +1191,7 @@ def create_app():
             last_backup=backups[0] if backups else None,
             hostname=socket.gethostname(),
             db_exists=db_exists,
+            backup_status=backup_status,
         )
 
     @app.route("/backups/<filename>")
@@ -1013,6 +1217,74 @@ def create_app():
             flash(f"Backup criado: {resultado.get('filename')}", "success")
         else:
             flash(resultado.get("error") or "Não foi possível criar backup.", "error")
+        return redirect(request.referrer or url_for("dashboard"))
+
+    def _obter_aula_turma(turma_id, aula_id):
+        aula = CalendarioAula.query.get_or_404(aula_id)
+        if aula.turma_id != turma_id:
+            abort(404)
+        return aula
+
+    def _filtrar_por_periodo(query):
+        periodo_id = request.form.get("periodo_id", type=int)
+        if periodo_id:
+            return query.filter(CalendarioAula.periodo_id == periodo_id)
+        return query
+
+    @app.route(
+        "/turmas/<int:turma_id>/aulas/<int:aula_id>/previsao/limpar",
+        methods=["POST"],
+    )
+    def previsao_limpar(turma_id, aula_id):
+        aula = _obter_aula_turma(turma_id, aula_id)
+        aula.previsao = ""
+        db.session.commit()
+        flash("Previsão limpa.", "success")
+        return redirect(request.referrer or url_for("dashboard"))
+
+    @app.route(
+        "/turmas/<int:turma_id>/aulas/<int:aula_id>/previsao/copiar-anterior",
+        methods=["POST"],
+    )
+    def previsao_copiar_anterior(turma_id, aula_id):
+        aula = _obter_aula_turma(turma_id, aula_id)
+        query = CalendarioAula.query.filter_by(turma_id=turma_id).filter(
+            CalendarioAula.apagado == False,  # noqa: E712
+            CalendarioAula.data < aula.data,
+        )
+        query = _filtrar_por_periodo(query)
+        anterior = (
+            query.order_by(CalendarioAula.data.desc(), CalendarioAula.id.desc()).first()
+        )
+        if not anterior:
+            flash("Não existe aula anterior para copiar.", "error")
+            return redirect(request.referrer or url_for("dashboard"))
+        aula.previsao = anterior.previsao or ""
+        db.session.commit()
+        flash("Previsão copiada da aula anterior.", "success")
+        return redirect(request.referrer or url_for("dashboard"))
+
+    @app.route(
+        "/turmas/<int:turma_id>/aulas/<int:aula_id>/previsao/enviar-seguinte",
+        methods=["POST"],
+    )
+    def previsao_enviar_seguinte(turma_id, aula_id):
+        aula = _obter_aula_turma(turma_id, aula_id)
+        if not (aula.previsao or "").strip():
+            flash("A previsão está vazia.", "error")
+            return redirect(request.referrer or url_for("dashboard"))
+        query = CalendarioAula.query.filter_by(turma_id=turma_id).filter(
+            CalendarioAula.apagado == False,  # noqa: E712
+            CalendarioAula.data > aula.data,
+        )
+        query = _filtrar_por_periodo(query)
+        seguinte = query.order_by(CalendarioAula.data.asc(), CalendarioAula.id.asc()).first()
+        if not seguinte:
+            flash("Não existe aula seguinte para enviar.", "error")
+            return redirect(request.referrer or url_for("dashboard"))
+        seguinte.previsao = aula.previsao or ""
+        db.session.commit()
+        flash("Previsão enviada para a aula seguinte.", "success")
         return redirect(request.referrer or url_for("dashboard"))
 
     # ----------------------------------------

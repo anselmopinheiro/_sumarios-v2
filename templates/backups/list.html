@@ -50,6 +50,66 @@
 
 <div class="card shadow-sm mb-4">
   <div class="card-header bg-white">
+    <strong>Estado do último backup</strong>
+  </div>
+  <div class="card-body">
+    {% if backup_status %}
+      <div class="row g-3">
+        <div class="col-md-4">
+          <div class="text-muted small">Estado</div>
+          {% if backup_status.last_backup_ok %}
+            <span class="badge text-bg-success">Sucesso</span>
+          {% else %}
+            <span class="badge text-bg-danger">Erro</span>
+          {% endif %}
+        </div>
+        <div class="col-md-4">
+          <div class="text-muted small">Timestamp</div>
+          <div>{{ backup_status.last_backup_at or '—' }}</div>
+        </div>
+        <div class="col-md-4">
+          <div class="text-muted small">Hostname</div>
+          <div>{{ backup_status.hostname or '—' }}</div>
+        </div>
+        <div class="col-12">
+          <div class="text-muted small">Ficheiro</div>
+          <div>{{ backup_status.last_backup_filename or '—' }}</div>
+        </div>
+        <div class="col-12">
+          <div class="text-muted small">BD</div>
+          <div class="text-break">{{ backup_status.db_path or '—' }}</div>
+        </div>
+        <div class="col-12">
+          <div class="text-muted small">Pasta de backup</div>
+          <div class="text-break">{{ backup_status.backup_dir or '—' }}</div>
+        </div>
+        <div class="col-md-6">
+          <div class="text-muted small">Método</div>
+          <div>{{ backup_status.method or '—' }}</div>
+        </div>
+        <div class="col-md-6">
+          <div class="text-muted small">Duração (s)</div>
+          <div>{{ backup_status.duration_s or '—' }}</div>
+        </div>
+        <div class="col-12">
+          <div class="text-muted small">Ficheiro temporário</div>
+          <div class="text-break">{{ backup_status.tmp_path or '—' }}</div>
+        </div>
+        {% if backup_status.last_backup_error %}
+          <div class="col-12">
+            <div class="text-muted small">Erro</div>
+            <div class="text-danger">{{ backup_status.last_backup_error }}</div>
+          </div>
+        {% endif %}
+      </div>
+    {% else %}
+      <div class="text-muted">Sem histórico de backups.</div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header bg-white">
     <strong>Backups disponíveis</strong>
   </div>
   <div class="card-body p-0">

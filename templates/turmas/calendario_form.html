@@ -119,10 +119,24 @@
           data-target="#{{ previsao_id }}"
           aria-label="Plano para a aula"
         >{{ aula.previsao if aula and aula.previsao else '' }}</div>
-        <input type="hidden" name="previsao" id="{{ previsao_id }}" value="{{ aula.previsao if aula and aula.previsao else '' }}">
+        <input type="hidden" name="previsao" id="{{ previsao_id }}" value="{{ aula.previsao if aula and aula.previsao else '' }}" data-turma-id="{{ aula.turma_id if aula else turma.id }}" data-sort-key="{{ aula.data.isoformat() if aula and aula.data else '' }}-{{ '%06d' % aula.id if aula else '000000' }}">
         <div class="form-text">Suporta negrito, itálico e destaque amarelo.</div>
       </div>
       <button type="button" class="btn btn-link btn-sm ps-0 js-copy-previsao">Copiar previsão para sumário</button>
+      {% if aula %}
+        <form method="post" action="{{ url_for('previsao_limpar', turma_id=aula.turma_id, aula_id=aula.id) }}" class="d-inline">
+          <input type="hidden" name="periodo_id" value="{{ aula.periodo_id }}">
+          <button type="submit" class="btn btn-link btn-sm ps-0">Limpar</button>
+        </form>
+        <form method="post" action="{{ url_for('previsao_copiar_anterior', turma_id=aula.turma_id, aula_id=aula.id) }}" class="d-inline">
+          <input type="hidden" name="periodo_id" value="{{ aula.periodo_id }}">
+          <button type="submit" class="btn btn-link btn-sm ps-0">Copiar anterior</button>
+        </form>
+        <form method="post" action="{{ url_for('previsao_enviar_seguinte', turma_id=aula.turma_id, aula_id=aula.id) }}" class="d-inline">
+          <input type="hidden" name="periodo_id" value="{{ aula.periodo_id }}">
+          <button type="submit" class="btn btn-link btn-sm ps-0">Enviar p/ seguinte</button>
+        </form>
+      {% endif %}
     </div>
   </div>
 

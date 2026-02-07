@@ -155,6 +155,21 @@
             <div class="col-12 col-md-9">
               {% set previsao_id = "previsao-" ~ a.id %}
               <div class="js-richtext-wrapper d-flex flex-column gap-1">
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                  <button type="button" class="btn btn-outline-success btn-sm js-copy-previsao">Copiar previsão para sumário</button>
+                  <form method="post" action="{{ url_for('previsao_limpar', turma_id=a.turma_id, aula_id=a.id) }}" class="d-inline">
+                    <input type="hidden" name="periodo_id" value="{{ a.periodo_id }}">
+                    <button type="submit" class="btn btn-outline-secondary btn-sm">Limpar</button>
+                  </form>
+                  <form method="post" action="{{ url_for('previsao_copiar_anterior', turma_id=a.turma_id, aula_id=a.id) }}" class="d-inline">
+                    <input type="hidden" name="periodo_id" value="{{ a.periodo_id }}">
+                    <button type="submit" class="btn btn-outline-secondary btn-sm">Copiar anterior</button>
+                  </form>
+                  <form method="post" action="{{ url_for('previsao_enviar_seguinte', turma_id=a.turma_id, aula_id=a.id) }}" class="d-inline">
+                    <input type="hidden" name="periodo_id" value="{{ a.periodo_id }}">
+                    <button type="submit" class="btn btn-outline-secondary btn-sm">Enviar p/ seguinte</button>
+                  </form>
+                </div>
                 <div class="richtext-toolbar d-flex flex-wrap align-items-center gap-2">
                   <span class="small text-muted">Formatação:</span>
                   <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="bold"><strong>B</strong></button>
@@ -167,7 +182,7 @@
                   data-target="#{{ previsao_id }}"
                   aria-label="Previsão da aula"
                 >{{ a.previsao|default('')|safe }}</div>
-                <input type="hidden" name="previsao" id="{{ previsao_id }}" value="{{ a.previsao or '' }}">
+                <input type="hidden" name="previsao" id="{{ previsao_id }}" value="{{ a.previsao or '' }}" data-turma-id="{{ a.turma_id }}" data-sort-key="{{ a.data.isoformat() if a.data else '' }}-{{ '%06d' % a.id }}">
               </div>
             </div>
           </div>
