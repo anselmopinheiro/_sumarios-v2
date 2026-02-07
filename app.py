@@ -1,5 +1,6 @@
 import calendar
 import csv
+import gc
 import io
 import json
 import os
@@ -8,6 +9,8 @@ import shutil
 import socket
 import sqlite3
 import subprocess
+import time
+import uuid
 import unicodedata
 from collections import defaultdict
 from datetime import datetime, date, timedelta
@@ -831,6 +834,60 @@ def create_app():
             return False, f"Erro SQLite ao validar: {exc}"
         return True, None
 
+    def _safe_remove(path, tentativas=6, atraso=0.2):
+        ultimo_erro = None
+        for tentativa in range(tentativas):
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+                return True, None
+            except OSError as exc:
+                app.logger.warning("Falha ao remover %s (tentativa %s): %s", path, tentativa + 1, exc)
+                gc.collect()
+                time.sleep(atraso * (2 ** tentativa))
+                ultimo_erro = exc
+        return False, ultimo_erro
+
+    def _safe_replace(src, dst, tentativas=6, atraso=0.2):
+        ultimo_erro = None
+        for tentativa in range(tentativas):
+            try:
+                os.replace(src, dst)
+                return True, None
+            except OSError as exc:
+                app.logger.warning(
+                    "Falha ao substituir %s -> %s (tentativa %s): %s",
+                    src,
+                    dst,
+                    tentativa + 1,
+                    exc,
+                )
+                gc.collect()
+                time.sleep(atraso * (2 ** tentativa))
+                ultimo_erro = exc
+        return False, ultimo_erro
+
+    def _obter_lock_backup(backup_dir):
+        lock_path = os.path.join(backup_dir, ".backup.lock")
+        try:
+            handle = open(lock_path, "x", encoding="utf-8")
+            handle.write(f"{os.getpid()}\n{socket.gethostname()}\n{datetime.now().isoformat()}\n")
+            handle.flush()
+            return lock_path, handle, None
+        except FileExistsError as exc:
+            return lock_path, None, "Backup já em execução."
+        except OSError as exc:
+            return lock_path, None, f"Não foi possível criar lock: {exc}"
+
+    def _libertar_lock_backup(lock_path, handle):
+        try:
+            if handle:
+                handle.close()
+            if lock_path and os.path.exists(lock_path):
+                _safe_remove(lock_path)
+        except OSError:
+            app.logger.warning("Não foi possível remover lock de backup: %s", lock_path)
+
     def _registar_backup_status(payload):
         try:
             os.makedirs(os.path.dirname(backup_status_path), exist_ok=True)
@@ -852,6 +909,7 @@ def create_app():
         return None
 
     def _backup_database(reason="manual"):
+        inicio = time.monotonic()
         backup_dir = app.config.get("BACKUP_DIR")
         db_path = _get_db_path()
         status_payload = {
@@ -862,15 +920,20 @@ def create_app():
             "hostname": socket.gethostname(),
             "db_path": db_path,
             "backup_dir": backup_dir,
+            "tmp_path": None,
+            "method": None,
+            "duration_s": None,
         }
 
         if not backup_dir or not db_path:
             status_payload["last_backup_error"] = "Configuração de backup em falta."
+            status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
             _registar_backup_status(status_payload)
             return {"ok": False, "error": status_payload["last_backup_error"]}
 
         if not os.path.isfile(db_path):
             status_payload["last_backup_error"] = "Base de dados não encontrada."
+            status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
             _registar_backup_status(status_payload)
             return {"ok": False, "error": status_payload["last_backup_error"]}
 
@@ -879,51 +942,95 @@ def create_app():
         manual_suffix = "_manual" if reason == "manual" else ""
         backup_name = f"{timestamp}__{hostname}{manual_suffix}.db"
         destination = os.path.join(backup_dir, backup_name)
-        tmp_path = f"{destination}.tmp"
+        tmp_path = f"{destination}.{os.getpid()}.{uuid.uuid4().hex[:6]}.tmp"
+        status_payload["tmp_path"] = tmp_path
 
         try:
             os.makedirs(backup_dir, exist_ok=True)
-            if os.path.exists(tmp_path):
+            app.logger.info(
+                "Início backup (%s): db=%s | backup_dir=%s | dest=%s | tmp=%s | pid=%s",
+                reason,
+                db_path,
+                backup_dir,
+                destination,
+                tmp_path,
+                os.getpid(),
+            )
+            lock_path, lock_handle, lock_error = _obter_lock_backup(backup_dir)
+            if lock_error:
+                status_payload["last_backup_error"] = lock_error
+                status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
+                _registar_backup_status(status_payload)
+                return {"ok": False, "error": lock_error}
+            try:
+                if os.path.exists(tmp_path):
+                    ok, erro_remover = _safe_remove(tmp_path)
+                    if not ok:
+                        status_payload["last_backup_error"] = (
+                            f"Não foi possível limpar ficheiro temporário: {erro_remover}"
+                        )
+                        status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
+                        _registar_backup_status(status_payload)
+                        return {"ok": False, "error": status_payload["last_backup_error"]}
+                db.session.remove()
+                if db.session.is_active:
+                    db.session.rollback()
                 try:
-                    os.remove(tmp_path)
-                except OSError as exc:
-                    status_payload["last_backup_error"] = (
-                        f"Não foi possível limpar ficheiro temporário: {exc}"
-                    )
+                    _write_backup_vacuum(db_path, tmp_path)
+                    status_payload["method"] = "vacuum_into"
+                except sqlite3.Error as exc:
+                    app.logger.warning("VACUUM INTO falhou, a tentar backup API: %s", exc)
+                    try:
+                        _write_backup_api(db_path, tmp_path)
+                        status_payload["method"] = "sqlite_backup_api"
+                    except sqlite3.Error as exc_api:
+                        app.logger.warning("Backup API falhou, a tentar copy2: %s", exc_api)
+                        _write_backup_copy(db_path, tmp_path)
+                        status_payload["method"] = "copy2"
+                if not os.path.exists(tmp_path):
+                    status_payload["last_backup_error"] = "O ficheiro temporário não foi criado."
+                    status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
                     _registar_backup_status(status_payload)
                     return {"ok": False, "error": status_payload["last_backup_error"]}
-            try:
-                _write_backup_vacuum(db_path, tmp_path)
-            except sqlite3.Error as exc:
-                app.logger.warning("VACUUM INTO falhou, a tentar backup API: %s", exc)
-                try:
-                    _write_backup_api(db_path, tmp_path)
-                except sqlite3.Error as exc_api:
-                    app.logger.warning("Backup API falhou, a tentar copy2: %s", exc_api)
-                    _write_backup_copy(db_path, tmp_path)
-            if not os.path.exists(tmp_path):
-                status_payload["last_backup_error"] = "O ficheiro temporário não foi criado."
-                _registar_backup_status(status_payload)
-                return {"ok": False, "error": status_payload["last_backup_error"]}
-            if os.path.getsize(tmp_path) <= 0:
-                status_payload["last_backup_error"] = "O ficheiro de backup está vazio."
-                _registar_backup_status(status_payload)
-                return {"ok": False, "error": status_payload["last_backup_error"]}
-            valido, erro_sqlite = _validar_backup_sqlite(tmp_path)
-            if not valido:
-                status_payload["last_backup_error"] = erro_sqlite or "Backup inválido."
-                _registar_backup_status(status_payload)
-                return {"ok": False, "error": status_payload["last_backup_error"]}
-            os.replace(tmp_path, destination)
-            _rotate_backups(backup_dir, app.config.get("BACKUP_KEEP", 30))
+                if os.path.getsize(tmp_path) <= 0:
+                    status_payload["last_backup_error"] = "O ficheiro de backup está vazio."
+                    status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
+                    _registar_backup_status(status_payload)
+                    return {"ok": False, "error": status_payload["last_backup_error"]}
+                valido, erro_sqlite = _validar_backup_sqlite(tmp_path)
+                if not valido:
+                    status_payload["last_backup_error"] = erro_sqlite or "Backup inválido."
+                    status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
+                    _registar_backup_status(status_payload)
+                    return {"ok": False, "error": status_payload["last_backup_error"]}
+                ok, erro_replace = _safe_replace(tmp_path, destination)
+                if not ok:
+                    status_payload["last_backup_error"] = f"Não foi possível gravar backup: {erro_replace}"
+                    status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
+                    _registar_backup_status(status_payload)
+                    return {"ok": False, "error": status_payload["last_backup_error"]}
+                _rotate_backups(backup_dir, app.config.get("BACKUP_KEEP", 30))
+            finally:
+                _libertar_lock_backup(lock_path, lock_handle)
             status_payload["last_backup_ok"] = True
             status_payload["last_backup_filename"] = backup_name
             status_payload["last_backup_error"] = None
+            status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
             _registar_backup_status(status_payload)
-            app.logger.info("Backup da base de dados criado (%s): %s", reason, backup_name)
+            app.logger.info(
+                "Backup criado (%s): %s | método=%s | db=%s | dest=%s | tmp=%s | %.3fs",
+                reason,
+                backup_name,
+                status_payload["method"],
+                db_path,
+                destination,
+                tmp_path,
+                status_payload["duration_s"],
+            )
             return {"ok": True, "filename": backup_name}
         except (OSError, sqlite3.Error) as exc:
             status_payload["last_backup_error"] = str(exc)
+            status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
             _registar_backup_status(status_payload)
             app.logger.exception(
                 "Não foi possível criar backup da base de dados em %s: %s",
@@ -933,7 +1040,10 @@ def create_app():
         finally:
             try:
                 if os.path.exists(tmp_path):
-                    os.remove(tmp_path)
+                    ok, erro_remover = _safe_remove(tmp_path)
+                    if not ok:
+                        stale = f"{tmp_path}.stale.{timestamp}"
+                        _safe_replace(tmp_path, stale)
             except OSError:
                 app.logger.warning("Não foi possível limpar o ficheiro temporário: %s", tmp_path)
         return {"ok": False, "error": "Não foi possível criar backup."}

@@ -83,6 +83,18 @@
           <div class="text-muted small">Pasta de backup</div>
           <div class="text-break">{{ backup_status.backup_dir or '—' }}</div>
         </div>
+        <div class="col-md-6">
+          <div class="text-muted small">Método</div>
+          <div>{{ backup_status.method or '—' }}</div>
+        </div>
+        <div class="col-md-6">
+          <div class="text-muted small">Duração (s)</div>
+          <div>{{ backup_status.duration_s or '—' }}</div>
+        </div>
+        <div class="col-12">
+          <div class="text-muted small">Ficheiro temporário</div>
+          <div class="text-break">{{ backup_status.tmp_path or '—' }}</div>
+        </div>
         {% if backup_status.last_backup_error %}
           <div class="col-12">
             <div class="text-muted small">Erro</div>
