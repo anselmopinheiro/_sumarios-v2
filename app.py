@@ -399,14 +399,19 @@ def criar_periodo_modular_para_modulo(modulo: Modulo) -> Periodo:
 
 
 def create_app():
-    app = Flask(__name__)
+    app = Flask(__name__, instance_relative_config=True)
     app.config.from_object(Config)
 
     db.init_app(app)
     Migrate(app, db)
 
     os.makedirs(app.instance_path, exist_ok=True)
-    if not os.environ.get("DB_BACKUP_DIR"):
+    app.config["DB_PATH"] = os.path.join(app.instance_path, "gestor_lectivo.db")
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + app.config["DB_PATH"]
+    backup_override = os.environ.get("DB_BACKUP_DIR")
+    if backup_override and os.path.isabs(backup_override):
+        app.config["BACKUP_DIR"] = backup_override
+    else:
         app.config["BACKUP_DIR"] = os.path.join(app.instance_path, "backups")
     export_options_path = os.path.join(app.instance_path, "export_options.json")
     backup_status_path = os.path.join(app.instance_path, "backup_status.json")
@@ -759,6 +764,9 @@ def create_app():
                     db.session.commit()
 
     def _get_db_path():
+        db_path = app.config.get("DB_PATH")
+        if db_path:
+            return db_path
         uri = app.config.get("SQLALCHEMY_DATABASE_URI")
         if not uri or not uri.startswith("sqlite:///"):
             return None
