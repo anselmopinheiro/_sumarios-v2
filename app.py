@@ -525,7 +525,10 @@ def create_app():
             return
         _save_last_save(datetime.now().isoformat(timespec="seconds"))
         if app.config.get("BACKUP_ON_COMMIT", True) and not _running_flask_cli():
-            _backup_database(reason="commit")
+            try:
+                _backup_database(reason="commit")
+            except Exception as exc:  # pragma: no cover - fallback safety
+                app.logger.exception("Backup automático falhou após commit: %s", exc)
 
     @app.context_processor
     def inject_footer_info():
@@ -1056,6 +1059,15 @@ def create_app():
             _registar_backup_status(status_payload)
             app.logger.exception(
                 "Não foi possível criar backup da base de dados em %s: %s",
+                backup_dir,
+                exc,
+            )
+        except Exception as exc:
+            status_payload["last_backup_error"] = str(exc)
+            status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
+            _registar_backup_status(status_payload)
+            app.logger.exception(
+                "Falha inesperada ao criar backup em %s: %s",
                 backup_dir,
                 exc,
             )
