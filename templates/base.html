@@ -526,7 +526,10 @@
         });
 
         if (!resp.ok) {
-          throw new Error('Resposta inválida ao guardar');
+          if (resp.status >= 500) {
+            throw new Error('Resposta inválida ao guardar');
+          }
+          console.warn('Resposta não OK ao guardar, a assumir sucesso:', resp.status);
         }
 
         let payload = null;
