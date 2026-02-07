@@ -955,6 +955,7 @@ def create_app():
         manual_suffix = "_manual" if reason == "manual" else ""
         backup_name = f"{timestamp}__{hostname}{manual_suffix}.db"
         destination = os.path.join(backup_dir, backup_name)
+        tmp_path = None
         status_payload["tmp_path"] = None
         delays = [0.2, 0.5, 1.0, 2.0, 3.0]
 
