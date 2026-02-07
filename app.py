@@ -9,6 +9,8 @@ import shutil
 import socket
 import sqlite3
 import subprocess
+import tempfile
+import threading
 import time
 import uuid
 import unicodedata
@@ -78,6 +80,8 @@ from calendario_service import (
     calcular_mapa_avaliacao_diaria,
     listar_sumarios_pendentes,
 )
+
+BACKUP_LOCK = threading.Lock()
 
 
 TIPOS_AULA = [
@@ -950,7 +954,11 @@ def create_app():
         manual_suffix = "_manual" if reason == "manual" else ""
         backup_name = f"{timestamp}__{hostname}{manual_suffix}.db"
         destination = os.path.join(backup_dir, backup_name)
-        tmp_path = f"{destination}.{os.getpid()}.{uuid.uuid4().hex[:6]}.tmp"
+        tmp_fd, tmp_path = tempfile.mkstemp(
+            prefix=f"{backup_name}.{os.getpid()}.{uuid.uuid4().hex[:6]}.",
+            suffix=".tmp",
+        )
+        os.close(tmp_fd)
         status_payload["tmp_path"] = tmp_path
 
         try:
@@ -971,6 +979,11 @@ def create_app():
                 _registar_backup_status(status_payload)
                 return {"ok": False, "error": lock_error}
             try:
+                if not BACKUP_LOCK.acquire(blocking=False):
+                    status_payload["last_backup_error"] = "Backup já em execução."
+                    status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
+                    _registar_backup_status(status_payload)
+                    return {"ok": False, "error": status_payload["last_backup_error"]}
                 if os.path.exists(tmp_path):
                     ok, erro_remover = _safe_remove(tmp_path)
                     if not ok:
@@ -1013,29 +1026,45 @@ def create_app():
                     return {"ok": False, "error": status_payload["last_backup_error"]}
                 ok, erro_replace = _safe_replace(tmp_path, destination)
                 if not ok:
-                    status_payload["last_backup_error"] = f"Não foi possível gravar backup: {erro_replace}"
-                    status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
-                    _registar_backup_status(status_payload)
-                    return {"ok": False, "error": status_payload["last_backup_error"]}
+                    alt_path = destination.replace(
+                        ".db", f".locked-{os.getpid()}.db"
+                    )
+                    ok_alt, erro_alt = _safe_replace(tmp_path, alt_path, tentativas=1, atraso=0.1)
+                    if ok_alt:
+                        destination = alt_path
+                        status_payload["last_backup_filename"] = os.path.basename(alt_path)
+                        app.logger.warning(
+                            "Backup gravado com nome alternativo devido a lock: %s",
+                            alt_path,
+                        )
+                    else:
+                        status_payload["last_backup_error"] = (
+                            f"Não foi possível gravar backup: {erro_alt or erro_replace}"
+                        )
+                        status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
+                        _registar_backup_status(status_payload)
+                        return {"ok": False, "error": status_payload["last_backup_error"]}
                 _rotate_backups(backup_dir, app.config.get("BACKUP_KEEP", 30))
             finally:
+                if BACKUP_LOCK.locked():
+                    BACKUP_LOCK.release()
                 _libertar_lock_backup(lock_path, lock_handle)
             status_payload["last_backup_ok"] = True
-            status_payload["last_backup_filename"] = backup_name
+            status_payload["last_backup_filename"] = status_payload["last_backup_filename"] or backup_name
             status_payload["last_backup_error"] = None
             status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
             _registar_backup_status(status_payload)
             app.logger.info(
                 "Backup criado (%s): %s | método=%s | db=%s | dest=%s | tmp=%s | %.3fs",
                 reason,
-                backup_name,
+                status_payload["last_backup_filename"],
                 status_payload["method"],
                 db_path,
                 destination,
                 tmp_path,
                 status_payload["duration_s"],
             )
-            return {"ok": True, "filename": backup_name}
+            return {"ok": True, "filename": status_payload["last_backup_filename"]}
         except (OSError, sqlite3.Error) as exc:
             status_payload["last_backup_error"] = str(exc)
             status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
