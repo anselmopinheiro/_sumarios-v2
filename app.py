@@ -406,6 +406,7 @@ def create_app():
     if not os.environ.get("DB_BACKUP_DIR"):
         app.config["BACKUP_DIR"] = os.path.join(app.instance_path, "backups")
     export_options_path = os.path.join(app.instance_path, "export_options.json")
+    backup_status_path = os.path.join(app.instance_path, "backup_status.json")
 
     def _default_csv_dir():
         return app.config.get("CSV_EXPORT_DIR") or os.path.join(app.root_path, "exports")
@@ -810,18 +811,68 @@ def create_app():
         with sqlite3.connect(db_path) as conn:
             conn.execute("VACUUM INTO ?", (tmp_path,))
 
+    def _write_backup_api(db_path, tmp_path):
+        with sqlite3.connect(db_path) as source:
+            with sqlite3.connect(tmp_path) as target:
+                source.backup(target)
+
     def _write_backup_copy(db_path, tmp_path):
         shutil.copy2(db_path, tmp_path)
+
+    def _validar_backup_sqlite(path):
+        try:
+            with sqlite3.connect(path) as conn:
+                cursor = conn.execute("PRAGMA integrity_check;")
+                resultado = cursor.fetchone()
+                if not resultado or resultado[0] != "ok":
+                    return False, "Falha no integrity_check."
+                conn.execute("SELECT name FROM sqlite_master LIMIT 1;")
+        except sqlite3.Error as exc:
+            return False, f"Erro SQLite ao validar: {exc}"
+        return True, None
+
+    def _registar_backup_status(payload):
+        try:
+            os.makedirs(os.path.dirname(backup_status_path), exist_ok=True)
+            with open(backup_status_path, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, ensure_ascii=False, indent=2)
+        except OSError as exc:
+            app.logger.warning("Não foi possível gravar estado do backup: %s", exc)
+
+    def _carregar_backup_status():
+        try:
+            with open(backup_status_path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+                if isinstance(payload, dict):
+                    return payload
+        except FileNotFoundError:
+            return None
+        except (OSError, json.JSONDecodeError):
+            return None
+        return None
 
     def _backup_database(reason="manual"):
         backup_dir = app.config.get("BACKUP_DIR")
         db_path = _get_db_path()
+        status_payload = {
+            "last_backup_at": datetime.now().isoformat(timespec="seconds"),
+            "last_backup_ok": False,
+            "last_backup_filename": None,
+            "last_backup_error": None,
+            "hostname": socket.gethostname(),
+            "db_path": db_path,
+            "backup_dir": backup_dir,
+        }
 
         if not backup_dir or not db_path:
-            return {"ok": False, "error": "Configuração de backup em falta."}
+            status_payload["last_backup_error"] = "Configuração de backup em falta."
+            _registar_backup_status(status_payload)
+            return {"ok": False, "error": status_payload["last_backup_error"]}
 
         if not os.path.isfile(db_path):
-            return {"ok": False, "error": "Base de dados não encontrada."}
+            status_payload["last_backup_error"] = "Base de dados não encontrada."
+            _registar_backup_status(status_payload)
+            return {"ok": False, "error": status_payload["last_backup_error"]}
 
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         hostname = socket.gethostname() or "HOST"
@@ -832,16 +883,49 @@ def create_app():
 
         try:
             os.makedirs(backup_dir, exist_ok=True)
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError as exc:
+                    status_payload["last_backup_error"] = (
+                        f"Não foi possível limpar ficheiro temporário: {exc}"
+                    )
+                    _registar_backup_status(status_payload)
+                    return {"ok": False, "error": status_payload["last_backup_error"]}
             try:
                 _write_backup_vacuum(db_path, tmp_path)
-            except Exception:
-                _write_backup_copy(db_path, tmp_path)
+            except sqlite3.Error as exc:
+                app.logger.warning("VACUUM INTO falhou, a tentar backup API: %s", exc)
+                try:
+                    _write_backup_api(db_path, tmp_path)
+                except sqlite3.Error as exc_api:
+                    app.logger.warning("Backup API falhou, a tentar copy2: %s", exc_api)
+                    _write_backup_copy(db_path, tmp_path)
+            if not os.path.exists(tmp_path):
+                status_payload["last_backup_error"] = "O ficheiro temporário não foi criado."
+                _registar_backup_status(status_payload)
+                return {"ok": False, "error": status_payload["last_backup_error"]}
+            if os.path.getsize(tmp_path) <= 0:
+                status_payload["last_backup_error"] = "O ficheiro de backup está vazio."
+                _registar_backup_status(status_payload)
+                return {"ok": False, "error": status_payload["last_backup_error"]}
+            valido, erro_sqlite = _validar_backup_sqlite(tmp_path)
+            if not valido:
+                status_payload["last_backup_error"] = erro_sqlite or "Backup inválido."
+                _registar_backup_status(status_payload)
+                return {"ok": False, "error": status_payload["last_backup_error"]}
             os.replace(tmp_path, destination)
             _rotate_backups(backup_dir, app.config.get("BACKUP_KEEP", 30))
+            status_payload["last_backup_ok"] = True
+            status_payload["last_backup_filename"] = backup_name
+            status_payload["last_backup_error"] = None
+            _registar_backup_status(status_payload)
             app.logger.info("Backup da base de dados criado (%s): %s", reason, backup_name)
             return {"ok": True, "filename": backup_name}
-        except OSError as exc:
-            app.logger.warning(
+        except (OSError, sqlite3.Error) as exc:
+            status_payload["last_backup_error"] = str(exc)
+            _registar_backup_status(status_payload)
+            app.logger.exception(
                 "Não foi possível criar backup da base de dados em %s: %s",
                 backup_dir,
                 exc,
@@ -981,6 +1065,7 @@ def create_app():
         backups = _list_backups()
         db_path = _get_db_path()
         db_exists = bool(db_path and os.path.isfile(db_path))
+        backup_status = _carregar_backup_status()
         return render_template(
             "backups/list.html",
             title="Backups",
@@ -988,6 +1073,7 @@ def create_app():
             last_backup=backups[0] if backups else None,
             hostname=socket.gethostname(),
             db_exists=db_exists,
+            backup_status=backup_status,
         )
 
     @app.route("/backups/<filename>")
