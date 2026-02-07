@@ -233,14 +233,26 @@
                     data-target="#{{ previsao_id }}"
                     aria-label="Previsão"
                   >{{ a.previsao|default('')|safe }}</div>
-                  <input type="hidden" name="previsao" id="{{ previsao_id }}" value="{{ a.previsao or '' }}" form="{{ form_id }}">
+                  <input type="hidden" name="previsao" id="{{ previsao_id }}" value="{{ a.previsao or '' }}" form="{{ form_id }}" data-turma-id="{{ a.turma_id }}" data-sort-key="{{ a.data.isoformat() if a.data else '' }}-{{ '%06d' % a.id }}">
                   <div class="form-text">Suporta negrito, itálico e destaque amarelo.</div>
                 </div>
                 <button type="button" class="btn btn-link btn-sm ps-0 js-copy-previsao" form="{{ form_id }}">Copiar previsão para sumário</button>
+                <button type="submit" class="btn btn-link btn-sm ps-0" form="previsao-limpar-{{ a.id }}">Limpar</button>
+                <button type="submit" class="btn btn-link btn-sm ps-0" form="previsao-anterior-{{ a.id }}">Copiar anterior</button>
+                <button type="submit" class="btn btn-link btn-sm ps-0" form="previsao-seguinte-{{ a.id }}">Enviar p/ seguinte</button>
                 {% set faltas_alunos = faltas_por_aula.get(a.id) if faltas_por_aula else [] %}
                 {% if faltas_alunos %}
                   <div class="small text-danger">Em falta: {{ faltas_alunos|join('; ') }}</div>
                 {% endif %}
+                <form method="post" id="previsao-limpar-{{ a.id }}" action="{{ url_for('previsao_limpar', turma_id=a.turma_id, aula_id=a.id) }}" class="d-none">
+                  <input type="hidden" name="periodo_id" value="{{ a.periodo_id }}">
+                </form>
+                <form method="post" id="previsao-anterior-{{ a.id }}" action="{{ url_for('previsao_copiar_anterior', turma_id=a.turma_id, aula_id=a.id) }}" class="d-none">
+                  <input type="hidden" name="periodo_id" value="{{ a.periodo_id }}">
+                </form>
+                <form method="post" id="previsao-seguinte-{{ a.id }}" action="{{ url_for('previsao_enviar_seguinte', turma_id=a.turma_id, aula_id=a.id) }}" class="d-none">
+                  <input type="hidden" name="periodo_id" value="{{ a.periodo_id }}">
+                </form>
               </div>
             </td>
             <td>

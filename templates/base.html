@@ -93,10 +93,13 @@
             <li class="nav-item"><a class="nav-link" href="/anos-letivos">Anos Letivos</a></li>
             <li class="nav-item"><a class="nav-link" href="/calendario/semana">Calendário Semanal</a></li>
             <li class="nav-item"><a class="nav-link" href="/calendario/dia">Calendário Diário</a></li>
-            <li class="nav-item"><a class="nav-link" href="/calendario/sumarios-pendentes">Sumários pendentes</a></li>
-            <li class="nav-item"><a class="nav-link" href="/calendario/outras-datas">Outras datas</a></li>
             <li class="nav-item"><a class="nav-link" href="/turmas">Turmas</a></li>
             <li class="nav-item"><a class="nav-link" href="/direcao-turma">Direção de Turma</a></li>
+            <li class="nav-item">
+                <form class="d-inline" method="post" action="{{ url_for('backups_trigger') }}">
+                    <button class="btn btn-outline-light btn-sm ms-lg-2" type="submit">Backup BD</button>
+                </form>
+            </li>
         </ul>
     </div>
 </nav>
@@ -331,6 +334,70 @@
       sumario.dispatchEvent(new Event('input', { bubbles: true }));
     };
 
+    const obterPrevisaoContexto = (btn) => {
+      if (!btn) return { input: null, editor: null };
+      const wrapper = btn.closest('.js-richtext-wrapper') || btn.closest('form');
+      if (!wrapper) return { input: null, editor: null };
+      const input = wrapper.querySelector('[name="previsao"]');
+      const editor = wrapper.querySelector('.js-richtext-editor');
+      return { input, editor };
+    };
+
+    const definirPrevisao = (input, editor, valor) => {
+      if (!input && !editor) return;
+      const sanitized = sanitizeRichtext(valor || '');
+      if (input) {
+        input.value = sanitized;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      if (editor) {
+        editor.innerHTML = sanitized;
+        syncRichtext(editor);
+        editor.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    };
+
+    const obterListaPrevisoes = (turmaId = null) => {
+      const lista = Array.from(document.querySelectorAll('input[name="previsao"]'));
+      const filtrada = turmaId ? lista.filter((item) => item.dataset.turmaId === turmaId) : lista;
+      return filtrada.sort((a, b) => {
+        const ordemA = a.dataset.sortKey || '';
+        const ordemB = b.dataset.sortKey || '';
+        if (ordemA === ordemB) return 0;
+        return ordemA < ordemB ? -1 : 1;
+      });
+    };
+
+    const limparPrevisao = (btn) => {
+      const { input, editor } = obterPrevisaoContexto(btn);
+      if (!input && !editor) return;
+      definirPrevisao(input, editor, '');
+    };
+
+    const copiarPrevisaoAnterior = (btn) => {
+      const { input, editor } = obterPrevisaoContexto(btn);
+      if (!input) return;
+      const lista = obterListaPrevisoes();
+      const idx = lista.indexOf(input);
+      if (idx <= 0) return;
+      const valor = lista[idx - 1]?.value || '';
+      definirPrevisao(input, editor, valor);
+    };
+
+    const enviarPrevisaoSeguinte = (btn) => {
+      const { input, editor } = obterPrevisaoContexto(btn);
+      if (!input) return;
+      const turmaId = input.dataset.turmaId || null;
+      const lista = obterListaPrevisoes(turmaId);
+      const idx = lista.indexOf(input);
+      if (idx < 0 || idx >= lista.length - 1) return;
+      const atual = input.value || '';
+      const nextInput = lista[idx + 1];
+      const nextWrapper = nextInput?.closest('.js-richtext-wrapper') || nextInput?.closest('form');
+      const nextEditor = nextWrapper?.querySelector('.js-richtext-editor') || null;
+      definirPrevisao(nextInput, nextEditor, atual);
+    };
+
     const copiarSumario = async (btn) => {
       if (!btn) return;
       const form = obterForm(btn) || btn.closest('.js-sumario-form');
@@ -401,6 +468,21 @@
         if (target) {
           ev.preventDefault();
           copiarPrevisao(target);
+        }
+        const limpar = ev.target.closest('.js-clear-previsao');
+        if (limpar) {
+          ev.preventDefault();
+          limparPrevisao(limpar);
+        }
+        const anterior = ev.target.closest('.js-prev-previsao');
+        if (anterior) {
+          ev.preventDefault();
+          copiarPrevisaoAnterior(anterior);
+        }
+        const seguinte = ev.target.closest('.js-next-previsao');
+        if (seguinte) {
+          ev.preventDefault();
+          enviarPrevisaoSeguinte(seguinte);
         }
       };
       document._copiaPrevisaoHandler = handler;
