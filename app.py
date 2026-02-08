@@ -39,6 +39,7 @@ from sqlalchemy import event
 from sqlalchemy.orm import joinedload
 
 from config import Config
+from config_store import ConfigStore
 from models import (
     db,
     Turma,
@@ -420,9 +421,7 @@ def create_app():
         app.config["BACKUP_DIR"] = backup_override
     else:
         app.config["BACKUP_DIR"] = os.path.join(app.instance_path, "backups")
-    export_options_path = os.path.join(app.instance_path, "export_options.json")
-    backup_status_path = os.path.join(app.instance_path, "backup_status.json")
-    backup_state_path = os.path.join(app.instance_path, "backup_state.json")
+    config_store = ConfigStore(app.instance_path, logger=app.logger)
 
     def _default_csv_dir():
         return app.config.get("CSV_EXPORT_DIR") or os.path.join(app.root_path, "exports")
@@ -438,18 +437,11 @@ def create_app():
             "backup_json_dir": _default_backup_json_dir(),
         }
 
-        try:
-            with open(export_options_path, "r", encoding="utf-8") as handle:
-                stored = json.load(handle)
-                if isinstance(stored, dict):
-                    if stored.get("csv_dest_dir"):
-                        options["csv_dest_dir"] = stored["csv_dest_dir"]
-                    if stored.get("backup_json_dir"):
-                        options["backup_json_dir"] = stored["backup_json_dir"]
-        except FileNotFoundError:
-            pass
-        except (OSError, json.JSONDecodeError) as exc:
-            app.logger.warning("Não foi possível ler opções de exportação: %s", exc)
+        stored = config_store.read_json("export_config.json", default={}) or {}
+        if stored.get("csv_dest_dir"):
+            options["csv_dest_dir"] = stored["csv_dest_dir"]
+        if stored.get("backup_json_dir"):
+            options["backup_json_dir"] = stored["backup_json_dir"]
 
         app.config["CSV_EXPORT_DIR"] = options["csv_dest_dir"] or _default_csv_dir()
         app.config["BACKUP_JSON_DIR"] = options.get("backup_json_dir") or _default_backup_json_dir()
@@ -462,39 +454,21 @@ def create_app():
         if backup_json_dir is not None:
             options["backup_json_dir"] = backup_json_dir
 
-        try:
-            os.makedirs(os.path.dirname(export_options_path), exist_ok=True)
-            with open(export_options_path, "w", encoding="utf-8") as handle:
-                json.dump(options, handle, ensure_ascii=False, indent=2)
-        except OSError as exc:
-            app.logger.warning("Não foi possível gravar opções de exportação: %s", exc)
+        if not config_store.write_json("export_config.json", options):
+            app.logger.warning("Não foi possível gravar opções de exportação.")
 
         app.config["CSV_EXPORT_DIR"] = options["csv_dest_dir"] or _default_csv_dir()
         app.config["BACKUP_JSON_DIR"] = options.get("backup_json_dir") or _default_backup_json_dir()
 
     _load_export_options()
 
-    last_save_path = os.path.join(app.instance_path, "last_save.json")
-
     def _load_last_save():
-        try:
-            with open(last_save_path, "r", encoding="utf-8") as handle:
-                payload = json.load(handle)
-                if isinstance(payload, dict):
-                    return payload.get("last_save")
-        except FileNotFoundError:
-            return None
-        except (OSError, json.JSONDecodeError):
-            return None
-        return None
+        payload = config_store.read_json("app_state.json", default={}) or {}
+        return payload.get("last_save")
 
     def _save_last_save(timestamp):
-        try:
-            os.makedirs(os.path.dirname(last_save_path), exist_ok=True)
-            with open(last_save_path, "w", encoding="utf-8") as handle:
-                json.dump({"last_save": timestamp}, handle, ensure_ascii=False, indent=2)
-        except OSError as exc:
-            app.logger.warning("Não foi possível gravar a data do último registo: %s", exc)
+        if not config_store.write_json("app_state.json", {"last_save": timestamp}):
+            app.logger.warning("Não foi possível gravar a data do último registo.")
 
     def _ler_timestamp_git():
         try:
@@ -931,56 +905,32 @@ def create_app():
             app.logger.warning("Não foi possível remover lock de backup: %s", lock_path)
 
     def _registar_backup_status(payload):
-        try:
-            os.makedirs(os.path.dirname(backup_status_path), exist_ok=True)
-            with open(backup_status_path, "w", encoding="utf-8") as handle:
-                json.dump(payload, handle, ensure_ascii=False, indent=2)
-        except OSError as exc:
-            app.logger.warning("Não foi possível gravar estado do backup: %s", exc)
+        if not config_store.write_json("backup_status.json", payload):
+            app.logger.warning("Não foi possível gravar estado do backup.")
 
     def _carregar_backup_status():
-        try:
-            with open(backup_status_path, "r", encoding="utf-8") as handle:
-                payload = json.load(handle)
-                if isinstance(payload, dict):
-                    return payload
-        except FileNotFoundError:
-            return None
-        except (OSError, json.JSONDecodeError):
-            return None
-        return None
+        return config_store.read_json("backup_status.json", default=None)
 
     def _carregar_backup_state():
-        try:
-            with open(backup_state_path, "r", encoding="utf-8") as handle:
-                payload = json.load(handle)
-                if isinstance(payload, dict):
-                    return payload
-        except FileNotFoundError:
-            return {
+        estado = config_store.read_json(
+            "backup_state.json",
+            default={
                 "last_backup_at": None,
                 "pending_changes_count": 0,
                 "last_change_at": None,
-            }
-        except (OSError, json.JSONDecodeError):
+            },
+        )
+        if not isinstance(estado, dict):
             return {
-                "last_backup_at": None,
-                "pending_changes_count": 0,
-                "last_change_at": None,
-            }
-        return {
             "last_backup_at": None,
             "pending_changes_count": 0,
             "last_change_at": None,
-        }
+            }
+        return estado
 
     def _guardar_backup_state(payload):
-        try:
-            os.makedirs(os.path.dirname(backup_state_path), exist_ok=True)
-            with open(backup_state_path, "w", encoding="utf-8") as handle:
-                json.dump(payload, handle, ensure_ascii=False, indent=2)
-        except OSError as exc:
-            app.logger.warning("Não foi possível gravar estado do backup: %s", exc)
+        if not config_store.write_json("backup_state.json", payload):
+            app.logger.warning("Não foi possível gravar estado do backup.")
 
     def _backup_database(reason="manual"):
         inicio = time.monotonic()
