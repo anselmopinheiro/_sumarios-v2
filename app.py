@@ -141,6 +141,14 @@ def csv_text(value):
     return f'="{texto}"'
 
 
+def build_csv_data(headers, rows):
+    output = io.StringIO()
+    writer = csv.writer(output, delimiter=";")
+    writer.writerow(headers)
+    writer.writerows(rows)
+    return "\ufeff" + output.getvalue()
+
+
 def _easter_sunday(year: int) -> date:
     """Domingo de Páscoa (algoritmo de Meeus/Jones/Butcher)."""
     a = year % 19
@@ -1864,12 +1872,10 @@ def create_app():
             fim_txt = data_fim.strftime("%Y%m%d") if data_fim else "fim"
             range_label = f"{inicio_txt}_{fim_txt}"
         filename = f"sumarios_{_slugify_filename(turma.nome, 'turma')}_{range_label}.csv"
-        output = io.StringIO()
-        writer = csv.writer(output, delimiter=";")
-        writer.writerow(["DATA", "MÓDULO", "N.º Sumário", "Sumário"])
-        writer.writerows(linhas_validas)
-        csv_text = output.getvalue()
-        data = "\ufeff" + csv_text
+        data = build_csv_data(
+            ["DATA", "MÓDULO", "N.º Sumário", "Sumário"],
+            linhas_validas,
+        )
         return Response(
             data,
             mimetype="text/csv; charset=utf-8",
