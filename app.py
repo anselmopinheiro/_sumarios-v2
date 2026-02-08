@@ -134,6 +134,13 @@ def _strip_html_to_text(html_text):
     return texto.strip()
 
 
+def csv_text(value):
+    if value is None:
+        return ""
+    texto = str(value)
+    return f'="{texto}"'
+
+
 def _easter_sunday(year: int) -> date:
     """Domingo de Páscoa (algoritmo de Meeus/Jones/Butcher)."""
     a = year % 19
@@ -1763,7 +1770,7 @@ def create_app():
                     [
                         data_legivel,
                         linha.get("modulo_nome") or "",
-                        linha.get("sumarios") or "",
+                        csv_text(linha.get("sumarios") or ""),
                         _strip_html_to_text(linha.get("sumario") or ""),
                     ]
                 )
@@ -1842,7 +1849,7 @@ def create_app():
                 [
                     data_aula.strftime("%d/%m/%Y"),
                     linha.get("modulo_nome") or "",
-                    linha.get("sumarios") or "",
+                    csv_text(linha.get("sumarios") or ""),
                     _strip_html_to_text(linha.get("sumario") or ""),
                 ]
             )
