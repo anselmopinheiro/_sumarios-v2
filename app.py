@@ -1,6 +1,7 @@
 import calendar
 import csv
 import gc
+import html
 import io
 import json
 import os
@@ -116,6 +117,21 @@ def _slugify_filename(texto, fallback="ficheiro"):
     )
 
     return safe_nome or fallback
+
+
+def _strip_html_to_text(html_text):
+    if not html_text:
+        return ""
+    texto = str(html_text)
+    texto = re.sub(r"(?i)<\s*br\s*/?>", "\n", texto)
+    texto = re.sub(r"(?i)</\s*p\s*>", "\n", texto)
+    texto = re.sub(r"(?i)<\s*li\s*>", "- ", texto)
+    texto = re.sub(r"<[^>]+>", "", texto)
+    texto = html.unescape(texto)
+    texto = texto.replace("\r\n", "\n").replace("\r", "\n")
+    texto = re.sub(r"[ \t]+", " ", texto)
+    texto = re.sub(r"\n{3,}", "\n\n", texto)
+    return texto.strip()
 
 
 def _easter_sunday(year: int) -> date:
@@ -1748,7 +1764,7 @@ def create_app():
                         data_legivel,
                         linha.get("modulo_nome") or "",
                         linha.get("sumarios") or "",
-                        linha.get("sumario") or "",
+                        _strip_html_to_text(linha.get("sumario") or ""),
                     ]
                 )
 
@@ -1827,7 +1843,7 @@ def create_app():
                     data_aula.strftime("%d/%m/%Y"),
                     linha.get("modulo_nome") or "",
                     linha.get("sumarios") or "",
-                    linha.get("sumario") or "",
+                    _strip_html_to_text(linha.get("sumario") or ""),
                 ]
             )
 
@@ -1840,24 +1856,16 @@ def create_app():
             inicio_txt = data_inicio.strftime("%Y%m%d") if data_inicio else "inicio"
             fim_txt = data_fim.strftime("%Y%m%d") if data_fim else "fim"
             range_label = f"{inicio_txt}_{fim_txt}"
-        filename = f"sumarios_{_slugify_filename(turma.nome, 'turma')}_{range_label}.xls"
-
+        filename = f"sumarios_{_slugify_filename(turma.nome, 'turma')}_{range_label}.csv"
         output = io.StringIO()
-        output.write("<html><head><meta charset='utf-8'></head><body>")
-        output.write("<table border='1'>")
-        output.write("<thead><tr><th>DATA</th><th>MÓDULO</th><th>N.º Sumário</th><th>Sumário</th></tr></thead><tbody>")
-        for data_legivel, modulo, sumarios, sumario in linhas_validas:
-            output.write("<tr>")
-            output.write(f"<td>{data_legivel}</td>")
-            output.write(f"<td>{modulo}</td>")
-            output.write(f"<td>{sumarios}</td>")
-            output.write(f"<td>{sumario}</td>")
-            output.write("</tr>")
-        output.write("</tbody></table></body></html>")
-
+        writer = csv.writer(output, delimiter=";")
+        writer.writerow(["DATA", "MÓDULO", "N.º Sumário", "Sumário"])
+        writer.writerows(linhas_validas)
+        csv_text = output.getvalue()
+        data = "\ufeff" + csv_text
         return Response(
-            output.getvalue(),
-            mimetype="application/vnd.ms-excel",
+            data,
+            mimetype="text/csv; charset=utf-8",
             headers={"Content-Disposition": f"attachment; filename={filename}"},
         )
 
