@@ -422,6 +422,7 @@ def create_app():
         app.config["BACKUP_DIR"] = os.path.join(app.instance_path, "backups")
     export_options_path = os.path.join(app.instance_path, "export_options.json")
     backup_status_path = os.path.join(app.instance_path, "backup_status.json")
+    backup_state_path = os.path.join(app.instance_path, "backup_state.json")
 
     def _default_csv_dir():
         return app.config.get("CSV_EXPORT_DIR") or os.path.join(app.root_path, "exports")
@@ -526,10 +527,7 @@ def create_app():
             return
         _save_last_save(datetime.now().isoformat(timespec="seconds"))
         if app.config.get("BACKUP_ON_COMMIT", True) and not _running_flask_cli():
-            try:
-                _backup_database(reason="commit")
-            except Exception as exc:  # pragma: no cover - fallback safety
-                app.logger.exception("Backup automático falhou após commit: %s", exc)
+            _agendar_backup_change()
 
     @app.context_processor
     def inject_footer_info():
@@ -952,6 +950,38 @@ def create_app():
             return None
         return None
 
+    def _carregar_backup_state():
+        try:
+            with open(backup_state_path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+                if isinstance(payload, dict):
+                    return payload
+        except FileNotFoundError:
+            return {
+                "last_backup_at": None,
+                "pending_changes_count": 0,
+                "last_change_at": None,
+            }
+        except (OSError, json.JSONDecodeError):
+            return {
+                "last_backup_at": None,
+                "pending_changes_count": 0,
+                "last_change_at": None,
+            }
+        return {
+            "last_backup_at": None,
+            "pending_changes_count": 0,
+            "last_change_at": None,
+        }
+
+    def _guardar_backup_state(payload):
+        try:
+            os.makedirs(os.path.dirname(backup_state_path), exist_ok=True)
+            with open(backup_state_path, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, ensure_ascii=False, indent=2)
+        except OSError as exc:
+            app.logger.warning("Não foi possível gravar estado do backup: %s", exc)
+
     def _backup_database(reason="manual"):
         inicio = time.monotonic()
         backup_dir = app.config.get("BACKUP_DIR")
@@ -1160,6 +1190,53 @@ def create_app():
         elif _running_flask_cli():
             app.logger.info("CLI detetada: backups automáticos desativados.")
 
+    def _agendar_backup_change():
+        estado = _carregar_backup_state()
+        agora = datetime.now().isoformat(timespec="seconds")
+        estado["pending_changes_count"] = int(estado.get("pending_changes_count") or 0) + 1
+        estado["last_change_at"] = agora
+        _guardar_backup_state(estado)
+
+    def _resetar_backup_state(timestamp=None):
+        estado = _carregar_backup_state()
+        estado["pending_changes_count"] = 0
+        estado["last_change_at"] = None
+        if timestamp:
+            estado["last_backup_at"] = timestamp
+        _guardar_backup_state(estado)
+
+    def _backup_scheduler():
+        if _running_flask_cli():
+            return
+        intervalo = max(5, app.config.get("BACKUP_CHECK_INTERVAL_SECONDS", 30))
+        debounce = max(0, app.config.get("BACKUP_DEBOUNCE_SECONDS", 300))
+        threshold = max(1, app.config.get("BACKUP_CHANGE_THRESHOLD", 15))
+        while True:
+            time.sleep(intervalo)
+            if not app.config.get("BACKUP_ON_COMMIT", True):
+                continue
+            estado = _carregar_backup_state()
+            pendentes = int(estado.get("pending_changes_count") or 0)
+            last_change_at = estado.get("last_change_at")
+            if pendentes == 0 or not last_change_at:
+                continue
+            try:
+                last_dt = datetime.fromisoformat(last_change_at)
+            except ValueError:
+                continue
+            agora = datetime.now()
+            pronto_por_threshold = pendentes >= threshold
+            pronto_por_tempo = debounce and (agora - last_dt).total_seconds() >= debounce
+            if pronto_por_threshold or pronto_por_tempo:
+                resultado = _backup_database(reason="auto")
+                if resultado.get("ok"):
+                    _resetar_backup_state(agora.isoformat(timespec="seconds"))
+                else:
+                    app.logger.warning("Backup automático falhou: %s", resultado.get("error"))
+
+    if not _running_flask_cli():
+        threading.Thread(target=_backup_scheduler, daemon=True).start()
+
     # ----------------------------------------
     # Helpers internos à app
     # ----------------------------------------
@@ -1336,6 +1413,7 @@ def create_app():
         resultado = _backup_database(reason="manual")
         if resultado.get("ok"):
             flash(f"Backup criado: {resultado.get('filename')}", "success")
+            _resetar_backup_state(datetime.now().isoformat(timespec="seconds"))
         else:
             flash(resultado.get("error") or "Não foi possível criar backup.", "error")
         return redirect(request.referrer or url_for("dashboard"))
