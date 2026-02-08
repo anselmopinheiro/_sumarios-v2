@@ -122,11 +122,12 @@
         <input type="hidden" name="previsao" id="{{ previsao_id }}" value="{{ aula.previsao if aula and aula.previsao else '' }}" data-turma-id="{{ aula.turma_id if aula else turma.id }}" data-sort-key="{{ aula.data.isoformat() if aula and aula.data else '' }}-{{ '%06d' % aula.id if aula else '000000' }}">
         <div class="form-text">Suporta negrito, itálico e destaque amarelo.</div>
       </div>
-      <button type="button" class="btn btn-link btn-sm ps-0 js-copy-previsao">Copiar previsão para sumário</button>
+      <button type="button" class="btn btn-link btn-sm ps-0 js-copy-previsao" data-aula-id="{{ aula.id if aula else '' }}">Copiar previsão para sumário</button>
       {% if aula %}
         <button type="submit" class="btn btn-link btn-sm ps-0" form="previsao-limpar-{{ aula.id }}">Limpar</button>
         <button type="submit" class="btn btn-link btn-sm ps-0" form="previsao-anterior-{{ aula.id }}">Copiar anterior</button>
         <button type="submit" class="btn btn-link btn-sm ps-0" form="previsao-seguinte-{{ aula.id }}">Enviar p/ seguinte</button>
+        <button type="button" class="btn btn-link btn-sm ps-0 js-reverter-sumario" data-aula-id="{{ aula.id }}">Reverter última alteração</button>
       {% endif %}
     </div>
   </div>

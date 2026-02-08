@@ -117,6 +117,7 @@
             </div>
         {% endif %}
     {% endwith %}
+    <div id="toast-container" class="toast-container position-fixed bottom-0 end-0 p-3"></div>
 
     {% block content %}{% endblock %}
 </div>
@@ -329,9 +330,66 @@
       const previsao = form.querySelector('[name="previsao"]');
       const sumario = form.querySelector('textarea[name="sumario"]');
       if (!previsao || !sumario) return;
+      const aulaId = btn.dataset.aulaId;
+      const novoTexto = previsao.value || '';
+      const atualTexto = sumario.value || '';
+      if (atualTexto && atualTexto !== novoTexto) {
+        const confirmar = window.confirm(
+          'Isto vai substituir o sumário existente. Confirmas?'
+        );
+        if (!confirmar) return;
+      }
+      if (!aulaId) return;
+      fetch(`/aulas/${aulaId}/sumario/copiar-previsao`, {
+        method: 'POST',
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          Accept: 'application/json',
+        },
+      })
+        .then((resp) => resp.json())
+        .then((payload) => {
+          if (payload.status !== 'ok' && payload.status !== 'noop') {
+            throw new Error(payload.message || 'Falha ao copiar previsão');
+          }
+          if (payload.status === 'noop') return;
+          sumario.value = payload.sumario || '';
+          sumario.dispatchEvent(new Event('input', { bubbles: true }));
+          setEstadoSumario(form, 'unsaved', 'Alterações por guardar', btn);
+          if (form) {
+            guardarAutomatico(form, btn);
+          }
+          mostrarToastUndo(aulaId);
+        })
+        .catch((err) => {
+          console.error(err);
+          alert('Não foi possível copiar a previsão para o sumário.');
+        });
+    };
 
-      sumario.value = previsao.value || '';
-      sumario.dispatchEvent(new Event('input', { bubbles: true }));
+    const mostrarToastUndo = (aulaId) => {
+      const container = document.getElementById('toast-container');
+      if (!container) return;
+      const toast = document.createElement('div');
+      toast.className = 'toast align-items-center text-bg-dark border-0 show';
+      toast.setAttribute('role', 'alert');
+      toast.setAttribute('aria-live', 'assertive');
+      toast.setAttribute('aria-atomic', 'true');
+      toast.innerHTML = `
+        <div class="d-flex">
+          <div class="toast-body">Sumário atualizado a partir da previsão.</div>
+          <button type="button" class="btn btn-link btn-sm text-white ms-auto js-undo-sumario" data-aula-id="${aulaId}">Anular</button>
+          <button type="button" class="btn-close btn-close-white me-2 m-auto" aria-label="Close"></button>
+        </div>
+      `;
+      container.appendChild(toast);
+      const closeBtn = toast.querySelector('.btn-close');
+      if (closeBtn) {
+        closeBtn.addEventListener('click', () => toast.remove());
+      }
+      setTimeout(() => {
+        toast.remove();
+      }, 20000);
     };
 
     const obterPrevisaoContexto = (btn) => {
@@ -469,6 +527,16 @@
           ev.preventDefault();
           copiarPrevisao(target);
         }
+        const undo = ev.target.closest('.js-undo-sumario');
+        if (undo) {
+          ev.preventDefault();
+          reverterSumario(undo.dataset.aulaId, undo);
+        }
+        const reverter = ev.target.closest('.js-reverter-sumario');
+        if (reverter) {
+          ev.preventDefault();
+          reverterSumario(reverter.dataset.aulaId, reverter);
+        }
         const limpar = ev.target.closest('.js-clear-previsao');
         if (limpar) {
           ev.preventDefault();
@@ -487,6 +555,37 @@
       };
       document._copiaPrevisaoHandler = handler;
       document.addEventListener('click', handler);
+    };
+
+    const reverterSumario = (aulaId, origem) => {
+      if (!aulaId) return;
+      fetch(`/aulas/${aulaId}/sumario/reverter`, {
+        method: 'POST',
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          Accept: 'application/json',
+        },
+      })
+        .then((resp) => resp.json().then((payload) => ({ resp, payload })))
+        .then(({ resp, payload }) => {
+          if (!resp.ok || payload.status !== 'ok') {
+            throw new Error(payload.message || 'Falha ao reverter');
+          }
+          const form = origem?.closest('form');
+          const sumario = form?.querySelector('textarea[name="sumario"]');
+          if (sumario) {
+            sumario.value = payload.sumario || '';
+            sumario.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+          if (form) {
+            setEstadoSumario(form, 'unsaved', 'Alterações por guardar', origem);
+            guardarAutomatico(form, origem);
+          }
+        })
+        .catch((err) => {
+          console.error(err);
+          alert('Não foi possível reverter o sumário.');
+        });
     };
 
     const obterForm = (elemento) => {

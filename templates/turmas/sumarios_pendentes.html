@@ -112,6 +112,7 @@
                     <span class="js-sumario-status-text">Guardado</span>
                   </div>
                   <button type="button" class="btn btn-outline-secondary btn-sm py-0 js-copy-sumario">Copiar sumário</button>
+                  <button type="button" class="btn btn-outline-secondary btn-sm py-0 js-reverter-sumario" data-aula-id="{{ a.id }}">Reverter última alteração</button>
                   {% if sumario_anterior %}
                     <button type="button"
                             class="btn btn-outline-info btn-sm py-0 js-use-prev-sumario"
@@ -156,7 +157,7 @@
                     <input type="hidden" name="previsao" id="{{ previsao_id }}" value="{{ a.previsao or '' }}" data-turma-id="{{ a.turma_id }}" data-sort-key="{{ a.data.isoformat() if a.data else '' }}-{{ '%06d' % a.id }}">
                     <div class="form-text">Suporta negrito, itálico e destaque amarelo.</div>
                   </div>
-                  <button type="button" class="btn btn-link btn-sm ps-0 js-copy-previsao">Copiar previsão para sumário</button>
+                  <button type="button" class="btn btn-link btn-sm ps-0 js-copy-previsao" data-aula-id="{{ a.id }}">Copiar previsão para sumário</button>
                   <button type="submit" class="btn btn-link btn-sm ps-0" form="previsao-limpar-{{ a.id }}">Limpar</button>
                   <button type="submit" class="btn btn-link btn-sm ps-0" form="previsao-anterior-{{ a.id }}">Copiar anterior</button>
                   <button type="submit" class="btn btn-link btn-sm ps-0" form="previsao-seguinte-{{ a.id }}">Enviar p/ seguinte</button>

@@ -236,7 +236,8 @@
                   <input type="hidden" name="previsao" id="{{ previsao_id }}" value="{{ a.previsao or '' }}" form="{{ form_id }}" data-turma-id="{{ a.turma_id }}" data-sort-key="{{ a.data.isoformat() if a.data else '' }}-{{ '%06d' % a.id }}">
                   <div class="form-text">Suporta negrito, itálico e destaque amarelo.</div>
                 </div>
-                <button type="button" class="btn btn-link btn-sm ps-0 js-copy-previsao" form="{{ form_id }}">Copiar previsão para sumário</button>
+                <button type="button" class="btn btn-link btn-sm ps-0 js-copy-previsao" form="{{ form_id }}" data-aula-id="{{ a.id }}">Copiar previsão para sumário</button>
+                <button type="button" class="btn btn-link btn-sm ps-0 js-reverter-sumario" data-aula-id="{{ a.id }}">Reverter última alteração</button>
                 <button type="submit" class="btn btn-link btn-sm ps-0" form="previsao-limpar-{{ a.id }}">Limpar</button>
                 <button type="submit" class="btn btn-link btn-sm ps-0" form="previsao-anterior-{{ a.id }}">Copiar anterior</button>
                 <button type="submit" class="btn btn-link btn-sm ps-0" form="previsao-seguinte-{{ a.id }}">Enviar p/ seguinte</button>

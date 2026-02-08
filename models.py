@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from flask_sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
@@ -419,6 +421,26 @@ class CalendarioAula(db.Model):
         db.Index("ix_cal_aulas_turma_data", "turma_id", "data", "apagado"),
         db.Index("ix_cal_aulas_periodo", "periodo_id", "data"),
         db.Index("ix_cal_aulas_modulo", "modulo_id"),
+    )
+
+
+class AulaSumarioHistorico(db.Model):
+    __tablename__ = "sumario_historico"
+
+    id = db.Column(db.Integer, primary_key=True)
+    calendario_aula_id = db.Column(
+        db.Integer, db.ForeignKey("calendario_aulas.id"), nullable=False
+    )
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    acao = db.Column(db.String(50), nullable=False)
+    sumario_anterior = db.Column(db.Text)
+    sumario_novo = db.Column(db.Text)
+    autor = db.Column(db.String(100), default="local", nullable=False)
+
+    aula = db.relationship("CalendarioAula", backref="sumario_historico")
+
+    __table_args__ = (
+        db.Index("ix_sumario_hist_aula_data", "calendario_aula_id", "created_at"),
     )
 
 

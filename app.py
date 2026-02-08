@@ -56,6 +56,7 @@ from models import (
     TurmaDisciplina,
     Aluno,
     AulaAluno,
+    AulaSumarioHistorico,
     DTTurma,
     DTAluno,
     DTJustificacao,
@@ -673,6 +674,33 @@ def create_app():
             )
             db.session.commit()
 
+        if "sumario_historico" not in tabelas:
+            db.session.execute(
+                text(
+                    """
+                    CREATE TABLE sumario_historico (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        calendario_aula_id INTEGER NOT NULL,
+                        created_at DATETIME NOT NULL,
+                        acao VARCHAR(50) NOT NULL,
+                        sumario_anterior TEXT,
+                        sumario_novo TEXT,
+                        autor VARCHAR(100) NOT NULL DEFAULT 'local',
+                        FOREIGN KEY(calendario_aula_id) REFERENCES calendario_aulas(id)
+                    )
+                    """
+                )
+            )
+            db.session.execute(
+                text(
+                    """
+                    CREATE INDEX ix_sumario_hist_aula_data
+                    ON sumario_historico (calendario_aula_id, created_at)
+                    """
+                )
+            )
+            db.session.commit()
+
         colunas = {col["name"] for col in insp.get_columns("calendario_aulas")}
 
         if "tempos_sem_aula" not in colunas:
@@ -1102,6 +1130,28 @@ def create_app():
         entries.sort(key=lambda item: item["timestamp"], reverse=True)
         return entries[:20]
 
+    def _registar_sumario_historico(aula, acao, anterior, novo, autor="local"):
+        registo = AulaSumarioHistorico(
+            calendario_aula_id=aula.id,
+            acao=acao,
+            sumario_anterior=anterior,
+            sumario_novo=novo,
+            autor=autor,
+        )
+        db.session.add(registo)
+        db.session.flush()
+        excessos = (
+            AulaSumarioHistorico.query
+            .filter_by(calendario_aula_id=aula.id)
+            .order_by(AulaSumarioHistorico.created_at.desc(), AulaSumarioHistorico.id.desc())
+            .offset(10)
+            .all()
+        )
+        if excessos:
+            for item in excessos:
+                db.session.delete(item)
+        return registo
+
     with app.app_context():
         _ensure_columns()
         if app.config.get("BACKUP_ON_STARTUP", True) and not _running_flask_cli():
@@ -1231,6 +1281,55 @@ def create_app():
         if not os.path.isfile(path):
             abort(404)
         return send_from_directory(backup_dir, filename, as_attachment=True)
+
+    @app.route("/aulas/<int:aula_id>/sumario/copiar-previsao", methods=["POST"])
+    def sumario_copiar_previsao(aula_id):
+        aula = CalendarioAula.query.get_or_404(aula_id)
+        previsao = (aula.previsao or "").strip()
+        anterior = aula.sumario or ""
+        novo = previsao
+        if anterior == novo:
+            return jsonify({"status": "noop", "sumario": aula.sumario or ""})
+        _registar_sumario_historico(
+            aula,
+            "copiar_previsao_para_sumario",
+            anterior,
+            novo,
+        )
+        aula.sumario = novo
+        db.session.commit()
+        return jsonify(
+            {
+                "status": "ok",
+                "sumario": aula.sumario or "",
+                "previous": anterior,
+                "last_save": _formatar_data_hora(_load_last_save()),
+            }
+        )
+
+    @app.route("/aulas/<int:aula_id>/sumario/reverter", methods=["POST"])
+    def sumario_reverter(aula_id):
+        aula = CalendarioAula.query.get_or_404(aula_id)
+        ultimo = (
+            AulaSumarioHistorico.query
+            .filter_by(calendario_aula_id=aula.id)
+            .order_by(AulaSumarioHistorico.created_at.desc(), AulaSumarioHistorico.id.desc())
+            .first()
+        )
+        if not ultimo:
+            return jsonify({"status": "error", "message": "Sem histórico para reverter."}), 400
+        anterior = ultimo.sumario_anterior or ""
+        novo = aula.sumario or ""
+        _registar_sumario_historico(aula, "reverter", novo, anterior)
+        aula.sumario = anterior
+        db.session.commit()
+        return jsonify(
+            {
+                "status": "ok",
+                "sumario": aula.sumario or "",
+                "last_save": _formatar_data_hora(_load_last_save()),
+            }
+        )
 
     @app.route("/backups/trigger", methods=["POST"])
     def backups_trigger():
@@ -4280,7 +4379,16 @@ def create_app():
 
         sumario_txt = request.form.get("sumario")
         if sumario_txt is not None:
-            aula.sumario = sumario_txt.strip()
+            sumario_atual = aula.sumario or ""
+            sumario_novo = sumario_txt.strip()
+            if sumario_novo != sumario_atual:
+                _registar_sumario_historico(
+                    aula,
+                    "edicao_manual",
+                    sumario_atual,
+                    sumario_novo,
+                )
+            aula.sumario = sumario_novo
 
         previsao_txt = request.form.get("previsao")
         if previsao_txt is not None:
