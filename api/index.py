@@ -1,8 +1,9 @@
 # api/index.py
-from flask import Flask
+import os
+import sys
 
-app = Flask(__name__)
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 
-@app.get("/")
-def home():
-    return "OK"
+from app import app  # importa o Flask app do teu app.py (raiz)
