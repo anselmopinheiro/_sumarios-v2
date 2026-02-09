@@ -5,4 +5,4 @@ app = Flask(__name__)
 
 @app.get("/")
 def home():
-    return "OK"
+    from app import app 
