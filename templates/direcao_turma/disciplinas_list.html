@@ -12,11 +12,13 @@
 </form>
 <div class="table-responsive">
   <table class="table table-striped align-middle">
-    <thead><tr><th>Nome</th><th>Ativa</th><th class="text-end">Ações</th></tr></thead>
+    <thead><tr><th>Nome</th><th>Nome curto</th><th>Professor</th><th>Ativa</th><th class="text-end">Ações</th></tr></thead>
     <tbody>
       {% for disciplina in disciplinas %}
       <tr>
         <td class="fw-semibold">{{ disciplina.nome }}</td>
+        <td>{{ disciplina.nome_curto or '—' }}</td>
+        <td>{{ disciplina.professor_nome or '—' }}</td>
         <td>{% if disciplina.ativa %}<span class="badge text-bg-success">Sim</span>{% else %}<span class="badge text-bg-secondary">Não</span>{% endif %}</td>
         <td class="text-end">
           <a href="{{ url_for('dt_disciplinas_edit', disciplina_id=disciplina.id) }}" class="btn btn-sm btn-outline-warning">Editar</a>
@@ -26,7 +28,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="3" class="text-muted">Sem disciplinas registadas.</td></tr>
+      <tr><td colspan="5" class="text-muted">Sem disciplinas registadas.</td></tr>
       {% endfor %}
     </tbody>
   </table>

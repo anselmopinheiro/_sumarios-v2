@@ -2,15 +2,17 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h2>{{ 'Editar ocorrência' if ocorrencia else 'Nova ocorrência' }}</h2>
-  <a href="{{ url_for('direcao_turma_ocorrencias', dt_id=dt_turma.id) }}" class="btn btn-secondary">Voltar</a>
+  <a href="{{ url_for('direcao_turma_ocorrencias', dt_id=dt_turma.id, **qs) }}" class="btn btn-secondary">Voltar</a>
 </div>
 <form method="post" class="card card-body shadow-sm">
+  <input type="hidden" name="_qs" value="{{ request.query_string.decode('utf-8') }}">
+  <input type="hidden" name="next" value="{{ next_url or request.full_path }}">
   <div class="row g-3">
     <div class="col-md-3"><label class="form-label">Data *</label><input required type="date" class="form-control" name="data" value="{{ ocorrencia.data.isoformat() if ocorrencia and ocorrencia.data else '' }}"></div>
     <div class="col-md-3"><label class="form-label">Hora início</label><input type="time" class="form-control" name="hora_inicio" value="{{ ocorrencia.hora_inicio.strftime('%H:%M') if ocorrencia and ocorrencia.hora_inicio else '' }}"></div>
     <div class="col-md-3"><label class="form-label">Hora fim</label><input type="time" class="form-control" name="hora_fim" value="{{ ocorrencia.hora_fim.strftime('%H:%M') if ocorrencia and ocorrencia.hora_fim else '' }}"></div>
     <div class="col-md-3"><label class="form-label">N.º tempos</label><input type="number" min="1" class="form-control" name="num_tempos" value="{{ ocorrencia.num_tempos if ocorrencia and ocorrencia.num_tempos is not none else '' }}"></div>
-    <div class="col-md-6"><label class="form-label">Disciplina *</label><select class="form-select" required name="dt_disciplina_id">{% for d in disciplinas %}<option value="{{ d.id }}" {% if ocorrencia and ocorrencia.dt_disciplina_id==d.id %}selected{% endif %}>{{ d.nome }}</option>{% endfor %}</select></div>
+    <div class="col-md-6"><label class="form-label">Disciplina *</label><select class="form-select" required name="dt_disciplina_id">{% for d in disciplinas %}{% set label = d.nome %}{% if d.nome_curto %}{% set label = d.nome_curto ~ ' — ' ~ label %}{% endif %}{% if d.professor_nome %}{% set label = label ~ ' (' ~ d.professor_nome ~ ')' %}{% endif %}<option value="{{ d.id }}" {% if ocorrencia and ocorrencia.dt_disciplina_id==d.id %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
     <div class="col-12">
       <div class="d-flex justify-content-between align-items-center mb-1"><label class="form-label mb-0">Alunos envolvidos</label><div><button class="btn btn-sm btn-outline-secondary" type="button" id="selAll">Selecionar todos</button> <button class="btn btn-sm btn-outline-secondary" type="button" id="selNone">Limpar seleção</button></div></div>
       <input class="form-control mb-2" id="alunoSearch" placeholder="Pesquisar aluno por nome/número">

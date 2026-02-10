@@ -268,6 +268,8 @@ class DTDisciplina(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(120), nullable=False, unique=True)
+    nome_curto = db.Column(db.String(40))
+    professor_nome = db.Column(db.String(120))
     ativa = db.Column(db.Boolean, nullable=False, default=True, server_default=db.text("1"))
 
 

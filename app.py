@@ -17,6 +17,7 @@ import uuid
 import platform
 import sys
 import unicodedata
+from urllib.parse import urlparse, parse_qsl
 from collections import defaultdict
 from datetime import datetime, date, timedelta
 
@@ -242,6 +243,61 @@ def _dt_periodo_range(dt_turma, periodo):
     if periodo == "anual":
         return ano.data_inicio_ano, ano.data_fim_ano
     return None, None
+
+
+def _default_nome_curto(nome):
+    partes = [p for p in (nome or "").strip().split() if p]
+    if not partes:
+        return ""
+    if len(partes) == 1:
+        return partes[0][:10]
+    iniciais = "".join(p[0].upper() for p in partes[:4] if p)
+    return iniciais or partes[0][:10]
+
+
+def _clean_query_params(data):
+    clean = {}
+    for k, v in (data or {}).items():
+        if v is None:
+            continue
+        s = str(v).strip()
+        if not s:
+            continue
+        clean[str(k)] = s
+    return clean
+
+
+def _safe_next_url(next_url, fallback):
+    if not next_url:
+        return fallback
+    parsed = urlparse(next_url)
+    if parsed.scheme or parsed.netloc:
+        return fallback
+    if not next_url.startswith("/") or next_url.startswith("//"):
+        return fallback
+    return next_url
+
+
+def redirect_com_filtros(endpoint, **kwargs):
+    params = request.args.to_dict(flat=True)
+    if not params:
+        raw_qs = request.form.get("_qs")
+        if raw_qs:
+            params = dict(parse_qsl(raw_qs, keep_blank_values=False))
+    params = _clean_query_params(params)
+    params.update(_clean_query_params(kwargs))
+    return redirect(url_for(endpoint, **params))
+
+
+def _dt_filtros_to_qs(filtros):
+    qs = {
+        "periodo": filtros.get("periodo") or "",
+        "data_inicio": filtros["data_inicio"].isoformat() if filtros.get("data_inicio") else "",
+        "data_fim": filtros["data_fim"].isoformat() if filtros.get("data_fim") else "",
+        "disciplina_id": str(filtros.get("disciplina_id") or ""),
+        "aluno_id": str(filtros.get("aluno_id") or ""),
+    }
+    return _clean_query_params(qs)
 
 
 def _total_previsto_ui(sumarios_txt, tempos_sem_aula):
@@ -708,6 +764,8 @@ def create_app():
                     CREATE TABLE dt_disciplinas (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         nome VARCHAR(120) NOT NULL,
+                        nome_curto VARCHAR(40),
+                        professor_nome VARCHAR(120),
                         ativa BOOLEAN NOT NULL DEFAULT 1,
                         CONSTRAINT uq_dt_disciplinas_nome UNIQUE(nome)
                     )
@@ -715,6 +773,14 @@ def create_app():
                 )
             )
             db.session.commit()
+        else:
+            dt_disciplinas_cols = {col["name"] for col in insp.get_columns("dt_disciplinas")}
+            if "nome_curto" not in dt_disciplinas_cols:
+                db.session.execute(text("ALTER TABLE dt_disciplinas ADD COLUMN nome_curto VARCHAR(40)"))
+                db.session.commit()
+            if "professor_nome" not in dt_disciplinas_cols:
+                db.session.execute(text("ALTER TABLE dt_disciplinas ADD COLUMN professor_nome VARCHAR(120)"))
+                db.session.commit()
 
         if "dt_ocorrencias" not in tabelas:
             db.session.execute(
@@ -2007,19 +2073,18 @@ def create_app():
         return bool(dt_turma and dt_turma.ano_letivo and dt_turma.ano_letivo.fechado)
 
     def _dt_ocorrencias_filters(dt_turma):
-        periodo = (request.args.get("periodo") or request.form.get("periodo") or "").strip()
-        data_inicio = _parse_date_form(request.args.get("data_inicio") or request.form.get("data_inicio"))
-        data_fim = _parse_date_form(request.args.get("data_fim") or request.form.get("data_fim"))
+        args = request.args
+        periodo = (args.get("periodo") or "").strip()
+        data_inicio = _parse_date_form(args.get("data_inicio"))
+        data_fim = _parse_date_form(args.get("data_fim"))
         if periodo in {"semestre1", "semestre2", "anual"}:
-            p_inicio, p_fim = _dt_periodo_range(dt_turma, periodo)
-            data_inicio = data_inicio or p_inicio
-            data_fim = data_fim or p_fim
+            data_inicio, data_fim = _dt_periodo_range(dt_turma, periodo)
         return {
             "periodo": periodo,
             "data_inicio": data_inicio,
             "data_fim": data_fim,
-            "disciplina_id": request.args.get("disciplina_id", type=int),
-            "aluno_id": request.args.get("aluno_id", type=int),
+            "disciplina_id": args.get("disciplina_id", type=int),
+            "aluno_id": args.get("aluno_id", type=int),
         }
 
     def _dt_ocorrencias_query(dt_turma, filtros):
@@ -2043,7 +2108,7 @@ def create_app():
         termo = (request.args.get("q") or "").strip()
         query = DTDisciplina.query
         if termo:
-            query = query.filter(DTDisciplina.nome.ilike(f"%{termo}%"))
+            query = query.filter((DTDisciplina.nome.ilike(f"%{termo}%")) | (DTDisciplina.nome_curto.ilike(f"%{termo}%")) | (DTDisciplina.professor_nome.ilike(f"%{termo}%")))
         disciplinas = query.order_by(DTDisciplina.nome.asc()).all()
         return render_template("direcao_turma/disciplinas_list.html", disciplinas=disciplinas, termo=termo)
 
@@ -2051,6 +2116,8 @@ def create_app():
     def dt_disciplinas_new():
         if request.method == "POST":
             nome = (request.form.get("nome") or "").strip()
+            nome_curto = (request.form.get("nome_curto") or "").strip() or _default_nome_curto(nome)
+            professor_nome = (request.form.get("professor_nome") or "").strip() or None
             ativa = bool(request.form.get("ativa"))
             if not nome:
                 flash("Nome da disciplina é obrigatório.", "error")
@@ -2059,7 +2126,7 @@ def create_app():
             if existente:
                 flash("Já existe uma disciplina com esse nome.", "error")
                 return redirect(url_for("dt_disciplinas_new"))
-            db.session.add(DTDisciplina(nome=nome, ativa=ativa))
+            db.session.add(DTDisciplina(nome=nome, nome_curto=nome_curto or None, professor_nome=professor_nome, ativa=ativa))
             db.session.commit()
             flash("Disciplina criada.", "success")
             return redirect(url_for("dt_disciplinas_list"))
@@ -2070,6 +2137,8 @@ def create_app():
         disciplina = DTDisciplina.query.get_or_404(disciplina_id)
         if request.method == "POST":
             nome = (request.form.get("nome") or "").strip()
+            nome_curto = (request.form.get("nome_curto") or "").strip() or _default_nome_curto(nome)
+            professor_nome = (request.form.get("professor_nome") or "").strip() or None
             ativa = bool(request.form.get("ativa"))
             if not nome:
                 flash("Nome da disciplina é obrigatório.", "error")
@@ -2083,6 +2152,8 @@ def create_app():
                 flash("Já existe uma disciplina com esse nome.", "error")
                 return redirect(url_for("dt_disciplinas_edit", disciplina_id=disciplina.id))
             disciplina.nome = nome
+            disciplina.nome_curto = nome_curto or None
+            disciplina.professor_nome = professor_nome
             disciplina.ativa = ativa
             db.session.commit()
             flash("Disciplina atualizada.", "success")
@@ -2579,6 +2650,7 @@ def create_app():
             joinedload(DTTurma.ano_letivo),
         ).get_or_404(dt_id)
         filtros = _dt_ocorrencias_filters(dt_turma)
+        qs = _dt_filtros_to_qs(filtros)
         ocorrencias = _dt_ocorrencias_query(dt_turma, filtros).all()
         disciplinas = DTDisciplina.query.filter_by(ativa=True).order_by(DTDisciplina.nome.asc()).all()
         alunos = (
@@ -2594,6 +2666,7 @@ def create_app():
             filtros=filtros,
             disciplinas=disciplinas,
             alunos=alunos,
+            qs=qs,
         )
 
     @app.route("/direcao-turma/<int:dt_id>/ocorrencias/new", methods=["GET", "POST"])
@@ -2601,7 +2674,7 @@ def create_app():
         dt_turma = DTTurma.query.options(joinedload(DTTurma.turma), joinedload(DTTurma.ano_letivo)).get_or_404(dt_id)
         if _dt_locked(dt_turma):
             flash("Ano letivo fechado: apenas consulta/export.", "error")
-            return redirect(url_for("direcao_turma_ocorrencias", dt_id=dt_id))
+            return redirect_com_filtros("direcao_turma_ocorrencias", dt_id=dt_id)
 
         disciplinas = DTDisciplina.query.filter_by(ativa=True).order_by(DTDisciplina.nome.asc()).all()
         if not disciplinas:
@@ -2619,7 +2692,7 @@ def create_app():
             aluno_ids = [int(v) for v in request.form.getlist("dt_aluno_ids") if str(v).isdigit()]
             if not data or not disciplina_id:
                 flash("Data e disciplina são obrigatórios.", "error")
-                return redirect(url_for("direcao_turma_ocorrencias_new", dt_id=dt_id))
+                return redirect_com_filtros("direcao_turma_ocorrencias_new", dt_id=dt_id)
             ocorr = DTOcorrencia(
                 dt_turma_id=dt_turma.id,
                 data=data,
@@ -2634,7 +2707,8 @@ def create_app():
             db.session.add(ocorr)
             db.session.commit()
             flash("Ocorrência registada.", "success")
-            return redirect(url_for("direcao_turma_ocorrencias", dt_id=dt_id))
+            fallback = url_for("direcao_turma_ocorrencias", dt_id=dt_id, **_clean_query_params(dict(parse_qsl(request.form.get("_qs") or ""))))
+            return redirect(_safe_next_url(request.form.get("next"), fallback))
 
         return render_template(
             "direcao_turma/ocorrencias_form.html",
@@ -2643,6 +2717,8 @@ def create_app():
             ocorrencia=None,
             disciplinas=disciplinas,
             alunos=alunos,
+            qs=_clean_query_params(request.args.to_dict(flat=True)),
+            next_url=request.full_path,
         )
 
     @app.route("/direcao-turma/<int:dt_id>/ocorrencias/<int:oc_id>/edit", methods=["GET", "POST"])
@@ -2653,14 +2729,14 @@ def create_app():
         alunos = DTAluno.query.options(joinedload(DTAluno.aluno)).filter_by(dt_turma_id=dt_turma.id).all()
         if _dt_locked(dt_turma):
             flash("Ano letivo fechado: apenas consulta/export.", "error")
-            return redirect(url_for("direcao_turma_ocorrencias", dt_id=dt_id))
+            return redirect_com_filtros("direcao_turma_ocorrencias", dt_id=dt_id)
 
         if request.method == "POST":
             data = _parse_date_form(request.form.get("data"))
             disciplina_id = request.form.get("dt_disciplina_id", type=int)
             if not data or not disciplina_id:
                 flash("Data e disciplina são obrigatórios.", "error")
-                return redirect(url_for("direcao_turma_ocorrencias_edit", dt_id=dt_id, oc_id=oc_id))
+                return redirect_com_filtros("direcao_turma_ocorrencias_edit", dt_id=dt_id, oc_id=oc_id)
             ocorrencia.data = data
             ocorrencia.hora_inicio = _parse_time_form(request.form.get("hora_inicio"))
             ocorrencia.hora_fim = _parse_time_form(request.form.get("hora_fim"))
@@ -2671,7 +2747,8 @@ def create_app():
             ocorrencia.alunos = DTAluno.query.filter(DTAluno.dt_turma_id == dt_turma.id, DTAluno.id.in_(aluno_ids)).all() if aluno_ids else []
             db.session.commit()
             flash("Ocorrência atualizada.", "success")
-            return redirect(url_for("direcao_turma_ocorrencias", dt_id=dt_id))
+            fallback = url_for("direcao_turma_ocorrencias", dt_id=dt_id, **_clean_query_params(dict(parse_qsl(request.form.get("_qs") or ""))))
+            return redirect(_safe_next_url(request.form.get("next"), fallback))
 
         return render_template(
             "direcao_turma/ocorrencias_form.html",
@@ -2680,6 +2757,8 @@ def create_app():
             ocorrencia=ocorrencia,
             disciplinas=disciplinas,
             alunos=alunos,
+            qs=_clean_query_params(request.args.to_dict(flat=True)),
+            next_url=request.full_path,
         )
 
     @app.route("/direcao-turma/<int:dt_id>/ocorrencias/<int:oc_id>/delete", methods=["POST"])
@@ -2687,12 +2766,13 @@ def create_app():
         dt_turma = DTTurma.query.options(joinedload(DTTurma.ano_letivo)).get_or_404(dt_id)
         if _dt_locked(dt_turma):
             flash("Ano letivo fechado: apenas consulta/export.", "error")
-            return redirect(url_for("direcao_turma_ocorrencias", dt_id=dt_id))
+            return redirect_com_filtros("direcao_turma_ocorrencias", dt_id=dt_id)
         ocorrencia = DTOcorrencia.query.filter_by(id=oc_id, dt_turma_id=dt_turma.id).first_or_404()
         db.session.delete(ocorrencia)
         db.session.commit()
         flash("Ocorrência removida.", "success")
-        return redirect(url_for("direcao_turma_ocorrencias", dt_id=dt_id))
+        fallback = url_for("direcao_turma_ocorrencias", dt_id=dt_id, **_clean_query_params(dict(parse_qsl(request.form.get("_qs") or ""))))
+        return redirect(_safe_next_url(request.form.get("next"), fallback))
 
     @app.route("/direcao-turma/<int:dt_id>/ocorrencias/export/csv")
     def direcao_turma_ocorrencias_export_csv(dt_id):

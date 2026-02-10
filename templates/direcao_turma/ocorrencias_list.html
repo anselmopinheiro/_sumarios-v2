@@ -7,24 +7,48 @@
   </div>
   <div class="d-flex gap-2">
     <a href="{{ url_for('direcao_turma_list') }}" class="btn btn-secondary">Voltar</a>
-    <a href="{{ url_for('direcao_turma_ocorrencias_new', dt_id=dt_turma.id) }}" class="btn btn-primary {% if bloqueado %}disabled{% endif %}">+ Nova ocorrência</a>
+    <a href="{{ url_for('direcao_turma_ocorrencias_new', dt_id=dt_turma.id, **qs) }}" class="btn btn-primary {% if bloqueado %}disabled{% endif %}">+ Nova ocorrência</a>
   </div>
 </div>
+
 <form method="get" class="card card-body shadow-sm mb-3">
   <div class="row g-2 align-items-end">
-    <div class="col-md-2"><label class="form-label">Período</label><select class="form-select" name="periodo"><option value="">Manual</option><option value="semestre1" {% if filtros.periodo=='semestre1' %}selected{% endif %}>1.º semestre</option><option value="semestre2" {% if filtros.periodo=='semestre2' %}selected{% endif %}>2.º semestre</option><option value="anual" {% if filtros.periodo=='anual' %}selected{% endif %}>Anual</option></select></div>
+    <div class="col-md-2">
+      <label class="form-label">Período</label>
+      <select class="form-select" name="periodo">
+        <option value="">Manual</option>
+        <option value="semestre1" {% if filtros.periodo=='semestre1' %}selected{% endif %}>1.º semestre</option>
+        <option value="semestre2" {% if filtros.periodo=='semestre2' %}selected{% endif %}>2.º semestre</option>
+        <option value="anual" {% if filtros.periodo=='anual' %}selected{% endif %}>Anual</option>
+      </select>
+    </div>
     <div class="col-md-2"><label class="form-label">Data início</label><input type="date" class="form-control" name="data_inicio" value="{{ filtros.data_inicio.isoformat() if filtros.data_inicio else '' }}"></div>
     <div class="col-md-2"><label class="form-label">Data fim</label><input type="date" class="form-control" name="data_fim" value="{{ filtros.data_fim.isoformat() if filtros.data_fim else '' }}"></div>
-    <div class="col-md-3"><label class="form-label">Disciplina</label><select class="form-select" name="disciplina_id"><option value="">Todas</option>{% for d in disciplinas %}<option value="{{ d.id }}" {% if filtros.disciplina_id==d.id %}selected{% endif %}>{{ d.nome }}</option>{% endfor %}</select></div>
+    <div class="col-md-3">
+      <label class="form-label">Disciplina</label>
+      <select class="form-select" name="disciplina_id">
+        <option value="">Todas</option>
+        {% for d in disciplinas %}
+          {% set label = d.nome %}
+          {% if d.nome_curto %}{% set label = d.nome_curto ~ ' — ' ~ label %}{% endif %}
+          {% if d.professor_nome %}{% set label = label ~ ' (' ~ d.professor_nome ~ ')' %}{% endif %}
+          <option value="{{ d.id }}" {% if filtros.disciplina_id==d.id %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
     <div class="col-md-3"><label class="form-label">Aluno</label><select class="form-select" name="aluno_id"><option value="">Todos</option>{% for a in alunos %}{% if a.aluno %}<option value="{{ a.id }}" {% if filtros.aluno_id==a.id %}selected{% endif %}>{{ '%02d'|format(a.aluno.numero) if a.aluno.numero is not none else '--' }} - {{ a.aluno.nome }}</option>{% endif %}{% endfor %}</select></div>
   </div>
-  <div class="mt-3 d-flex gap-2"><button class="btn btn-outline-primary">Filtrar</button><a class="btn btn-outline-success" href="{{ url_for('direcao_turma_ocorrencias_export_csv', dt_id=dt_turma.id, periodo=filtros.periodo, data_inicio=filtros.data_inicio.isoformat() if filtros.data_inicio else '', data_fim=filtros.data_fim.isoformat() if filtros.data_fim else '', disciplina_id=filtros.disciplina_id or '', aluno_id=filtros.aluno_id or '') }}">Exportar CSV</a></div>
+  <div class="mt-3 d-flex gap-2">
+    <button class="btn btn-outline-primary">Filtrar</button>
+    <a class="btn btn-outline-success" href="{{ url_for('direcao_turma_ocorrencias_export_csv', dt_id=dt_turma.id, **qs) }}">Exportar CSV</a>
+  </div>
 </form>
+
 <div class="table-responsive"><table class="table table-striped align-middle"><thead><tr><th>Data</th><th>Hora</th><th>Tempos</th><th>Disciplina</th><th>Nº Alunos</th><th>Observações</th><th class="text-end">Ações</th></tr></thead><tbody>
 {% for o in ocorrencias %}
 <tr>
-<td>{{ o.data.strftime('%d/%m/%Y') if o.data else '—' }}</td><td>{{ o.hora_inicio.strftime('%H:%M') if o.hora_inicio else '' }}{% if o.hora_fim %} - {{ o.hora_fim.strftime('%H:%M') }}{% endif %}</td><td>{{ o.num_tempos if o.num_tempos is not none else '—' }}</td><td>{{ o.disciplina.nome if o.disciplina else '—' }}</td><td>{{ o.alunos|length }}</td><td>{{ (o.observacoes or '')[:80] }}{% if o.observacoes and o.observacoes|length > 80 %}…{% endif %}</td>
-<td class="text-end"><a class="btn btn-sm btn-outline-warning {% if bloqueado %}disabled{% endif %}" href="{{ url_for('direcao_turma_ocorrencias_edit', dt_id=dt_turma.id, oc_id=o.id) }}">Editar</a><form method="post" action="{{ url_for('direcao_turma_ocorrencias_delete', dt_id=dt_turma.id, oc_id=o.id) }}" class="d-inline" onsubmit="return confirm('Apagar ocorrência?');"><button class="btn btn-sm btn-outline-danger" {% if bloqueado %}disabled{% endif %}>Apagar</button></form></td>
+<td>{{ o.data.strftime('%d/%m/%Y') if o.data else '—' }}</td><td>{{ o.hora_inicio.strftime('%H:%M') if o.hora_inicio else '' }}{% if o.hora_fim %} - {{ o.hora_fim.strftime('%H:%M') }}{% endif %}</td><td>{{ o.num_tempos if o.num_tempos is not none else '—' }}</td><td>{% set label = o.disciplina.nome if o.disciplina else '—' %}{% if o.disciplina and o.disciplina.nome_curto %}{% set label = o.disciplina.nome_curto ~ ' — ' ~ o.disciplina.nome %}{% endif %}{% if o.disciplina and o.disciplina.professor_nome %}{% set label = label ~ ' (' ~ o.disciplina.professor_nome ~ ')' %}{% endif %}{{ label }}</td><td>{{ o.alunos|length }}</td><td>{{ (o.observacoes or '')[:80] }}{% if o.observacoes and o.observacoes|length > 80 %}…{% endif %}</td>
+<td class="text-end"><a class="btn btn-sm btn-outline-warning {% if bloqueado %}disabled{% endif %}" href="{{ url_for('direcao_turma_ocorrencias_edit', dt_id=dt_turma.id, oc_id=o.id, **qs) }}">Editar</a><form method="post" action="{{ url_for('direcao_turma_ocorrencias_delete', dt_id=dt_turma.id, oc_id=o.id) }}" class="d-inline" onsubmit="return confirm('Apagar ocorrência?');"><input type="hidden" name="_qs" value="{{ request.query_string.decode('utf-8') }}"><input type="hidden" name="next" value="{{ request.full_path }}"><button class="btn btn-sm btn-outline-danger" {% if bloqueado %}disabled{% endif %}>Apagar</button></form></td>
 </tr>
 {% else %}<tr><td colspan="7" class="text-muted">Sem ocorrências para os filtros selecionados.</td></tr>{% endfor %}
 </tbody></table></div>
