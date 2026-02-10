@@ -205,6 +205,11 @@ class DTTurma(db.Model):
         back_populates="dt_turma",
         cascade="all, delete-orphan",
     )
+    ocorrencias = db.relationship(
+        "DTOcorrencia",
+        back_populates="dt_turma",
+        cascade="all, delete-orphan",
+    )
 
     __table_args__ = (
         db.UniqueConstraint("turma_id", "ano_letivo_id", name="uq_dt_turma_ano"),
@@ -255,6 +260,51 @@ class DTMotivoDia(db.Model):
 
     __table_args__ = (
         db.UniqueConstraint("dt_turma_id", "data", name="uq_dt_motivo_dia"),
+    )
+
+
+class DTDisciplina(db.Model):
+    __tablename__ = "dt_disciplinas"
+
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(120), nullable=False, unique=True)
+    ativa = db.Column(db.Boolean, nullable=False, default=True, server_default=db.text("1"))
+
+
+class DTOcorrenciaAluno(db.Model):
+    __tablename__ = "dt_ocorrencia_alunos"
+
+    id = db.Column(db.Integer, primary_key=True)
+    dt_ocorrencia_id = db.Column(db.Integer, db.ForeignKey("dt_ocorrencias.id"), nullable=False)
+    dt_aluno_id = db.Column(db.Integer, db.ForeignKey("dt_alunos.id"), nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint("dt_ocorrencia_id", "dt_aluno_id", name="uq_dt_ocorrencia_aluno"),
+        db.Index("ix_dt_ocorrencia_alunos_ocorrencia", "dt_ocorrencia_id"),
+        db.Index("ix_dt_ocorrencia_alunos_aluno", "dt_aluno_id"),
+    )
+
+
+class DTOcorrencia(db.Model):
+    __tablename__ = "dt_ocorrencias"
+
+    id = db.Column(db.Integer, primary_key=True)
+    dt_turma_id = db.Column(db.Integer, db.ForeignKey("dt_turmas.id"), nullable=False, index=True)
+    data = db.Column(db.Date, nullable=False, index=True)
+    hora_inicio = db.Column(db.Time)
+    hora_fim = db.Column(db.Time)
+    num_tempos = db.Column(db.Integer)
+    dt_disciplina_id = db.Column(db.Integer, db.ForeignKey("dt_disciplinas.id"), nullable=False, index=True)
+    observacoes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    dt_turma = db.relationship("DTTurma", back_populates="ocorrencias")
+    disciplina = db.relationship("DTDisciplina", backref="ocorrencias")
+    alunos = db.relationship(
+        "DTAluno",
+        secondary="dt_ocorrencia_alunos",
+        backref=db.backref("ocorrencias", lazy="dynamic"),
     )
 
 

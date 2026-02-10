@@ -38,7 +38,11 @@
     <h2>Mapa mensal de justificações</h2>
     <div class="text-muted">{{ dt_turma.turma.nome if dt_turma.turma else 'Turma' }} — {{ dt_turma.ano_letivo.nome if dt_turma.ano_letivo else 'Ano letivo' }}</div>
   </div>
-  <a href="{{ url_for('direcao_turma_list') }}" class="btn btn-secondary">Voltar</a>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('direcao_turma_list') }}" class="btn btn-secondary">Voltar</a>
+    <a href="{{ url_for('direcao_turma_mapa_mensal', dt_id=dt_turma.id) }}" class="btn btn-outline-info">Mapa mensal justificações</a>
+    <a href="{{ url_for('direcao_turma_ocorrencias', dt_id=dt_turma.id) }}" class="btn btn-outline-dark">Ocorrências</a>
+  </div>
 </div>
 
 <div class="card shadow-sm mb-4">

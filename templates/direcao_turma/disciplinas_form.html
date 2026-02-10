@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>{{ 'Editar disciplina' if disciplina else 'Nova disciplina' }}</h2>
+<form method="post" class="card card-body shadow-sm mt-3" style="max-width: 560px;">
+  <div class="mb-3">
+    <label class="form-label">Nome</label>
+    <input class="form-control" name="nome" required value="{{ disciplina.nome if disciplina else '' }}">
+  </div>
+  <div class="form-check mb-3">
+    <input class="form-check-input" type="checkbox" id="ativa" name="ativa" {% if not disciplina or disciplina.ativa %}checked{% endif %}>
+    <label class="form-check-label" for="ativa">Ativa</label>
+  </div>
+  <div class="d-flex gap-2">
+    <button class="btn btn-primary">Guardar</button>
+    <a href="{{ url_for('dt_disciplinas_list') }}" class="btn btn-secondary">Cancelar</a>
+  </div>
+</form>
+{% endblock %}

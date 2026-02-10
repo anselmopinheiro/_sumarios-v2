@@ -48,7 +48,11 @@
                 </a>
                 <a href="{{ url_for('direcao_turma_mapa_mensal', dt_id=dt.id) }}"
                    class="btn btn-sm btn-outline-info">
-                  Mapa mensal
+                  Mapa mensal justificações
+                </a>
+                <a href="{{ url_for('direcao_turma_ocorrencias', dt_id=dt.id) }}"
+                   class="btn btn-sm btn-outline-dark">
+                  Ocorrências
                 </a>
                 <a href="{{ url_for('direcao_turma_edit', dt_id=dt.id) }}"
                    class="btn btn-sm btn-outline-warning {% if bloqueado %}disabled{% endif %}">
