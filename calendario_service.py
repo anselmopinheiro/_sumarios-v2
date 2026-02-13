@@ -26,6 +26,7 @@ from models import (
     Exclusao,
     Extra,
     Livro,
+    LivroTurma,
 )
 
 
@@ -869,7 +870,7 @@ def exportar_backup_ano(ano: AnoLetivo) -> Dict[str, object]:
 
     turmas = (
         Turma.query.options(
-            joinedload(Turma.livros),
+            joinedload(Turma.livros_turmas).joinedload(LivroTurma.livro),
             joinedload(Turma.turmas_disciplinas).joinedload(TurmaDisciplina.disciplina),
         )
         .filter_by(ano_letivo_id=ano.id)

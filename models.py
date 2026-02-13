@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.ext.associationproxy import association_proxy
 
 db = SQLAlchemy()
 
@@ -15,10 +16,10 @@ class Livro(db.Model):
         back_populates="livro",
         cascade="all, delete-orphan",
     )
-    turmas = db.relationship(
-        "Turma",
-        secondary=lambda: LivroTurma.__table__,
-        back_populates="livros",
+    turmas = association_proxy(
+        "livros_turmas",
+        "turma",
+        creator=lambda turma: LivroTurma(turma=turma),
     )
 
 
@@ -70,10 +71,10 @@ class Turma(db.Model):
         back_populates="turma",
         cascade="all, delete-orphan",
     )
-    livros = db.relationship(
-        "Livro",
-        secondary=lambda: LivroTurma.__table__,
-        back_populates="turmas",
+    livros = association_proxy(
+        "livros_turmas",
+        "livro",
+        creator=lambda livro: LivroTurma(livro=livro),
     )
     # NOVO — carga horária por dia da semana
     carga_segunda = db.Column(db.Float, nullable=True)
@@ -94,10 +95,10 @@ class Turma(db.Model):
         back_populates="turma",
         cascade="all, delete-orphan",
     )
-    disciplinas = db.relationship(
-        "Disciplina",
-        secondary=lambda: TurmaDisciplina.__table__,
-        back_populates="turmas",
+    disciplinas = association_proxy(
+        "turmas_disciplinas",
+        "disciplina",
+        creator=lambda disciplina: TurmaDisciplina(disciplina=disciplina),
     )
     alunos = db.relationship(
         "Aluno",
@@ -123,10 +124,10 @@ class Disciplina(db.Model):
         back_populates="disciplina",
         cascade="all, delete-orphan",
     )
-    turmas = db.relationship(
-        "Turma",
-        secondary=lambda: TurmaDisciplina.__table__,
-        back_populates="disciplinas",
+    turmas = association_proxy(
+        "turmas_disciplinas",
+        "turma",
+        creator=lambda turma: TurmaDisciplina(turma=turma),
     )
 
 
