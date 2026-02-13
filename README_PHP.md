@@ -1,57 +1,50 @@
-# Migração para PHP + MySQL (fase inicial)
+# Sumários em PHP (deploy cPanel + FTP)
 
-## Estado atual
-Esta pasta contém a primeira fase funcional da reimplementação em PHP puro:
-- autenticação simples por sessão
-- dashboard
-- gestão básica de turmas
-- calendário por turma com edição de sumário/previsão em modal
-- importação CSV de turmas com dry-run e pré-visualização (20 linhas)
+## Estrutura segura para alojamento partilhado
 
-## Estrutura
-- `public/index.php` front controller
-- `src/` config, DB PDO, auth/csrf, router, controllers, repositories, services
-- `views/` layout + páginas
-- `storage/logs` logs de erro
-- `storage/exports` exportações CSV
-- `schema.sql` + `migrations/*.sql`
+- `public/` → conteúdo para `public_html/sumarios/`
+  - `index.php`
+  - `.htaccess`
+- `apps/sumarios/` → conteúdo para pasta fora do público (`/apps/sumarios/`)
+  - `src/`
+  - `views/`
+  - `config/`
+  - `storage/`
+  - `migrations/` e scripts SQL
 
-## Configuração
-1. Criar base MySQL (`utf8mb4_unicode_ci`).
-2. Executar `schema.sql` no phpMyAdmin.
-3. Opcional: executar `migrations/002_add_alunos_and_avaliacao.sql`.
-4. Criar `.env` na raiz com:
+Com esta organização, ficheiros de aplicação fora de `public_html` não ficam acessíveis por URL.
 
-```
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_NAME=sumarios
-DB_USER=utilizador
-DB_PASS=senha
-APP_USER=admin
-APP_PASSWORD_HASH=$2y$10$substituir_por_hash_real
-```
+## Deploy
 
-Gerar hash com `password_hash('AQUI_A_TUA_SENHA', PASSWORD_DEFAULT)` localmente.
+1. Copiar `public/*` para `public_html/sumarios/`.
+2. Copiar `apps/sumarios/*` para `/apps/sumarios/` (fora do web root).
+3. Editar `/apps/sumarios/config/config.php`:
+   - credenciais MySQL
+   - `base_path` = `/sumarios`
+4. Criar base de dados MySQL e executar `schema.sql` (via phpMyAdmin).
+5. Abrir `https://meudominio.com/sumarios`.
 
-## Deploy FTP (cPanel)
-1. Subir o conteúdo do repositório por FTP.
-2. Definir document root para `public/`.
-3. Garantir permissões de escrita em `storage/logs` e `storage/exports`.
-4. Configurar base de dados no cPanel e atualizar `.env`.
+## Rotas implementadas
 
-## Importar CSV
-- Ir a `/importar`
-- Escolher tabela `turmas`
-- Definir separador (`;` ou `,`)
-- Executar em `dry-run` para validar
-- Executar em `import` para gravar
+- `/sumarios/` dashboard
+- `/sumarios/turmas`
+- `/sumarios/calendario`
+- `/sumarios/aula/{id}/editar`
+- `/sumarios/importar`
 
-CSV esperado para turmas (cabeçalhos):
-`nome;tipo;periodo_tipo`
+## CSV Import
 
-## Próximas fases
-- disciplinas, livros, anos letivos e calendário escolar
-- direção de turma e avaliação diária
-- exportações completas CSV/JSON
-- importador CSV multi-tabela com mapeamento de colunas e relatório avançado
+Funcionalidade disponível em `/sumarios/importar`:
+- upload de ficheiro
+- validação de cabeçalhos obrigatórios: `nome`, `tipo`, `periodo_tipo`
+- pré-visualização de 20 linhas
+- modo `dry-run`
+- modo `import`
+- relatório de erros por linha
+
+## Apache
+
+`public/.htaccess` usa:
+- `RewriteBase /sumarios/`
+- front controller em `index.php`
+
