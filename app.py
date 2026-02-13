@@ -32,6 +32,7 @@ from flask import (
     jsonify,
     send_from_directory,
     abort,
+    has_app_context,
 )
 
 from flask_migrate import Migrate
@@ -521,9 +522,6 @@ def create_app():
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_object(Config)
 
-    db.init_app(app)
-    Migrate(app, db)
-
     os.makedirs(app.instance_path, exist_ok=True)
     app.config["DB_PATH"] = os.path.join(app.instance_path, "gestor_lectivo.db")
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + app.config["DB_PATH"]
@@ -532,6 +530,10 @@ def create_app():
         app.config["BACKUP_DIR"] = backup_override
     else:
         app.config["BACKUP_DIR"] = os.path.join(app.instance_path, "backups")
+
+    db.init_app(app)
+    Migrate(app, db)
+
     config_store = ConfigStore(app.instance_path, logger=app.logger)
 
     def _default_csv_dir():
@@ -956,11 +958,18 @@ def create_app():
     def _get_db_path():
         db_path = app.config.get("DB_PATH")
         if db_path:
-            return db_path
+            return os.path.abspath(db_path)
+        if has_app_context():
+            try:
+                engine_path = db.engine.url.database
+                if engine_path:
+                    return os.path.abspath(engine_path)
+            except Exception:
+                pass
         uri = app.config.get("SQLALCHEMY_DATABASE_URI")
         if not uri or not uri.startswith("sqlite:///"):
             return None
-        return uri.replace("sqlite:///", "", 1)
+        return os.path.abspath(uri.replace("sqlite:///", "", 1))
 
     def _parse_backup_filename(filename):
         pattern = re.compile(
@@ -1174,9 +1183,10 @@ def create_app():
                     status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
                     _registar_backup_status(status_payload)
                     return {"ok": False, "error": status_payload["last_backup_error"]}
-                db.session.remove()
-                if db.session.is_active:
-                    db.session.rollback()
+                if has_app_context():
+                    db.session.remove()
+                    if db.session.is_active:
+                        db.session.rollback()
                 status_payload["method"] = "copy2"
                 copia_ok = False
                 ultimo_erro = None
@@ -1315,6 +1325,17 @@ def create_app():
 
     with app.app_context():
         _ensure_columns()
+        try:
+            engine_db = db.engine.url.database
+            config_db = app.config.get("DB_PATH")
+            if engine_db and config_db and os.path.abspath(engine_db) != os.path.abspath(config_db):
+                app.logger.warning(
+                    "DB path diverge do esperado: engine=%s | config=%s",
+                    engine_db,
+                    config_db,
+                )
+        except Exception:
+            app.logger.warning("Não foi possível validar coerência do caminho da BD.")
         if app.config.get("BACKUP_ON_STARTUP", True) and not _running_flask_cli():
             app.logger.info("Backups automáticos ativos no arranque.")
             _backup_database(reason="startup")
@@ -1359,7 +1380,8 @@ def create_app():
             pronto_por_threshold = pendentes >= threshold
             pronto_por_tempo = debounce and (agora - last_dt).total_seconds() >= debounce
             if pronto_por_threshold or pronto_por_tempo:
-                resultado = _backup_database(reason="auto")
+                with app.app_context():
+                    resultado = _backup_database(reason="auto")
                 if resultado.get("ok"):
                     _resetar_backup_state(agora.isoformat(timespec="seconds"))
                 else:
@@ -5466,4 +5488,6 @@ def create_app():
 
 if __name__ == "__main__":
     app = create_app()
-    app.run(debug=True)
+    debug_enabled = os.environ.get("FLASK_DEBUG", "0") == "1"
+    use_reloader = os.environ.get("FLASK_USE_RELOADER", "1") == "1"
+    app.run(debug=debug_enabled, use_reloader=use_reloader)
