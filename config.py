@@ -1,3 +1,4 @@
+import importlib.util
 import os
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -12,12 +13,16 @@ def _get_int(value, default):
         return default
 
 
+def _has_psycopg_driver():
+    return importlib.util.find_spec("psycopg") is not None
+
+
 def normalize_database_url(url):
     if not url:
         return url
 
     normalized = url.replace("postgres://", "postgresql://", 1)
-    if normalized.startswith("postgresql://"):
+    if normalized.startswith("postgresql://") and _has_psycopg_driver():
         normalized = normalized.replace("postgresql://", "postgresql+psycopg://", 1)
 
     parsed = urlsplit(normalized)

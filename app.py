@@ -2,6 +2,8 @@ import calendar
 import csv
 import gc
 import html
+import importlib
+import importlib.util
 import io
 import json
 import os
@@ -36,12 +38,24 @@ from flask import (
 )
 
 from flask_migrate import Migrate
-from dotenv import load_dotenv
 from alembic.script import ScriptDirectory
 
-PROJECT_ENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
-if os.path.exists(PROJECT_ENV_PATH) and os.environ.get("FLASK_ENV", "development") == "development":
-    load_dotenv(PROJECT_ENV_PATH)
+
+def _load_dotenv_if_available():
+    project_env_path = os.path.join(os.path.dirname(__file__), ".env")
+    is_development = os.environ.get("FLASK_ENV", "development") == "development"
+    if not is_development or not os.path.exists(project_env_path):
+        return
+
+    dotenv_spec = importlib.util.find_spec("dotenv")
+    if dotenv_spec is None:
+        return
+
+    dotenv_module = importlib.import_module("dotenv")
+    dotenv_module.load_dotenv(project_env_path)
+
+
+_load_dotenv_if_available()
 from sqlalchemy import func, inspect, text
 from sqlalchemy import event
 from sqlalchemy.orm import joinedload
