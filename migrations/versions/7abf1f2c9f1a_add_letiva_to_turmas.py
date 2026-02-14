@@ -17,12 +17,22 @@ depends_on = None
 
 
 def upgrade():
-    op.add_column(
-        "turmas",
-        sa.Column("letiva", sa.Boolean(), nullable=False, server_default=sa.text("true")),
-    )
-    op.alter_column("turmas", "letiva", server_default=None)
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    columns = {col["name"] for col in inspector.get_columns("turmas")}
+
+    if "letiva" not in columns:
+        op.add_column(
+            "turmas",
+            sa.Column("letiva", sa.Boolean(), nullable=False, server_default=sa.text("true")),
+        )
+        op.alter_column("turmas", "letiva", server_default=None)
 
 
 def downgrade():
-    op.drop_column("turmas", "letiva")
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    columns = {col["name"] for col in inspector.get_columns("turmas")}
+
+    if "letiva" in columns:
+        op.drop_column("turmas", "letiva")
