@@ -61,13 +61,20 @@ Aplicação Flask para gestão de turmas, calendários de aulas, sumários e ava
 postgresql+psycopg://USER:PASSWORD@HOST:5432/postgres?sslmode=require
 ```
 
+### Exportar schema atual do SQLite (baseline)
+```bash
+python tools/dump_sqlite_schema.py --sqlite-path gestor_lectivo.db --output tools/schema_sqlite.json
+```
+
 ### Migrações de schema (Alembic)
+Em PostgreSQL, o schema deve ser criado por migrações Alembic (não por DDL em runtime):
 ```bash
 export DATABASE_URL='postgresql+psycopg://USER:PASSWORD@HOST:5432/postgres?sslmode=require'
 flask db upgrade
 ```
 
 ### Migração de dados SQLite -> Postgres
+Depois do schema criado no Postgres, migrar os dados:
 ```bash
 python tools/migrate_sqlite_to_postgres.py
 ```

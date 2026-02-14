@@ -1,0 +1,1938 @@
+{
+  "source": "gestor_lectivo.db",
+  "tables": [
+    {
+      "name": "alunos",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": true
+        },
+        {
+          "name": "turma_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "processo",
+          "type": "VARCHAR(50)",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "numero",
+          "type": "INTEGER",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "nome",
+          "type": "VARCHAR(255)",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "nome_curto",
+          "type": "VARCHAR(100)",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "nee",
+          "type": "TEXT",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "observacoes",
+          "type": "TEXT",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        }
+      ],
+      "primary_key": {
+        "name": null,
+        "constrained_columns": [
+          "id"
+        ]
+      },
+      "foreign_keys": [
+        {
+          "name": null,
+          "constrained_columns": [
+            "turma_id"
+          ],
+          "referred_table": "turmas",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "indexes": [
+        {
+          "name": "ix_alunos_turma_numero",
+          "unique": false,
+          "column_names": [
+            "turma_id",
+            "numero"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "anos_letivos",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": true
+        },
+        {
+          "name": "nome",
+          "type": "VARCHAR(20)",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "data_inicio_ano",
+          "type": "DATE",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "data_fim_ano",
+          "type": "DATE",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "data_fim_semestre1",
+          "type": "DATE",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "data_inicio_semestre2",
+          "type": "DATE",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "descricao",
+          "type": "VARCHAR(255)",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "ativo",
+          "type": "BOOLEAN",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "fechado",
+          "type": "BOOLEAN",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        }
+      ],
+      "primary_key": {
+        "name": null,
+        "constrained_columns": [
+          "id"
+        ]
+      },
+      "foreign_keys": [],
+      "unique_constraints": [],
+      "indexes": []
+    },
+    {
+      "name": "aulas_alunos",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": true
+        },
+        {
+          "name": "aula_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "aluno_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "atraso",
+          "type": "BOOLEAN",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "faltas",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "responsabilidade",
+          "type": "INTEGER",
+          "nullable": true,
+          "default": "'3'",
+          "primary_key": false
+        },
+        {
+          "name": "comportamento",
+          "type": "INTEGER",
+          "nullable": true,
+          "default": "'3'",
+          "primary_key": false
+        },
+        {
+          "name": "participacao",
+          "type": "INTEGER",
+          "nullable": true,
+          "default": "'3'",
+          "primary_key": false
+        },
+        {
+          "name": "trabalho_autonomo",
+          "type": "INTEGER",
+          "nullable": true,
+          "default": "'3'",
+          "primary_key": false
+        },
+        {
+          "name": "portatil_material",
+          "type": "INTEGER",
+          "nullable": true,
+          "default": "'3'",
+          "primary_key": false
+        },
+        {
+          "name": "atividade",
+          "type": "INTEGER",
+          "nullable": true,
+          "default": "'3'",
+          "primary_key": false
+        },
+        {
+          "name": "falta_disciplinar",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": "'0'",
+          "primary_key": false
+        }
+      ],
+      "primary_key": {
+        "name": null,
+        "constrained_columns": [
+          "id"
+        ]
+      },
+      "foreign_keys": [
+        {
+          "name": null,
+          "constrained_columns": [
+            "aluno_id"
+          ],
+          "referred_table": "alunos",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "name": null,
+          "constrained_columns": [
+            "aula_id"
+          ],
+          "referred_table": "calendario_aulas",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "indexes": [
+        {
+          "name": "ix_aulas_alunos_aluno",
+          "unique": false,
+          "column_names": [
+            "aluno_id"
+          ]
+        },
+        {
+          "name": "ix_aulas_alunos_aula",
+          "unique": false,
+          "column_names": [
+            "aula_id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "calendario_aulas",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": true
+        },
+        {
+          "name": "turma_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "periodo_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "data",
+          "type": "DATE",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "weekday",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "modulo_id",
+          "type": "INTEGER",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "numero_modulo",
+          "type": "INTEGER",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "total_geral",
+          "type": "INTEGER",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "sumarios",
+          "type": "VARCHAR(255)",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "tipo",
+          "type": "VARCHAR(50)",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "apagado",
+          "type": "BOOLEAN",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "tempos_sem_aula",
+          "type": "INTEGER",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "observacoes",
+          "type": "TEXT",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "sumario",
+          "type": "TEXT",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "previsao",
+          "type": "TEXT",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "atividade",
+          "type": "BOOLEAN",
+          "nullable": false,
+          "default": "'0'",
+          "primary_key": false
+        },
+        {
+          "name": "atividade_nome",
+          "type": "TEXT",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        }
+      ],
+      "primary_key": {
+        "name": null,
+        "constrained_columns": [
+          "id"
+        ]
+      },
+      "foreign_keys": [
+        {
+          "name": null,
+          "constrained_columns": [
+            "modulo_id"
+          ],
+          "referred_table": "modulos",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "name": null,
+          "constrained_columns": [
+            "periodo_id"
+          ],
+          "referred_table": "periodos",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "name": null,
+          "constrained_columns": [
+            "turma_id"
+          ],
+          "referred_table": "turmas",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "indexes": [
+        {
+          "name": "ix_cal_aulas_turma_data",
+          "unique": false,
+          "column_names": [
+            "turma_id",
+            "data",
+            "apagado"
+          ]
+        },
+        {
+          "name": "ix_cal_aulas_modulo",
+          "unique": false,
+          "column_names": [
+            "modulo_id"
+          ]
+        },
+        {
+          "name": "ix_cal_aulas_periodo",
+          "unique": false,
+          "column_names": [
+            "periodo_id",
+            "data"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "disciplinas",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": true
+        },
+        {
+          "name": "nome",
+          "type": "VARCHAR(100)",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "sigla",
+          "type": "VARCHAR(20)",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "ano_letivo_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        }
+      ],
+      "primary_key": {
+        "name": null,
+        "constrained_columns": [
+          "id"
+        ]
+      },
+      "foreign_keys": [
+        {
+          "name": null,
+          "constrained_columns": [
+            "ano_letivo_id"
+          ],
+          "referred_table": "anos_letivos",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "indexes": []
+    },
+    {
+      "name": "dt_alunos",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": true
+        },
+        {
+          "name": "dt_turma_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "aluno_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        }
+      ],
+      "primary_key": {
+        "name": null,
+        "constrained_columns": [
+          "id"
+        ]
+      },
+      "foreign_keys": [
+        {
+          "name": null,
+          "constrained_columns": [
+            "aluno_id"
+          ],
+          "referred_table": "alunos",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "name": null,
+          "constrained_columns": [
+            "dt_turma_id"
+          ],
+          "referred_table": "dt_turmas",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "indexes": [
+        {
+          "name": "ix_dt_alunos_turma_aluno",
+          "unique": false,
+          "column_names": [
+            "dt_turma_id",
+            "aluno_id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "dt_disciplinas",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": true
+        },
+        {
+          "name": "nome",
+          "type": "VARCHAR(120)",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "nome_curto",
+          "type": "VARCHAR(40)",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "professor_nome",
+          "type": "VARCHAR(120)",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "ativa",
+          "type": "BOOLEAN",
+          "nullable": false,
+          "default": "1",
+          "primary_key": false
+        }
+      ],
+      "primary_key": {
+        "name": null,
+        "constrained_columns": [
+          "id"
+        ]
+      },
+      "foreign_keys": [],
+      "unique_constraints": [],
+      "indexes": []
+    },
+    {
+      "name": "dt_justificacoes",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": true
+        },
+        {
+          "name": "dt_aluno_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "data",
+          "type": "DATE",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "tipo",
+          "type": "VARCHAR(20)",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "motivo",
+          "type": "TEXT",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        }
+      ],
+      "primary_key": {
+        "name": null,
+        "constrained_columns": [
+          "id"
+        ]
+      },
+      "foreign_keys": [
+        {
+          "name": null,
+          "constrained_columns": [
+            "dt_aluno_id"
+          ],
+          "referred_table": "dt_alunos",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "indexes": []
+    },
+    {
+      "name": "dt_motivos_dia",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": true
+        },
+        {
+          "name": "dt_turma_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "data",
+          "type": "DATE",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "motivo",
+          "type": "TEXT",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        }
+      ],
+      "primary_key": {
+        "name": null,
+        "constrained_columns": [
+          "id"
+        ]
+      },
+      "foreign_keys": [
+        {
+          "name": null,
+          "constrained_columns": [
+            "dt_turma_id"
+          ],
+          "referred_table": "dt_turmas",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "indexes": []
+    },
+    {
+      "name": "dt_ocorrencia_alunos",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": true
+        },
+        {
+          "name": "dt_ocorrencia_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "dt_aluno_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        }
+      ],
+      "primary_key": {
+        "name": null,
+        "constrained_columns": [
+          "id"
+        ]
+      },
+      "foreign_keys": [
+        {
+          "name": null,
+          "constrained_columns": [
+            "dt_aluno_id"
+          ],
+          "referred_table": "dt_alunos",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "name": null,
+          "constrained_columns": [
+            "dt_ocorrencia_id"
+          ],
+          "referred_table": "dt_ocorrencias",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "indexes": [
+        {
+          "name": "ix_dt_ocorrencia_alunos_ocorrencia",
+          "unique": false,
+          "column_names": [
+            "dt_ocorrencia_id"
+          ]
+        },
+        {
+          "name": "ix_dt_ocorrencia_alunos_aluno",
+          "unique": false,
+          "column_names": [
+            "dt_aluno_id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "dt_ocorrencias",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": true
+        },
+        {
+          "name": "dt_turma_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "data",
+          "type": "DATE",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "hora_inicio",
+          "type": "TIME",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "hora_fim",
+          "type": "TIME",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "num_tempos",
+          "type": "INTEGER",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "dt_disciplina_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "observacoes",
+          "type": "TEXT",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "updated_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        }
+      ],
+      "primary_key": {
+        "name": null,
+        "constrained_columns": [
+          "id"
+        ]
+      },
+      "foreign_keys": [
+        {
+          "name": null,
+          "constrained_columns": [
+            "dt_disciplina_id"
+          ],
+          "referred_table": "dt_disciplinas",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "name": null,
+          "constrained_columns": [
+            "dt_turma_id"
+          ],
+          "referred_table": "dt_turmas",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "indexes": [
+        {
+          "name": "ix_dt_ocorrencias_dt_turma_id",
+          "unique": false,
+          "column_names": [
+            "dt_turma_id"
+          ]
+        },
+        {
+          "name": "ix_dt_ocorrencias_data",
+          "unique": false,
+          "column_names": [
+            "data"
+          ]
+        },
+        {
+          "name": "ix_dt_ocorrencias_dt_disciplina_id",
+          "unique": false,
+          "column_names": [
+            "dt_disciplina_id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "dt_turmas",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": true
+        },
+        {
+          "name": "turma_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "ano_letivo_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "observacoes",
+          "type": "TEXT",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        }
+      ],
+      "primary_key": {
+        "name": null,
+        "constrained_columns": [
+          "id"
+        ]
+      },
+      "foreign_keys": [
+        {
+          "name": null,
+          "constrained_columns": [
+            "ano_letivo_id"
+          ],
+          "referred_table": "anos_letivos",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "name": null,
+          "constrained_columns": [
+            "turma_id"
+          ],
+          "referred_table": "turmas",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "indexes": []
+    },
+    {
+      "name": "exclusoes",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": true
+        },
+        {
+          "name": "turma_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "data",
+          "type": "DATE",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "data_text",
+          "type": "VARCHAR(255)",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "motivo",
+          "type": "VARCHAR(255)",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "tipo",
+          "type": "VARCHAR(50)",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        }
+      ],
+      "primary_key": {
+        "name": null,
+        "constrained_columns": [
+          "id"
+        ]
+      },
+      "foreign_keys": [
+        {
+          "name": null,
+          "constrained_columns": [
+            "turma_id"
+          ],
+          "referred_table": "turmas",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "indexes": []
+    },
+    {
+      "name": "extras",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": true
+        },
+        {
+          "name": "turma_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "data",
+          "type": "DATE",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "data_text",
+          "type": "VARCHAR(255)",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "motivo",
+          "type": "VARCHAR(255)",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "aulas",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "modulo_nome",
+          "type": "VARCHAR(255)",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "tipo",
+          "type": "VARCHAR(50)",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        }
+      ],
+      "primary_key": {
+        "name": null,
+        "constrained_columns": [
+          "id"
+        ]
+      },
+      "foreign_keys": [
+        {
+          "name": null,
+          "constrained_columns": [
+            "turma_id"
+          ],
+          "referred_table": "turmas",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "indexes": []
+    },
+    {
+      "name": "feriados",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": true
+        },
+        {
+          "name": "ano_letivo_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "data",
+          "type": "DATE",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "data_text",
+          "type": "VARCHAR(255)",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "nome",
+          "type": "VARCHAR(255)",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        }
+      ],
+      "primary_key": {
+        "name": null,
+        "constrained_columns": [
+          "id"
+        ]
+      },
+      "foreign_keys": [
+        {
+          "name": null,
+          "constrained_columns": [
+            "ano_letivo_id"
+          ],
+          "referred_table": "anos_letivos",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "indexes": []
+    },
+    {
+      "name": "horarios",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": true
+        },
+        {
+          "name": "turma_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "weekday",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "horas",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        }
+      ],
+      "primary_key": {
+        "name": null,
+        "constrained_columns": [
+          "id"
+        ]
+      },
+      "foreign_keys": [
+        {
+          "name": null,
+          "constrained_columns": [
+            "turma_id"
+          ],
+          "referred_table": "turmas",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "indexes": []
+    },
+    {
+      "name": "interrupcoes_letivas",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": true
+        },
+        {
+          "name": "ano_letivo_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "tipo",
+          "type": "VARCHAR(50)",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "data_inicio",
+          "type": "DATE",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "data_fim",
+          "type": "DATE",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "data_text",
+          "type": "VARCHAR(255)",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "descricao",
+          "type": "VARCHAR(255)",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        }
+      ],
+      "primary_key": {
+        "name": null,
+        "constrained_columns": [
+          "id"
+        ]
+      },
+      "foreign_keys": [
+        {
+          "name": null,
+          "constrained_columns": [
+            "ano_letivo_id"
+          ],
+          "referred_table": "anos_letivos",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "indexes": []
+    },
+    {
+      "name": "livros",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": true
+        },
+        {
+          "name": "nome",
+          "type": "VARCHAR(255)",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        }
+      ],
+      "primary_key": {
+        "name": null,
+        "constrained_columns": [
+          "id"
+        ]
+      },
+      "foreign_keys": [],
+      "unique_constraints": [],
+      "indexes": []
+    },
+    {
+      "name": "livros_turmas",
+      "columns": [
+        {
+          "name": "livro_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": true
+        },
+        {
+          "name": "turma_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": true
+        }
+      ],
+      "primary_key": {
+        "name": null,
+        "constrained_columns": [
+          "livro_id",
+          "turma_id"
+        ]
+      },
+      "foreign_keys": [
+        {
+          "name": null,
+          "constrained_columns": [
+            "turma_id"
+          ],
+          "referred_table": "turmas",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "name": null,
+          "constrained_columns": [
+            "livro_id"
+          ],
+          "referred_table": "livros",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "indexes": []
+    },
+    {
+      "name": "modulos",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": true
+        },
+        {
+          "name": "turma_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "nome",
+          "type": "VARCHAR(255)",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "total_aulas",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "tolerancia",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        }
+      ],
+      "primary_key": {
+        "name": null,
+        "constrained_columns": [
+          "id"
+        ]
+      },
+      "foreign_keys": [
+        {
+          "name": null,
+          "constrained_columns": [
+            "turma_id"
+          ],
+          "referred_table": "turmas",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "indexes": []
+    },
+    {
+      "name": "periodos",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": true
+        },
+        {
+          "name": "nome",
+          "type": "VARCHAR(100)",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "tipo",
+          "type": "VARCHAR(20)",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "data_inicio",
+          "type": "DATE",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "data_fim",
+          "type": "DATE",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "turma_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "modulo_id",
+          "type": "INTEGER",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        }
+      ],
+      "primary_key": {
+        "name": null,
+        "constrained_columns": [
+          "id"
+        ]
+      },
+      "foreign_keys": [
+        {
+          "name": null,
+          "constrained_columns": [
+            "modulo_id"
+          ],
+          "referred_table": "modulos",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "name": null,
+          "constrained_columns": [
+            "turma_id"
+          ],
+          "referred_table": "turmas",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "indexes": []
+    },
+    {
+      "name": "sumario_historico",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": true
+        },
+        {
+          "name": "calendario_aula_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "acao",
+          "type": "VARCHAR(50)",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "sumario_anterior",
+          "type": "TEXT",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "sumario_novo",
+          "type": "TEXT",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "autor",
+          "type": "VARCHAR(100)",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        }
+      ],
+      "primary_key": {
+        "name": null,
+        "constrained_columns": [
+          "id"
+        ]
+      },
+      "foreign_keys": [
+        {
+          "name": null,
+          "constrained_columns": [
+            "calendario_aula_id"
+          ],
+          "referred_table": "calendario_aulas",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "indexes": [
+        {
+          "name": "ix_sumario_hist_aula_data",
+          "unique": false,
+          "column_names": [
+            "calendario_aula_id",
+            "created_at"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "turmas",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": true
+        },
+        {
+          "name": "nome",
+          "type": "VARCHAR(50)",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "tipo",
+          "type": "VARCHAR(20)",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "periodo_tipo",
+          "type": "VARCHAR(20)",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "ano_letivo_id",
+          "type": "INTEGER",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "carga_segunda",
+          "type": "FLOAT",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "carga_terca",
+          "type": "FLOAT",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "carga_quarta",
+          "type": "FLOAT",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "carga_quinta",
+          "type": "FLOAT",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "carga_sexta",
+          "type": "FLOAT",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "tempo_segunda",
+          "type": "INTEGER",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "tempo_terca",
+          "type": "INTEGER",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "tempo_quarta",
+          "type": "INTEGER",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "tempo_quinta",
+          "type": "INTEGER",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "tempo_sexta",
+          "type": "INTEGER",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "letiva",
+          "type": "BOOLEAN",
+          "nullable": false,
+          "default": "'1'",
+          "primary_key": false
+        }
+      ],
+      "primary_key": {
+        "name": null,
+        "constrained_columns": [
+          "id"
+        ]
+      },
+      "foreign_keys": [
+        {
+          "name": null,
+          "constrained_columns": [
+            "ano_letivo_id"
+          ],
+          "referred_table": "anos_letivos",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "indexes": []
+    },
+    {
+      "name": "turmas_disciplinas",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": true
+        },
+        {
+          "name": "turma_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "disciplina_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "default": null,
+          "primary_key": false
+        },
+        {
+          "name": "horas_semanais",
+          "type": "FLOAT",
+          "nullable": true,
+          "default": null,
+          "primary_key": false
+        }
+      ],
+      "primary_key": {
+        "name": null,
+        "constrained_columns": [
+          "id"
+        ]
+      },
+      "foreign_keys": [
+        {
+          "name": null,
+          "constrained_columns": [
+            "disciplina_id"
+          ],
+          "referred_table": "disciplinas",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "name": null,
+          "constrained_columns": [
+            "turma_id"
+          ],
+          "referred_table": "turmas",
+          "referred_columns": [
+            "id"
+          ],
+          "on_update": "NO ACTION",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unique_constraints": [],
+      "indexes": []
+    }
+  ]
+}

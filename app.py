@@ -644,6 +644,9 @@ def create_app():
     # aplicaram as migrações correspondentes (evita erros em bases de dados
     # antigas carregadas a partir de ficheiro).
     def _ensure_columns():
+        if db.engine.dialect.name != "sqlite":
+            return
+
         insp = inspect(db.engine)
         tabelas = set(insp.get_table_names())
 
