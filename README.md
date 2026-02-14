@@ -52,7 +52,7 @@ Aplicação Flask para gestão de turmas, calendários de aulas, sumários e ava
 
 
 ## Supabase / PostgreSQL
-- A app usa `DATABASE_URL` quando definida; se não existir, continua em SQLite (`instance/gestor_lectivo.db`).
+- A app usa `DATABASE_URL` quando definida; se não existir, continua em SQLite (`instance/gestor_lectivo.db`). Se `DATABASE_URL` for Postgres mas nenhum driver estiver instalado (`psycopg`, `psycopg2` ou `pg8000`), a app faz fallback para SQLite e emite aviso.
 - O URL é normalizado (incluindo `postgres://` -> `postgresql://`), prefere `postgresql+psycopg://` quando o driver `psycopg` está instalado e força SSL (`sslmode=require`) quando não indicado.
 - Para backend Flask tradicional, preferir **Direct connection** (ligações long-lived). O **Pooler** é mais indicado para workloads serverless/funções com muitas ligações curtas.
 

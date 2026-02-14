@@ -1,5 +1,6 @@
 import importlib.util
 import os
+import warnings
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -13,8 +14,37 @@ def _get_int(value, default):
         return default
 
 
-def _has_psycopg_driver():
-    return importlib.util.find_spec("psycopg") is not None
+def _has_module(module_name):
+    return importlib.util.find_spec(module_name) is not None
+
+
+def _available_postgres_driver():
+    if _has_module("psycopg"):
+        return "psycopg"
+    if _has_module("psycopg2"):
+        return "psycopg2"
+    if _has_module("pg8000"):
+        return "pg8000"
+    return None
+
+
+def _can_use_database_url(url):
+    parsed = urlsplit(url)
+    scheme = parsed.scheme or ""
+
+    if scheme.startswith("postgresql+"):
+        driver = scheme.split("+", 1)[1]
+        driver_modules = {
+            "psycopg": "psycopg",
+            "psycopg2": "psycopg2",
+            "pg8000": "pg8000",
+        }
+        return _has_module(driver_modules.get(driver, driver))
+
+    if scheme == "postgresql":
+        return _available_postgres_driver() is not None
+
+    return True
 
 
 def normalize_database_url(url):
@@ -22,12 +52,15 @@ def normalize_database_url(url):
         return url
 
     normalized = url.replace("postgres://", "postgresql://", 1)
-    if normalized.startswith("postgresql://") and _has_psycopg_driver():
-        normalized = normalized.replace("postgresql://", "postgresql+psycopg://", 1)
+
+    if normalized.startswith("postgresql://"):
+        driver = _available_postgres_driver()
+        if driver:
+            normalized = normalized.replace("postgresql://", f"postgresql+{driver}://", 1)
 
     parsed = urlsplit(normalized)
     query = dict(parse_qsl(parsed.query, keep_blank_values=True))
-    if "sslmode" not in query:
+    if parsed.scheme.startswith("postgresql") and "sslmode" not in query:
         query["sslmode"] = "require"
 
     return urlunsplit(
@@ -47,7 +80,15 @@ class Config:
     DB_PATH = SQLITE_PATH
     SQLALCHEMY_DATABASE_URI = "sqlite:///" + DB_PATH
     if DATABASE_URL:
-        SQLALCHEMY_DATABASE_URI = normalize_database_url(DATABASE_URL)
+        _normalized_database_url = normalize_database_url(DATABASE_URL)
+        if _can_use_database_url(_normalized_database_url):
+            SQLALCHEMY_DATABASE_URI = _normalized_database_url
+        else:
+            warnings.warn(
+                "DATABASE_URL foi definida mas não há driver PostgreSQL instalado. "
+                "A app irá arrancar em SQLite até instalar psycopg[binary] (ou outro driver).",
+                RuntimeWarning,
+            )
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {
