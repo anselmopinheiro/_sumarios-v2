@@ -1,4 +1,7 @@
+from datetime import datetime
+
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.ext.associationproxy import association_proxy
 
 db = SQLAlchemy()
 
@@ -13,10 +16,10 @@ class Livro(db.Model):
         back_populates="livro",
         cascade="all, delete-orphan",
     )
-    turmas = db.relationship(
-        "Turma",
-        secondary=lambda: LivroTurma.__table__,
-        back_populates="livros",
+    turmas = association_proxy(
+        "livros_turmas",
+        "turma",
+        creator=lambda turma: LivroTurma(turma=turma),
     )
 
 
@@ -68,10 +71,10 @@ class Turma(db.Model):
         back_populates="turma",
         cascade="all, delete-orphan",
     )
-    livros = db.relationship(
-        "Livro",
-        secondary=lambda: LivroTurma.__table__,
-        back_populates="turmas",
+    livros = association_proxy(
+        "livros_turmas",
+        "livro",
+        creator=lambda livro: LivroTurma(livro=livro),
     )
     # NOVO — carga horária por dia da semana
     carga_segunda = db.Column(db.Float, nullable=True)
@@ -92,10 +95,10 @@ class Turma(db.Model):
         back_populates="turma",
         cascade="all, delete-orphan",
     )
-    disciplinas = db.relationship(
-        "Disciplina",
-        secondary=lambda: TurmaDisciplina.__table__,
-        back_populates="turmas",
+    disciplinas = association_proxy(
+        "turmas_disciplinas",
+        "disciplina",
+        creator=lambda disciplina: TurmaDisciplina(disciplina=disciplina),
     )
     alunos = db.relationship(
         "Aluno",
@@ -121,10 +124,10 @@ class Disciplina(db.Model):
         back_populates="disciplina",
         cascade="all, delete-orphan",
     )
-    turmas = db.relationship(
-        "Turma",
-        secondary=lambda: TurmaDisciplina.__table__,
-        back_populates="disciplinas",
+    turmas = association_proxy(
+        "turmas_disciplinas",
+        "turma",
+        creator=lambda turma: TurmaDisciplina(turma=turma),
     )
 
 
@@ -203,6 +206,11 @@ class DTTurma(db.Model):
         back_populates="dt_turma",
         cascade="all, delete-orphan",
     )
+    ocorrencias = db.relationship(
+        "DTOcorrencia",
+        back_populates="dt_turma",
+        cascade="all, delete-orphan",
+    )
 
     __table_args__ = (
         db.UniqueConstraint("turma_id", "ano_letivo_id", name="uq_dt_turma_ano"),
@@ -253,6 +261,53 @@ class DTMotivoDia(db.Model):
 
     __table_args__ = (
         db.UniqueConstraint("dt_turma_id", "data", name="uq_dt_motivo_dia"),
+    )
+
+
+class DTDisciplina(db.Model):
+    __tablename__ = "dt_disciplinas"
+
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(120), nullable=False, unique=True)
+    nome_curto = db.Column(db.String(40))
+    professor_nome = db.Column(db.String(120))
+    ativa = db.Column(db.Boolean, nullable=False, default=True, server_default=db.text("1"))
+
+
+class DTOcorrenciaAluno(db.Model):
+    __tablename__ = "dt_ocorrencia_alunos"
+
+    id = db.Column(db.Integer, primary_key=True)
+    dt_ocorrencia_id = db.Column(db.Integer, db.ForeignKey("dt_ocorrencias.id"), nullable=False)
+    dt_aluno_id = db.Column(db.Integer, db.ForeignKey("dt_alunos.id"), nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint("dt_ocorrencia_id", "dt_aluno_id", name="uq_dt_ocorrencia_aluno"),
+        db.Index("ix_dt_ocorrencia_alunos_ocorrencia", "dt_ocorrencia_id"),
+        db.Index("ix_dt_ocorrencia_alunos_aluno", "dt_aluno_id"),
+    )
+
+
+class DTOcorrencia(db.Model):
+    __tablename__ = "dt_ocorrencias"
+
+    id = db.Column(db.Integer, primary_key=True)
+    dt_turma_id = db.Column(db.Integer, db.ForeignKey("dt_turmas.id"), nullable=False, index=True)
+    data = db.Column(db.Date, nullable=False, index=True)
+    hora_inicio = db.Column(db.Time)
+    hora_fim = db.Column(db.Time)
+    num_tempos = db.Column(db.Integer)
+    dt_disciplina_id = db.Column(db.Integer, db.ForeignKey("dt_disciplinas.id"), nullable=False, index=True)
+    observacoes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    dt_turma = db.relationship("DTTurma", back_populates="ocorrencias")
+    disciplina = db.relationship("DTDisciplina", backref="ocorrencias")
+    alunos = db.relationship(
+        "DTAluno",
+        secondary="dt_ocorrencia_alunos",
+        backref=db.backref("ocorrencias", lazy="dynamic"),
     )
 
 
@@ -419,6 +474,26 @@ class CalendarioAula(db.Model):
         db.Index("ix_cal_aulas_turma_data", "turma_id", "data", "apagado"),
         db.Index("ix_cal_aulas_periodo", "periodo_id", "data"),
         db.Index("ix_cal_aulas_modulo", "modulo_id"),
+    )
+
+
+class AulaSumarioHistorico(db.Model):
+    __tablename__ = "sumario_historico"
+
+    id = db.Column(db.Integer, primary_key=True)
+    calendario_aula_id = db.Column(
+        db.Integer, db.ForeignKey("calendario_aulas.id"), nullable=False
+    )
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    acao = db.Column(db.String(50), nullable=False)
+    sumario_anterior = db.Column(db.Text)
+    sumario_novo = db.Column(db.Text)
+    autor = db.Column(db.String(100), default="local", nullable=False)
+
+    aula = db.relationship("CalendarioAula", backref="sumario_historico")
+
+    __table_args__ = (
+        db.Index("ix_sumario_hist_aula_data", "calendario_aula_id", "created_at"),
     )
 
 

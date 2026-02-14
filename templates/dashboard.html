@@ -11,6 +11,12 @@
   <a href="{{ url_for('calendario_escolar_gestao') }}">Gerir Calendário Escolar</a>
 </p>
 
+<div class="mb-3">
+  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('calendario_outras_datas') }}">Outras datas</a>
+  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('calendario_sumarios_pendentes') }}">Sumários pendentes</a>
+  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('backups_list') }}">Backups</a>
+</div>
+
 <div class="card shadow-sm mb-4">
   <div class="card-body">
     <h3 class="h5 mb-3">Pesquisa de sumários</h3>

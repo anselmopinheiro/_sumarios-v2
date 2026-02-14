@@ -21,6 +21,11 @@ class Config:
     BACKUP_KEEP = _get_int(os.environ.get("BACKUP_KEEP", 30), 30)
     BACKUP_ON_STARTUP = os.environ.get("BACKUP_ON_STARTUP", "1") != "0"
     BACKUP_ON_COMMIT = os.environ.get("BACKUP_ON_COMMIT", "1") != "0"
+    BACKUP_DEBOUNCE_SECONDS = _get_int(os.environ.get("BACKUP_DEBOUNCE_SECONDS", 300), 300)
+    BACKUP_CHANGE_THRESHOLD = _get_int(os.environ.get("BACKUP_CHANGE_THRESHOLD", 15), 15)
+    BACKUP_CHECK_INTERVAL_SECONDS = _get_int(
+        os.environ.get("BACKUP_CHECK_INTERVAL_SECONDS", 30), 30
+    )
     CSV_EXPORT_DIR = os.environ.get("CSV_EXPORT_DIR") or os.path.join(basedir, "exports")
     BACKUP_JSON_DIR = os.environ.get("BACKUP_JSON_DIR") or os.path.join(
         basedir, "exports", "backups"

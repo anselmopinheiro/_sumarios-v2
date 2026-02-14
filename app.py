@@ -1,6 +1,7 @@
 import calendar
 import csv
 import gc
+import html
 import io
 import json
 import os
@@ -9,9 +10,14 @@ import shutil
 import socket
 import sqlite3
 import subprocess
+import tempfile
+import threading
 import time
 import uuid
+import platform
+import sys
 import unicodedata
+from urllib.parse import urlparse, parse_qsl
 from collections import defaultdict
 from datetime import datetime, date, timedelta
 
@@ -26,6 +32,7 @@ from flask import (
     jsonify,
     send_from_directory,
     abort,
+    has_app_context,
 )
 
 from flask_migrate import Migrate
@@ -35,6 +42,7 @@ from sqlalchemy import event
 from sqlalchemy.orm import joinedload
 
 from config import Config
+from config_store import ConfigStore
 from models import (
     db,
     Turma,
@@ -52,10 +60,13 @@ from models import (
     TurmaDisciplina,
     Aluno,
     AulaAluno,
+    AulaSumarioHistorico,
     DTTurma,
     DTAluno,
     DTJustificacao,
     DTMotivoDia,
+    DTDisciplina,
+    DTOcorrencia,
 )
 
 from calendario_service import (
@@ -78,6 +89,8 @@ from calendario_service import (
     calcular_mapa_avaliacao_diaria,
     listar_sumarios_pendentes,
 )
+
+BACKUP_LOCK = threading.Lock()
 
 
 TIPOS_AULA = [
@@ -108,6 +121,36 @@ def _slugify_filename(texto, fallback="ficheiro"):
     )
 
     return safe_nome or fallback
+
+
+def _strip_html_to_text(html_text):
+    if not html_text:
+        return ""
+    texto = str(html_text)
+    texto = re.sub(r"(?i)<\s*br\s*/?>", "\n", texto)
+    texto = re.sub(r"(?i)</\s*p\s*>", "\n", texto)
+    texto = re.sub(r"(?i)<\s*li\s*>", "- ", texto)
+    texto = re.sub(r"<[^>]+>", "", texto)
+    texto = html.unescape(texto)
+    texto = texto.replace("\r\n", "\n").replace("\r", "\n")
+    texto = re.sub(r"[ \t]+", " ", texto)
+    texto = re.sub(r"\n{3,}", "\n\n", texto)
+    return texto.strip()
+
+
+def csv_text(value):
+    if value is None:
+        return ""
+    texto = str(value)
+    return f'="{texto}"'
+
+
+def build_csv_data(headers, rows):
+    output = io.StringIO()
+    writer = csv.writer(output, delimiter=";")
+    writer.writerow(headers)
+    writer.writerows(rows)
+    return "\ufeff" + output.getvalue()
 
 
 def _easter_sunday(year: int) -> date:
@@ -179,6 +222,83 @@ def _parse_date_form(value):
         return datetime.strptime(value, "%Y-%m-%d").date()
     except ValueError:
         return None
+
+
+def _parse_time_form(value):
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%H:%M").time()
+    except ValueError:
+        return None
+
+
+def _dt_periodo_range(dt_turma, periodo):
+    ano = dt_turma.ano_letivo if dt_turma else None
+    if not ano:
+        return None, None
+    if periodo == "semestre1":
+        return ano.data_inicio_ano, ano.data_fim_semestre1
+    if periodo == "semestre2":
+        return ano.data_inicio_semestre2, ano.data_fim_ano
+    if periodo == "anual":
+        return ano.data_inicio_ano, ano.data_fim_ano
+    return None, None
+
+
+def _default_nome_curto(nome):
+    partes = [p for p in (nome or "").strip().split() if p]
+    if not partes:
+        return ""
+    if len(partes) == 1:
+        return partes[0][:10]
+    iniciais = "".join(p[0].upper() for p in partes[:4] if p)
+    return iniciais or partes[0][:10]
+
+
+def _clean_query_params(data):
+    clean = {}
+    for k, v in (data or {}).items():
+        if v is None:
+            continue
+        s = str(v).strip()
+        if not s:
+            continue
+        clean[str(k)] = s
+    return clean
+
+
+def _safe_next_url(next_url, fallback):
+    if not next_url:
+        return fallback
+    parsed = urlparse(next_url)
+    if parsed.scheme or parsed.netloc:
+        return fallback
+    if not next_url.startswith("/") or next_url.startswith("//"):
+        return fallback
+    return next_url
+
+
+def redirect_com_filtros(endpoint, **kwargs):
+    params = request.args.to_dict(flat=True)
+    if not params:
+        raw_qs = request.form.get("_qs")
+        if raw_qs:
+            params = dict(parse_qsl(raw_qs, keep_blank_values=False))
+    params = _clean_query_params(params)
+    params.update(_clean_query_params(kwargs))
+    return redirect(url_for(endpoint, **params))
+
+
+def _dt_filtros_to_qs(filtros):
+    qs = {
+        "periodo": filtros.get("periodo") or "",
+        "data_inicio": filtros["data_inicio"].isoformat() if filtros.get("data_inicio") else "",
+        "data_fim": filtros["data_fim"].isoformat() if filtros.get("data_fim") else "",
+        "disciplina_id": str(filtros.get("disciplina_id") or ""),
+        "aluno_id": str(filtros.get("aluno_id") or ""),
+    }
+    return _clean_query_params(qs)
 
 
 def _total_previsto_ui(sumarios_txt, tempos_sem_aula):
@@ -402,9 +522,6 @@ def create_app():
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_object(Config)
 
-    db.init_app(app)
-    Migrate(app, db)
-
     os.makedirs(app.instance_path, exist_ok=True)
     app.config["DB_PATH"] = os.path.join(app.instance_path, "gestor_lectivo.db")
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + app.config["DB_PATH"]
@@ -413,8 +530,11 @@ def create_app():
         app.config["BACKUP_DIR"] = backup_override
     else:
         app.config["BACKUP_DIR"] = os.path.join(app.instance_path, "backups")
-    export_options_path = os.path.join(app.instance_path, "export_options.json")
-    backup_status_path = os.path.join(app.instance_path, "backup_status.json")
+
+    db.init_app(app)
+    Migrate(app, db)
+
+    config_store = ConfigStore(app.instance_path, logger=app.logger)
 
     def _default_csv_dir():
         return app.config.get("CSV_EXPORT_DIR") or os.path.join(app.root_path, "exports")
@@ -430,18 +550,11 @@ def create_app():
             "backup_json_dir": _default_backup_json_dir(),
         }
 
-        try:
-            with open(export_options_path, "r", encoding="utf-8") as handle:
-                stored = json.load(handle)
-                if isinstance(stored, dict):
-                    if stored.get("csv_dest_dir"):
-                        options["csv_dest_dir"] = stored["csv_dest_dir"]
-                    if stored.get("backup_json_dir"):
-                        options["backup_json_dir"] = stored["backup_json_dir"]
-        except FileNotFoundError:
-            pass
-        except (OSError, json.JSONDecodeError) as exc:
-            app.logger.warning("Não foi possível ler opções de exportação: %s", exc)
+        stored = config_store.read_json("export_config.json", default={}) or {}
+        if stored.get("csv_dest_dir"):
+            options["csv_dest_dir"] = stored["csv_dest_dir"]
+        if stored.get("backup_json_dir"):
+            options["backup_json_dir"] = stored["backup_json_dir"]
 
         app.config["CSV_EXPORT_DIR"] = options["csv_dest_dir"] or _default_csv_dir()
         app.config["BACKUP_JSON_DIR"] = options.get("backup_json_dir") or _default_backup_json_dir()
@@ -454,39 +567,21 @@ def create_app():
         if backup_json_dir is not None:
             options["backup_json_dir"] = backup_json_dir
 
-        try:
-            os.makedirs(os.path.dirname(export_options_path), exist_ok=True)
-            with open(export_options_path, "w", encoding="utf-8") as handle:
-                json.dump(options, handle, ensure_ascii=False, indent=2)
-        except OSError as exc:
-            app.logger.warning("Não foi possível gravar opções de exportação: %s", exc)
+        if not config_store.write_json("export_config.json", options):
+            app.logger.warning("Não foi possível gravar opções de exportação.")
 
         app.config["CSV_EXPORT_DIR"] = options["csv_dest_dir"] or _default_csv_dir()
         app.config["BACKUP_JSON_DIR"] = options.get("backup_json_dir") or _default_backup_json_dir()
 
     _load_export_options()
 
-    last_save_path = os.path.join(app.instance_path, "last_save.json")
-
     def _load_last_save():
-        try:
-            with open(last_save_path, "r", encoding="utf-8") as handle:
-                payload = json.load(handle)
-                if isinstance(payload, dict):
-                    return payload.get("last_save")
-        except FileNotFoundError:
-            return None
-        except (OSError, json.JSONDecodeError):
-            return None
-        return None
+        payload = config_store.read_json("app_state.json", default={}) or {}
+        return payload.get("last_save")
 
     def _save_last_save(timestamp):
-        try:
-            os.makedirs(os.path.dirname(last_save_path), exist_ok=True)
-            with open(last_save_path, "w", encoding="utf-8") as handle:
-                json.dump({"last_save": timestamp}, handle, ensure_ascii=False, indent=2)
-        except OSError as exc:
-            app.logger.warning("Não foi possível gravar a data do último registo: %s", exc)
+        if not config_store.write_json("app_state.json", {"last_save": timestamp}):
+            app.logger.warning("Não foi possível gravar a data do último registo.")
 
     def _ler_timestamp_git():
         try:
@@ -518,8 +613,8 @@ def create_app():
         if not session.info.pop("has_changes", False):
             return
         _save_last_save(datetime.now().isoformat(timespec="seconds"))
-        if app.config.get("BACKUP_ON_COMMIT", True):
-            _backup_database(reason="commit")
+        if app.config.get("BACKUP_ON_COMMIT", True) and not _running_flask_cli():
+            _agendar_backup_change()
 
     @app.context_processor
     def inject_footer_info():
@@ -664,6 +759,103 @@ def create_app():
             )
             db.session.commit()
 
+        if "dt_disciplinas" not in tabelas:
+            db.session.execute(
+                text(
+                    """
+                    CREATE TABLE dt_disciplinas (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        nome VARCHAR(120) NOT NULL,
+                        nome_curto VARCHAR(40),
+                        professor_nome VARCHAR(120),
+                        ativa BOOLEAN NOT NULL DEFAULT 1,
+                        CONSTRAINT uq_dt_disciplinas_nome UNIQUE(nome)
+                    )
+                    """
+                )
+            )
+            db.session.commit()
+        else:
+            dt_disciplinas_cols = {col["name"] for col in insp.get_columns("dt_disciplinas")}
+            if "nome_curto" not in dt_disciplinas_cols:
+                db.session.execute(text("ALTER TABLE dt_disciplinas ADD COLUMN nome_curto VARCHAR(40)"))
+                db.session.commit()
+            if "professor_nome" not in dt_disciplinas_cols:
+                db.session.execute(text("ALTER TABLE dt_disciplinas ADD COLUMN professor_nome VARCHAR(120)"))
+                db.session.commit()
+
+        if "dt_ocorrencias" not in tabelas:
+            db.session.execute(
+                text(
+                    """
+                    CREATE TABLE dt_ocorrencias (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        dt_turma_id INTEGER NOT NULL,
+                        data DATE NOT NULL,
+                        hora_inicio TIME,
+                        hora_fim TIME,
+                        num_tempos INTEGER,
+                        dt_disciplina_id INTEGER NOT NULL,
+                        observacoes TEXT,
+                        created_at DATETIME NOT NULL,
+                        updated_at DATETIME NOT NULL,
+                        CONSTRAINT fk_dt_ocorrencia_turma FOREIGN KEY(dt_turma_id) REFERENCES dt_turmas(id),
+                        CONSTRAINT fk_dt_ocorrencia_disciplina FOREIGN KEY(dt_disciplina_id) REFERENCES dt_disciplinas(id)
+                    )
+                    """
+                )
+            )
+            db.session.execute(text("CREATE INDEX ix_dt_ocorrencias_dt_turma_id ON dt_ocorrencias (dt_turma_id)"))
+            db.session.execute(text("CREATE INDEX ix_dt_ocorrencias_data ON dt_ocorrencias (data)"))
+            db.session.execute(text("CREATE INDEX ix_dt_ocorrencias_dt_disciplina_id ON dt_ocorrencias (dt_disciplina_id)"))
+            db.session.commit()
+
+        if "dt_ocorrencia_alunos" not in tabelas:
+            db.session.execute(
+                text(
+                    """
+                    CREATE TABLE dt_ocorrencia_alunos (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        dt_ocorrencia_id INTEGER NOT NULL,
+                        dt_aluno_id INTEGER NOT NULL,
+                        CONSTRAINT fk_dt_ocorr_aluno_ocorr FOREIGN KEY(dt_ocorrencia_id) REFERENCES dt_ocorrencias(id),
+                        CONSTRAINT fk_dt_ocorr_aluno_aluno FOREIGN KEY(dt_aluno_id) REFERENCES dt_alunos(id),
+                        CONSTRAINT uq_dt_ocorrencia_aluno UNIQUE(dt_ocorrencia_id, dt_aluno_id)
+                    )
+                    """
+                )
+            )
+            db.session.execute(text("CREATE INDEX ix_dt_ocorrencia_alunos_ocorrencia ON dt_ocorrencia_alunos (dt_ocorrencia_id)"))
+            db.session.execute(text("CREATE INDEX ix_dt_ocorrencia_alunos_aluno ON dt_ocorrencia_alunos (dt_aluno_id)"))
+            db.session.commit()
+
+        if "sumario_historico" not in tabelas:
+            db.session.execute(
+                text(
+                    """
+                    CREATE TABLE sumario_historico (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        calendario_aula_id INTEGER NOT NULL,
+                        created_at DATETIME NOT NULL,
+                        acao VARCHAR(50) NOT NULL,
+                        sumario_anterior TEXT,
+                        sumario_novo TEXT,
+                        autor VARCHAR(100) NOT NULL DEFAULT 'local',
+                        FOREIGN KEY(calendario_aula_id) REFERENCES calendario_aulas(id)
+                    )
+                    """
+                )
+            )
+            db.session.execute(
+                text(
+                    """
+                    CREATE INDEX ix_sumario_hist_aula_data
+                    ON sumario_historico (calendario_aula_id, created_at)
+                    """
+                )
+            )
+            db.session.commit()
+
         colunas = {col["name"] for col in insp.get_columns("calendario_aulas")}
 
         if "tempos_sem_aula" not in colunas:
@@ -766,11 +958,18 @@ def create_app():
     def _get_db_path():
         db_path = app.config.get("DB_PATH")
         if db_path:
-            return db_path
+            return os.path.abspath(db_path)
+        if has_app_context():
+            try:
+                engine_path = db.engine.url.database
+                if engine_path:
+                    return os.path.abspath(engine_path)
+            except Exception:
+                pass
         uri = app.config.get("SQLALCHEMY_DATABASE_URI")
         if not uri or not uri.startswith("sqlite:///"):
             return None
-        return uri.replace("sqlite:///", "", 1)
+        return os.path.abspath(uri.replace("sqlite:///", "", 1))
 
     def _parse_backup_filename(filename):
         pattern = re.compile(
@@ -818,18 +1017,6 @@ def create_app():
                     "Não foi possível remover backup antigo: %s", entry["path"]
                 )
 
-    def _write_backup_vacuum(db_path, tmp_path):
-        with sqlite3.connect(db_path) as conn:
-            conn.execute("VACUUM INTO ?", (tmp_path,))
-
-    def _write_backup_api(db_path, tmp_path):
-        with sqlite3.connect(db_path) as source:
-            with sqlite3.connect(tmp_path) as target:
-                source.backup(target)
-
-    def _write_backup_copy(db_path, tmp_path):
-        shutil.copy2(db_path, tmp_path)
-
     def _validar_backup_sqlite(path):
         try:
             with sqlite3.connect(path) as conn:
@@ -837,7 +1024,6 @@ def create_app():
                 resultado = cursor.fetchone()
                 if not resultado or resultado[0] != "ok":
                     return False, "Falha no integrity_check."
-                conn.execute("SELECT name FROM sqlite_master LIMIT 1;")
         except sqlite3.Error as exc:
             return False, f"Erro SQLite ao validar: {exc}"
         return True, None
@@ -875,6 +1061,18 @@ def create_app():
                 ultimo_erro = exc
         return False, ultimo_erro
 
+    def _running_flask_cli():
+        if os.environ.get("FLASK_RUN_FROM_CLI") == "true":
+            return True
+        args = " ".join(sys.argv).lower()
+        return any(
+            token in args
+            for token in ["flask db", "flask shell", "migrate", "upgrade", "current"]
+        )
+
+    def _get_machine_name():
+        return os.environ.get("COMPUTERNAME") or platform.node() or socket.gethostname()
+
     def _obter_lock_backup(backup_dir):
         lock_path = os.path.join(backup_dir, ".backup.lock")
         try:
@@ -897,24 +1095,32 @@ def create_app():
             app.logger.warning("Não foi possível remover lock de backup: %s", lock_path)
 
     def _registar_backup_status(payload):
-        try:
-            os.makedirs(os.path.dirname(backup_status_path), exist_ok=True)
-            with open(backup_status_path, "w", encoding="utf-8") as handle:
-                json.dump(payload, handle, ensure_ascii=False, indent=2)
-        except OSError as exc:
-            app.logger.warning("Não foi possível gravar estado do backup: %s", exc)
+        if not config_store.write_json("backup_status.json", payload):
+            app.logger.warning("Não foi possível gravar estado do backup.")
 
     def _carregar_backup_status():
-        try:
-            with open(backup_status_path, "r", encoding="utf-8") as handle:
-                payload = json.load(handle)
-                if isinstance(payload, dict):
-                    return payload
-        except FileNotFoundError:
-            return None
-        except (OSError, json.JSONDecodeError):
-            return None
-        return None
+        return config_store.read_json("backup_status.json", default=None)
+
+    def _carregar_backup_state():
+        estado = config_store.read_json(
+            "backup_state.json",
+            default={
+                "last_backup_at": None,
+                "pending_changes_count": 0,
+                "last_change_at": None,
+            },
+        )
+        if not isinstance(estado, dict):
+            return {
+            "last_backup_at": None,
+            "pending_changes_count": 0,
+            "last_change_at": None,
+            }
+        return estado
+
+    def _guardar_backup_state(payload):
+        if not config_store.write_json("backup_state.json", payload):
+            app.logger.warning("Não foi possível gravar estado do backup.")
 
     def _backup_database(reason="manual"):
         inicio = time.monotonic()
@@ -946,12 +1152,13 @@ def create_app():
             return {"ok": False, "error": status_payload["last_backup_error"]}
 
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        hostname = socket.gethostname() or "HOST"
+        hostname = _get_machine_name() or "HOST"
         manual_suffix = "_manual" if reason == "manual" else ""
         backup_name = f"{timestamp}__{hostname}{manual_suffix}.db"
         destination = os.path.join(backup_dir, backup_name)
-        tmp_path = f"{destination}.{os.getpid()}.{uuid.uuid4().hex[:6]}.tmp"
-        status_payload["tmp_path"] = tmp_path
+        tmp_path = None
+        status_payload["tmp_path"] = None
+        delays = [0.2, 0.5, 1.0, 2.0, 3.0]
 
         try:
             os.makedirs(backup_dir, exist_ok=True)
@@ -971,71 +1178,80 @@ def create_app():
                 _registar_backup_status(status_payload)
                 return {"ok": False, "error": lock_error}
             try:
-                if os.path.exists(tmp_path):
-                    ok, erro_remover = _safe_remove(tmp_path)
-                    if not ok:
-                        status_payload["last_backup_error"] = (
-                            f"Não foi possível limpar ficheiro temporário: {erro_remover}"
-                        )
-                        status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
-                        _registar_backup_status(status_payload)
-                        return {"ok": False, "error": status_payload["last_backup_error"]}
-                db.session.remove()
-                if db.session.is_active:
-                    db.session.rollback()
-                try:
-                    _write_backup_vacuum(db_path, tmp_path)
-                    status_payload["method"] = "vacuum_into"
-                except sqlite3.Error as exc:
-                    app.logger.warning("VACUUM INTO falhou, a tentar backup API: %s", exc)
-                    try:
-                        _write_backup_api(db_path, tmp_path)
-                        status_payload["method"] = "sqlite_backup_api"
-                    except sqlite3.Error as exc_api:
-                        app.logger.warning("Backup API falhou, a tentar copy2: %s", exc_api)
-                        _write_backup_copy(db_path, tmp_path)
-                        status_payload["method"] = "copy2"
-                if not os.path.exists(tmp_path):
-                    status_payload["last_backup_error"] = "O ficheiro temporário não foi criado."
+                if not BACKUP_LOCK.acquire(blocking=False):
+                    status_payload["last_backup_error"] = "Backup já em execução."
                     status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
                     _registar_backup_status(status_payload)
                     return {"ok": False, "error": status_payload["last_backup_error"]}
-                if os.path.getsize(tmp_path) <= 0:
+                if has_app_context():
+                    db.session.remove()
+                    if db.session.is_active:
+                        db.session.rollback()
+                status_payload["method"] = "copy2"
+                copia_ok = False
+                ultimo_erro = None
+                for atraso in delays:
+                    try:
+                        shutil.copy2(db_path, destination)
+                        copia_ok = True
+                        break
+                    except OSError as exc:
+                        ultimo_erro = exc
+                        app.logger.warning("Falha ao copiar backup, retry em %.2fs: %s", atraso, exc)
+                        time.sleep(atraso)
+                if not copia_ok:
+                    fallback_dir = os.path.join(tempfile.gettempdir(), "sumarios_backups")
+                    os.makedirs(fallback_dir, exist_ok=True)
+                    fallback_path = os.path.join(fallback_dir, backup_name)
+                    try:
+                        shutil.copy2(db_path, fallback_path)
+                        destination = fallback_path
+                        status_payload["last_backup_filename"] = os.path.basename(fallback_path)
+                        app.logger.warning(
+                            "Backup gravado em fallback (TEMP): %s", fallback_path
+                        )
+                        copia_ok = True
+                    except OSError as exc:
+                        status_payload["last_backup_error"] = f"Não foi possível gravar backup: {exc}"
+                        status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
+                        _registar_backup_status(status_payload)
+                        return {"ok": False, "error": status_payload["last_backup_error"]}
+                if not os.path.exists(destination):
+                    status_payload["last_backup_error"] = "O ficheiro de backup não foi criado."
+                    status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
+                    _registar_backup_status(status_payload)
+                    return {"ok": False, "error": status_payload["last_backup_error"]}
+                if os.path.getsize(destination) <= 0:
                     status_payload["last_backup_error"] = "O ficheiro de backup está vazio."
                     status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
                     _registar_backup_status(status_payload)
                     return {"ok": False, "error": status_payload["last_backup_error"]}
-                valido, erro_sqlite = _validar_backup_sqlite(tmp_path)
+                valido, erro_sqlite = _validar_backup_sqlite(destination)
                 if not valido:
                     status_payload["last_backup_error"] = erro_sqlite or "Backup inválido."
                     status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
                     _registar_backup_status(status_payload)
                     return {"ok": False, "error": status_payload["last_backup_error"]}
-                ok, erro_replace = _safe_replace(tmp_path, destination)
-                if not ok:
-                    status_payload["last_backup_error"] = f"Não foi possível gravar backup: {erro_replace}"
-                    status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
-                    _registar_backup_status(status_payload)
-                    return {"ok": False, "error": status_payload["last_backup_error"]}
                 _rotate_backups(backup_dir, app.config.get("BACKUP_KEEP", 30))
             finally:
+                if BACKUP_LOCK.locked():
+                    BACKUP_LOCK.release()
                 _libertar_lock_backup(lock_path, lock_handle)
             status_payload["last_backup_ok"] = True
-            status_payload["last_backup_filename"] = backup_name
+            status_payload["last_backup_filename"] = status_payload["last_backup_filename"] or backup_name
             status_payload["last_backup_error"] = None
             status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
             _registar_backup_status(status_payload)
             app.logger.info(
-                "Backup criado (%s): %s | método=%s | db=%s | dest=%s | tmp=%s | %.3fs",
+                "Backup criado (%s): %s | método=%s | db=%s | dest=%s | %.3fs",
                 reason,
-                backup_name,
+                status_payload["last_backup_filename"],
                 status_payload["method"],
                 db_path,
                 destination,
-                tmp_path,
                 status_payload["duration_s"],
             )
-            return {"ok": True, "filename": backup_name}
+            return {"ok": True, "filename": status_payload["last_backup_filename"]}
         except (OSError, sqlite3.Error) as exc:
             status_payload["last_backup_error"] = str(exc)
             status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
@@ -1045,15 +1261,17 @@ def create_app():
                 backup_dir,
                 exc,
             )
+        except Exception as exc:
+            status_payload["last_backup_error"] = str(exc)
+            status_payload["duration_s"] = round(time.monotonic() - inicio, 3)
+            _registar_backup_status(status_payload)
+            app.logger.exception(
+                "Falha inesperada ao criar backup em %s: %s",
+                backup_dir,
+                exc,
+            )
         finally:
-            try:
-                if os.path.exists(tmp_path):
-                    ok, erro_remover = _safe_remove(tmp_path)
-                    if not ok:
-                        stale = f"{tmp_path}.stale.{timestamp}"
-                        _safe_replace(tmp_path, stale)
-            except OSError:
-                app.logger.warning("Não foi possível limpar o ficheiro temporário: %s", tmp_path)
+            pass
         return {"ok": False, "error": "Não foi possível criar backup."}
 
     def _list_backups():
@@ -1083,10 +1301,94 @@ def create_app():
         entries.sort(key=lambda item: item["timestamp"], reverse=True)
         return entries[:20]
 
+    def _registar_sumario_historico(aula, acao, anterior, novo, autor="local"):
+        registo = AulaSumarioHistorico(
+            calendario_aula_id=aula.id,
+            acao=acao,
+            sumario_anterior=anterior,
+            sumario_novo=novo,
+            autor=autor,
+        )
+        db.session.add(registo)
+        db.session.flush()
+        excessos = (
+            AulaSumarioHistorico.query
+            .filter_by(calendario_aula_id=aula.id)
+            .order_by(AulaSumarioHistorico.created_at.desc(), AulaSumarioHistorico.id.desc())
+            .offset(10)
+            .all()
+        )
+        if excessos:
+            for item in excessos:
+                db.session.delete(item)
+        return registo
+
     with app.app_context():
         _ensure_columns()
-        if app.config.get("BACKUP_ON_STARTUP", True):
+        try:
+            engine_db = db.engine.url.database
+            config_db = app.config.get("DB_PATH")
+            if engine_db and config_db and os.path.abspath(engine_db) != os.path.abspath(config_db):
+                app.logger.warning(
+                    "DB path diverge do esperado: engine=%s | config=%s",
+                    engine_db,
+                    config_db,
+                )
+        except Exception:
+            app.logger.warning("Não foi possível validar coerência do caminho da BD.")
+        if app.config.get("BACKUP_ON_STARTUP", True) and not _running_flask_cli():
+            app.logger.info("Backups automáticos ativos no arranque.")
             _backup_database(reason="startup")
+        elif _running_flask_cli():
+            app.logger.info("CLI detetada: backups automáticos desativados.")
+
+    def _agendar_backup_change():
+        estado = _carregar_backup_state()
+        agora = datetime.now().isoformat(timespec="seconds")
+        estado["pending_changes_count"] = int(estado.get("pending_changes_count") or 0) + 1
+        estado["last_change_at"] = agora
+        _guardar_backup_state(estado)
+
+    def _resetar_backup_state(timestamp=None):
+        estado = _carregar_backup_state()
+        estado["pending_changes_count"] = 0
+        estado["last_change_at"] = None
+        if timestamp:
+            estado["last_backup_at"] = timestamp
+        _guardar_backup_state(estado)
+
+    def _backup_scheduler():
+        if _running_flask_cli():
+            return
+        intervalo = max(5, app.config.get("BACKUP_CHECK_INTERVAL_SECONDS", 30))
+        debounce = max(0, app.config.get("BACKUP_DEBOUNCE_SECONDS", 300))
+        threshold = max(1, app.config.get("BACKUP_CHANGE_THRESHOLD", 15))
+        while True:
+            time.sleep(intervalo)
+            if not app.config.get("BACKUP_ON_COMMIT", True):
+                continue
+            estado = _carregar_backup_state()
+            pendentes = int(estado.get("pending_changes_count") or 0)
+            last_change_at = estado.get("last_change_at")
+            if pendentes == 0 or not last_change_at:
+                continue
+            try:
+                last_dt = datetime.fromisoformat(last_change_at)
+            except ValueError:
+                continue
+            agora = datetime.now()
+            pronto_por_threshold = pendentes >= threshold
+            pronto_por_tempo = debounce and (agora - last_dt).total_seconds() >= debounce
+            if pronto_por_threshold or pronto_por_tempo:
+                with app.app_context():
+                    resultado = _backup_database(reason="auto")
+                if resultado.get("ok"):
+                    _resetar_backup_state(agora.isoformat(timespec="seconds"))
+                else:
+                    app.logger.warning("Backup automático falhou: %s", resultado.get("error"))
+
+    if not _running_flask_cli():
+        threading.Thread(target=_backup_scheduler, daemon=True).start()
 
     # ----------------------------------------
     # Helpers internos à app
@@ -1210,11 +1512,61 @@ def create_app():
             abort(404)
         return send_from_directory(backup_dir, filename, as_attachment=True)
 
+    @app.route("/aulas/<int:aula_id>/sumario/copiar-previsao", methods=["POST"])
+    def sumario_copiar_previsao(aula_id):
+        aula = CalendarioAula.query.get_or_404(aula_id)
+        previsao = (aula.previsao or "").strip()
+        anterior = aula.sumario or ""
+        novo = previsao
+        if anterior == novo:
+            return jsonify({"status": "noop", "sumario": aula.sumario or ""})
+        _registar_sumario_historico(
+            aula,
+            "copiar_previsao_para_sumario",
+            anterior,
+            novo,
+        )
+        aula.sumario = novo
+        db.session.commit()
+        return jsonify(
+            {
+                "status": "ok",
+                "sumario": aula.sumario or "",
+                "previous": anterior,
+                "last_save": _formatar_data_hora(_load_last_save()),
+            }
+        )
+
+    @app.route("/aulas/<int:aula_id>/sumario/reverter", methods=["POST"])
+    def sumario_reverter(aula_id):
+        aula = CalendarioAula.query.get_or_404(aula_id)
+        ultimo = (
+            AulaSumarioHistorico.query
+            .filter_by(calendario_aula_id=aula.id)
+            .order_by(AulaSumarioHistorico.created_at.desc(), AulaSumarioHistorico.id.desc())
+            .first()
+        )
+        if not ultimo:
+            return jsonify({"status": "error", "message": "Sem histórico para reverter."}), 400
+        anterior = ultimo.sumario_anterior or ""
+        novo = aula.sumario or ""
+        _registar_sumario_historico(aula, "reverter", novo, anterior)
+        aula.sumario = anterior
+        db.session.commit()
+        return jsonify(
+            {
+                "status": "ok",
+                "sumario": aula.sumario or "",
+                "last_save": _formatar_data_hora(_load_last_save()),
+            }
+        )
+
     @app.route("/backups/trigger", methods=["POST"])
     def backups_trigger():
         resultado = _backup_database(reason="manual")
         if resultado.get("ok"):
             flash(f"Backup criado: {resultado.get('filename')}", "success")
+            _resetar_backup_state(datetime.now().isoformat(timespec="seconds"))
         else:
             flash(resultado.get("error") or "Não foi possível criar backup.", "error")
         return redirect(request.referrer or url_for("dashboard"))
@@ -1598,8 +1950,8 @@ def create_app():
                     [
                         data_legivel,
                         linha.get("modulo_nome") or "",
-                        linha.get("sumarios") or "",
-                        linha.get("sumario") or "",
+                        csv_text(linha.get("sumarios") or ""),
+                        _strip_html_to_text(linha.get("sumario") or ""),
                     ]
                 )
 
@@ -1677,8 +2029,8 @@ def create_app():
                 [
                     data_aula.strftime("%d/%m/%Y"),
                     linha.get("modulo_nome") or "",
-                    linha.get("sumarios") or "",
-                    linha.get("sumario") or "",
+                    csv_text(linha.get("sumarios") or ""),
+                    _strip_html_to_text(linha.get("sumario") or ""),
                 ]
             )
 
@@ -1691,24 +2043,14 @@ def create_app():
             inicio_txt = data_inicio.strftime("%Y%m%d") if data_inicio else "inicio"
             fim_txt = data_fim.strftime("%Y%m%d") if data_fim else "fim"
             range_label = f"{inicio_txt}_{fim_txt}"
-        filename = f"sumarios_{_slugify_filename(turma.nome, 'turma')}_{range_label}.xls"
-
-        output = io.StringIO()
-        output.write("<html><head><meta charset='utf-8'></head><body>")
-        output.write("<table border='1'>")
-        output.write("<thead><tr><th>DATA</th><th>MÓDULO</th><th>N.º Sumário</th><th>Sumário</th></tr></thead><tbody>")
-        for data_legivel, modulo, sumarios, sumario in linhas_validas:
-            output.write("<tr>")
-            output.write(f"<td>{data_legivel}</td>")
-            output.write(f"<td>{modulo}</td>")
-            output.write(f"<td>{sumarios}</td>")
-            output.write(f"<td>{sumario}</td>")
-            output.write("</tr>")
-        output.write("</tbody></table></body></html>")
-
+        filename = f"sumarios_{_slugify_filename(turma.nome, 'turma')}_{range_label}.csv"
+        data = build_csv_data(
+            ["DATA", "MÓDULO", "N.º Sumário", "Sumário"],
+            linhas_validas,
+        )
         return Response(
-            output.getvalue(),
-            mimetype="application/vnd.ms-excel",
+            data,
+            mimetype="text/csv; charset=utf-8",
             headers={"Content-Disposition": f"attachment; filename={filename}"},
         )
 
@@ -1748,6 +2090,110 @@ def create_app():
             return None, None
 
         return turma, ano
+
+    def _dt_locked(dt_turma):
+        return bool(dt_turma and dt_turma.ano_letivo and dt_turma.ano_letivo.fechado)
+
+    def _dt_ocorrencias_filters(dt_turma):
+        args = request.args
+        periodo = (args.get("periodo") or "").strip()
+        data_inicio = _parse_date_form(args.get("data_inicio"))
+        data_fim = _parse_date_form(args.get("data_fim"))
+        if periodo in {"semestre1", "semestre2", "anual"}:
+            data_inicio, data_fim = _dt_periodo_range(dt_turma, periodo)
+        return {
+            "periodo": periodo,
+            "data_inicio": data_inicio,
+            "data_fim": data_fim,
+            "disciplina_id": args.get("disciplina_id", type=int),
+            "aluno_id": args.get("aluno_id", type=int),
+        }
+
+    def _dt_ocorrencias_query(dt_turma, filtros):
+        query = DTOcorrencia.query.options(
+            joinedload(DTOcorrencia.disciplina),
+            joinedload(DTOcorrencia.alunos).joinedload(DTAluno.aluno),
+        ).filter(DTOcorrencia.dt_turma_id == dt_turma.id)
+
+        if filtros.get("data_inicio"):
+            query = query.filter(DTOcorrencia.data >= filtros["data_inicio"])
+        if filtros.get("data_fim"):
+            query = query.filter(DTOcorrencia.data <= filtros["data_fim"])
+        if filtros.get("disciplina_id"):
+            query = query.filter(DTOcorrencia.dt_disciplina_id == filtros["disciplina_id"])
+        if filtros.get("aluno_id"):
+            query = query.filter(DTOcorrencia.alunos.any(DTAluno.id == filtros["aluno_id"]))
+        return query.order_by(DTOcorrencia.data.desc(), DTOcorrencia.hora_inicio.desc(), DTOcorrencia.id.desc())
+
+    @app.route("/dt-disciplinas")
+    def dt_disciplinas_list():
+        termo = (request.args.get("q") or "").strip()
+        query = DTDisciplina.query
+        if termo:
+            query = query.filter((DTDisciplina.nome.ilike(f"%{termo}%")) | (DTDisciplina.nome_curto.ilike(f"%{termo}%")) | (DTDisciplina.professor_nome.ilike(f"%{termo}%")))
+        disciplinas = query.order_by(DTDisciplina.nome.asc()).all()
+        return render_template("direcao_turma/disciplinas_list.html", disciplinas=disciplinas, termo=termo)
+
+    @app.route("/dt-disciplinas/new", methods=["GET", "POST"])
+    def dt_disciplinas_new():
+        if request.method == "POST":
+            nome = (request.form.get("nome") or "").strip()
+            nome_curto = (request.form.get("nome_curto") or "").strip() or _default_nome_curto(nome)
+            professor_nome = (request.form.get("professor_nome") or "").strip() or None
+            ativa = bool(request.form.get("ativa"))
+            if not nome:
+                flash("Nome da disciplina é obrigatório.", "error")
+                return redirect(url_for("dt_disciplinas_new"))
+            existente = DTDisciplina.query.filter(func.lower(DTDisciplina.nome) == nome.lower()).first()
+            if existente:
+                flash("Já existe uma disciplina com esse nome.", "error")
+                return redirect(url_for("dt_disciplinas_new"))
+            db.session.add(DTDisciplina(nome=nome, nome_curto=nome_curto or None, professor_nome=professor_nome, ativa=ativa))
+            db.session.commit()
+            flash("Disciplina criada.", "success")
+            return redirect(url_for("dt_disciplinas_list"))
+        return render_template("direcao_turma/disciplinas_form.html", disciplina=None)
+
+    @app.route("/dt-disciplinas/<int:disciplina_id>/edit", methods=["GET", "POST"])
+    def dt_disciplinas_edit(disciplina_id):
+        disciplina = DTDisciplina.query.get_or_404(disciplina_id)
+        if request.method == "POST":
+            nome = (request.form.get("nome") or "").strip()
+            nome_curto = (request.form.get("nome_curto") or "").strip() or _default_nome_curto(nome)
+            professor_nome = (request.form.get("professor_nome") or "").strip() or None
+            ativa = bool(request.form.get("ativa"))
+            if not nome:
+                flash("Nome da disciplina é obrigatório.", "error")
+                return redirect(url_for("dt_disciplinas_edit", disciplina_id=disciplina.id))
+            existente = (
+                DTDisciplina.query.filter(func.lower(DTDisciplina.nome) == nome.lower())
+                .filter(DTDisciplina.id != disciplina.id)
+                .first()
+            )
+            if existente:
+                flash("Já existe uma disciplina com esse nome.", "error")
+                return redirect(url_for("dt_disciplinas_edit", disciplina_id=disciplina.id))
+            disciplina.nome = nome
+            disciplina.nome_curto = nome_curto or None
+            disciplina.professor_nome = professor_nome
+            disciplina.ativa = ativa
+            db.session.commit()
+            flash("Disciplina atualizada.", "success")
+            return redirect(url_for("dt_disciplinas_list"))
+        return render_template("direcao_turma/disciplinas_form.html", disciplina=disciplina)
+
+    @app.route("/dt-disciplinas/<int:disciplina_id>/delete", methods=["POST"])
+    def dt_disciplinas_delete(disciplina_id):
+        disciplina = DTDisciplina.query.get_or_404(disciplina_id)
+        if disciplina.ocorrencias:
+            disciplina.ativa = False
+            db.session.commit()
+            flash("Disciplina em uso: foi desativada.", "warning")
+            return redirect(url_for("dt_disciplinas_list"))
+        db.session.delete(disciplina)
+        db.session.commit()
+        flash("Disciplina removida.", "success")
+        return redirect(url_for("dt_disciplinas_list"))
 
     @app.route("/direcao-turma")
     def direcao_turma_list():
@@ -2217,6 +2663,165 @@ def create_app():
             "direcao_turma/alunos_form.html",
             dt_turma=dt_turma,
             dt_aluno=dt_aluno,
+        )
+
+    @app.route("/direcao-turma/<int:dt_id>/ocorrencias")
+    def direcao_turma_ocorrencias(dt_id):
+        dt_turma = DTTurma.query.options(
+            joinedload(DTTurma.turma),
+            joinedload(DTTurma.ano_letivo),
+        ).get_or_404(dt_id)
+        filtros = _dt_ocorrencias_filters(dt_turma)
+        qs = _dt_filtros_to_qs(filtros)
+        ocorrencias = _dt_ocorrencias_query(dt_turma, filtros).all()
+        disciplinas = DTDisciplina.query.filter_by(ativa=True).order_by(DTDisciplina.nome.asc()).all()
+        alunos = (
+            DTAluno.query.options(joinedload(DTAluno.aluno))
+            .filter_by(dt_turma_id=dt_turma.id)
+            .all()
+        )
+        return render_template(
+            "direcao_turma/ocorrencias_list.html",
+            dt_turma=dt_turma,
+            bloqueado=_dt_locked(dt_turma),
+            ocorrencias=ocorrencias,
+            filtros=filtros,
+            disciplinas=disciplinas,
+            alunos=alunos,
+            qs=qs,
+        )
+
+    @app.route("/direcao-turma/<int:dt_id>/ocorrencias/new", methods=["GET", "POST"])
+    def direcao_turma_ocorrencias_new(dt_id):
+        dt_turma = DTTurma.query.options(joinedload(DTTurma.turma), joinedload(DTTurma.ano_letivo)).get_or_404(dt_id)
+        if _dt_locked(dt_turma):
+            flash("Ano letivo fechado: apenas consulta/export.", "error")
+            return redirect_com_filtros("direcao_turma_ocorrencias", dt_id=dt_id)
+
+        disciplinas = DTDisciplina.query.filter_by(ativa=True).order_by(DTDisciplina.nome.asc()).all()
+        if not disciplinas:
+            flash("Sem disciplinas ativas. Cria disciplinas primeiro.", "warning")
+            return redirect(url_for("dt_disciplinas_new"))
+        alunos = DTAluno.query.options(joinedload(DTAluno.aluno)).filter_by(dt_turma_id=dt_turma.id).all()
+
+        if request.method == "POST":
+            data = _parse_date_form(request.form.get("data"))
+            disciplina_id = request.form.get("dt_disciplina_id", type=int)
+            hora_inicio = _parse_time_form(request.form.get("hora_inicio"))
+            hora_fim = _parse_time_form(request.form.get("hora_fim"))
+            num_tempos = _clamp_int(request.form.get("num_tempos"), default=None, min_val=1)
+            observacoes = request.form.get("observacoes") or None
+            aluno_ids = [int(v) for v in request.form.getlist("dt_aluno_ids") if str(v).isdigit()]
+            if not data or not disciplina_id:
+                flash("Data e disciplina são obrigatórios.", "error")
+                return redirect_com_filtros("direcao_turma_ocorrencias_new", dt_id=dt_id)
+            ocorr = DTOcorrencia(
+                dt_turma_id=dt_turma.id,
+                data=data,
+                hora_inicio=hora_inicio,
+                hora_fim=hora_fim,
+                num_tempos=num_tempos,
+                dt_disciplina_id=disciplina_id,
+                observacoes=observacoes,
+            )
+            if aluno_ids:
+                ocorr.alunos = DTAluno.query.filter(DTAluno.dt_turma_id == dt_turma.id, DTAluno.id.in_(aluno_ids)).all()
+            db.session.add(ocorr)
+            db.session.commit()
+            flash("Ocorrência registada.", "success")
+            fallback = url_for("direcao_turma_ocorrencias", dt_id=dt_id, **_clean_query_params(dict(parse_qsl(request.form.get("_qs") or ""))))
+            return redirect(_safe_next_url(request.form.get("next"), fallback))
+
+        return render_template(
+            "direcao_turma/ocorrencias_form.html",
+            dt_turma=dt_turma,
+            bloqueado=False,
+            ocorrencia=None,
+            disciplinas=disciplinas,
+            alunos=alunos,
+            qs=_clean_query_params(request.args.to_dict(flat=True)),
+            next_url=request.full_path,
+        )
+
+    @app.route("/direcao-turma/<int:dt_id>/ocorrencias/<int:oc_id>/edit", methods=["GET", "POST"])
+    def direcao_turma_ocorrencias_edit(dt_id, oc_id):
+        dt_turma = DTTurma.query.options(joinedload(DTTurma.turma), joinedload(DTTurma.ano_letivo)).get_or_404(dt_id)
+        ocorrencia = DTOcorrencia.query.options(joinedload(DTOcorrencia.alunos), joinedload(DTOcorrencia.disciplina)).filter_by(id=oc_id, dt_turma_id=dt_turma.id).first_or_404()
+        disciplinas = DTDisciplina.query.filter_by(ativa=True).order_by(DTDisciplina.nome.asc()).all()
+        alunos = DTAluno.query.options(joinedload(DTAluno.aluno)).filter_by(dt_turma_id=dt_turma.id).all()
+        if _dt_locked(dt_turma):
+            flash("Ano letivo fechado: apenas consulta/export.", "error")
+            return redirect_com_filtros("direcao_turma_ocorrencias", dt_id=dt_id)
+
+        if request.method == "POST":
+            data = _parse_date_form(request.form.get("data"))
+            disciplina_id = request.form.get("dt_disciplina_id", type=int)
+            if not data or not disciplina_id:
+                flash("Data e disciplina são obrigatórios.", "error")
+                return redirect_com_filtros("direcao_turma_ocorrencias_edit", dt_id=dt_id, oc_id=oc_id)
+            ocorrencia.data = data
+            ocorrencia.hora_inicio = _parse_time_form(request.form.get("hora_inicio"))
+            ocorrencia.hora_fim = _parse_time_form(request.form.get("hora_fim"))
+            ocorrencia.num_tempos = _clamp_int(request.form.get("num_tempos"), default=None, min_val=1)
+            ocorrencia.dt_disciplina_id = disciplina_id
+            ocorrencia.observacoes = request.form.get("observacoes") or None
+            aluno_ids = [int(v) for v in request.form.getlist("dt_aluno_ids") if str(v).isdigit()]
+            ocorrencia.alunos = DTAluno.query.filter(DTAluno.dt_turma_id == dt_turma.id, DTAluno.id.in_(aluno_ids)).all() if aluno_ids else []
+            db.session.commit()
+            flash("Ocorrência atualizada.", "success")
+            fallback = url_for("direcao_turma_ocorrencias", dt_id=dt_id, **_clean_query_params(dict(parse_qsl(request.form.get("_qs") or ""))))
+            return redirect(_safe_next_url(request.form.get("next"), fallback))
+
+        return render_template(
+            "direcao_turma/ocorrencias_form.html",
+            dt_turma=dt_turma,
+            bloqueado=False,
+            ocorrencia=ocorrencia,
+            disciplinas=disciplinas,
+            alunos=alunos,
+            qs=_clean_query_params(request.args.to_dict(flat=True)),
+            next_url=request.full_path,
+        )
+
+    @app.route("/direcao-turma/<int:dt_id>/ocorrencias/<int:oc_id>/delete", methods=["POST"])
+    def direcao_turma_ocorrencias_delete(dt_id, oc_id):
+        dt_turma = DTTurma.query.options(joinedload(DTTurma.ano_letivo)).get_or_404(dt_id)
+        if _dt_locked(dt_turma):
+            flash("Ano letivo fechado: apenas consulta/export.", "error")
+            return redirect_com_filtros("direcao_turma_ocorrencias", dt_id=dt_id)
+        ocorrencia = DTOcorrencia.query.filter_by(id=oc_id, dt_turma_id=dt_turma.id).first_or_404()
+        db.session.delete(ocorrencia)
+        db.session.commit()
+        flash("Ocorrência removida.", "success")
+        fallback = url_for("direcao_turma_ocorrencias", dt_id=dt_id, **_clean_query_params(dict(parse_qsl(request.form.get("_qs") or ""))))
+        return redirect(_safe_next_url(request.form.get("next"), fallback))
+
+    @app.route("/direcao-turma/<int:dt_id>/ocorrencias/export/csv")
+    def direcao_turma_ocorrencias_export_csv(dt_id):
+        dt_turma = DTTurma.query.options(joinedload(DTTurma.turma), joinedload(DTTurma.ano_letivo)).get_or_404(dt_id)
+        filtros = _dt_ocorrencias_filters(dt_turma)
+        ocorrencias = _dt_ocorrencias_query(dt_turma, filtros).all()
+        rows = []
+        for ocorr in ocorrencias:
+            alunos_txt = "; ".join(
+                f"{(a.aluno.numero if a.aluno and a.aluno.numero is not None else '—')} - {(a.aluno.nome if a.aluno else '—')}"
+                for a in sorted(ocorr.alunos, key=lambda x: (x.aluno.numero if x.aluno and x.aluno.numero is not None else 9999, x.aluno.nome if x.aluno else ""))
+            )
+            rows.append([
+                ocorr.data.strftime("%d/%m/%Y") if ocorr.data else "",
+                ocorr.hora_inicio.strftime("%H:%M") if ocorr.hora_inicio else "",
+                ocorr.hora_fim.strftime("%H:%M") if ocorr.hora_fim else "",
+                csv_text(ocorr.num_tempos) if ocorr.num_tempos is not None else "",
+                ocorr.disciplina.nome if ocorr.disciplina else "",
+                alunos_txt,
+                ocorr.observacoes or "",
+            ])
+        filename = f"ocorrencias_{_slugify_filename(dt_turma.turma.nome if dt_turma.turma else 'dt', 'dt')}.csv"
+        data = build_csv_data(["Data", "Hora início", "Hora fim", "N.º tempos", "Disciplina", "Alunos", "Observações"], rows)
+        return Response(
+            data,
+            mimetype="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
         )
 
     @app.route("/direcao-turma/<int:dt_id>/delete", methods=["POST"])
@@ -4258,7 +4863,16 @@ def create_app():
 
         sumario_txt = request.form.get("sumario")
         if sumario_txt is not None:
-            aula.sumario = sumario_txt.strip()
+            sumario_atual = aula.sumario or ""
+            sumario_novo = sumario_txt.strip()
+            if sumario_novo != sumario_atual:
+                _registar_sumario_historico(
+                    aula,
+                    "edicao_manual",
+                    sumario_atual,
+                    sumario_novo,
+                )
+            aula.sumario = sumario_novo
 
         previsao_txt = request.form.get("previsao")
         if previsao_txt is not None:
@@ -4874,4 +5488,6 @@ def create_app():
 
 if __name__ == "__main__":
     app = create_app()
-    app.run(debug=True)
+    debug_enabled = os.environ.get("FLASK_DEBUG", "0") == "1"
+    use_reloader = os.environ.get("FLASK_USE_RELOADER", "1") == "1"
+    app.run(debug=debug_enabled, use_reloader=use_reloader)
