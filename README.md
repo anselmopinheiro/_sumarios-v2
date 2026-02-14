@@ -73,6 +73,8 @@ export DATABASE_URL='postgresql+psycopg://USER:PASSWORD@HOST:5432/postgres?sslmo
 flask db upgrade
 ```
 
+> Nota: durante a migração inicial para Supabase, aplique em base **vazia**. Se já existir schema antigo/parcial, faça reset do schema `public` antes de correr `flask db upgrade` para evitar conflitos de baseline.
+
 ### Migração de dados SQLite -> Postgres
 Depois do schema criado no Postgres, migrar os dados:
 ```bash
