@@ -17,7 +17,11 @@ def upgrade():
         return
 
     cols = {col["name"] for col in inspector.get_columns("dt_alunos")}
+    indexes = {idx["name"] for idx in inspector.get_indexes("dt_alunos")}
+    dialect_name = bind.dialect.name
     if cols == {"id", "dt_turma_id", "aluno_id"}:
+        if "ix_dt_alunos_turma_aluno" not in indexes:
+            op.create_index("ix_dt_alunos_turma_aluno", "dt_alunos", ["dt_turma_id", "aluno_id"])
         return
 
     op.create_table(
@@ -30,17 +34,24 @@ def upgrade():
     )
 
     if {"processo", "numero", "nome"}.issubset(cols):
+        numero_match = (
+            "a.numero IS NOT DISTINCT FROM d.numero"
+            if dialect_name == "postgresql"
+            else "(a.numero IS d.numero OR a.numero = d.numero)"
+        )
         op.execute(
-            """
-            INSERT INTO dt_alunos_new (dt_turma_id, aluno_id)
-            SELECT d.dt_turma_id, a.id
-            FROM dt_alunos d
-            JOIN alunos a
-              ON a.processo = d.processo
-             AND (a.numero IS d.numero OR (a.numero = d.numero))
-             AND a.nome = d.nome
-            WHERE a.id IS NOT NULL
-            """
+            sa.text(
+                f"""
+                INSERT INTO dt_alunos_new (dt_turma_id, aluno_id)
+                SELECT d.dt_turma_id, a.id
+                FROM dt_alunos d
+                JOIN alunos a
+                  ON a.processo = d.processo
+                 AND {numero_match}
+                 AND a.nome = d.nome
+                WHERE a.id IS NOT NULL
+                """
+            )
         )
     elif "aluno_id" in cols:
         op.execute(
@@ -54,7 +65,11 @@ def upgrade():
 
     op.drop_table("dt_alunos")
     op.rename_table("dt_alunos_new", "dt_alunos")
-    op.create_index("ix_dt_alunos_turma_aluno", "dt_alunos", ["dt_turma_id", "aluno_id"])
+
+    inspector = sa.inspect(bind)
+    new_indexes = {idx["name"] for idx in inspector.get_indexes("dt_alunos")}
+    if "ix_dt_alunos_turma_aluno" not in new_indexes:
+        op.create_index("ix_dt_alunos_turma_aluno", "dt_alunos", ["dt_turma_id", "aluno_id"])
 
 
 def downgrade():
