@@ -23,9 +23,13 @@ Aplicação Flask para gestão de turmas, calendários de aulas, sumários e ava
    ```bash
    pip install -r requirements.txt
    ```
-3. **Configurar variáveis (opcional)**
-   - `FLASK_APP=app.py`
-   - `FLASK_ENV=development` (para reloading automático)
+3. **Configurar variáveis (desenvolvimento)**
+   - Copiar o template e preencher valores:
+     ```bash
+     cp .env.example .env
+     ```
+   - A app carrega automaticamente `.env` **apenas em desenvolvimento** (`FLASK_ENV=development`).
+   - O ficheiro `.env` deve manter-se local e já está no `.gitignore`.
 
 4. **Criar base de dados**
    - Por omissão é usado `sqlite:///instance/gestor_lectivo.db` (sempre local).
@@ -45,6 +49,33 @@ Aplicação Flask para gestão de turmas, calendários de aulas, sumários e ava
    ```bash
    flask run
    ```
+
+
+## Supabase / PostgreSQL
+- A app usa `DATABASE_URL` quando definida; se não existir, continua em SQLite (`instance/gestor_lectivo.db`).
+- O URL é normalizado para SQLAlchemy + psycopg e força SSL (`sslmode=require`) quando não indicado.
+- Para backend Flask tradicional, preferir **Direct connection** (ligações long-lived). O **Pooler** é mais indicado para workloads serverless/funções com muitas ligações curtas.
+
+### Exemplo de `DATABASE_URL`
+```bash
+postgresql+psycopg://USER:PASSWORD@HOST:5432/postgres?sslmode=require
+```
+
+### Migrações de schema (Alembic)
+```bash
+export DATABASE_URL='postgresql+psycopg://USER:PASSWORD@HOST:5432/postgres?sslmode=require'
+flask db upgrade
+```
+
+### Migração de dados SQLite -> Postgres
+```bash
+python tools/migrate_sqlite_to_postgres.py
+```
+
+Opções úteis:
+- `--sqlite-path instance/gestor_lectivo.db`
+- `--database-url 'postgresql+psycopg://...'`
+- `--wipe` para limpar o destino antes da importação.
 
 ## Utilização rápida
 - **Anos letivos**: criar/editar e marcar como ativo/aberto. Turmas são agrupadas por ano aberto/fechado na listagem.

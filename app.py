@@ -36,7 +36,12 @@ from flask import (
 )
 
 from flask_migrate import Migrate
+from dotenv import load_dotenv
 from alembic.script import ScriptDirectory
+
+PROJECT_ENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
+if os.path.exists(PROJECT_ENV_PATH) and os.environ.get("FLASK_ENV", "development") == "development":
+    load_dotenv(PROJECT_ENV_PATH)
 from sqlalchemy import func, inspect, text
 from sqlalchemy import event
 from sqlalchemy.orm import joinedload
@@ -523,8 +528,6 @@ def create_app():
     app.config.from_object(Config)
 
     os.makedirs(app.instance_path, exist_ok=True)
-    app.config["DB_PATH"] = os.path.join(app.instance_path, "gestor_lectivo.db")
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + app.config["DB_PATH"]
     backup_override = os.environ.get("DB_BACKUP_DIR")
     if backup_override and os.path.isabs(backup_override):
         app.config["BACKUP_DIR"] = backup_override
