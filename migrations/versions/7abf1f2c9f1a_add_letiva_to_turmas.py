@@ -19,7 +19,7 @@ depends_on = None
 def upgrade():
     op.add_column(
         "turmas",
-        sa.Column("letiva", sa.Boolean(), nullable=False, server_default="1"),
+        sa.Column("letiva", sa.Boolean(), nullable=False, server_default=sa.text("true")),
     )
     op.alter_column("turmas", "letiva", server_default=None)
 

@@ -13,7 +13,7 @@ COLS = [
     sa.Column("id", sa.Integer(), primary_key=True),
     sa.Column("aula_id", sa.Integer(), nullable=False),
     sa.Column("aluno_id", sa.Integer(), nullable=False),
-    sa.Column("atraso", sa.Boolean(), nullable=False, server_default=sa.text("0")),
+    sa.Column("atraso", sa.Boolean(), nullable=False, server_default=sa.text("false")),
     sa.Column("faltas", sa.Integer(), nullable=False, server_default=sa.text("0")),
     sa.Column("responsabilidade", sa.Integer(), server_default=sa.text("5")),
     sa.Column("comportamento", sa.Integer(), server_default=sa.text("5")),

@@ -20,7 +20,7 @@ def upgrade():
         "dt_disciplinas",
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("nome", sa.String(length=120), nullable=False),
-        sa.Column("ativa", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        sa.Column("ativa", sa.Boolean(), nullable=False, server_default=sa.text("true")),
         sa.PrimaryKeyConstraint("id", name="pk_dt_disciplinas"),
         sa.UniqueConstraint("nome", name="uq_dt_disciplinas_nome"),
     )
