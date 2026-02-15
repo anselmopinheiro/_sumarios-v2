@@ -58,9 +58,18 @@ def _load_dotenv_if_available():
 _load_dotenv_if_available()
 from sqlalchemy import func, inspect, text
 from sqlalchemy import event
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import joinedload
 
 from config import Config
+from offline_queue import (
+    clear_sent,
+    enqueue_upsert_aulas_alunos,
+    flush_pending,
+    get_last_error,
+    init_offline_db,
+    pending_count,
+)
 from config_store import ConfigStore
 from models import (
     db,
@@ -250,6 +259,119 @@ def _parse_time_form(value):
         return datetime.strptime(value, "%H:%M").time()
     except ValueError:
         return None
+
+
+AULAS_ALUNOS_FIELDS = {
+    "atraso",
+    "faltas",
+    "responsabilidade",
+    "comportamento",
+    "participacao",
+    "trabalho_autonomo",
+    "portatil_material",
+    "atividade",
+    "falta_disciplinar",
+}
+
+
+def _as_bool(value, default=False):
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return bool(value)
+    value_txt = str(value).strip().lower()
+    if value_txt in {"1", "true", "t", "yes", "y", "on", "sim"}:
+        return True
+    if value_txt in {"0", "false", "f", "no", "n", "off", "nao", "não", ""}:
+        return False
+    return default
+
+
+def normalize_aulas_alunos_payload(payload):
+    payload = payload or {}
+    normalized = {}
+    if "atraso" in payload:
+        normalized["atraso"] = _as_bool(payload.get("atraso"), default=False)
+
+    if "faltas" in payload:
+        normalized["faltas"] = _clamp_int(payload.get("faltas"), default=0, min_val=0, max_val=6) or 0
+
+    for campo in [
+        "responsabilidade",
+        "comportamento",
+        "participacao",
+        "trabalho_autonomo",
+        "portatil_material",
+        "atividade",
+    ]:
+        if campo in payload:
+            normalized[campo] = _clamp_int(payload.get(campo), default=3, min_val=1, max_val=5) or 3
+
+    if "falta_disciplinar" in payload:
+        normalized["falta_disciplinar"] = (
+            _clamp_int(payload.get("falta_disciplinar"), default=0, min_val=0, max_val=2) or 0
+        )
+
+    return normalized
+
+
+def apply_upsert_aulas_alunos(session, aula_id, aluno_id, payload):
+    dados = normalize_aulas_alunos_payload(payload)
+    avaliacao = session.query(AulaAluno).filter_by(aula_id=aula_id, aluno_id=aluno_id).first()
+    if not avaliacao:
+        avaliacao = AulaAluno(aula_id=aula_id, aluno_id=aluno_id)
+        session.add(avaliacao)
+
+    for campo, valor in dados.items():
+        if campo in AULAS_ALUNOS_FIELDS:
+            setattr(avaliacao, campo, valor)
+
+    return avaliacao
+
+
+def parse_aulas_alunos_tsv(raw_text, aula_id_default=None):
+    rows = []
+    if not raw_text:
+        return rows
+
+    lines = [line for line in str(raw_text).splitlines() if line.strip()]
+    if not lines:
+        return rows
+
+    headers = [h.strip() for h in lines[0].split("	")]
+    has_header = "aluno_id" in headers
+    data_lines = lines[1:] if has_header else lines
+
+    expected = [
+        "aula_id",
+        "aluno_id",
+        "atraso",
+        "faltas",
+        "responsabilidade",
+        "comportamento",
+        "participacao",
+        "trabalho_autonomo",
+        "portatil_material",
+        "atividade",
+        "falta_disciplinar",
+    ]
+
+    for idx, line in enumerate(data_lines, start=1):
+        parts = [p.strip() for p in line.split("	")]
+        if len(parts) < len(expected):
+            raise ValueError(f"Linha TSV inválida (campos insuficientes) na linha {idx}.")
+
+        record = dict(zip(expected, parts[: len(expected)]))
+        aula_id = int(record["aula_id"] or aula_id_default)
+        aluno_id = int(record["aluno_id"])
+        payload = normalize_aulas_alunos_payload(record)
+        payload["client_ts"] = datetime.utcnow().isoformat(timespec="seconds")
+
+        rows.append({"aula_id": aula_id, "aluno_id": aluno_id, "payload": payload})
+
+    return rows
 
 
 def _dt_periodo_range(dt_turma, periodo):
@@ -1343,7 +1465,68 @@ def create_app():
                 db.session.delete(item)
         return registo
 
+    def _build_payloads_from_form(aula, alunos):
+        payloads = []
+        for aluno in alunos:
+            payload = normalize_aulas_alunos_payload(
+                {
+                    "atraso": bool(request.form.get(f"atraso_{aluno.id}")),
+                    "faltas": request.form.get(f"faltas_{aluno.id}"),
+                    "responsabilidade": request.form.get(f"responsabilidade_{aluno.id}"),
+                    "comportamento": request.form.get(f"comportamento_{aluno.id}"),
+                    "participacao": request.form.get(f"participacao_{aluno.id}"),
+                    "trabalho_autonomo": request.form.get(f"trabalho_autonomo_{aluno.id}"),
+                    "portatil_material": request.form.get(f"portatil_material_{aluno.id}"),
+                    "atividade": request.form.get(f"atividade_{aluno.id}"),
+                    "falta_disciplinar": request.form.get(f"falta_disciplinar_{aluno.id}"),
+                }
+            )
+            payload["client_ts"] = datetime.utcnow().isoformat(timespec="seconds")
+            payloads.append({"aula_id": aula.id, "aluno_id": aluno.id, "payload": payload})
+        return payloads
+
+    def _enqueue_payloads(payloads):
+        for item in payloads:
+            enqueue_upsert_aulas_alunos(
+                item["aula_id"],
+                item["aluno_id"],
+                item["payload"],
+                instance_path=app.instance_path,
+            )
+
+    def _apply_payloads(payloads):
+        for item in payloads:
+            apply_upsert_aulas_alunos(
+                db.session,
+                item["aula_id"],
+                item["aluno_id"],
+                item["payload"],
+            )
+
+    def try_flush_outbox(limit=200):
+        try:
+            db.session.execute(text("SELECT 1"))
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.warning("Sem ligação à BD principal; flush adiado: %s", exc)
+            return {"ok": False, "applied": 0, "errors": 0, "remaining": pending_count(app.instance_path)}
+
+        def _apply_from_outbox(payload):
+            with db.session.begin():
+                apply_upsert_aulas_alunos(
+                    db.session,
+                    int(payload["aula_id"]),
+                    int(payload["aluno_id"]),
+                    payload.get("payload") or {},
+                )
+
+        result = flush_pending(_apply_from_outbox, limit=limit, instance_path=app.instance_path)
+        clear_sent(instance_path=app.instance_path)
+        result["ok"] = True
+        return result
+
     with app.app_context():
+        init_offline_db(app.instance_path)
         _ensure_columns()
         try:
             engine_db = db.engine.url.database
@@ -1361,6 +1544,10 @@ def create_app():
             _backup_database(reason="startup")
         elif _running_flask_cli():
             app.logger.info("CLI detetada: backups automáticos desativados.")
+
+        flush_result = try_flush_outbox(limit=200)
+        if flush_result.get("applied"):
+            app.logger.info("Outbox sincronizada no arranque: %s item(ns).", flush_result["applied"])
 
     def _agendar_backup_change():
         estado = _carregar_backup_state()
@@ -4800,18 +4987,6 @@ def create_app():
             for avaliacao in AulaAluno.query.filter_by(aula_id=aula.id).all()
         }
 
-        def _parse_nota(field_name, default_val=3):
-            valor = request.form.get(field_name)
-            if valor in (None, ""):
-                return default_val
-            return _clamp_int(valor, min_val=1, max_val=5)
-
-        def _parse_falta_disciplinar(field_name):
-            valor = request.form.get(field_name)
-            if valor in (None, ""):
-                return 0
-            return _clamp_int(valor, min_val=1, max_val=2)
-
         if request.method == "POST":
             if ano_fechado:
                 flash("Ano letivo fechado: apenas leitura.", "error")
@@ -4823,30 +4998,17 @@ def create_app():
                 request.form.get("atividade_nome") if aula.atividade else None
             )
 
-            for aluno in alunos:
-                avaliacao = avaliacoes.get(aluno.id)
-                if not avaliacao:
-                    avaliacao = AulaAluno(aula=aula, aluno=aluno)
-                    db.session.add(avaliacao)
-                    avaliacoes[aluno.id] = avaliacao
+            payloads = _build_payloads_from_form(aula, alunos)
+            try:
+                _apply_payloads(payloads)
+                db.session.commit()
+                flash("Avaliações de alunos guardadas.", "success")
+            except Exception as exc:
+                db.session.rollback()
+                app.logger.warning("Falha ao gravar avaliações na BD principal; guardado em outbox local: %s", exc)
+                _enqueue_payloads(payloads)
+                flash("Registo guardado localmente; sincronizará quando houver rede.", "warning")
 
-                avaliacao.atraso = bool(request.form.get(f"atraso_{aluno.id}"))
-                avaliacao.faltas = (
-                    _clamp_int(request.form.get(f"faltas_{aluno.id}"), default=0, min_val=0, max_val=6)
-                    or 0
-                )
-                avaliacao.responsabilidade = _parse_nota(f"responsabilidade_{aluno.id}")
-                avaliacao.comportamento = _parse_nota(f"comportamento_{aluno.id}")
-                avaliacao.participacao = _parse_nota(f"participacao_{aluno.id}")
-                avaliacao.trabalho_autonomo = _parse_nota(f"trabalho_autonomo_{aluno.id}")
-                avaliacao.portatil_material = _parse_nota(f"portatil_material_{aluno.id}")
-                avaliacao.atividade = _parse_nota(f"atividade_{aluno.id}")
-                avaliacao.falta_disciplinar = _parse_falta_disciplinar(
-                    f"falta_disciplinar_{aluno.id}"
-                )
-
-            db.session.commit()
-            flash("Avaliações de alunos guardadas.", "success")
             destino = return_url or url_for("turma_calendario", turma_id=turma.id)
             return redirect(destino)
 
@@ -4858,6 +5020,114 @@ def create_app():
             avaliacoes=avaliacoes,
             ano_fechado=ano_fechado,
             return_url=return_url,
+            pending_offline=pending_count(app.instance_path),
+        )
+
+    @app.route("/aulas/<int:aula_id>/aulas_alunos/save", methods=["POST"])
+    def aulas_alunos_save(aula_id):
+        aula = CalendarioAula.query.filter_by(id=aula_id, apagado=False).first_or_404()
+        turma = Turma.query.options(joinedload(Turma.ano_letivo)).get_or_404(aula.turma_id)
+        ano = turma.ano_letivo
+        if ano and ano.fechado:
+            return jsonify({"ok": False, "error": "Ano letivo fechado."}), 400
+
+        items = request.get_json(silent=True) or {}
+        payloads = items.get("items") or []
+        if not isinstance(payloads, list):
+            return jsonify({"ok": False, "error": "Payload inválido."}), 400
+
+        normalized_payloads = []
+        for item in payloads:
+            aluno_id = int(item.get("aluno_id"))
+            payload = normalize_aulas_alunos_payload(item.get("payload") or {})
+            payload["client_ts"] = item.get("client_ts") or datetime.utcnow().isoformat(timespec="seconds")
+            normalized_payloads.append({"aula_id": aula.id, "aluno_id": aluno_id, "payload": payload})
+
+        try:
+            _apply_payloads(normalized_payloads)
+            db.session.commit()
+            return jsonify({"ok": True, "offline": False, "pending": pending_count(app.instance_path)})
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.warning("Falha no save de aulas_alunos; enfileirado localmente: %s", exc)
+            _enqueue_payloads(normalized_payloads)
+            return jsonify({"ok": True, "offline": True, "pending": pending_count(app.instance_path)})
+
+    @app.route("/aulas/<int:aula_id>/aulas_alunos/import_tsv", methods=["POST"])
+    def aulas_alunos_import_tsv(aula_id):
+        aula = CalendarioAula.query.filter_by(id=aula_id, apagado=False).first_or_404()
+        turma = Turma.query.options(joinedload(Turma.ano_letivo)).get_or_404(aula.turma_id)
+        ano = turma.ano_letivo
+        if ano and ano.fechado:
+            return jsonify({"ok": False, "error": "Ano letivo fechado."}), 400
+
+        content_type = (request.content_type or "").lower()
+        if "application/json" in content_type:
+            payload = request.get_json(silent=True) or {}
+            raw_tsv = payload.get("tsv") or ""
+        else:
+            raw_tsv = request.get_data(as_text=True) or ""
+
+        try:
+            rows = parse_aulas_alunos_tsv(raw_tsv, aula_id_default=aula.id)
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+        try:
+            _apply_payloads(rows)
+            db.session.commit()
+            return jsonify({"ok": True, "offline": False, "imported": len(rows), "pending": pending_count(app.instance_path)})
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.warning("Falha ao importar TSV para BD principal; enfileirado localmente: %s", exc)
+            _enqueue_payloads(rows)
+            return jsonify({"ok": True, "offline": True, "imported": len(rows), "pending": pending_count(app.instance_path)})
+
+    @app.route("/api/sync/apply", methods=["POST"])
+    def api_sync_apply():
+        data = request.get_json(silent=True) or {}
+        items = data.get("items")
+        if not isinstance(items, list):
+            return jsonify({"ok": False, "error": "items inválido"}), 400
+
+        applied = 0
+        try:
+            with db.session.begin():
+                for item in items:
+                    if item.get("entity") != "aulas_alunos" or item.get("action") != "upsert":
+                        continue
+                    aula_id = int(item.get("aula_id"))
+                    aluno_id = int(item.get("aluno_id"))
+                    payload = item.get("payload") or {}
+                    apply_upsert_aulas_alunos(db.session, aula_id, aluno_id, payload)
+                    applied += 1
+        except Exception as exc:
+            app.logger.warning("/api/sync/apply falhou: %s", exc)
+            return jsonify({"ok": False, "error": "Falha ao aplicar sincronização."}), 500
+
+        return jsonify({"ok": True, "applied": applied})
+
+    @app.route("/api/sync/status", methods=["GET"])
+    def api_sync_status():
+        return jsonify(
+            {
+                "ok": True,
+                "pending": pending_count(app.instance_path),
+                "last_error": get_last_error(app.instance_path),
+            }
+        )
+
+    @app.route("/sync/flush", methods=["POST"])
+    def sync_flush():
+        result = try_flush_outbox(limit=200)
+        return jsonify(
+            {
+                "ok": bool(result.get("ok", True)),
+                "applied": result.get("applied", 0),
+                "errors": result.get("errors", 0),
+                "pending": result.get("remaining", pending_count(app.instance_path)),
+                "last_error": get_last_error(app.instance_path),
+            }
         )
 
     @app.route(
