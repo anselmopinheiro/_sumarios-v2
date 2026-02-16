@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Histórico de snapshots</h2>
+<table class="table table-sm table-striped">
+  <thead><tr><th>ID</th><th>Início</th><th>Fim</th><th>Estado</th><th>Contagens</th><th>Erro</th></tr></thead>
+  <tbody>
+  {% for run in runs %}
+    <tr>
+      <td>{{ run.id }}</td>
+      <td>{{ run.started_at }}</td>
+      <td>{{ run.finished_at or '—' }}</td>
+      <td>{{ 'OK' if run.ok else 'ERRO' }}</td>
+      <td>{{ run.counts }}</td>
+      <td><small>{{ run.error or '' }}</small></td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="text-muted">Sem histórico.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

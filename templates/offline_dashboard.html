@@ -13,4 +13,7 @@
   {% if status.last_error %}<br><small>{{ status.last_error }}</small>{% endif %}
 </div>
 <a class="btn btn-primary" href="{{ url_for('offline.turmas') }}">Abrir turmas offline</a>
+<a class="btn btn-outline-secondary" href="{{ url_for('offline.status_page') }}">Status</a>
+<a class="btn btn-outline-secondary" href="{{ url_for('offline.history_page') }}">Histórico</a>
+<a class="btn btn-outline-secondary" href="{{ url_for('offline.settings_page') }}">Definições</a>
 {% endblock %}

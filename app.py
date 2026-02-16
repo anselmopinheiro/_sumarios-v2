@@ -65,7 +65,7 @@ from sqlalchemy.orm import joinedload, sessionmaker
 
 from config import Config
 from offline_blueprint import offline_bp, refresh_snapshot_from_remote
-from offline_store import init_offline_db as init_offline_store_db, is_online as detect_online
+from offline_store import init_offline_db as init_offline_store_db
 from sync import sync_outbox
 from offline_queue import (
     clear_sent,
@@ -737,6 +737,42 @@ def _setup_dual_db_engines(app):
             )
 
 
+
+def _remote_healthcheck(app, use_cache=True):
+    now = time.time()
+    cache = app.extensions.setdefault("remote_health_cache", {"ts": 0.0, "ok": False, "error": "", "latency_ms": None})
+    ttl = float(app.config.get("REMOTE_HEALTHCHECK_TTL_SECONDS", 5) or 5)
+
+    if use_cache and (now - cache.get("ts", 0.0)) < ttl:
+        return dict(cache)
+
+    started = time.perf_counter()
+    if (app.config.get("APP_DB_MODE") or "sqlite").lower() != "postgres":
+        cache.update({"ts": now, "ok": False, "error": "APP_DB_MODE não está em postgres.", "latency_ms": None})
+        return dict(cache)
+
+    try:
+        db.session.execute(text("SELECT 1"))
+        latency = int((time.perf_counter() - started) * 1000)
+        cache.update({"ts": now, "ok": True, "error": "", "latency_ms": latency})
+    except Exception as exc:
+        db.session.rollback()
+        latency = int((time.perf_counter() - started) * 1000)
+        cache.update({"ts": now, "ok": False, "error": str(exc), "latency_ms": latency})
+        target = _safe_db_target_from_uri(app.config.get("SQLALCHEMY_DATABASE_URI") or "")
+        app.logger.exception(
+            "Healthcheck remoto falhou (host=%s port=%s db=%s): %s",
+            target["host"],
+            target["port"],
+            target["db"],
+            exc,
+        )
+    return dict(cache)
+
+
+def _is_remote_online(app, use_cache=True):
+    return bool(_remote_healthcheck(app, use_cache=use_cache).get("ok"))
+
 def create_app():
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_object(Config)
@@ -744,6 +780,7 @@ def create_app():
     os.makedirs(app.instance_path, exist_ok=True)
     _configure_logging(app)
     _setup_dual_db_engines(app)
+    app.extensions["is_remote_online"] = lambda use_cache=True: _is_remote_online(app, use_cache=use_cache)
     backup_override = os.environ.get("DB_BACKUP_DIR")
     if backup_override and os.path.isabs(backup_override):
         app.config["BACKUP_DIR"] = backup_override
@@ -756,8 +793,9 @@ def create_app():
 
     @app.before_request
     def _set_connectivity_state():
-        g.is_online = detect_online(app, lambda: db.session.execute(text("SELECT 1")))
-        if request.path == "/" and not g.is_online:
+        g.is_online = _is_remote_online(app, use_cache=True)
+        g.is_offline = not g.is_online
+        if request.path == "/" and g.is_offline:
             return redirect(url_for("offline.dashboard"))
 
     @app.cli.group("offline")
@@ -793,25 +831,35 @@ def create_app():
             )
             raise SystemExit(json.dumps({"ok": False, "error": str(exc), **target}, ensure_ascii=False))
 
+    @app.get("/health/db")
     @app.get("/api/health/db")
     def api_health_db():
         target = _safe_db_target_from_uri(app.config.get("SQLALCHEMY_DATABASE_URI") or "")
+        info = _remote_healthcheck(app, use_cache=False)
         if (app.config.get("APP_DB_MODE") or "sqlite").lower() != "postgres":
             return jsonify({"ok": False, "error": "APP_DB_MODE não está em postgres.", **target}), 400
-        try:
-            db.session.execute(text("SELECT 1"))
-            return jsonify({"ok": True, **target})
-        except Exception as exc:
-            app.logger.exception(
-                "Healthcheck API falhou (host=%s port=%s db=%s): %s",
-                target["host"],
-                target["port"],
-                target["db"],
-                exc,
-            )
-            return jsonify({"ok": False, "error": str(exc), **target}), 503
+        if info.get("ok"):
+            return jsonify({"ok": True, "latency_ms": info.get("latency_ms"), **target})
+        return jsonify({"ok": False, "error": info.get("error"), "latency_ms": info.get("latency_ms"), **target}), 503
 
     config_store = ConfigStore(app.instance_path, logger=app.logger)
+
+    def get_db_sessions(mode="auto"):
+        remote_session = db.session
+        local_factory = app.extensions.get("session_local_factory")
+
+        resolved_mode = mode
+        if mode == "auto":
+            resolved_mode = "remote" if _is_remote_online(app, use_cache=True) else "local"
+
+        if resolved_mode == "remote" and (app.config.get("APP_DB_MODE") or "sqlite").lower() != "postgres":
+            app.logger.warning("Pedido de sessão remota em APP_DB_MODE=%s", app.config.get("APP_DB_MODE"))
+
+        return {
+            "mode": resolved_mode,
+            "remote": remote_session,
+            "local_factory": local_factory,
+        }
 
     def _default_csv_dir():
         return app.config.get("CSV_EXPORT_DIR") or os.path.join(app.root_path, "exports")
@@ -895,9 +943,12 @@ def create_app():
 
     @app.context_processor
     def inject_footer_info():
+        health = _remote_healthcheck(app, use_cache=True)
         return {
             "app_version_timestamp": app.config.get("APP_VERSION_TIMESTAMP"),
             "last_save_timestamp": _formatar_data_hora(_load_last_save()),
+            "is_offline": not bool(health.get("ok")),
+            "remote_health": health,
         }
 
     # Garantir que colunas recentes existem em instalações que ainda não
@@ -1682,6 +1733,31 @@ def create_app():
         result["ok"] = True
         return result
 
+    def _start_dev_snapshot_scheduler():
+        if os.environ.get("DEV_LOCAL_SCHEDULER", "0") != "1":
+            return
+        try:
+            from apscheduler.schedulers.background import BackgroundScheduler
+        except Exception:
+            app.logger.warning("DEV_LOCAL_SCHEDULER=1 mas APScheduler não está disponível.")
+            return
+
+        interval = int(os.environ.get("SNAPSHOT_INTERVAL_SECONDS", "60") or "60")
+        scheduler = BackgroundScheduler(daemon=True)
+
+        def _scheduled_job():
+            with app.app_context():
+                from offline_store import get_setting
+                enabled = get_setting(app.instance_path, "snapshot_enabled", "1")
+                if enabled != "1":
+                    return
+                refresh_snapshot_from_remote()
+
+        scheduler.add_job(_scheduled_job, "interval", seconds=max(15, interval), id="offline_snapshot_job", replace_existing=True)
+        scheduler.start()
+        app.extensions["offline_scheduler"] = scheduler
+        app.logger.info("Scheduler local de snapshot ativo: %ss", max(15, interval))
+
     with app.app_context():
         init_offline_db(app.instance_path)
         init_offline_store_db(app.instance_path)
@@ -1699,6 +1775,8 @@ def create_app():
         flush_result = try_flush_outbox(limit=200)
         if flush_result.get("applied"):
             app.logger.info("Outbox sincronizada no arranque: %s item(ns).", flush_result["applied"])
+
+    _start_dev_snapshot_scheduler()
 
     def _agendar_backup_change():
         estado = _carregar_backup_state()
@@ -5150,15 +5228,21 @@ def create_app():
             )
 
             payloads = _build_payloads_from_form(aula, alunos)
+            sessions = get_db_sessions("remote")
+            if sessions["mode"] != "remote":
+                app.logger.warning("Write de calendário em modo não-remoto: %s", sessions["mode"])
             try:
                 _apply_payloads(payloads)
                 db.session.commit()
                 flash("Avaliações de alunos guardadas.", "success")
             except Exception as exc:
                 db.session.rollback()
-                app.logger.warning("Falha ao gravar avaliações na BD principal; guardado em outbox local: %s", exc)
-                _enqueue_payloads(payloads)
-                flash("Registo guardado localmente; sincronizará quando houver rede.", "warning")
+                app.logger.exception("Falha ao gravar avaliações na BD principal: %s", exc)
+                if g.is_offline:
+                    _enqueue_payloads(payloads)
+                    flash("Registo guardado localmente; sincronizará quando houver rede.", "warning")
+                else:
+                    flash("Falha ao guardar na BD remota. Tente novamente.", "error")
 
             destino = return_url or url_for("turma_calendario", turma_id=turma.id)
             return redirect(destino)
@@ -5194,15 +5278,21 @@ def create_app():
             payload["client_ts"] = item.get("client_ts") or datetime.utcnow().isoformat(timespec="seconds")
             normalized_payloads.append({"aula_id": aula.id, "aluno_id": aluno_id, "payload": payload})
 
+        sessions = get_db_sessions("remote")
+        if sessions["mode"] != "remote":
+            app.logger.warning("/aulas_alunos/save em modo não-remoto: %s", sessions["mode"])
+
         try:
             _apply_payloads(normalized_payloads)
             db.session.commit()
             return jsonify({"ok": True, "offline": False, "pending": pending_count(app.instance_path)})
         except Exception as exc:
             db.session.rollback()
-            app.logger.warning("Falha no save de aulas_alunos; enfileirado localmente: %s", exc)
-            _enqueue_payloads(normalized_payloads)
-            return jsonify({"ok": True, "offline": True, "pending": pending_count(app.instance_path)})
+            app.logger.exception("Falha no save de aulas_alunos: %s", exc)
+            if g.is_offline:
+                _enqueue_payloads(normalized_payloads)
+                return jsonify({"ok": True, "offline": True, "pending": pending_count(app.instance_path)})
+            return jsonify({"ok": False, "error": "Falha ao guardar na BD remota."}), 503
 
     @app.route("/aulas/<int:aula_id>/aulas_alunos/import_tsv", methods=["POST"])
     def aulas_alunos_import_tsv(aula_id):
@@ -5224,15 +5314,21 @@ def create_app():
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
 
+        sessions = get_db_sessions("remote")
+        if sessions["mode"] != "remote":
+            app.logger.warning("/import_tsv em modo não-remoto: %s", sessions["mode"])
+
         try:
             _apply_payloads(rows)
             db.session.commit()
             return jsonify({"ok": True, "offline": False, "imported": len(rows), "pending": pending_count(app.instance_path)})
         except Exception as exc:
             db.session.rollback()
-            app.logger.warning("Falha ao importar TSV para BD principal; enfileirado localmente: %s", exc)
-            _enqueue_payloads(rows)
-            return jsonify({"ok": True, "offline": True, "imported": len(rows), "pending": pending_count(app.instance_path)})
+            app.logger.exception("Falha ao importar TSV para BD principal: %s", exc)
+            if g.is_offline:
+                _enqueue_payloads(rows)
+                return jsonify({"ok": True, "offline": True, "imported": len(rows), "pending": pending_count(app.instance_path)})
+            return jsonify({"ok": False, "error": "Falha ao importar para BD remota."}), 503
 
     @app.route("/api/sync/apply", methods=["POST"])
     def api_sync_apply():
@@ -5253,7 +5349,8 @@ def create_app():
                     apply_upsert_aulas_alunos(db.session, aula_id, aluno_id, payload)
                     applied += 1
         except Exception as exc:
-            app.logger.warning("/api/sync/apply falhou: %s", exc)
+            db.session.rollback()
+            app.logger.exception("/api/sync/apply falhou: %s", exc)
             return jsonify({"ok": False, "error": "Falha ao aplicar sincronização."}), 500
 
         return jsonify({"ok": True, "applied": applied})

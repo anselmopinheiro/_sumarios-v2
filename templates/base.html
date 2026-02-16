@@ -80,10 +80,29 @@
       .richtext-highlight {
         background-color: #fff3cd;
       }
+
+      .offline-banner {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        background: #dc3545;
+        color: #fff;
+        text-align: center;
+        padding: 0.35rem 0.75rem;
+        z-index: 2000;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+      }
+
+      body.with-offline-banner {
+        padding-top: 2.1rem;
+      }
     </style>
 </head>
 
-<body class="bg-light">
+<body class="bg-light {% if is_offline %}with-offline-banner{% endif %}">
+{% if is_offline %}<div class="offline-banner">OFFLINE</div>{% endif %}
 
 <nav class="navbar navbar-dark bg-dark navbar-expand-lg mb-4">
     <div class="container">
@@ -96,6 +115,7 @@
             <li class="nav-item"><a class="nav-link" href="/turmas">Turmas</a></li>
             <li class="nav-item"><a class="nav-link" href="/direcao-turma">Direção de Turma</a></li>
             <li class="nav-item"><a class="nav-link" href="/dt-disciplinas">Disciplinas (DT)</a></li>
+            <li class="nav-item"><a class="nav-link" href="/offline/status">Offline</a></li>
             <li class="nav-item">
                 <form class="d-inline" method="post" action="{{ url_for('backups_trigger') }}">
                     <button class="btn btn-outline-light btn-sm ms-lg-2" type="submit">Backup BD</button>

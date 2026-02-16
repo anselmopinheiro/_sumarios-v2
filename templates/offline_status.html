@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Estado offline</h2>
+<div class="alert {{ 'alert-success' if payload.online else 'alert-danger' }}">
+  Estado remoto: <strong>{{ 'ONLINE' if payload.online else 'OFFLINE' }}</strong>
+</div>
+<div class="card mb-3"><div class="card-body">
+  <h5>Snapshot local</h5>
+  <p class="mb-1">Turmas: {{ payload.snapshot.counts.turmas }} | Alunos: {{ payload.snapshot.counts.alunos }} | Aulas: {{ payload.snapshot.counts.aulas }}</p>
+  <p class="mb-1">Períodos: {{ payload.snapshot.counts.periodos }} | Módulos: {{ payload.snapshot.counts.modulos }}</p>
+  {% if payload.snapshot.last_run %}
+  <p class="text-muted mb-0">Último run: #{{ payload.snapshot.last_run.id }} — {{ payload.snapshot.last_run.finished_at or payload.snapshot.last_run.started_at }} — {{ 'OK' if payload.snapshot.last_run.ok else 'ERRO' }}</p>
+  {% endif %}
+</div></div>
+<a class="btn btn-outline-primary" href="{{ url_for('offline.history_page') }}">Ver histórico</a>
+<a class="btn btn-outline-secondary" href="{{ url_for('offline.settings_page') }}">Definições</a>
+{% endblock %}

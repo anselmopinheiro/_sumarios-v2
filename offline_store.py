@@ -15,6 +15,9 @@ SNAPSHOT_TABLES = {
 
 def get_offline_db_path(instance_path):
     os.makedirs(instance_path, exist_ok=True)
+    override = (os.environ.get("OFFLINE_DB_PATH") or "").strip()
+    if override:
+        return override if os.path.isabs(override) else os.path.abspath(os.path.join(instance_path, override))
     return os.path.join(instance_path, "offline.db")
 
 
@@ -116,9 +119,25 @@ def init_offline_db(instance_path):
               updated_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS snapshot_runs (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              started_at TEXT NOT NULL,
+              finished_at TEXT,
+              ok INTEGER NOT NULL DEFAULT 0,
+              error TEXT,
+              counts_json TEXT,
+              mode TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS offline_settings (
+              key TEXT PRIMARY KEY,
+              value TEXT
+            );
+
             CREATE INDEX IF NOT EXISTS idx_outbox_status_created ON outbox(status, created_at);
             CREATE INDEX IF NOT EXISTS idx_snapshot_alunos_turma ON snapshot_alunos(turma_id);
             CREATE INDEX IF NOT EXISTS idx_snapshot_aulas_turma_data ON snapshot_calendario_aulas(turma_id, data);
+            CREATE INDEX IF NOT EXISTS idx_snapshot_runs_started_at ON snapshot_runs(started_at DESC);
             """
         )
 
@@ -332,3 +351,82 @@ def outbox_status(instance_path):
             "errors": int(errors),
             "last_error": last_error_row["last_error"] if last_error_row else None,
         }
+
+
+def start_snapshot_run(instance_path, mode="manual"):
+    started_at = datetime.utcnow().isoformat(timespec="seconds")
+    with _connect(instance_path) as conn:
+        cur = conn.execute(
+            "INSERT INTO snapshot_runs (started_at, ok, mode) VALUES (?, 0, ?)",
+            (started_at, mode),
+        )
+        return int(cur.lastrowid), started_at
+
+
+def finish_snapshot_run(instance_path, run_id, ok, counts=None, error=None):
+    finished_at = datetime.utcnow().isoformat(timespec="seconds")
+    with _connect(instance_path) as conn:
+        conn.execute(
+            """
+            UPDATE snapshot_runs
+               SET finished_at=?, ok=?, error=?, counts_json=?
+             WHERE id=?
+            """,
+            (
+                finished_at,
+                1 if ok else 0,
+                (str(error)[:2000] if error else None),
+                (json.dumps(counts or {}, ensure_ascii=False) if counts is not None else None),
+                int(run_id),
+            ),
+        )
+
+
+def list_snapshot_runs(instance_path, limit=20):
+    with _connect(instance_path) as conn:
+        rows = conn.execute(
+            "SELECT * FROM snapshot_runs ORDER BY id DESC LIMIT ?",
+            (int(limit),),
+        ).fetchall()
+    items = []
+    for row in rows:
+        item = dict(row)
+        raw = item.get("counts_json")
+        item["counts"] = json.loads(raw) if raw else {}
+        items.append(item)
+    return items
+
+
+def get_snapshot_status(instance_path):
+    with _connect(instance_path) as conn:
+        last = conn.execute("SELECT * FROM snapshot_runs ORDER BY id DESC LIMIT 1").fetchone()
+        counts = {
+            "turmas": conn.execute("SELECT COUNT(*) n FROM snapshot_turmas").fetchone()["n"],
+            "alunos": conn.execute("SELECT COUNT(*) n FROM snapshot_alunos").fetchone()["n"],
+            "aulas": conn.execute("SELECT COUNT(*) n FROM snapshot_calendario_aulas").fetchone()["n"],
+            "periodos": conn.execute("SELECT COUNT(*) n FROM snapshot_periodos").fetchone()["n"],
+            "modulos": conn.execute("SELECT COUNT(*) n FROM snapshot_modulos").fetchone()["n"],
+        }
+    return {
+        "last_run": dict(last) if last else None,
+        "counts": {k: int(v) for k, v in counts.items()},
+    }
+
+
+def get_setting(instance_path, key, default=None):
+    with _connect(instance_path) as conn:
+        row = conn.execute("SELECT value FROM offline_settings WHERE key=?", (key,)).fetchone()
+        if not row:
+            return default
+        return row["value"]
+
+
+def set_setting(instance_path, key, value):
+    with _connect(instance_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO offline_settings (key, value) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value
+            """,
+            (str(key), str(value) if value is not None else ""),
+        )

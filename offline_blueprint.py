@@ -7,14 +7,20 @@ from sqlalchemy.engine import make_url
 from models import Aluno, AnoLetivo, CalendarioAula, Modulo, Periodo, Turma, db
 from offline_store import (
     enqueue_outbox,
+    finish_snapshot_run,
     get_offline_aulas_alunos,
     get_offline_sumario,
+    get_setting,
     get_snapshot_aula,
+    get_snapshot_status,
     is_online,
     list_snapshot_aulas,
     list_snapshot_alunos,
+    list_snapshot_runs,
     list_snapshot_turmas,
     outbox_status,
+    set_setting,
+    start_snapshot_run,
     upsert_offline_aulas_alunos,
     upsert_offline_sumario,
     upsert_snapshot_batch,
@@ -22,6 +28,13 @@ from offline_store import (
 from sync import sync_outbox
 
 offline_bp = Blueprint("offline", __name__, url_prefix="/offline")
+
+
+def _get_online_state():
+    cached_fn = current_app.extensions.get("is_remote_online")
+    if callable(cached_fn):
+        return bool(cached_fn())
+    return is_online(current_app, lambda: db.session.execute(sa.text("SELECT 1")))
 
 
 def _remote_db_meta():
@@ -65,11 +78,12 @@ def _normalize_payload(item):
     }
 
 
-def refresh_snapshot_from_remote():
+def snapshot_remote_to_local(mode="manual"):
     app = current_app
     target = _remote_db_meta()
+    run_id, started_at = start_snapshot_run(app.instance_path, mode=mode)
 
-    if not is_online(app, lambda: db.session.execute(sa.text("SELECT 1"))):
+    if not _get_online_state():
         app.logger.warning(
             "Snapshot offline abortado: sem ligação remota (host=%s port=%s db=%s mode=%s)",
             target["host"],
@@ -77,7 +91,8 @@ def refresh_snapshot_from_remote():
             target["db"],
             target["mode"],
         )
-        return {"ok": False, "error": "Sem ligação à BD remota."}
+        finish_snapshot_run(app.instance_path, run_id, ok=False, error="Sem ligação à BD remota.")
+        return {"ok": False, "error": "Sem ligação à BD remota.", "run_id": run_id, "started_at": started_at}
 
     try:
         ano_ativo = AnoLetivo.query.filter_by(ativo=True).first()
@@ -170,6 +185,8 @@ def refresh_snapshot_from_remote():
         }
 
         counts = upsert_snapshot_batch(app.instance_path, payload)
+        finish_snapshot_run(app.instance_path, run_id, ok=True, counts=counts)
+
         app.logger.info(
             "Snapshot offline atualizado (host=%s port=%s db=%s mode=%s): turmas=%s alunos=%s aulas=%s",
             target["host"],
@@ -183,6 +200,8 @@ def refresh_snapshot_from_remote():
 
         return {
             "ok": True,
+            "run_id": run_id,
+            "started_at": started_at,
             "turmas": counts.get("snapshot_turmas", 0),
             "alunos": counts.get("snapshot_alunos", 0),
             "aulas": counts.get("snapshot_calendario_aulas", 0),
@@ -198,23 +217,78 @@ def refresh_snapshot_from_remote():
             target["mode"],
             exc,
         )
+        finish_snapshot_run(app.instance_path, run_id, ok=False, error=str(exc))
         if target["mode"] == "pooler":
             app.logger.warning(
                 "Dica Supabase pooler: confirme porta/URL (pooler=6543, direct=5432), role e password."
             )
-        return {"ok": False, "error": "Sem ligação à BD remota."}
+        return {"ok": False, "error": "Sem ligação à BD remota.", "run_id": run_id, "started_at": started_at}
+
+
+def refresh_snapshot_from_remote():
+    return snapshot_remote_to_local(mode="manual")
 
 
 @offline_bp.route("/")
 def dashboard():
     status = outbox_status(current_app.instance_path)
     turmas = list_snapshot_turmas(current_app.instance_path)
-    return render_template("offline_dashboard.html", status=status, turmas=turmas)
+    snapshot = get_snapshot_status(current_app.instance_path)
+    return render_template("offline_dashboard.html", status=status, turmas=turmas, snapshot=snapshot)
 
 
-@offline_bp.route("/snapshot", methods=["POST"])
+@offline_bp.route("/status")
+def status_page():
+    payload = {
+        "ok": True,
+        "online": _get_online_state(),
+        "snapshot": get_snapshot_status(current_app.instance_path),
+        "outbox": outbox_status(current_app.instance_path),
+        "settings": {
+            "enabled": get_setting(current_app.instance_path, "snapshot_enabled", "1"),
+            "interval_seconds": get_setting(current_app.instance_path, "snapshot_interval_seconds", "60"),
+        },
+    }
+    if request.accept_mimetypes.best == "application/json" or request.args.get("format") == "json":
+        return jsonify(payload)
+    return render_template("offline_status.html", payload=payload)
+
+
+@offline_bp.route("/history")
+def history_page():
+    runs = list_snapshot_runs(current_app.instance_path, limit=50)
+    return render_template("offline_history.html", runs=runs)
+
+
+@offline_bp.route("/settings", methods=["GET", "POST"])
+def settings_page():
+    if request.method == "POST":
+        enabled = "1" if request.form.get("snapshot_enabled") else "0"
+        interval = request.form.get("snapshot_interval_seconds") or "60"
+        try:
+            interval = str(max(15, int(interval)))
+        except Exception:
+            interval = "60"
+
+        set_setting(current_app.instance_path, "snapshot_enabled", enabled)
+        set_setting(current_app.instance_path, "snapshot_interval_seconds", interval)
+        flash("Definições offline guardadas.", "success")
+        return redirect(url_for("offline.settings_page"))
+
+    settings = {
+        "snapshot_enabled": get_setting(current_app.instance_path, "snapshot_enabled", "1"),
+        "snapshot_interval_seconds": get_setting(current_app.instance_path, "snapshot_interval_seconds", "60"),
+    }
+    return render_template("offline_settings.html", settings=settings)
+
+
+@offline_bp.route("/snapshot", methods=["POST", "GET"])
 def snapshot_now():
-    result = refresh_snapshot_from_remote()
+    result = snapshot_remote_to_local(mode="manual")
+    if request.accept_mimetypes.best == "application/json" or request.args.get("format") == "json":
+        code = 200 if result.get("ok") else 503
+        return jsonify(result), code
+
     if result.get("ok"):
         flash(
             (

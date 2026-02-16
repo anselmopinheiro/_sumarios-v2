@@ -210,3 +210,26 @@ Está prevista a migração para um sistema servidor (MySQL/PostgreSQL), permiti
 - Histórico imutável.
 - Conformidade legal reforçada.
 - Backups transacionais.
+
+
+### Snapshot automático (60s)
+Em desenvolvimento/local:
+```bash
+export DEV_LOCAL_SCHEDULER=1
+export SNAPSHOT_INTERVAL_SECONDS=60
+python app.py
+```
+
+Em produção/serverless, use cron para chamar:
+```bash
+curl -X POST https://SEU_HOST/offline/snapshot?format=json
+```
+
+### Variáveis recomendadas (.env)
+```env
+DATABASE_URL=postgresql+psycopg://USER:PASSWORD@HOST:5432/postgres?sslmode=require
+OFFLINE_DB_PATH=instance/offline.db
+SUPABASE_DB_MODE=direct
+DEV_LOCAL_SCHEDULER=1
+SNAPSHOT_INTERVAL_SECONDS=60
+```

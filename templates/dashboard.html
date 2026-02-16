@@ -12,6 +12,14 @@
 </p>
 
 <div class="mb-3">
+  <a class="btn btn-outline-danger btn-sm" href="{{ url_for('offline.status_page') }}">Offline status</a>
+  <a class="btn btn-outline-danger btn-sm" href="{{ url_for('offline.history_page') }}">Offline history</a>
+  <a class="btn btn-outline-danger btn-sm" href="{{ url_for('offline.settings_page') }}">Offline settings</a>
+  <form method="post" action="{{ url_for('offline.snapshot_now') }}" class="d-inline">
+    <button class="btn btn-danger btn-sm" type="submit">Snapshot agora</button>
+  </form>
+</div>
+<div class="mb-3">
   <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('calendario_outras_datas') }}">Outras datas</a>
   <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('calendario_sumarios_pendentes') }}">Sumários pendentes</a>
   <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('backups_list') }}">Backups</a>
