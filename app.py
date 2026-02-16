@@ -5452,165 +5452,204 @@ def create_app():
         methods=["POST"],
     )
     def calendario_update_sumario(turma_id, aula_id):
-        turma = Turma.query.get_or_404(turma_id)
-        ano = turma.ano_letivo
-        if ano and ano.fechado:
-            flash("Ano letivo fechado: não é possível editar o calendário.", "error")
-            return redirect(url_for("turma_calendario", turma_id=turma.id))
-
-        aula = (
-            CalendarioAula.query.filter_by(id=aula_id, apagado=False)
-            .first_or_404()
-        )
-        if aula.turma_id != turma.id:
-            flash("Linha de calendário não pertence a esta turma.", "error")
-            return redirect(url_for("turma_calendario", turma_id=turma.id))
-
-        aceita_json = request.headers.get("X-Requested-With") == "XMLHttpRequest"
-
-        sumario_txt = request.form.get("sumario")
-        if sumario_txt is not None:
-            sumario_atual = aula.sumario or ""
-            sumario_novo = sumario_txt.strip()
-            if sumario_novo != sumario_atual:
-                _registar_sumario_historico(
-                    aula,
-                    "edicao_manual",
-                    sumario_atual,
-                    sumario_novo,
-                )
-            aula.sumario = sumario_novo
-
-        previsao_txt = request.form.get("previsao")
-        if previsao_txt is not None:
-            aula.previsao = previsao_txt.strip()
-
-        observacoes_txt = request.form.get("observacoes")
-        if observacoes_txt is not None:
-            aula.observacoes = observacoes_txt.strip()
-
-        tipo_original = aula.tipo
-        tempos_originais = aula.tempos_sem_aula or 0
-        novo_tipo_raw = request.form.get("tipo")
-        novo_tipo = (novo_tipo_raw if novo_tipo_raw is not None else aula.tipo) or "normal"
-        if isinstance(novo_tipo, str):
-            novo_tipo = novo_tipo.strip()
-        aula.tipo = novo_tipo
-
-        tempos_sem_aula = request.form.get("tempos_sem_aula", type=int)
-        total_previsto = _total_previsto_ui(
-            aula.sumarios,
-            tempos_sem_aula if tempos_sem_aula is not None else aula.tempos_sem_aula,
-        )
-        if tempos_sem_aula is None:
-            if novo_tipo in DEFAULT_TIPOS_SEM_AULA:
-                tempos_sem_aula = (
-                    aula.tempos_sem_aula
-                    if aula.tempos_sem_aula is not None
-                    else total_previsto
-                )
-            else:
-                tempos_sem_aula = 0
-        tempos_sem_aula = max(0, min(tempos_sem_aula, total_previsto))
-        aula.tempos_sem_aula = (
-            tempos_sem_aula if novo_tipo in DEFAULT_TIPOS_SEM_AULA else 0
+        aceita_json = (
+            request.headers.get("X-Requested-With") == "XMLHttpRequest"
+            or request.accept_mimetypes.best == "application/json"
         )
 
-        mudou_tempos = aula.tempos_sem_aula != tempos_originais
+        def _json_error(message, status=500):
+            if aceita_json:
+                return jsonify({"ok": False, "error": message}), status
+            flash(message, "error")
+            return redirect(url_for("turma_calendario", turma_id=turma_id))
 
-        db.session.commit()
+        try:
+            turma = Turma.query.get_or_404(turma_id)
+            ano = turma.ano_letivo
+            if ano and ano.fechado:
+                return _json_error("Ano letivo fechado: não é possível editar o calendário.", 400)
 
-        mensagem = "Sumário atualizado."
-
-        if novo_tipo != tipo_original or mudou_tempos:
-            renumerar_calendario_turma(turma.id)
-            novas = completar_modulos_profissionais(
-                turma.id,
-                data_removida=aula.data,
-                modulo_removido_id=aula.modulo_id,
+            aula = (
+                CalendarioAula.query.filter_by(id=aula_id, apagado=False)
+                .first_or_404()
             )
-            if novas:
-                renumerar_calendario_turma(turma.id)
-                mensagem = (
-                    "Tipo de aula atualizado e "
-                    f"{novas} aula(s) adicionadas para cumprir o total do módulo."
-                )
-            else:
-                mensagem = "Sumário e contagens atualizados."
+            if aula.turma_id != turma.id:
+                return _json_error("Linha de calendário não pertence a esta turma.", 400)
 
-        if not aceita_json:
-            flash(mensagem, "success")
-        else:
-            return jsonify(
-                {
-                    "status": "ok",
-                    "sumario": aula.sumario or "",
-                    "previsao": aula.previsao or "",
-                    "tipo": aula.tipo,
-                    "tempos_sem_aula": aula.tempos_sem_aula or 0,
-                    "last_save": _formatar_data_hora(_load_last_save()),
-                }
+            sumario_txt = request.form.get("sumario")
+            if sumario_txt is not None:
+                sumario_atual = aula.sumario or ""
+                sumario_novo = sumario_txt.strip()
+                if sumario_novo != sumario_atual:
+                    try:
+                        _registar_sumario_historico(
+                            aula,
+                            "edicao_manual",
+                            sumario_atual,
+                            sumario_novo,
+                        )
+                    except Exception as hist_exc:
+                        app.logger.exception(
+                            "Falha ao registar histórico de sumário (turma_id=%s aula_id=%s): %s",
+                            turma_id,
+                            aula_id,
+                            hist_exc,
+                        )
+                aula.sumario = sumario_novo
+
+            previsao_txt = request.form.get("previsao")
+            if previsao_txt is not None:
+                aula.previsao = previsao_txt.strip()
+
+            observacoes_txt = request.form.get("observacoes")
+            if observacoes_txt is not None:
+                aula.observacoes = observacoes_txt.strip()
+
+            tipo_original = aula.tipo
+            tempos_originais = aula.tempos_sem_aula or 0
+            novo_tipo_raw = request.form.get("tipo")
+            novo_tipo = (novo_tipo_raw if novo_tipo_raw is not None else aula.tipo) or "normal"
+            if isinstance(novo_tipo, str):
+                novo_tipo = novo_tipo.strip()
+            aula.tipo = novo_tipo
+
+            tempos_sem_aula = request.form.get("tempos_sem_aula", type=int)
+            total_previsto = _total_previsto_ui(
+                aula.sumarios,
+                tempos_sem_aula if tempos_sem_aula is not None else aula.tempos_sem_aula,
             )
-
-        periodo_id = request.form.get("periodo_id", type=int)
-        redirect_view = request.form.get("view")
-        data_ref = request.form.get("data_ref")
-        turma_filtro = request.form.get("turma_filtro", type=int)
-
-        if redirect_view == "pendentes":
-            filtros = {}
-            turma_filtro = request.form.get("turma_filtro", type=int)
-            if turma_filtro:
-                filtros["turma_id"] = turma_filtro
-            return redirect(url_for("calendario_sumarios_pendentes", **filtros))
-
-        if redirect_view == "outras_datas":
-            filtros = {
-                "tipo": request.form.get("tipo_filtro") or None,
-                "turma_id": request.form.get("turma_filtro", type=int),
-                "data_inicio": request.form.get("data_inicio") or None,
-                "data_fim": request.form.get("data_fim") or None,
-            }
-            filtros_limpos = {k: v for k, v in filtros.items() if v}
-            return redirect(url_for("calendario_outras_datas", **filtros_limpos))
-
-        if redirect_view == "dia" and data_ref:
-            destino = {"data": data_ref}
-            if periodo_id:
-                destino["periodo_id"] = periodo_id
-            if turma_filtro:
-                return redirect(
-                    url_for(
-                        "turma_calendario_dia",
-                        turma_id=turma_filtro,
-                        **destino,
+            if tempos_sem_aula is None:
+                if novo_tipo in DEFAULT_TIPOS_SEM_AULA:
+                    tempos_sem_aula = (
+                        aula.tempos_sem_aula
+                        if aula.tempos_sem_aula is not None
+                        else total_previsto
                     )
-                )
-            return redirect(url_for("turma_calendario_dia", **destino))
-        if redirect_view == "semana":
-            filtros = {}
-            if data_ref:
-                filtros["data"] = data_ref
-            turma_filtro = request.form.get("turma_id", type=int)
-            if turma_filtro:
-                filtros["turma_id"] = turma_filtro
-            if periodo_id:
-                filtros["periodo_id"] = periodo_id
-            return redirect(url_for("calendario_semana", **filtros))
-        if redirect_view == "semana_previsao":
-            filtros = {}
-            if data_ref:
-                filtros["data"] = data_ref
-            turma_filtro = request.form.get("turma_id", type=int)
-            if turma_filtro:
-                filtros["turma_id"] = turma_filtro
-            if periodo_id:
-                filtros["periodo_id"] = periodo_id
-            return redirect(url_for("calendario_semana_previsao", **filtros))
+                else:
+                    tempos_sem_aula = 0
+            tempos_sem_aula = max(0, min(tempos_sem_aula, total_previsto))
+            aula.tempos_sem_aula = (
+                tempos_sem_aula if novo_tipo in DEFAULT_TIPOS_SEM_AULA else 0
+            )
 
-        return redirect(
-            url_for("turma_calendario", turma_id=turma.id, periodo_id=periodo_id)
-        )
+            mudou_tempos = aula.tempos_sem_aula != tempos_originais
+
+            db.session.commit()
+            app.logger.info(
+                "SAVE OK | turma_id=%s | aula_id=%s | endpoint=calendario_update_sumario",
+                turma_id,
+                aula_id,
+            )
+
+            mensagem = "Sumário atualizado."
+
+            if novo_tipo != tipo_original or mudou_tempos:
+                try:
+                    renumerar_calendario_turma(turma.id)
+                    novas = completar_modulos_profissionais(
+                        turma.id,
+                        data_removida=aula.data,
+                        modulo_removido_id=aula.modulo_id,
+                    )
+                    if novas:
+                        renumerar_calendario_turma(turma.id)
+                        mensagem = (
+                            "Tipo de aula atualizado e "
+                            f"{novas} aula(s) adicionadas para cumprir o total do módulo."
+                        )
+                    else:
+                        mensagem = "Sumário e contagens atualizados."
+                except Exception as pos_exc:
+                    app.logger.exception(
+                        "Falha pós-gravação ao renumerar/completar módulo (turma_id=%s aula_id=%s): %s",
+                        turma_id,
+                        aula_id,
+                        pos_exc,
+                    )
+
+            if aceita_json:
+                return jsonify(
+                    {
+                        "status": "ok",
+                        "ok": True,
+                        "sumario": aula.sumario or "",
+                        "previsao": aula.previsao or "",
+                        "tipo": aula.tipo,
+                        "tempos_sem_aula": aula.tempos_sem_aula or 0,
+                        "last_save": _formatar_data_hora(_load_last_save()),
+                    }
+                )
+
+            flash(mensagem, "success")
+
+            periodo_id = request.form.get("periodo_id", type=int)
+            redirect_view = request.form.get("view")
+            data_ref = request.form.get("data_ref")
+            turma_filtro = request.form.get("turma_filtro", type=int)
+
+            if redirect_view == "pendentes":
+                filtros = {}
+                turma_filtro = request.form.get("turma_filtro", type=int)
+                if turma_filtro:
+                    filtros["turma_id"] = turma_filtro
+                return redirect(url_for("calendario_sumarios_pendentes", **filtros))
+
+            if redirect_view == "outras_datas":
+                filtros = {
+                    "tipo": request.form.get("tipo_filtro") or None,
+                    "turma_id": request.form.get("turma_filtro", type=int),
+                    "data_inicio": request.form.get("data_inicio") or None,
+                    "data_fim": request.form.get("data_fim") or None,
+                }
+                filtros_limpos = {k: v for k, v in filtros.items() if v}
+                return redirect(url_for("calendario_outras_datas", **filtros_limpos))
+
+            if redirect_view == "dia" and data_ref:
+                destino = {"data": data_ref}
+                if periodo_id:
+                    destino["periodo_id"] = periodo_id
+                if turma_filtro:
+                    return redirect(
+                        url_for(
+                            "turma_calendario_dia",
+                            turma_id=turma_filtro,
+                            **destino,
+                        )
+                    )
+                return redirect(url_for("turma_calendario_dia", **destino))
+            if redirect_view == "semana":
+                filtros = {}
+                if data_ref:
+                    filtros["data"] = data_ref
+                turma_filtro = request.form.get("turma_id", type=int)
+                if turma_filtro:
+                    filtros["turma_id"] = turma_filtro
+                if periodo_id:
+                    filtros["periodo_id"] = periodo_id
+                return redirect(url_for("calendario_semana", **filtros))
+            if redirect_view == "semana_previsao":
+                filtros = {}
+                if data_ref:
+                    filtros["data"] = data_ref
+                turma_filtro = request.form.get("turma_id", type=int)
+                if turma_filtro:
+                    filtros["turma_id"] = turma_filtro
+                if periodo_id:
+                    filtros["periodo_id"] = periodo_id
+                return redirect(url_for("calendario_semana_previsao", **filtros))
+
+            return redirect(
+                url_for("turma_calendario", turma_id=turma.id, periodo_id=periodo_id)
+            )
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.exception(
+                "Erro ao guardar sumário (turma_id=%s aula_id=%s): %s",
+                turma_id,
+                aula_id,
+                exc,
+            )
+            return _json_error("Falha ao guardar sumário.", 500)
 
     # ----------------------------------------
     # ANOS LETIVOS – CRUD
