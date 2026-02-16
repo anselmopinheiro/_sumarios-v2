@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Turmas (snapshot offline)</h2>
+<ul class="list-group">
+  {% for turma in turmas %}
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+      <span>{{ turma.nome }}</span>
+      <a class="btn btn-sm btn-outline-primary" href="{{ url_for('offline.turma_aulas', turma_id=turma.id) }}">Ver aulas</a>
+    </li>
+  {% else %}
+    <li class="list-group-item text-muted">Sem turmas no snapshot.</li>
+  {% endfor %}
+</ul>
+{% endblock %}

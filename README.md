@@ -73,6 +73,23 @@ flask db upgrade
 python app.py
 ```
 
+### Modo offline (snapshot + outbox local)
+Quando `APP_DB_MODE=postgres` e a ligação remota falha, a app ativa o fluxo offline em `/offline`.
+
+1. Preparar snapshot antes de ficar sem rede:
+   ```bash
+   flask offline snapshot
+   ```
+2. Sem rede, usar `/offline` para:
+   - escolher turma/aula do snapshot;
+   - lançar presenças/avaliação por aluno;
+   - guardar sumário/observações locais.
+3. Quando a rede regressar, sincronizar:
+   - pela UI em `/offline/sync`, ou
+   - via botão "Sincronizar" no dashboard offline.
+
+> O armazenamento offline usa sempre `instance/offline.db` (SQLite local), independentemente da base principal.
+
 ### Exportar schema atual do SQLite (baseline)
 ```bash
 python tools/dump_sqlite_schema.py --sqlite-path gestor_lectivo.db --output tools/schema_sqlite.json

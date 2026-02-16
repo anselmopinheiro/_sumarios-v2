@@ -35,6 +35,7 @@ from flask import (
     send_from_directory,
     abort,
     has_app_context,
+    g,
 )
 
 from flask_migrate import Migrate
@@ -61,6 +62,9 @@ from sqlalchemy import event
 from sqlalchemy.orm import joinedload
 
 from config import Config
+from offline_blueprint import offline_bp, refresh_snapshot_from_remote
+from offline_store import init_offline_db as init_offline_store_db, is_online as detect_online
+from sync import sync_outbox
 from offline_queue import (
     clear_sent,
     enqueue_upsert_aulas_alunos,
@@ -671,6 +675,28 @@ def create_app():
 
     db.init_app(app)
     Migrate(app, db)
+    app.register_blueprint(offline_bp)
+
+    @app.before_request
+    def _set_connectivity_state():
+        g.is_online = detect_online(app, lambda: db.session.execute(text("SELECT 1")))
+        if request.path == "/" and not g.is_online:
+            return redirect(url_for("offline.dashboard"))
+
+    @app.cli.group("offline")
+    def offline_cli():
+        """Comandos de preparação/sincronização offline."""
+
+    @offline_cli.command("snapshot")
+    def offline_snapshot_command():
+        result = refresh_snapshot_from_remote()
+        if result.get("ok"):
+            print(
+                f"Snapshot offline atualizado: {result['turmas']} turma(s), "
+                f"{result['alunos']} aluno(s), {result['aulas']} aula(s)."
+            )
+        else:
+            raise SystemExit(result.get("error") or "Falha ao atualizar snapshot offline.")
 
     config_store = ConfigStore(app.instance_path, logger=app.logger)
 
@@ -1537,6 +1563,7 @@ def create_app():
 
     with app.app_context():
         init_offline_db(app.instance_path)
+        init_offline_store_db(app.instance_path)
         _ensure_columns()
         try:
             _log_db_mode()

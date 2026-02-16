@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Modo offline</h2>
+<p class="text-muted">Sem rede para a BD remota. Trabalhe com o snapshot local.</p>
+<div class="mb-3">
+  <form method="post" action="{{ url_for('offline.snapshot_now') }}" class="d-inline">
+    <button class="btn btn-outline-primary" type="submit">Actualizar dados para offline</button>
+  </form>
+  <a class="btn btn-outline-success" href="{{ url_for('offline.sync_page') }}">Sincronizar</a>
+</div>
+<div class="alert alert-secondary">
+  Pendentes: <strong>{{ status.pending }}</strong> | Erros: <strong>{{ status.errors }}</strong>
+  {% if status.last_error %}<br><small>{{ status.last_error }}</small>{% endif %}
+</div>
+<a class="btn btn-primary" href="{{ url_for('offline.turmas') }}">Abrir turmas offline</a>
+{% endblock %}
