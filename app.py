@@ -19,6 +19,8 @@ import uuid
 import platform
 import sys
 import unicodedata
+import logging
+from logging.handlers import RotatingFileHandler
 from urllib.parse import urlparse, parse_qsl, urlsplit
 from collections import defaultdict
 from datetime import datetime, date, timedelta
@@ -57,9 +59,9 @@ def _load_dotenv_if_available():
 
 
 _load_dotenv_if_available()
-from sqlalchemy import func, inspect, text
+from sqlalchemy import create_engine, func, inspect, text
 from sqlalchemy import event
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, sessionmaker
 
 from config import Config
 from offline_blueprint import offline_bp, refresh_snapshot_from_remote
@@ -662,11 +664,86 @@ def criar_periodo_modular_para_modulo(modulo: Modulo) -> Periodo:
     return p
 
 
+
+def _safe_db_target_from_uri(uri):
+    try:
+        parsed = urlsplit(uri or "")
+        host = parsed.hostname or "-"
+        port = parsed.port or "-"
+        db_name = (parsed.path or "/").lstrip("/") or "-"
+        return {"host": host, "port": port, "db": db_name}
+    except Exception:
+        return {"host": "-", "port": "-", "db": "-"}
+
+
+def _configure_logging(app):
+    os.makedirs(os.path.join(app.root_path, "logs"), exist_ok=True)
+    log_file = os.path.join(app.root_path, "logs", "app.log")
+
+    formatter = logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s")
+
+    file_handler_exists = any(
+        isinstance(h, RotatingFileHandler) and getattr(h, "baseFilename", None) == log_file
+        for h in app.logger.handlers
+    )
+    if not file_handler_exists:
+        file_handler = RotatingFileHandler(log_file, maxBytes=2 * 1024 * 1024, backupCount=5, encoding="utf-8")
+        file_handler.setFormatter(formatter)
+        file_handler.setLevel(logging.INFO)
+        app.logger.addHandler(file_handler)
+
+    if app.debug:
+        console_exists = any(isinstance(h, logging.StreamHandler) for h in app.logger.handlers)
+        if not console_exists:
+            console = logging.StreamHandler()
+            console.setFormatter(formatter)
+            console.setLevel(logging.DEBUG)
+            app.logger.addHandler(console)
+
+    app.logger.setLevel(logging.DEBUG if app.debug else logging.INFO)
+
+
+def _setup_dual_db_engines(app):
+    local_uri = f"sqlite:///{os.path.join(app.instance_path, 'offline.db')}"
+    remote_uri = app.config.get("SQLALCHEMY_DATABASE_URI")
+
+    app.extensions["engine_local"] = create_engine(local_uri, future=True)
+    app.extensions["session_local_factory"] = sessionmaker(bind=app.extensions["engine_local"], future=True)
+
+    app.extensions["engine_remote"] = None
+    app.extensions["session_remote_factory"] = None
+
+    if (app.config.get("APP_DB_MODE") or "sqlite").lower() == "postgres" and remote_uri:
+        try:
+            app.extensions["engine_remote"] = create_engine(
+                remote_uri,
+                future=True,
+                pool_pre_ping=True,
+                pool_recycle=1800,
+                connect_args={
+                    "connect_timeout": int(app.config.get("SUPABASE_CONNECT_TIMEOUT", 5) or 5),
+                    "options": f"-c statement_timeout={int(app.config.get('SUPABASE_STATEMENT_TIMEOUT_MS', 15000) or 15000)}",
+                },
+            )
+            app.extensions["session_remote_factory"] = sessionmaker(bind=app.extensions["engine_remote"], future=True)
+        except Exception as exc:
+            target = _safe_db_target_from_uri(remote_uri)
+            app.logger.exception(
+                "Não foi possível preparar engine remota (host=%s port=%s db=%s): %s",
+                target["host"],
+                target["port"],
+                target["db"],
+                exc,
+            )
+
+
 def create_app():
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_object(Config)
 
     os.makedirs(app.instance_path, exist_ok=True)
+    _configure_logging(app)
+    _setup_dual_db_engines(app)
     backup_override = os.environ.get("DB_BACKUP_DIR")
     if backup_override and os.path.isabs(backup_override):
         app.config["BACKUP_DIR"] = backup_override
@@ -697,6 +774,42 @@ def create_app():
             )
         else:
             raise SystemExit(result.get("error") or "Falha ao atualizar snapshot offline.")
+
+    @offline_cli.command("healthcheck")
+    def offline_healthcheck_command():
+        target = _safe_db_target_from_uri(app.config.get("SQLALCHEMY_DATABASE_URI") or "")
+        if (app.config.get("APP_DB_MODE") or "sqlite").lower() != "postgres":
+            raise SystemExit("APP_DB_MODE não está em postgres.")
+        try:
+            db.session.execute(text("SELECT 1"))
+            print(json.dumps({"ok": True, **target}, ensure_ascii=False))
+        except Exception as exc:
+            app.logger.exception(
+                "Healthcheck CLI falhou (host=%s port=%s db=%s): %s",
+                target["host"],
+                target["port"],
+                target["db"],
+                exc,
+            )
+            raise SystemExit(json.dumps({"ok": False, "error": str(exc), **target}, ensure_ascii=False))
+
+    @app.get("/api/health/db")
+    def api_health_db():
+        target = _safe_db_target_from_uri(app.config.get("SQLALCHEMY_DATABASE_URI") or "")
+        if (app.config.get("APP_DB_MODE") or "sqlite").lower() != "postgres":
+            return jsonify({"ok": False, "error": "APP_DB_MODE não está em postgres.", **target}), 400
+        try:
+            db.session.execute(text("SELECT 1"))
+            return jsonify({"ok": True, **target})
+        except Exception as exc:
+            app.logger.exception(
+                "Healthcheck API falhou (host=%s port=%s db=%s): %s",
+                target["host"],
+                target["port"],
+                target["db"],
+                exc,
+            )
+            return jsonify({"ok": False, "error": str(exc), **target}), 503
 
     config_store = ConfigStore(app.instance_path, logger=app.logger)
 
@@ -1534,8 +1647,16 @@ def create_app():
         if db_mode == "postgres":
             parsed = urlsplit(uri)
             host = parsed.hostname or "-"
+            port = parsed.port or "-"
             db_name = (parsed.path or "/").lstrip("/") or "-"
-            app.logger.info("DB mode: postgres | host: %s | db: %s", host, db_name)
+            supabase_mode = app.config.get("SUPABASE_DB_MODE", "direct")
+            app.logger.info(
+                "DB mode: postgres | host: %s | port: %s | db: %s | supabase_mode: %s",
+                host,
+                port,
+                db_name,
+                supabase_mode,
+            )
         else:
             app.logger.info("DB mode: sqlite | uri: %s", uri)
 

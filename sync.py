@@ -1,10 +1,27 @@
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
 
 from models import db
 from offline_store import list_outbox, mark_outbox, outbox_status
 
 
+def _target_from_app(app):
+    uri = app.config.get("SQLALCHEMY_DATABASE_URI") or ""
+    mode = app.config.get("SUPABASE_DB_MODE", "direct")
+    try:
+        parsed = make_url(uri)
+        return {
+            "host": parsed.host or "-",
+            "port": parsed.port or "-",
+            "db": parsed.database or "-",
+            "mode": mode,
+        }
+    except Exception:
+        return {"host": "-", "port": "-", "db": "-", "mode": mode}
+
+
 def sync_outbox(app, limit=200):
+    target = _target_from_app(app)
     db_mode = (app.config.get("APP_DB_MODE") or "sqlite").lower()
     if db_mode != "postgres":
         return {"ok": False, "error": "APP_DB_MODE não está em postgres.", **outbox_status(app.instance_path)}
@@ -13,6 +30,18 @@ def sync_outbox(app, limit=200):
         db.session.execute(text("SELECT 1"))
     except Exception as exc:
         db.session.rollback()
+        app.logger.exception(
+            "Sync outbox sem ligação remota (host=%s port=%s db=%s mode=%s): %s",
+            target["host"],
+            target["port"],
+            target["db"],
+            target["mode"],
+            exc,
+        )
+        if target["mode"] == "pooler":
+            app.logger.warning(
+                "Dica Supabase pooler: teste direct (5432), valide password/role e parâmetros de timeout."
+            )
         return {"ok": False, "error": f"BD remota indisponível: {exc}", **outbox_status(app.instance_path)}
 
     applied = 0
@@ -84,6 +113,7 @@ def sync_outbox(app, limit=200):
             applied += 1
         except Exception as exc:
             db.session.rollback()
+            app.logger.exception("Erro ao sincronizar outbox id=%s: %s", item["id"], exc)
             mark_outbox(app.instance_path, item["id"], "error", str(exc))
             errored += 1
 

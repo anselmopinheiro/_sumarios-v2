@@ -29,8 +29,8 @@
 <hr>
 <h5>Sumário / Observações (offline)</h5>
 <form method="post" action="{{ url_for('offline.aula_sumario', aula_id=aula.id) }}">
-  <textarea class="form-control mb-2" name="sumario" rows="3" placeholder="Sumário"></textarea>
-  <textarea class="form-control mb-2" name="observacoes" rows="2" placeholder="Observações"></textarea>
+  <textarea class="form-control mb-2" name="sumario" rows="3" placeholder="Sumário">{{ sumario.sumario if sumario else "" }}</textarea>
+  <textarea class="form-control mb-2" name="observacoes" rows="2" placeholder="Observações">{{ sumario.observacoes if sumario else "" }}</textarea>
   <button class="btn btn-outline-primary" type="submit">Guardar sumário localmente</button>
 </form>
 {% endblock %}

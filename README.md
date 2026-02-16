@@ -69,6 +69,9 @@ python app.py
 ```bash
 export APP_DB_MODE=postgres
 export DATABASE_URL='postgresql+psycopg://USER:PASSWORD@HOST:5432/postgres?sslmode=require'
+export SUPABASE_DB_MODE=direct   # direct|pooler
+export SUPABASE_DB_PORT=5432     # 6543 para pooler
+export SQLALCHEMY_ECHO=0
 flask db upgrade
 python app.py
 ```
@@ -89,6 +92,14 @@ Quando `APP_DB_MODE=postgres` e a ligação remota falha, a app ativa o fluxo of
    - via botão "Sincronizar" no dashboard offline.
 
 > O armazenamento offline usa sempre `instance/offline.db` (SQLite local), independentemente da base principal.
+
+
+### Healthcheck da ligação remota
+```bash
+flask offline healthcheck
+# ou HTTP:
+curl -s http://127.0.0.1:5000/api/health/db
+```
 
 ### Exportar schema atual do SQLite (baseline)
 ```bash

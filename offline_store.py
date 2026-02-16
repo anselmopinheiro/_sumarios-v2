@@ -4,6 +4,15 @@ import sqlite3
 from datetime import datetime
 
 
+SNAPSHOT_TABLES = {
+    "snapshot_turmas": ("id",),
+    "snapshot_alunos": ("id",),
+    "snapshot_periodos": ("id",),
+    "snapshot_modulos": ("id",),
+    "snapshot_calendario_aulas": ("id",),
+}
+
+
 def get_offline_db_path(instance_path):
     os.makedirs(instance_path, exist_ok=True)
     return os.path.join(instance_path, "offline.db")
@@ -124,14 +133,46 @@ def is_online(app, ping_fn):
         return False
 
 
-def replace_snapshot(instance_path, table_name, rows):
+def _upsert_rows(conn, table_name, rows, conflict_cols):
+    if not rows:
+        return 0
+
+    cols = list(rows[0].keys())
+    placeholders = ",".join(["?"] * len(cols))
+    update_cols = [c for c in cols if c not in conflict_cols]
+    update_clause = ", ".join([f"{c}=excluded.{c}" for c in update_cols])
+    sql = (
+        f"INSERT INTO {table_name} ({','.join(cols)}) VALUES ({placeholders}) "
+        f"ON CONFLICT({','.join(conflict_cols)}) DO UPDATE SET {update_clause}"
+    )
+    conn.executemany(sql, [tuple(r.get(c) for c in cols) for r in rows])
+    return len(rows)
+
+
+def upsert_snapshot_batch(instance_path, snapshot_data):
+    counts = {}
     with _connect(instance_path) as conn:
-        conn.execute(f"DELETE FROM {table_name}")
-        if rows:
-            cols = list(rows[0].keys())
-            placeholders = ",".join(["?"] * len(cols))
-            sql = f"INSERT INTO {table_name} ({','.join(cols)}) VALUES ({placeholders})"
-            conn.executemany(sql, [tuple(r.get(c) for c in cols) for r in rows])
+        for table_name, rows in snapshot_data.items():
+            conflict_cols = SNAPSHOT_TABLES.get(table_name)
+            if not conflict_cols:
+                continue
+            counts[table_name] = _upsert_rows(conn, table_name, rows or [], conflict_cols)
+    return counts
+
+
+def replace_snapshot(instance_path, table_name, rows):
+    """Compatibilidade retroativa. Evitar em novos fluxos para não apagar snapshot local."""
+    with _connect(instance_path) as conn:
+        conflict_cols = SNAPSHOT_TABLES.get(table_name)
+        if not conflict_cols:
+            conn.execute(f"DELETE FROM {table_name}")
+            if rows:
+                cols = list(rows[0].keys())
+                placeholders = ",".join(["?"] * len(cols))
+                sql = f"INSERT INTO {table_name} ({','.join(cols)}) VALUES ({placeholders})"
+                conn.executemany(sql, [tuple(r.get(c) for c in cols) for r in rows])
+            return
+        _upsert_rows(conn, table_name, rows or [], conflict_cols)
 
 
 def list_snapshot_turmas(instance_path):
@@ -180,6 +221,12 @@ def get_offline_aulas_alunos(instance_path, aula_id):
             (int(aula_id),),
         ).fetchall()
         return {r["aluno_id"]: dict(r) for r in rows}
+
+
+def get_offline_sumario(instance_path, aula_id):
+    with _connect(instance_path) as conn:
+        row = conn.execute("SELECT * FROM offline_sumarios WHERE aula_id=?", (int(aula_id),)).fetchone()
+        return dict(row) if row else None
 
 
 def upsert_offline_aulas_alunos(instance_path, aula_id, aluno_payloads):
