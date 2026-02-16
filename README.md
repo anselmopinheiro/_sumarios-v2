@@ -52,13 +52,25 @@ Aplicação Flask para gestão de turmas, calendários de aulas, sumários e ava
 
 
 ## Supabase / PostgreSQL
-- A app usa `DATABASE_URL` quando definida; se não existir, continua em SQLite (`instance/gestor_lectivo.db`). Se `DATABASE_URL` for Postgres mas nenhum driver estiver instalado (`psycopg`, `psycopg2` ou `pg8000`), a app faz fallback para SQLite e emite aviso.
-- O URL é normalizado (incluindo `postgres://` -> `postgresql://`), prefere `postgresql+psycopg://` quando o driver `psycopg` está instalado e força SSL (`sslmode=require`) quando não indicado.
+- A app usa uma configuração única via `APP_DB_MODE`:
+  - `APP_DB_MODE=sqlite` usa ficheiro local (`SQLITE_PATH`, default `gestor_lectivo.db`).
+  - `APP_DB_MODE=postgres` usa `DATABASE_URL` (normaliza `postgres://` e força `sslmode=require` quando falta).
 - Para backend Flask tradicional, preferir **Direct connection** (ligações long-lived). O **Pooler** é mais indicado para workloads serverless/funções com muitas ligações curtas.
 
-### Exemplo de `DATABASE_URL`
+### Arrancar em SQLite (dev/offline)
 ```bash
-postgresql+psycopg://USER:PASSWORD@HOST:5432/postgres?sslmode=require
+export APP_DB_MODE=sqlite
+export SQLITE_PATH=gestor_lectivo.db
+flask db upgrade
+python app.py
+```
+
+### Arrancar em Supabase Postgres
+```bash
+export APP_DB_MODE=postgres
+export DATABASE_URL='postgresql+psycopg://USER:PASSWORD@HOST:5432/postgres?sslmode=require'
+flask db upgrade
+python app.py
 ```
 
 ### Exportar schema atual do SQLite (baseline)

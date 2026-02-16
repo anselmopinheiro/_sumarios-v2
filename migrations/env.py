@@ -25,9 +25,12 @@ def get_engine():
 
 
 def get_engine_url():
+    configured_uri = current_app.config.get("SQLALCHEMY_DATABASE_URI")
+    if configured_uri:
+        return configured_uri.replace('%', '%%')
+
     try:
-        return get_engine().url.render_as_string(hide_password=False).replace(
-            '%', '%%')
+        return get_engine().url.render_as_string(hide_password=False).replace('%', '%%')
     except AttributeError:
         return str(get_engine().url).replace('%', '%%')
 

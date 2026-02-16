@@ -41,10 +41,10 @@ class AnoLetivo(db.Model):
     descricao = db.Column(db.String(255))
 
     # Ano letivo actualmente em uso (“Corrente”)
-    ativo = db.Column(db.Boolean, nullable=False, default=False)
+    ativo = db.Column(db.Boolean, nullable=False, default=False, server_default=db.text("false"))
 
     # Anos passados que ficam só para consulta/exportação
-    fechado = db.Column(db.Boolean, nullable=False, default=False)
+    fechado = db.Column(db.Boolean, nullable=False, default=False, server_default=db.text("false"))
 
     # Relações opcionais, se as tiveres:
     # turmas = db.relationship("Turma", back_populates="ano_letivo")
@@ -88,7 +88,7 @@ class Turma(db.Model):
     tempo_quarta = db.Column(db.Integer, nullable=True)
     tempo_quinta = db.Column(db.Integer, nullable=True)
     tempo_sexta = db.Column(db.Integer, nullable=True)
-    letiva = db.Column(db.Boolean, nullable=False, default=True, server_default="1")
+    letiva = db.Column(db.Boolean, nullable=False, default=True, server_default=db.text("true"))
     # relação many-to-many com disciplina
     turmas_disciplinas = db.relationship(
         "TurmaDisciplina",
@@ -271,7 +271,7 @@ class DTDisciplina(db.Model):
     nome = db.Column(db.String(120), nullable=False, unique=True)
     nome_curto = db.Column(db.String(40))
     professor_nome = db.Column(db.String(120))
-    ativa = db.Column(db.Boolean, nullable=False, default=True, server_default=db.text("1"))
+    ativa = db.Column(db.Boolean, nullable=False, default=True, server_default=db.text("true"))
 
 
 class DTOcorrenciaAluno(db.Model):
@@ -299,8 +299,8 @@ class DTOcorrencia(db.Model):
     num_tempos = db.Column(db.Integer)
     dt_disciplina_id = db.Column(db.Integer, db.ForeignKey("dt_disciplinas.id"), nullable=False, index=True)
     observacoes = db.Column(db.Text)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, server_default=db.text("now()"))
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=db.text("now()"))
 
     dt_turma = db.relationship("DTTurma", back_populates="ocorrencias")
     disciplina = db.relationship("DTDisciplina", backref="ocorrencias")
@@ -454,7 +454,7 @@ class CalendarioAula(db.Model):
     # normal / greve / servico_oficial / extra
     tipo = db.Column(db.String(50), default="normal", nullable=False)
 
-    apagado = db.Column(db.Boolean, default=False, nullable=False)
+    apagado = db.Column(db.Boolean, default=False, nullable=False, server_default=db.text("false"))
 
     # Número de tempos que não contam para a numeração (aplicável em faltas, serviço oficial, etc.)
     tempos_sem_aula = db.Column(db.Integer, default=0)
@@ -462,7 +462,7 @@ class CalendarioAula(db.Model):
     observacoes = db.Column(db.Text)
     sumario = db.Column(db.Text)
     previsao = db.Column(db.Text)
-    atividade = db.Column(db.Boolean, default=False, server_default="0", nullable=False)
+    atividade = db.Column(db.Boolean, default=False, server_default=db.text("false"), nullable=False)
     atividade_nome = db.Column(db.Text)
 
     turma = db.relationship("Turma", backref="calendario_aulas")
@@ -484,7 +484,7 @@ class AulaSumarioHistorico(db.Model):
     calendario_aula_id = db.Column(
         db.Integer, db.ForeignKey("calendario_aulas.id"), nullable=False
     )
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, server_default=db.text("now()"))
     acao = db.Column(db.String(50), nullable=False)
     sumario_anterior = db.Column(db.Text)
     sumario_novo = db.Column(db.Text)
@@ -505,7 +505,7 @@ class AulaAluno(db.Model):
     aluno_id = db.Column(db.Integer, db.ForeignKey("alunos.id"), nullable=False)
 
     # True = atraso; False = pontual
-    atraso = db.Column(db.Boolean, default=False, nullable=False)
+    atraso = db.Column(db.Boolean, default=False, nullable=False, server_default=db.text("false"))
     # Número de tempos em falta (0 = presente)
     faltas = db.Column(db.Integer, default=0, nullable=False)
 

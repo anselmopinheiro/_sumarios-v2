@@ -19,7 +19,7 @@ import uuid
 import platform
 import sys
 import unicodedata
-from urllib.parse import urlparse, parse_qsl
+from urllib.parse import urlparse, parse_qsl, urlsplit
 from collections import defaultdict
 from datetime import datetime, date, timedelta
 
@@ -58,7 +58,6 @@ def _load_dotenv_if_available():
 _load_dotenv_if_available()
 from sqlalchemy import func, inspect, text
 from sqlalchemy import event
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import joinedload
 
 from config import Config
@@ -1503,6 +1502,17 @@ def create_app():
                 item["payload"],
             )
 
+    def _log_db_mode():
+        db_mode = app.config.get("APP_DB_MODE", "sqlite")
+        uri = app.config.get("SQLALCHEMY_DATABASE_URI", "")
+        if db_mode == "postgres":
+            parsed = urlsplit(uri)
+            host = parsed.hostname or "-"
+            db_name = (parsed.path or "/").lstrip("/") or "-"
+            app.logger.info("DB mode: postgres | host: %s | db: %s", host, db_name)
+        else:
+            app.logger.info("DB mode: sqlite | uri: %s", uri)
+
     def try_flush_outbox(limit=200):
         try:
             db.session.execute(text("SELECT 1"))
@@ -1529,16 +1539,9 @@ def create_app():
         init_offline_db(app.instance_path)
         _ensure_columns()
         try:
-            engine_db = db.engine.url.database
-            config_db = app.config.get("DB_PATH")
-            if engine_db and config_db and os.path.abspath(engine_db) != os.path.abspath(config_db):
-                app.logger.warning(
-                    "DB path diverge do esperado: engine=%s | config=%s",
-                    engine_db,
-                    config_db,
-                )
+            _log_db_mode()
         except Exception:
-            app.logger.warning("Não foi possível validar coerência do caminho da BD.")
+            app.logger.warning("Não foi possível emitir informação do backend de BD.")
         if app.config.get("BACKUP_ON_STARTUP", True) and not _running_flask_cli():
             app.logger.info("Backups automáticos ativos no arranque.")
             _backup_database(reason="startup")
