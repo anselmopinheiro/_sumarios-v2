@@ -413,7 +413,8 @@
       }, 20000);
     };
 
-    const obterPrevisaoContexto = (btn) => {
+    if (!window.app) window.app = {};
+    window.app.obterPrevisaoContexto = window.app.obterPrevisaoContexto || function (btn) {
       if (!btn) return { input: null, editor: null };
       const wrapper = btn.closest('.js-richtext-wrapper') || btn.closest('form');
       if (!wrapper) return { input: null, editor: null };
@@ -421,70 +422,7 @@
       const editor = wrapper.querySelector('.js-richtext-editor');
       return { input, editor };
     };
-
-    const definirPrevisao = (input, editor, valor) => {
-      if (!input && !editor) return;
-      const sanitized = sanitizeRichtext(valor || '');
-      if (input) {
-        input.value = sanitized;
-        input.dispatchEvent(new Event('change', { bubbles: true }));
-      }
-      if (editor) {
-        editor.innerHTML = sanitized;
-        syncRichtext(editor);
-        editor.dispatchEvent(new Event('input', { bubbles: true }));
-      }
-    };
-
-    const obterListaPrevisoes = (turmaId = null) => {
-      const lista = Array.from(document.querySelectorAll('input[name="previsao"]'));
-      const filtrada = turmaId ? lista.filter((item) => item.dataset.turmaId === turmaId) : lista;
-      return filtrada.sort((a, b) => {
-        const ordemA = a.dataset.sortKey || '';
-        const ordemB = b.dataset.sortKey || '';
-        if (ordemA === ordemB) return 0;
-        return ordemA < ordemB ? -1 : 1;
-      });
-    };
-
-    const limparPrevisao = (btn) => {
-      const { input, editor } = obterPrevisaoContexto(btn);
-      if (!input && !editor) return;
-      definirPrevisao(input, editor, '');
-    };
-
-    const copiarPrevisaoAnterior = (btn) => {
-      const { input, editor } = obterPrevisaoContexto(btn);
-      if (!input) return;
-      const lista = obterListaPrevisoes();
-      const idx = lista.indexOf(input);
-      if (idx <= 0) return;
-      const valor = lista[idx - 1]?.value || '';
-      definirPrevisao(input, editor, valor);
-    };
-
-    const enviarPrevisaoSeguinte = (btn) => {
-      const { input, editor } = obterPrevisaoContexto(btn);
-      if (!input) return;
-      const turmaId = input.dataset.turmaId || null;
-      const lista = obterListaPrevisoes(turmaId);
-      const idx = lista.indexOf(input);
-      if (idx < 0 || idx >= lista.length - 1) return;
-      const atual = input.value || '';
-      const nextInput = lista[idx + 1];
-      const nextWrapper = nextInput?.closest('.js-richtext-wrapper') || nextInput?.closest('form');
-      const nextEditor = nextWrapper?.querySelector('.js-richtext-editor') || null;
-      definirPrevisao(nextInput, nextEditor, atual);
-    };
-
-    const obterPrevisaoContexto = (btn) => {
-      if (!btn) return { input: null, editor: null };
-      const wrapper = btn.closest('.js-richtext-wrapper') || btn.closest('form');
-      if (!wrapper) return { input: null, editor: null };
-      const input = wrapper.querySelector('[name="previsao"]');
-      const editor = wrapper.querySelector('.js-richtext-editor');
-      return { input, editor };
-    };
+    var obterPrevisaoContexto = window.app.obterPrevisaoContexto;
 
     const definirPrevisao = (input, editor, valor) => {
       if (!input && !editor) return;
