@@ -60,6 +60,7 @@ def _load_dotenv_if_available():
 
 _load_dotenv_if_available()
 from sqlalchemy import create_engine, func, inspect, text
+from sqlalchemy.engine import Engine
 from sqlalchemy import event
 from sqlalchemy.orm import joinedload, sessionmaker
 
@@ -703,6 +704,37 @@ def _configure_logging(app):
     app.logger.setLevel(logging.DEBUG if app.debug else logging.INFO)
 
 
+
+def _bind_label(connection):
+    try:
+        backend = connection.engine.url.get_backend_name()
+    except Exception:
+        backend = "unknown"
+    if backend == "postgresql":
+        return "postgres"
+    if backend == "sqlite":
+        return "sqlite"
+    return backend
+
+
+def _setup_tx_logging(app):
+    if getattr(_setup_tx_logging, "_registered", False):
+        return
+
+    @event.listens_for(Engine, "begin")
+    def _tx_begin(conn):
+        app.logger.info("TX BEGIN | bind=%s", _bind_label(conn))
+
+    @event.listens_for(Engine, "commit")
+    def _tx_commit(conn):
+        app.logger.info("TX COMMIT | bind=%s", _bind_label(conn))
+
+    @event.listens_for(Engine, "rollback")
+    def _tx_rollback(conn):
+        app.logger.info("TX ROLLBACK | bind=%s", _bind_label(conn))
+
+    _setup_tx_logging._registered = True
+
 def _setup_dual_db_engines(app):
     local_uri = f"sqlite:///{os.path.join(app.instance_path, 'offline.db')}"
     remote_uri = app.config.get("SQLALCHEMY_DATABASE_URI")
@@ -779,6 +811,7 @@ def create_app():
 
     os.makedirs(app.instance_path, exist_ok=True)
     _configure_logging(app)
+    _setup_tx_logging(app)
     _setup_dual_db_engines(app)
     app.extensions["is_remote_online"] = lambda use_cache=True: _is_remote_online(app, use_cache=use_cache)
     backup_override = os.environ.get("DB_BACKUP_DIR")
@@ -841,6 +874,33 @@ def create_app():
         if info.get("ok"):
             return jsonify({"ok": True, "latency_ms": info.get("latency_ms"), **target})
         return jsonify({"ok": False, "error": info.get("error"), "latency_ms": info.get("latency_ms"), **target}), 503
+
+    @app.get("/health/db-write")
+    def api_health_db_write():
+        target = _safe_db_target_from_uri(app.config.get("SQLALCHEMY_DATABASE_URI") or "")
+        if (app.config.get("APP_DB_MODE") or "sqlite").lower() != "postgres":
+            return jsonify({"ok": False, "error": "APP_DB_MODE não está em postgres.", **target}), 400
+
+        try:
+            db.session.execute(text("SELECT 1"))
+            db.session.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS __write_probe (
+                      id BIGSERIAL PRIMARY KEY,
+                      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    )
+                    """
+                )
+            )
+            db.session.execute(text("INSERT INTO __write_probe DEFAULT VALUES"))
+            rows = db.session.execute(text("SELECT COUNT(*) FROM __write_probe")).scalar() or 0
+            db.session.commit()
+            return jsonify({"ok": True, "rows": int(rows), **target})
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.exception("Healthcheck DB-WRITE falhou (host=%s port=%s db=%s): %s", target["host"], target["port"], target["db"], exc)
+            return jsonify({"ok": False, "error": str(exc), **target}), 500
 
     config_store = ConfigStore(app.instance_path, logger=app.logger)
 
@@ -1401,6 +1461,15 @@ def create_app():
             for token in ["flask db", "flask shell", "migrate", "upgrade", "current"]
         )
 
+    def _should_run_startup_jobs():
+        if _running_flask_cli():
+            return False
+        if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+            return True
+        if os.environ.get("FLASK_DEBUG") in {"1", "true", "True"}:
+            return False
+        return True
+
     def _get_machine_name():
         return os.environ.get("COMPUTERNAME") or platform.node() or socket.gethostname()
 
@@ -1766,11 +1835,11 @@ def create_app():
             _log_db_mode()
         except Exception:
             app.logger.warning("Não foi possível emitir informação do backend de BD.")
-        if app.config.get("BACKUP_ON_STARTUP", True) and not _running_flask_cli():
+        if app.config.get("BACKUP_ON_STARTUP", True) and _should_run_startup_jobs():
             app.logger.info("Backups automáticos ativos no arranque.")
             _backup_database(reason="startup")
-        elif _running_flask_cli():
-            app.logger.info("CLI detetada: backups automáticos desativados.")
+        elif not _should_run_startup_jobs():
+            app.logger.info("Arranque secundário/CLI detetado: tarefas de startup desativadas.")
 
         flush_result = try_flush_outbox(limit=200)
         if flush_result.get("applied"):
