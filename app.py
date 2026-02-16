@@ -60,6 +60,7 @@ def _load_dotenv_if_available():
 
 _load_dotenv_if_available()
 from sqlalchemy import create_engine, func, inspect, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.engine import Engine
 from sqlalchemy import event
 from sqlalchemy.orm import joinedload, sessionmaker
@@ -1701,27 +1702,76 @@ def create_app():
         entries.sort(key=lambda item: item["timestamp"], reverse=True)
         return entries[:20]
 
-    def _registar_sumario_historico(aula, acao, anterior, novo, autor="local"):
-        registo = AulaSumarioHistorico(
-            calendario_aula_id=aula.id,
-            acao=acao,
-            sumario_anterior=anterior,
-            sumario_novo=novo,
-            autor=autor,
-        )
-        db.session.add(registo)
-        db.session.flush()
-        excessos = (
-            AulaSumarioHistorico.query
-            .filter_by(calendario_aula_id=aula.id)
-            .order_by(AulaSumarioHistorico.created_at.desc(), AulaSumarioHistorico.id.desc())
-            .offset(10)
-            .all()
-        )
-        if excessos:
-            for item in excessos:
-                db.session.delete(item)
-        return registo
+    def _registar_sumario_historico(aula, acao, anterior, novo, autor="local", session=None, ignore_errors=False):
+        sess = session or db.session
+        try:
+            registo = AulaSumarioHistorico(
+                calendario_aula_id=aula.id,
+                acao=acao,
+                sumario_anterior=anterior,
+                sumario_novo=novo,
+                autor=autor,
+            )
+            sess.add(registo)
+            excessos = (
+                sess.query(AulaSumarioHistorico)
+                .filter_by(calendario_aula_id=aula.id)
+                .order_by(AulaSumarioHistorico.created_at.desc(), AulaSumarioHistorico.id.desc())
+                .offset(10)
+                .all()
+            )
+            if excessos:
+                for item in excessos:
+                    sess.delete(item)
+            return registo
+        except IntegrityError as exc:
+            sess.rollback()
+            app.logger.exception(
+                "HIST FAIL (ignored) | aula_id=%s | acao=%s | erro=%s",
+                getattr(aula, "id", None),
+                acao,
+                exc,
+            )
+            if ignore_errors:
+                return None
+            raise
+
+    def _registar_sumario_historico_isolado(aula_id, acao, anterior, novo, autor="local"):
+        session_factory = app.extensions.get("session_remote_factory")
+        if session_factory is None:
+            bind = db.session.get_bind()
+            session_factory = sessionmaker(bind=bind, future=True)
+
+        hist_session = session_factory()
+        try:
+            aula_hist = hist_session.get(CalendarioAula, int(aula_id))
+            if not aula_hist:
+                app.logger.warning("HIST FAIL (ignored) | aula_id=%s | motivo=aula_inexistente", aula_id)
+                hist_session.rollback()
+                return False
+
+            registo = _registar_sumario_historico(
+                aula_hist,
+                acao,
+                anterior,
+                novo,
+                autor=autor,
+                session=hist_session,
+                ignore_errors=True,
+            )
+            if registo is None:
+                hist_session.rollback()
+                return False
+
+            hist_session.commit()
+            app.logger.info("HIST OK | aula_id=%s | acao=%s", aula_id, acao)
+            return True
+        except Exception as exc:
+            hist_session.rollback()
+            app.logger.exception("HIST FAIL (ignored) | aula_id=%s | acao=%s | erro=%s", aula_id, acao, exc)
+            return False
+        finally:
+            hist_session.close()
 
     def _build_payloads_from_form(aula, alunos):
         payloads = []
@@ -5476,25 +5526,17 @@ def create_app():
             if aula.turma_id != turma.id:
                 return _json_error("Linha de calendário não pertence a esta turma.", 400)
 
+            historico_pendente = None
             sumario_txt = request.form.get("sumario")
             if sumario_txt is not None:
                 sumario_atual = aula.sumario or ""
                 sumario_novo = sumario_txt.strip()
                 if sumario_novo != sumario_atual:
-                    try:
-                        _registar_sumario_historico(
-                            aula,
-                            "edicao_manual",
-                            sumario_atual,
-                            sumario_novo,
-                        )
-                    except Exception as hist_exc:
-                        app.logger.exception(
-                            "Falha ao registar histórico de sumário (turma_id=%s aula_id=%s): %s",
-                            turma_id,
-                            aula_id,
-                            hist_exc,
-                        )
+                    historico_pendente = {
+                        "acao": "edicao_manual",
+                        "anterior": sumario_atual,
+                        "novo": sumario_novo,
+                    }
                 aula.sumario = sumario_novo
 
             previsao_txt = request.form.get("previsao")
@@ -5540,6 +5582,13 @@ def create_app():
                 turma_id,
                 aula_id,
             )
+            if historico_pendente:
+                _registar_sumario_historico_isolado(
+                    aula_id=aula.id,
+                    acao=historico_pendente["acao"],
+                    anterior=historico_pendente["anterior"],
+                    novo=historico_pendente["novo"],
+                )
 
             mensagem = "Sumário atualizado."
 
