@@ -8,6 +8,7 @@
   </form>
   <a class="btn btn-outline-success" href="{{ url_for('offline.sync_page') }}">Sincronizar</a>
 </div>
+<div class="mb-2 text-muted small" id="snapshot-status-inline">Último snapshot: — | Estado: —</div>
 <div class="alert alert-secondary">
   Pendentes: <strong>{{ status.pending }}</strong> | Erros: <strong>{{ status.errors }}</strong>
   {% if status.last_error %}<br><small>{{ status.last_error }}</small>{% endif %}
@@ -16,4 +17,10 @@
 <a class="btn btn-outline-secondary" href="{{ url_for('offline.status_page') }}">Status</a>
 <a class="btn btn-outline-secondary" href="{{ url_for('offline.history_page') }}">Histórico</a>
 <a class="btn btn-outline-secondary" href="{{ url_for('offline.settings_page') }}">Definições</a>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  window.SNAPSHOT_TOAST_CONFIG = { enabled: true, intervalSeconds: {{ config.get("SNAPSHOT_INTERVAL_SECONDS", 60) }}, statusElementId: "snapshot-status-inline" };
+</script>
 {% endblock %}

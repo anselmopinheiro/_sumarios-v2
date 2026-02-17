@@ -773,5 +773,78 @@
   })();
 </script>
 
+
+<script>
+  (() => {
+    const container = document.getElementById('toast-container');
+
+    window.showToast = window.showToast || function (message, level = 'info', timeoutMs = 4000) {
+      if (!container || !message) return;
+      const klass = level === 'error' ? 'text-bg-danger' : (level === 'success' ? 'text-bg-success' : 'text-bg-secondary');
+      const toastEl = document.createElement('div');
+      toastEl.className = `toast align-items-center ${klass} border-0`;
+      toastEl.setAttribute('role', 'alert');
+      toastEl.setAttribute('aria-live', 'assertive');
+      toastEl.setAttribute('aria-atomic', 'true');
+      toastEl.innerHTML = `<div class="d-flex"><div class="toast-body">${message}</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button></div>`;
+      container.appendChild(toastEl);
+      const toast = new bootstrap.Toast(toastEl, { delay: timeoutMs });
+      toastEl.addEventListener('hidden.bs.toast', () => toastEl.remove());
+      toast.show();
+    };
+
+    const cfg = window.SNAPSHOT_TOAST_CONFIG;
+    if (!cfg || !cfg.enabled) return;
+
+    let lastSignature = null;
+    const statusNode = document.getElementById(cfg.statusElementId || 'snapshot-status-inline');
+
+    const renderStatus = (payload) => {
+      if (!statusNode) return;
+      const snapshot = payload?.snapshot || {};
+      const lastRun = snapshot?.last_run || null;
+      const ok = lastRun && Number(lastRun.ok) === 1;
+      const finished = lastRun?.finished_at || lastRun?.started_at || '—';
+      const counts = snapshot?.counts || {};
+      statusNode.textContent = `Último snapshot: ${finished} | Estado: ${ok ? 'OK' : 'ERRO'} | Turmas:${counts.turmas || 0} Alunos:${counts.alunos || 0} Aulas:${counts.aulas || 0}`;
+    };
+
+    const poll = async () => {
+      try {
+        const resp = await fetch('/offline/status?format=json', { headers: { Accept: 'application/json' } });
+        if (!resp.ok) return;
+        const payload = await resp.json();
+        renderStatus(payload);
+
+        const lastRun = payload?.snapshot?.last_run;
+        if (!lastRun) return;
+        const signature = `${lastRun.id || 'x'}:${lastRun.ok || 0}:${lastRun.finished_at || ''}`;
+        if (lastSignature === null) {
+          lastSignature = signature;
+          return;
+        }
+        if (signature === lastSignature) return;
+        lastSignature = signature;
+
+        if (Number(lastRun.ok) === 1) {
+          const counts = payload?.snapshot?.counts || {};
+          window.showToast(`Snapshot concluído (turmas:${counts.turmas || 0}, alunos:${counts.alunos || 0}, aulas:${counts.aulas || 0})`, 'success');
+        } else {
+          const err = (lastRun.error || 'Falha no snapshot').toString().slice(0, 120);
+          window.showToast(`Snapshot falhou: ${err}`, 'error');
+        }
+      } catch (err) {
+        // silencioso
+      }
+    };
+
+    window.showToast('Snapshot automático iniciado.', 'info', 2500);
+    poll();
+    const interval = Math.max(5, Number(cfg.intervalSeconds || 60));
+    setInterval(poll, interval * 1000);
+  })();
+</script>
+{% block extra_scripts %}{% endblock %}
+
 </body>
 </html>

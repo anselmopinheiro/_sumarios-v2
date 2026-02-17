@@ -1,4 +1,5 @@
 from datetime import datetime
+from threading import Lock
 
 from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, url_for
 import sqlalchemy as sa
@@ -28,6 +29,7 @@ from offline_store import (
 from sync import sync_outbox
 
 offline_bp = Blueprint("offline", __name__, url_prefix="/offline")
+SNAPSHOT_RUN_LOCK = Lock()
 
 
 def _get_online_state():
@@ -81,6 +83,11 @@ def _normalize_payload(item):
 def snapshot_remote_to_local(mode="manual"):
     app = current_app
     target = _remote_db_meta()
+
+    if not SNAPSHOT_RUN_LOCK.acquire(blocking=False):
+        app.logger.info("Snapshot já em execução; pedido ignorado.")
+        return {"ok": False, "error": "Snapshot já em execução."}
+
     run_id, started_at = start_snapshot_run(app.instance_path, mode=mode)
 
     if not _get_online_state():
@@ -223,6 +230,8 @@ def snapshot_remote_to_local(mode="manual"):
                 "Dica Supabase pooler: confirme porta/URL (pooler=6543, direct=5432), role e password."
             )
         return {"ok": False, "error": "Sem ligação à BD remota.", "run_id": run_id, "started_at": started_at}
+    finally:
+        SNAPSHOT_RUN_LOCK.release()
 
 
 def refresh_snapshot_from_remote():

@@ -66,7 +66,7 @@ from sqlalchemy import event
 from sqlalchemy.orm import joinedload, sessionmaker
 
 from config import Config
-from offline_blueprint import offline_bp, refresh_snapshot_from_remote
+from offline_blueprint import offline_bp, refresh_snapshot_from_remote, snapshot_remote_to_local
 from offline_store import init_offline_db as init_offline_store_db
 from sync import fix_sequences_remote, sync_outbox
 from offline_queue import (
@@ -1879,27 +1879,61 @@ def create_app():
     def _start_dev_snapshot_scheduler():
         if os.environ.get("DEV_LOCAL_SCHEDULER", "0") != "1":
             return
+        if not _should_run_startup_jobs():
+            app.logger.info("Scheduler snapshot ignorado neste processo (reloader/CLI).")
+            return
+        if app.extensions.get("offline_scheduler"):
+            app.logger.info("Scheduler snapshot já ativo; sem duplicação de job.")
+            return
+
         try:
             from apscheduler.schedulers.background import BackgroundScheduler
         except Exception:
             app.logger.warning("DEV_LOCAL_SCHEDULER=1 mas APScheduler não está disponível.")
             return
 
-        interval = int(os.environ.get("SNAPSHOT_INTERVAL_SECONDS", "60") or "60")
+        try:
+            interval = int(os.environ.get("SNAPSHOT_INTERVAL_SECONDS", "60") or "60")
+        except Exception:
+            interval = 60
+        interval = max(5, interval)
         scheduler = BackgroundScheduler(daemon=True)
 
         def _scheduled_job():
             with app.app_context():
                 from offline_store import get_setting
+
                 enabled = get_setting(app.instance_path, "snapshot_enabled", "1")
                 if enabled != "1":
+                    app.logger.info("Snapshot automático ignorado: snapshot_enabled=0")
                     return
-                refresh_snapshot_from_remote()
 
-        scheduler.add_job(_scheduled_job, "interval", seconds=max(15, interval), id="offline_snapshot_job", replace_existing=True)
+                app.logger.info("Snapshot automático iniciado (interval=%ss)", interval)
+                result = snapshot_remote_to_local(mode="auto")
+                if result.get("ok"):
+                    app.logger.info(
+                        "Snapshot automático concluído: turmas=%s alunos=%s aulas=%s periodos=%s modulos=%s",
+                        result.get("turmas", 0),
+                        result.get("alunos", 0),
+                        result.get("aulas", 0),
+                        result.get("periodos", 0),
+                        result.get("modulos", 0),
+                    )
+                else:
+                    app.logger.warning("Snapshot automático falhou: %s", result.get("error"))
+
+        scheduler.add_job(
+            _scheduled_job,
+            "interval",
+            seconds=interval,
+            id="offline_snapshot_job",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
         scheduler.start()
         app.extensions["offline_scheduler"] = scheduler
-        app.logger.info("Scheduler local de snapshot ativo: %ss", max(15, interval))
+        app.logger.info("Scheduler local de snapshot ativo: %ss", interval)
 
     with app.app_context():
         init_offline_db(app.instance_path)
