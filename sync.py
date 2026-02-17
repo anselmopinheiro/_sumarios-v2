@@ -28,11 +28,36 @@ def _quote_ident(ident):
 
 
 def _extract_pk_table_name(exc):
+    # prioridade: metadata do driver (psycopg)
+    orig = getattr(exc, "orig", None)
+    diag = getattr(orig, "diag", None)
+    if diag:
+        table_name = getattr(diag, "table_name", None)
+        constraint_name = getattr(diag, "constraint_name", None)
+        if table_name:
+            return table_name
+        if constraint_name and constraint_name.endswith("_pkey"):
+            return constraint_name[:-5]
+
+    # fallback textual
     message = str(exc)
     match = re.search(r'constraint\s+"([a-zA-Z0-9_]+)_pkey"', message)
-    if not match:
-        return None
-    return match.group(1)
+    if match:
+        return match.group(1)
+
+    # fallback para mensagens sem constraint explícita
+    match = re.search(r'Key \(id\)=', message)
+    if match:
+        return "aulas_alunos"
+    return None
+
+
+def _is_unique_violation(exc):
+    orig = getattr(exc, "orig", None)
+    pgcode = getattr(orig, "pgcode", None)
+    if pgcode == "23505":
+        return True
+    return "duplicate key value violates unique constraint" in str(exc)
 
 
 def _repair_sequence_for_table(app, schema_name, table_name):
@@ -205,11 +230,14 @@ def sync_outbox(app, limit=200):
         except IntegrityError as exc:
             db.session.rollback()
             duplicate_table = _extract_pk_table_name(exc)
-            if duplicate_table:
+            if not duplicate_table and item.get("op_type") == "UPSERT_AULAS_ALUNOS":
+                duplicate_table = "aulas_alunos"
+            if _is_unique_violation(exc) and duplicate_table:
                 app.logger.warning(
-                    "PK duplicate detectada (%s_pkey); a executar fix sequences + retry | outbox_id=%s",
+                    "PK duplicate detectada (%s_pkey); a executar fix sequences + retry | outbox_id=%s | op_type=%s",
                     duplicate_table,
                     item["id"],
+                    item.get("op_type"),
                 )
                 try:
                     fix_sequences_remote(app, schema_name="public")
