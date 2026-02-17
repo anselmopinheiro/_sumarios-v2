@@ -224,10 +224,13 @@ Está prevista a migração para um sistema servidor (MySQL/PostgreSQL), permiti
 ### Snapshot automático (60s)
 Em desenvolvimento/local:
 ```bash
+pip install -r requirements.txt
 export DEV_LOCAL_SCHEDULER=1
 export SNAPSHOT_INTERVAL_SECONDS=60
 python app.py
 ```
+
+> Nota: o scheduler local usa `APScheduler`. Se faltar a dependência, o log mostra `DEV_LOCAL_SCHEDULER=1 mas APScheduler não está disponível.`
 
 Em produção/serverless, use cron para chamar:
 ```bash
