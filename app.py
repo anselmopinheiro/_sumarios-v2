@@ -1494,6 +1494,13 @@ def create_app():
             return False
         return True
 
+    def get_db_mode():
+        mode = (app.config.get("APP_DB_MODE") or "sqlite").strip().lower()
+        return "postgres" if mode == "postgres" else "sqlite"
+
+    def _sqlite_backups_enabled():
+        return get_db_mode() == "sqlite"
+
     def _get_machine_name():
         return os.environ.get("COMPUTERNAME") or platform.node() or socket.gethostname()
 
@@ -1547,6 +1554,10 @@ def create_app():
             app.logger.warning("Não foi possível gravar estado do backup.")
 
     def _backup_database(reason="manual"):
+        if not _sqlite_backups_enabled():
+            app.logger.info("Backups SQLite desativados (modo postgres)")
+            return {"ok": False, "error": "Backups SQLite desativados (modo postgres)."}
+
         inicio = time.monotonic()
         backup_dir = app.config.get("BACKUP_DIR")
         db_path = _get_db_path()
@@ -1942,11 +1953,14 @@ def create_app():
             _log_db_mode()
         except Exception:
             app.logger.warning("Não foi possível emitir informação do backend de BD.")
-        if app.config.get("BACKUP_ON_STARTUP", True) and _should_run_startup_jobs():
-            app.logger.info("Backups automáticos ativos no arranque.")
-            _backup_database(reason="startup")
-        elif not _should_run_startup_jobs():
-            app.logger.info("Arranque secundário/CLI detetado: tarefas de startup desativadas.")
+        if _sqlite_backups_enabled():
+            if app.config.get("BACKUP_ON_STARTUP", True) and _should_run_startup_jobs():
+                app.logger.info("Backups SQLite ativos")
+                _backup_database(reason="startup")
+            elif not _should_run_startup_jobs():
+                app.logger.info("Arranque secundário/CLI detetado: tarefas de startup desativadas.")
+        else:
+            app.logger.info("Backups SQLite desativados (modo postgres)")
 
         flush_result = try_flush_outbox(limit=200)
         if flush_result.get("applied"):
@@ -1955,6 +1969,8 @@ def create_app():
     _start_dev_snapshot_scheduler()
 
     def _agendar_backup_change():
+        if not _sqlite_backups_enabled():
+            return
         estado = _carregar_backup_state()
         agora = datetime.now().isoformat(timespec="seconds")
         estado["pending_changes_count"] = int(estado.get("pending_changes_count") or 0) + 1
@@ -1971,6 +1987,9 @@ def create_app():
 
     def _backup_scheduler():
         if _running_flask_cli():
+            return
+        if not _sqlite_backups_enabled():
+            app.logger.info("Backups SQLite desativados (modo postgres)")
             return
         intervalo = max(5, app.config.get("BACKUP_CHECK_INTERVAL_SECONDS", 30))
         debounce = max(0, app.config.get("BACKUP_DEBOUNCE_SECONDS", 300))
@@ -1999,7 +2018,7 @@ def create_app():
                 else:
                     app.logger.warning("Backup automático falhou: %s", resultado.get("error"))
 
-    if not _running_flask_cli():
+    if not _running_flask_cli() and _sqlite_backups_enabled():
         threading.Thread(target=_backup_scheduler, daemon=True).start()
 
     # ----------------------------------------
