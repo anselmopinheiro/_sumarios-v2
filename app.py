@@ -102,6 +102,12 @@ from models import (
     DTMotivoDia,
     DTDisciplina,
     DTOcorrencia,
+    Trabalho,
+    TrabalhoGrupo,
+    TrabalhoGrupoMembro,
+    Entrega,
+    EntregaParametro,
+    ParametroDefinicao,
 )
 
 from calendario_service import (
@@ -4106,6 +4112,201 @@ def create_app():
             flash("Ação inválida.", "error")
 
         return redirect(url_for("turma_alunos", turma_id=turma_origem.id))
+
+    def _listar_alunos_turma(turma_id):
+        return (
+            Aluno.query.filter_by(turma_id=turma_id)
+            .order_by(Aluno.numero.is_(None), Aluno.numero, Aluno.nome)
+            .all()
+        )
+
+    def _ensure_individual_groups(trabalho):
+        alunos = _listar_alunos_turma(trabalho.turma_id)
+        existing_members = {m.aluno_id for g in trabalho.grupos for m in g.membros}
+        for aluno in alunos:
+            if aluno.id in existing_members:
+                continue
+            nome = (aluno.nome_curto or aluno.nome or f"Aluno {aluno.id}").strip()
+            grupo = TrabalhoGrupo(trabalho_id=trabalho.id, nome=nome)
+            db.session.add(grupo)
+            db.session.flush()
+            db.session.add(TrabalhoGrupoMembro(trabalho_grupo_id=grupo.id, aluno_id=aluno.id))
+
+    def _build_trabalho_grid(trabalho):
+        parametros = sorted(trabalho.parametros, key=lambda p: (p.ordem, p.id))
+        entregas = {e.trabalho_grupo_id: e for e in trabalho.entregas}
+        rows = []
+        for grupo in sorted(trabalho.grupos, key=lambda g: g.nome.lower() if g.nome else ""):
+            entrega = entregas.get(grupo.id)
+            params_map = {}
+            if entrega:
+                for ep in entrega.parametros:
+                    params_map[ep.parametro_definicao_id] = ep
+            rows.append({
+                "grupo": grupo,
+                "entrega": entrega,
+                "params": params_map,
+                "membros": [m.aluno for m in grupo.membros],
+            })
+        return parametros, rows
+
+    @app.route("/turmas/<int:turma_id>/trabalhos", methods=["GET", "POST"])
+    def turma_trabalhos(turma_id):
+        turma = Turma.query.get_or_404(turma_id)
+        if request.method == "POST":
+            titulo = (request.form.get("titulo") or "").strip()
+            if not titulo:
+                flash("Título é obrigatório.", "error")
+                return redirect(url_for("turma_trabalhos", turma_id=turma.id))
+
+            trabalho = Trabalho(
+                turma_id=turma.id,
+                titulo=titulo,
+                descricao=(request.form.get("descricao") or "").strip() or None,
+                modo=(request.form.get("modo") or "individual").strip().lower(),
+            )
+            if trabalho.modo not in {"individual", "grupo"}:
+                trabalho.modo = "individual"
+            db.session.add(trabalho)
+            db.session.commit()
+            flash("Trabalho criado.", "success")
+            return redirect(url_for("trabalho_detail", turma_id=turma.id, trabalho_id=trabalho.id))
+
+        trabalhos = Trabalho.query.filter_by(turma_id=turma.id).order_by(Trabalho.created_at.desc()).all()
+        return render_template("trabalhos/list.html", turma=turma, trabalhos=trabalhos)
+
+    @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/delete", methods=["POST"])
+    def trabalho_delete(turma_id, trabalho_id):
+        trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
+        db.session.delete(trabalho)
+        db.session.commit()
+        flash("Trabalho removido.", "success")
+        return redirect(url_for("turma_trabalhos", turma_id=turma_id))
+
+    @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>")
+    def trabalho_detail(turma_id, trabalho_id):
+        trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
+        if trabalho.modo == "individual":
+            _ensure_individual_groups(trabalho)
+            db.session.commit()
+
+        parametros, rows = _build_trabalho_grid(trabalho)
+        alunos = _listar_alunos_turma(turma_id)
+        return render_template("trabalhos/detail.html", trabalho=trabalho, turma=trabalho.turma, parametros=parametros, rows=rows, alunos=alunos)
+
+    @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/parametros", methods=["POST"])
+    def trabalho_add_parametro(turma_id, trabalho_id):
+        trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
+        nome = (request.form.get("nome") or "").strip()
+        tipo = (request.form.get("tipo") or "numerico").strip().lower()
+        if tipo not in {"numerico", "texto"}:
+            tipo = "numerico"
+        if not nome:
+            flash("Nome do parâmetro é obrigatório.", "error")
+            return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
+
+        exists = ParametroDefinicao.query.filter_by(trabalho_id=trabalho.id, nome=nome).first()
+        if exists:
+            flash("Já existe um parâmetro com esse nome.", "error")
+            return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
+
+        ordem = (db.session.query(func.max(ParametroDefinicao.ordem)).filter_by(trabalho_id=trabalho.id).scalar() or 0) + 1
+        db.session.add(ParametroDefinicao(trabalho_id=trabalho.id, nome=nome, tipo=tipo, ordem=ordem))
+        db.session.commit()
+        flash("Parâmetro adicionado.", "success")
+        return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
+
+    @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/grupos", methods=["POST"])
+    def trabalho_add_grupo(turma_id, trabalho_id):
+        trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
+        nome = (request.form.get("nome") or "").strip()
+        aluno_ids = [int(v) for v in request.form.getlist("aluno_ids") if str(v).isdigit()]
+        if not nome:
+            flash("Nome do grupo é obrigatório.", "error")
+            return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
+        if trabalho.modo != "grupo":
+            flash("Trabalho está em modo individual.", "error")
+            return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
+
+        grupo = TrabalhoGrupo(trabalho_id=trabalho.id, nome=nome)
+        db.session.add(grupo)
+        db.session.flush()
+        for aluno_id in sorted(set(aluno_ids)):
+            db.session.add(TrabalhoGrupoMembro(trabalho_grupo_id=grupo.id, aluno_id=aluno_id))
+        db.session.commit()
+        flash("Grupo criado.", "success")
+        return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
+
+    @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/entregas/<int:grupo_id>/save", methods=["POST"])
+    def trabalho_save_entrega(turma_id, trabalho_id, grupo_id):
+        trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
+        grupo = TrabalhoGrupo.query.filter_by(id=grupo_id, trabalho_id=trabalho.id).first_or_404()
+
+        payload = request.get_json(silent=True) or request.form
+        entregue = bool(payload.get("entregue"))
+
+        def _score(name):
+            raw = payload.get(name)
+            if raw in (None, ""):
+                return None
+            v = int(raw)
+            if v < 1 or v > 5:
+                raise ValueError(f"{name} fora do intervalo 1..5")
+            return v
+
+        try:
+            consecucao = _score("consecucao")
+            qualidade = _score("qualidade")
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+        entrega = Entrega.query.filter_by(trabalho_id=trabalho.id, trabalho_grupo_id=grupo.id).first()
+        if not entrega:
+            entrega = Entrega(trabalho_id=trabalho.id, trabalho_grupo_id=grupo.id)
+            db.session.add(entrega)
+            db.session.flush()
+
+        entrega.entregue = entregue
+        entrega.consecucao = consecucao
+        entrega.qualidade = qualidade
+        entrega.updated_at = datetime.utcnow()
+
+        parametros = ParametroDefinicao.query.filter_by(trabalho_id=trabalho.id).all()
+        defs_by_id = {p.id: p for p in parametros}
+        extra = payload.get("extra") or {}
+        if isinstance(extra, str):
+            extra = {}
+
+        for param_id, value in extra.items():
+            try:
+                pid = int(param_id)
+            except Exception:
+                continue
+            definicao = defs_by_id.get(pid)
+            if not definicao:
+                continue
+
+            ep = EntregaParametro.query.filter_by(entrega_id=entrega.id, parametro_definicao_id=pid).first()
+            if not ep:
+                ep = EntregaParametro(entrega_id=entrega.id, parametro_definicao_id=pid)
+                db.session.add(ep)
+
+            if definicao.tipo == "numerico":
+                if value in (None, ""):
+                    ep.valor_numerico = None
+                    ep.valor_texto = None
+                else:
+                    iv = int(value)
+                    if iv < 1 or iv > 5:
+                        return jsonify({"ok": False, "error": f"{definicao.nome} fora do intervalo 1..5"}), 400
+                    ep.valor_numerico = iv
+                    ep.valor_texto = None
+            else:
+                ep.valor_texto = (str(value).strip() if value is not None else None) or None
+                ep.valor_numerico = None
+
+        db.session.commit()
+        return jsonify({"ok": True, "updated_at": entrega.updated_at.isoformat(timespec="seconds")})
 
     @app.route("/turmas/<int:turma_id>/calendario")
     def turma_calendario(turma_id):

@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>{{ trabalho.titulo }} <small class="text-muted">({{ trabalho.modo }})</small></h2>
+<p class="text-muted">{{ trabalho.descricao or '' }}</p>
+<div class="mb-3 d-flex gap-2">
+  <a class="btn btn-outline-secondary" href="{{ url_for('turma_trabalhos', turma_id=turma.id) }}">Voltar</a>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header">Adicionar parâmetro</div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('trabalho_add_parametro', turma_id=turma.id, trabalho_id=trabalho.id) }}" class="row g-2">
+          <div class="col-md-6"><input class="form-control" name="nome" placeholder="Nome" required></div>
+          <div class="col-md-4">
+            <select class="form-select" name="tipo">
+              <option value="numerico">Numérico 1..5</option>
+              <option value="texto">Texto</option>
+            </select>
+          </div>
+          <div class="col-md-2"><button class="btn btn-primary w-100" type="submit">Adicionar</button></div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  {% if trabalho.modo == 'grupo' %}
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header">Criar grupo</div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('trabalho_add_grupo', turma_id=turma.id, trabalho_id=trabalho.id) }}" class="row g-2">
+          <div class="col-md-5"><input class="form-control" name="nome" placeholder="Nome grupo" required></div>
+          <div class="col-md-5">
+            <select class="form-select" name="aluno_ids" multiple size="3">
+              {% for a in alunos %}
+              <option value="{{ a.id }}">{{ a.numero or '—' }} - {{ a.nome }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-2"><button class="btn btn-primary w-100" type="submit">Criar</button></div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="table-responsive">
+  <table class="table table-sm align-middle" id="trabalhos-grid">
+    <thead>
+      <tr>
+        <th>Grupo/Aluno</th>
+        <th>Membros</th>
+        <th>Entregue</th>
+        <th>Consec.</th>
+        <th>Qualidade</th>
+        {% for p in parametros %}<th>{{ p.nome }}</th>{% endfor %}
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      {% set entrega = row.entrega %}
+      <tr data-grupo-id="{{ row.grupo.id }}">
+        <td>{{ row.grupo.nome }}</td>
+        <td>
+          {% for m in row.membros %}{{ m.nome_curto or m.nome }}{% if not loop.last %}, {% endif %}{% endfor %}
+        </td>
+        <td><input type="checkbox" class="form-check-input field-entregue" {% if entrega and entrega.entregue %}checked{% endif %}></td>
+        <td>
+          <select class="form-select form-select-sm field-consecucao">
+            <option value=""></option>
+            {% for i in range(1,6) %}<option value="{{ i }}" {% if entrega and entrega.consecucao==i %}selected{% endif %}>{{ i }}</option>{% endfor %}
+          </select>
+        </td>
+        <td>
+          <select class="form-select form-select-sm field-qualidade">
+            <option value=""></option>
+            {% for i in range(1,6) %}<option value="{{ i }}" {% if entrega and entrega.qualidade==i %}selected{% endif %}>{{ i }}</option>{% endfor %}
+          </select>
+        </td>
+        {% for p in parametros %}
+        {% set ep = row.params.get(p.id) %}
+        <td>
+          {% if p.tipo == 'numerico' %}
+          <select class="form-select form-select-sm field-extra" data-param-id="{{ p.id }}">
+            <option value=""></option>
+            {% for i in range(1,6) %}<option value="{{ i }}" {% if ep and ep.valor_numerico==i %}selected{% endif %}>{{ i }}</option>{% endfor %}
+          </select>
+          {% else %}
+          <input class="form-control form-control-sm field-extra" data-param-id="{{ p.id }}" value="{{ ep.valor_texto if ep else '' }}">
+          {% endif %}
+        </td>
+        {% endfor %}
+        <td><button class="btn btn-sm btn-primary btn-save-row">Guardar</button></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function(){
+  const grid = document.getElementById('trabalhos-grid');
+  if(!grid) return;
+
+  function toast(msg, level='info'){
+    if(window.showToast){ window.showToast(msg, level); return; }
+    alert(msg);
+  }
+
+  async function saveRow(tr){
+    const grupoId = tr.dataset.grupoId;
+    const payload = {
+      entregue: tr.querySelector('.field-entregue')?.checked || false,
+      consecucao: tr.querySelector('.field-consecucao')?.value || null,
+      qualidade: tr.querySelector('.field-qualidade')?.value || null,
+      extra: {}
+    };
+    tr.querySelectorAll('.field-extra').forEach((el)=>{
+      payload.extra[el.dataset.paramId] = el.value;
+    });
+
+    const url = "{{ url_for('trabalho_save_entrega', turma_id=turma.id, trabalho_id=trabalho.id, grupo_id=0) }}".replace('/0/save', `/${grupoId}/save`);
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','Accept':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await resp.json().catch(()=>({ok:false,error:'Erro inesperado'}));
+    if(!resp.ok || !data.ok){
+      toast(data.error || 'Falha ao guardar', 'error');
+      return;
+    }
+    toast('Entrega guardada com sucesso', 'success');
+  }
+
+  grid.addEventListener('click', (ev)=>{
+    const btn = ev.target.closest('.btn-save-row');
+    if(!btn) return;
+    ev.preventDefault();
+    const tr = btn.closest('tr[data-grupo-id]');
+    if(tr) saveRow(tr);
+  });
+})();
+</script>
+{% endblock %}

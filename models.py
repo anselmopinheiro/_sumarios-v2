@@ -525,3 +525,101 @@ class AulaAluno(db.Model):
         db.Index("ix_aulas_alunos_aula", "aula_id"),
         db.Index("ix_aulas_alunos_aluno", "aluno_id"),
     )
+
+
+class Trabalho(db.Model):
+    __tablename__ = "trabalhos"
+
+    id = db.Column(db.Integer, primary_key=True)
+    turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), nullable=False, index=True)
+    titulo = db.Column(db.String(255), nullable=False)
+    descricao = db.Column(db.Text)
+    modo = db.Column(db.String(20), nullable=False, default="individual", server_default="individual")
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, server_default=db.text("now()"))
+
+    turma = db.relationship("Turma", backref=db.backref("trabalhos", cascade="all, delete-orphan"))
+
+
+class TrabalhoGrupo(db.Model):
+    __tablename__ = "trabalho_grupos"
+
+    id = db.Column(db.Integer, primary_key=True)
+    trabalho_id = db.Column(db.Integer, db.ForeignKey("trabalhos.id"), nullable=False, index=True)
+    nome = db.Column(db.String(255), nullable=False)
+
+    trabalho = db.relationship("Trabalho", backref=db.backref("grupos", cascade="all, delete-orphan"))
+
+    __table_args__ = (
+        db.UniqueConstraint("trabalho_id", "nome", name="uq_trabalho_grupo_nome"),
+    )
+
+
+class TrabalhoGrupoMembro(db.Model):
+    __tablename__ = "trabalho_grupo_membros"
+
+    id = db.Column(db.Integer, primary_key=True)
+    trabalho_grupo_id = db.Column(db.Integer, db.ForeignKey("trabalho_grupos.id"), nullable=False, index=True)
+    aluno_id = db.Column(db.Integer, db.ForeignKey("alunos.id"), nullable=False, index=True)
+
+    grupo = db.relationship("TrabalhoGrupo", backref=db.backref("membros", cascade="all, delete-orphan"))
+    aluno = db.relationship("Aluno")
+
+    __table_args__ = (
+        db.UniqueConstraint("trabalho_grupo_id", "aluno_id", name="uq_trabalho_grupo_membro"),
+    )
+
+
+class Entrega(db.Model):
+    __tablename__ = "entregas"
+
+    id = db.Column(db.Integer, primary_key=True)
+    trabalho_id = db.Column(db.Integer, db.ForeignKey("trabalhos.id"), nullable=False, index=True)
+    trabalho_grupo_id = db.Column(db.Integer, db.ForeignKey("trabalho_grupos.id"), nullable=False, index=True)
+
+    entregue = db.Column(db.Boolean, nullable=False, default=False, server_default=db.text("false"))
+    consecucao = db.Column(db.Integer)
+    qualidade = db.Column(db.Integer)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, server_default=db.text("now()"))
+
+    trabalho = db.relationship("Trabalho", backref=db.backref("entregas", cascade="all, delete-orphan"))
+    grupo = db.relationship("TrabalhoGrupo", backref=db.backref("entrega", uselist=False, cascade="all, delete-orphan"))
+
+    __table_args__ = (
+        db.UniqueConstraint("trabalho_id", "trabalho_grupo_id", name="uq_entrega_trabalho_grupo"),
+        db.CheckConstraint("consecucao IS NULL OR (consecucao >= 1 AND consecucao <= 5)", name="ck_entrega_consecucao_1_5"),
+        db.CheckConstraint("qualidade IS NULL OR (qualidade >= 1 AND qualidade <= 5)", name="ck_entrega_qualidade_1_5"),
+    )
+
+
+class ParametroDefinicao(db.Model):
+    __tablename__ = "parametro_definicoes"
+
+    id = db.Column(db.Integer, primary_key=True)
+    trabalho_id = db.Column(db.Integer, db.ForeignKey("trabalhos.id"), nullable=False, index=True)
+    nome = db.Column(db.String(120), nullable=False)
+    tipo = db.Column(db.String(20), nullable=False, default="numerico", server_default="numerico")
+    ordem = db.Column(db.Integer, nullable=False, default=0, server_default="0")
+
+    trabalho = db.relationship("Trabalho", backref=db.backref("parametros", cascade="all, delete-orphan"))
+
+    __table_args__ = (
+        db.UniqueConstraint("trabalho_id", "nome", name="uq_parametro_trabalho_nome"),
+    )
+
+
+class EntregaParametro(db.Model):
+    __tablename__ = "entrega_parametros"
+
+    id = db.Column(db.Integer, primary_key=True)
+    entrega_id = db.Column(db.Integer, db.ForeignKey("entregas.id"), nullable=False, index=True)
+    parametro_definicao_id = db.Column(db.Integer, db.ForeignKey("parametro_definicoes.id"), nullable=False, index=True)
+    valor_numerico = db.Column(db.Integer)
+    valor_texto = db.Column(db.Text)
+
+    entrega = db.relationship("Entrega", backref=db.backref("parametros", cascade="all, delete-orphan"))
+    parametro = db.relationship("ParametroDefinicao")
+
+    __table_args__ = (
+        db.UniqueConstraint("entrega_id", "parametro_definicao_id", name="uq_entrega_parametro"),
+        db.CheckConstraint("valor_numerico IS NULL OR (valor_numerico >= 1 AND valor_numerico <= 5)", name="ck_entrega_parametro_num_1_5"),
+    )
