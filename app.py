@@ -1478,12 +1478,11 @@ def create_app():
         return False, ultimo_erro
 
     def _running_flask_cli():
-        if os.environ.get("FLASK_RUN_FROM_CLI") == "true":
-            return True
+        """Deteta comandos utilitários de CLI (não inclui `flask run`)."""
         args = " ".join(sys.argv).lower()
         return any(
             token in args
-            for token in ["flask db", "flask shell", "migrate", "upgrade", "current"]
+            for token in ["flask db", "flask shell", "flask routes", "migrate", "upgrade", "current"]
         )
 
     def _should_run_startup_jobs():
