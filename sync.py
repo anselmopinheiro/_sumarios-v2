@@ -1,3 +1,5 @@
+import re
+
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
@@ -21,51 +23,88 @@ def _target_from_app(app):
         return {"host": "-", "port": "-", "db": "-", "mode": mode}
 
 
-def _ensure_safe_table_name(table_name):
-    allowed = {"aulas_alunos", "sumario_historico", "calendario_aulas", "turmas", "alunos"}
-    if table_name not in allowed:
-        raise ValueError(f"Tabela não permitida para sequence repair: {table_name}")
-    return table_name
+def _quote_ident(ident):
+    return '"' + str(ident).replace('"', '""') + '"'
 
 
-def _repair_sequence_for_table(app, table_name):
-    table_name = _ensure_safe_table_name(table_name)
-    table_fq = f"public.{table_name}"
+def _extract_pk_table_name(exc):
+    message = str(exc)
+    match = re.search(r'constraint\s+"([a-zA-Z0-9_]+)_pkey"', message)
+    if not match:
+        return None
+    return match.group(1)
+
+
+def _repair_sequence_for_table(app, schema_name, table_name):
+    schema_q = _quote_ident(schema_name)
+    table_q = _quote_ident(table_name)
+    table_fq = f"{schema_name}.{table_name}"
+
     seq_name = db.session.execute(
         text("SELECT pg_get_serial_sequence(:table_fq, 'id')"),
         {"table_fq": table_fq},
     ).scalar()
 
     if not seq_name:
-        seq_name = f"public.{table_name}_id_seq"
+        seq_name = f"{schema_name}.{table_name}_id_seq"
+        seq_q = f"{schema_q}.{_quote_ident(table_name + '_id_seq')}"
         app.logger.warning(
-            "sequence ausente; a criar default para tabela=%s usando %s",
+            "sequence ausente; a criar default para tabela=%s.%s usando %s",
+            schema_name,
             table_name,
             seq_name,
         )
-        db.session.execute(text(f"CREATE SEQUENCE IF NOT EXISTS {seq_name}"))
+        db.session.execute(text(f"CREATE SEQUENCE IF NOT EXISTS {seq_q}"))
         db.session.execute(
             text(
-                f"ALTER TABLE {table_fq} "
+                f"ALTER TABLE {schema_q}.{table_q} "
                 f"ALTER COLUMN id SET DEFAULT nextval('{seq_name}')"
             )
         )
-        db.session.execute(
-            text(f"ALTER SEQUENCE {seq_name} OWNED BY {table_fq}.id")
-        )
+        db.session.execute(text(f"ALTER SEQUENCE {seq_q} OWNED BY {schema_q}.{table_q}.id"))
 
-    max_id = db.session.execute(text(f"SELECT COALESCE(MAX(id), 1) FROM {table_fq}")).scalar() or 1
-    db.session.execute(text("SELECT setval(:seq_name, :max_id, true)"), {"seq_name": seq_name, "max_id": int(max_id)})
-    db.session.commit()
-    app.logger.info("sequence repaired | table=%s | sequence=%s | max_id=%s", table_name, seq_name, max_id)
-
-
-def _is_pk_duplicate(exc, constraint_name):
-    message = str(exc)
-    return (
-        "duplicate key value violates unique constraint" in message
-        and constraint_name in message
+    max_id = db.session.execute(text(f"SELECT COALESCE(MAX(id), 1) FROM {schema_q}.{table_q}")).scalar() or 1
+    db.session.execute(
+        text("SELECT setval(:seq_name, :max_id, true)"),
+        {"seq_name": seq_name, "max_id": int(max_id)},
     )
+    app.logger.info(
+        "FIX SEQ OK | table=%s.%s | sequence=%s | max_id=%s",
+        schema_name,
+        table_name,
+        seq_name,
+        max_id,
+    )
+
+
+def fix_sequences_remote(app, schema_name="public"):
+    if (app.config.get("APP_DB_MODE") or "sqlite").lower() != "postgres":
+        return {"ok": False, "error": "APP_DB_MODE não está em postgres.", "tables": []}
+
+    rows = db.session.execute(
+        text(
+            """
+            SELECT c.table_schema, c.table_name
+            FROM information_schema.columns c
+            JOIN information_schema.tables t
+              ON t.table_schema = c.table_schema
+             AND t.table_name = c.table_name
+            WHERE c.table_schema = :schema_name
+              AND c.column_name = 'id'
+              AND t.table_type = 'BASE TABLE'
+            ORDER BY c.table_name
+            """
+        ),
+        {"schema_name": schema_name},
+    ).fetchall()
+
+    fixed_tables = []
+    for row in rows:
+        _repair_sequence_for_table(app, row.table_schema, row.table_name)
+        fixed_tables.append(f"{row.table_schema}.{row.table_name}")
+
+    db.session.commit()
+    return {"ok": True, "tables": fixed_tables}
 
 
 def _apply_outbox_item(item):
@@ -165,13 +204,16 @@ def sync_outbox(app, limit=200):
             applied += 1
         except IntegrityError as exc:
             db.session.rollback()
-            if item.get("op_type") == "UPSERT_AULAS_ALUNOS" and _is_pk_duplicate(exc, "aulas_alunos_pkey"):
+            duplicate_table = _extract_pk_table_name(exc)
+            if duplicate_table:
                 app.logger.warning(
-                    "PK duplicate em aulas_alunos; a tentar sequence repair + retry | outbox_id=%s",
+                    "PK duplicate detectada (%s_pkey); a executar fix sequences + retry | outbox_id=%s",
+                    duplicate_table,
                     item["id"],
                 )
                 try:
-                    _repair_sequence_for_table(app, "aulas_alunos")
+                    fix_sequences_remote(app, schema_name="public")
+                    app.logger.info("sequence repaired | table=%s", duplicate_table)
                     _apply_outbox_item(item)
                     db.session.commit()
                     app.logger.info("sequence repaired and retry succeeded | outbox_id=%s", item["id"])
@@ -181,10 +223,18 @@ def sync_outbox(app, limit=200):
                 except Exception as retry_exc:
                     db.session.rollback()
                     app.logger.exception(
-                        "Retry após sequence repair falhou | outbox_id=%s: %s",
+                        "Retry após fix sequences falhou | outbox_id=%s: %s",
                         item["id"],
                         retry_exc,
                     )
+                    mark_outbox(
+                        app.instance_path,
+                        item["id"],
+                        "error",
+                        f"retry_failed_after_sequence_repair: {retry_exc}",
+                    )
+                    errored += 1
+                    continue
             app.logger.exception("Erro de integridade ao sincronizar outbox id=%s: %s", item["id"], exc)
             mark_outbox(app.instance_path, item["id"], "error", str(exc))
             errored += 1

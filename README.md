@@ -116,13 +116,13 @@ flask db upgrade
 > Nota: durante a migração inicial para Supabase, aplique em base **vazia**. Se já existir schema antigo/parcial, faça reset do schema `public` antes de correr `flask db upgrade` para evitar conflitos de baseline.
 
 ### Reparar sequences no Supabase (PK id duplicada)
-Se aparecer erro `duplicate key value violates unique constraint ..._pkey` em tabelas com `id`, execute no **Supabase SQL Editor**:
+Se aparecer erro `duplicate key value violates unique constraint ..._pkey` em tabelas com `id`:
+
+1. Via CLI da app (recomendado):
 ```bash
-cat migrations/supabase_fix_sequences.sql
+flask supabase-fix-sequences
 ```
-Depois copie/cole o conteúdo em SQL Editor e execute. O script:
-- garante default/sequence em `public.aulas_alunos.id`;
-- alinha (`setval`) as sequences de todas as tabelas `public` com coluna `id`.
+2. Ou via Supabase SQL Editor: usar `db/supabase_fix_sequences.sql`.
 
 ### Migração de dados SQLite -> Postgres
 Depois do schema criado no Postgres, migrar os dados:

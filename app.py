@@ -68,7 +68,7 @@ from sqlalchemy.orm import joinedload, sessionmaker
 from config import Config
 from offline_blueprint import offline_bp, refresh_snapshot_from_remote
 from offline_store import init_offline_db as init_offline_store_db
-from sync import sync_outbox
+from sync import fix_sequences_remote, sync_outbox
 from offline_queue import (
     clear_sent,
     enqueue_upsert_aulas_alunos,
@@ -864,6 +864,30 @@ def create_app():
                 exc,
             )
             raise SystemExit(json.dumps({"ok": False, "error": str(exc), **target}, ensure_ascii=False))
+
+    @app.cli.command("supabase-fix-sequences")
+    def supabase_fix_sequences_command():
+        """Alinha sequences das tabelas do schema public com coluna id."""
+        if (app.config.get("APP_DB_MODE") or "sqlite").lower() != "postgres":
+            raise SystemExit("APP_DB_MODE não está em postgres.")
+
+        sql_path = os.path.join(app.root_path, "db", "supabase_fix_sequences.sql")
+        if not os.path.exists(sql_path):
+            raise SystemExit(f"Ficheiro SQL não encontrado: {sql_path}")
+
+        try:
+            sql_script = open(sql_path, "r", encoding="utf-8").read()
+            db.session.execute(text(sql_script))
+            db.session.commit()
+
+            result = fix_sequences_remote(app, schema_name="public")
+            for table_name in result.get("tables", []):
+                app.logger.info("FIX SEQ OK | table=%s", table_name)
+            print(json.dumps({"ok": True, "tables": result.get("tables", [])}, ensure_ascii=False))
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.exception("Falha no comando supabase-fix-sequences: %s", exc)
+            raise SystemExit(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
 
     @app.get("/health/db")
     @app.get("/api/health/db")
