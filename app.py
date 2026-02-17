@@ -1045,6 +1045,37 @@ def create_app():
     # Garantir que colunas recentes existem em instalações que ainda não
     # aplicaram as migrações correspondentes (evita erros em bases de dados
     # antigas carregadas a partir de ficheiro).
+    def _ensure_trabalhos_tables():
+        required = {
+            "trabalhos",
+            "trabalho_grupos",
+            "trabalho_grupo_membros",
+            "entregas",
+            "parametro_definicoes",
+            "entrega_parametros",
+        }
+        insp = inspect(db.engine)
+        existing = set(insp.get_table_names())
+        missing = sorted(required - existing)
+        if not missing:
+            return
+
+        app.logger.warning("Tabelas de trabalhos em falta (%s). A criar automaticamente.", ", ".join(missing))
+        db.metadata.create_all(
+            bind=db.engine,
+            tables=[
+                Trabalho.__table__,
+                TrabalhoGrupo.__table__,
+                TrabalhoGrupoMembro.__table__,
+                Entrega.__table__,
+                ParametroDefinicao.__table__,
+                EntregaParametro.__table__,
+            ],
+            checkfirst=True,
+        )
+        db.session.commit()
+        app.logger.info("Schema de trabalhos garantido com sucesso.")
+
     def _ensure_columns():
         if db.engine.dialect.name != "sqlite":
             return
@@ -1955,6 +1986,7 @@ def create_app():
         init_offline_db(app.instance_path)
         init_offline_store_db(app.instance_path)
         _ensure_columns()
+        _ensure_trabalhos_tables()
         try:
             _log_db_mode()
         except Exception:
