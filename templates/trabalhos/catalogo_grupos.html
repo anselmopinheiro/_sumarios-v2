@@ -3,14 +3,27 @@
 <h2>Grupos da turma — {{ turma.nome }}</h2>
 <div class="mb-3"><a class="btn btn-outline-secondary" href="{{ url_for('turma_trabalhos', turma_id=turma.id) }}">Voltar</a></div>
 
+<style>
+  .membros-picker {
+    width: 100%;
+    max-height: 640px;
+    overflow-y: auto;
+  }
+
+  .membros-picker option {
+    white-space: normal;
+    line-height: 1.25;
+  }
+</style>
+
 <div class="card mb-4">
   <div class="card-header">Novo grupo do catálogo</div>
   <div class="card-body">
     <form method="post" class="row g-2">
       <div class="col-md-4"><input class="form-control" name="nome" placeholder="Nome" required></div>
       <div class="col-md-6">
-        <select class="form-select" name="aluno_ids" multiple size="4">
-          {% for a in alunos %}<option value="{{ a.id }}">{{ a.numero or '—' }} - {{ a.nome }}</option>{% endfor %}
+        <select class="form-select membros-picker" name="aluno_ids" multiple size="{{ [alunos|length, 30]|min }}">
+          {% for a in alunos %}<option value="{{ a.id }}">{{ a.numero or '—' }} {{ a.nome_curto or a.nome_curto_exibicao }}</option>{% endfor %}
         </select>
       </div>
       <div class="col-md-2"><button class="btn btn-primary w-100" type="submit">Criar</button></div>
