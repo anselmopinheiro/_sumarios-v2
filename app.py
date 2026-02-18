@@ -4217,11 +4217,22 @@ def create_app():
                 else:
                     estado = "No prazo"
 
+            membros = sorted(
+                [m.aluno for m in grupo.membros if m.aluno],
+                key=lambda a: ((a.numero is None), a.numero if a.numero is not None else 0, (a.nome or "").lower()),
+            )
+            aluno_principal = membros[0] if membros else None
+            aluno_label = ""
+            if aluno_principal:
+                numero = aluno_principal.numero if aluno_principal.numero is not None else "—"
+                aluno_label = f"{numero} {aluno_principal.nome_curto_exibicao}".strip()
+
             rows.append({
                 "grupo": grupo,
                 "entrega": entrega,
                 "params": params_map,
-                "membros": [m.aluno for m in grupo.membros],
+                "membros": membros,
+                "aluno_label": aluno_label,
                 "estado": estado,
             })
 

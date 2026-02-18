@@ -75,7 +75,7 @@
     <thead>
       <tr>
         <th>{{ 'Grupo' if trabalho.modo == 'grupo' else 'Aluno' }}</th>
-        <th>Membros</th>
+        {% if trabalho.modo == 'grupo' %}<th>Membros</th>{% endif %}
         <th>Estado</th>
         <th>Entregue</th>
         <th>Data entrega</th>
@@ -90,6 +90,7 @@
       {% for row in rows %}
       {% set entrega = row.entrega %}
       <tr data-grupo-id="{{ row.grupo.id }}">
+        {% if trabalho.modo == 'grupo' %}
         <td>{{ row.grupo.nome }}</td>
         <td>
           <div class="lista-membros">
@@ -98,6 +99,9 @@
             {% endfor %}
           </div>
         </td>
+        {% else %}
+        <td>{{ row.aluno_label }}</td>
+        {% endif %}
         <td class="field-estado">{{ row.estado }}</td>
         <td><input type="checkbox" class="form-check-input field-entregue" {% if entrega and entrega.entregue %}checked{% endif %}></td>
         <td><input type="datetime-local" class="form-control form-control-sm field-data-entrega" value="{{ entrega.data_entrega.strftime('%Y-%m-%dT%H:%M') if entrega and entrega.data_entrega else '' }}"></td>
@@ -138,6 +142,11 @@
 {% block extra_scripts %}
 <script>
 (function(){
+  function toast(msg, level='info'){
+    if(window.showToast){ window.showToast(msg, level); return; }
+    alert(msg);
+  }
+
   const params = new URLSearchParams(window.location.search);
   if(params.get('toast') === 'updated'){
     toast('Trabalho atualizado', 'success');
@@ -145,11 +154,6 @@
 
   const grid = document.getElementById('trabalhos-grid');
   if(!grid) return;
-
-  function toast(msg, level='info'){
-    if(window.showToast){ window.showToast(msg, level); return; }
-    alert(msg);
-  }
 
   async function saveRow(tr){
     const grupoId = tr.dataset.grupoId;
