@@ -4258,23 +4258,71 @@ def create_app():
     def turma_grupos_catalogo(turma_id):
         turma = Turma.query.get_or_404(turma_id)
         if request.method == "POST":
-            nome = (request.form.get("nome") or "").strip()
-            aluno_ids = [int(v) for v in request.form.getlist("aluno_ids") if str(v).isdigit()]
+            payload = request.get_json(silent=True) if request.is_json else request.form
+            nome = (payload.get("nome") or payload.get("nome_grupo") or "").strip()
+            raw_ids = payload.get("aluno_ids") if request.is_json else request.form.getlist("aluno_ids")
+            if raw_ids is None:
+                raw_ids = []
+            if not isinstance(raw_ids, list):
+                raw_ids = [raw_ids]
+            aluno_ids = sorted({int(v) for v in raw_ids if str(v).isdigit()})
+            wants_json = request.is_json or request.accept_mimetypes.best == "application/json"
+
             if not nome:
+                if wants_json:
+                    return jsonify({"ok": False, "error": "Nome do grupo é obrigatório."}), 400
                 flash("Nome do grupo é obrigatório.", "error")
                 return redirect(url_for("turma_grupos_catalogo", turma_id=turma.id))
+
+            usados = {
+                m.aluno_id
+                for g in GrupoTurma.query.filter_by(turma_id=turma.id).all()
+                for m in g.membros
+                if m.aluno_id is not None
+            }
+            duplicados = [aid for aid in aluno_ids if aid in usados]
+            if duplicados:
+                msg = "Um ou mais alunos já estão atribuídos a outro grupo da turma."
+                if wants_json:
+                    return jsonify({"ok": False, "error": msg, "aluno_ids": duplicados}), 400
+                flash(msg, "error")
+                return redirect(url_for("turma_grupos_catalogo", turma_id=turma.id))
+
             grupo = GrupoTurma(turma_id=turma.id, nome=nome)
             db.session.add(grupo)
             db.session.flush()
-            for aluno_id in sorted(set(aluno_ids)):
+            for aluno_id in aluno_ids:
                 db.session.add(GrupoTurmaMembro(grupo_turma_id=grupo.id, aluno_id=aluno_id))
             db.session.commit()
+
+            if wants_json:
+                membros_payload = []
+                if aluno_ids:
+                    alunos_map = {
+                        a.id: a
+                        for a in Aluno.query.filter(Aluno.id.in_(aluno_ids)).all()
+                    }
+                    for aid in aluno_ids:
+                        a = alunos_map.get(aid)
+                        if not a:
+                            continue
+                        numero = a.numero if a.numero is not None else "—"
+                        membros_payload.append({"id": aid, "label": f"{numero} {a.nome_curto_exibicao}".strip()})
+                return jsonify({"ok": True, "grupo_id": grupo.id, "nome": grupo.nome, "membros_ids": aluno_ids, "membros": membros_payload})
+
             flash("Grupo da turma criado.", "success")
             return redirect(url_for("turma_grupos_catalogo", turma_id=turma.id))
 
         grupos = GrupoTurma.query.filter_by(turma_id=turma.id).order_by(GrupoTurma.nome).all()
         alunos = _listar_alunos_turma(turma.id)
-        return render_template("trabalhos/catalogo_grupos.html", turma=turma, grupos=grupos, alunos=alunos)
+        usados = {
+            m.aluno_id
+            for g in grupos
+            for m in g.membros
+            if m.aluno_id is not None
+        }
+        alunos_disponiveis = [a for a in alunos if a.id not in usados]
+        return render_template("trabalhos/catalogo_grupos.html", turma=turma, grupos=grupos, alunos=alunos, alunos_disponiveis=alunos_disponiveis)
 
     @app.route("/turmas/<int:turma_id>/grupos/<int:grupo_id>/delete", methods=["POST"])
     def turma_grupo_catalogo_delete(turma_id, grupo_id):
@@ -4283,6 +4331,30 @@ def create_app():
         db.session.commit()
         flash("Grupo do catálogo removido.", "success")
         return redirect(url_for("turma_grupos_catalogo", turma_id=turma_id))
+
+    @app.route("/turmas/<int:turma_id>/grupos/<int:grupo_id>/membros/<int:aluno_id>/remove", methods=["POST"])
+    def turma_grupo_remove_membro(turma_id, grupo_id, aluno_id):
+        grupo = GrupoTurma.query.filter_by(id=grupo_id, turma_id=turma_id).first_or_404()
+        membro = GrupoTurmaMembro.query.filter_by(grupo_turma_id=grupo.id, aluno_id=aluno_id).first()
+        if not membro:
+            return jsonify({"ok": False, "error": "Aluno não pertence a este grupo."}), 404
+
+        aluno = Aluno.query.filter_by(id=aluno_id, turma_id=turma_id).first()
+        numero = aluno.numero if (aluno and aluno.numero is not None) else "—"
+        nome_curto = aluno.nome_curto_exibicao if aluno else "Aluno"
+
+        db.session.delete(membro)
+        db.session.flush()
+
+        restantes = GrupoTurmaMembro.query.filter_by(grupo_turma_id=grupo.id).count()
+        if restantes == 0:
+            gid = grupo.id
+            db.session.delete(grupo)
+            db.session.commit()
+            return jsonify({"ok": True, "deleted": True, "grupo_id": gid, "membros_repostos": [{"id": aluno_id, "label": f"{numero} {nome_curto}".strip()}]})
+
+        db.session.commit()
+        return jsonify({"ok": True, "deleted": False, "grupo_id": grupo.id, "removed_members_ids": [aluno_id], "membros_repostos": [{"id": aluno_id, "label": f"{numero} {nome_curto}".strip()}]})
 
     @app.route("/turmas/<int:turma_id>/trabalhos", methods=["GET", "POST"])
     def turma_trabalhos(turma_id):
