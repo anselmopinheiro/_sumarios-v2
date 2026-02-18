@@ -99,6 +99,9 @@
         <th>{{ 'Grupo' if trabalho.modo == 'grupo' else 'Aluno' }}</th>
         {% if trabalho.modo == 'grupo' %}<th>Membros</th>{% endif %}
         <th>Estado</th>
+        <th>Média</th>
+        <th>Fator</th>
+        <th>Nota final</th>
         <th>Entregue</th>
         <th>Data entrega</th>
         <th>Consec.</th>
@@ -128,6 +131,9 @@
         <td>{{ row.aluno_label }}</td>
         {% endif %}
         <td class="field-estado"><span class="badge-estado {{ row.estado_css }}">{{ row.estado }}</span></td>
+        <td class="field-media-base">{{ '%.2f'|format(row.media_base) }}</td>
+        <td class="field-fator-estado">{{ '%.2f'|format(row.fator_estado) }}</td>
+        <td class="field-nota-final">{{ '%.2f'|format(row.nota_final) }}</td>
         <td><input type="checkbox" class="form-check-input field-entregue" {% if entrega and entrega.entregue %}checked{% endif %}></td>
         <td><input type="date" class="form-control form-control-sm field-data-entrega" value="{{ entrega.data_entrega.strftime('%Y-%m-%d') if entrega and entrega.data_entrega else '' }}"></td>
         <td>
@@ -219,6 +225,18 @@
           el.innerHTML = `<span class="badge-estado ${data.estado_css || 'badge-por-entregar'}">${data.estado}</span>`;
         }
       }
+    }
+    if(typeof data.media_base !== 'undefined'){
+      const mediaCell = tr.querySelector('.field-media-base');
+      if(mediaCell) mediaCell.textContent = Number(data.media_base).toFixed(2);
+    }
+    if(typeof data.fator_estado !== 'undefined'){
+      const fatorCell = tr.querySelector('.field-fator-estado');
+      if(fatorCell) fatorCell.textContent = Number(data.fator_estado).toFixed(2);
+    }
+    if(typeof data.nota_final !== 'undefined'){
+      const notaCell = tr.querySelector('.field-nota-final');
+      if(notaCell) notaCell.textContent = Number(data.nota_final).toFixed(2);
     }
     if(data.data_entrega){
       const dt = tr.querySelector('.field-data-entrega');

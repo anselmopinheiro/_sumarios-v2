@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Mapa de notas — {{ turma.nome }}</h2>
+<div class="mb-3 d-flex gap-2 flex-wrap">
+  <a class="btn btn-outline-secondary" href="{{ url_for('turma_trabalhos', turma_id=turma.id) }}">Voltar aos trabalhos</a>
+  <a class="btn btn-outline-dark" href="{{ url_for('turma_grupos_catalogo', turma_id=turma.id) }}">Grupos da turma</a>
+</div>
+
+<div class="table-responsive">
+  <table class="table table-sm align-middle table-bordered">
+    <thead>
+      <tr>
+        <th>Aluno</th>
+        {% for trabalho in trabalhos %}
+          <th>{{ trabalho.titulo }}</th>
+        {% endfor %}
+        <th>Média global</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in mapa_rows %}
+        <tr>
+          <td>{{ row.aluno.numero or '—' }} {{ row.aluno.nome_curto_exibicao }}</td>
+          {% for cell in row.cells %}
+            <td>{{ '%.2f'|format(cell.nota_final) }}</td>
+          {% endfor %}
+          <td><strong>{{ '%.2f'|format(row.media_global) }}</strong></td>
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="{{ trabalhos|length + 2 }}" class="text-muted">Sem dados para apresentar.</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

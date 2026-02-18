@@ -4203,6 +4203,41 @@ def create_app():
                     continue
         return None
 
+    def _estado_info(trabalho, entrega):
+        if not entrega or not entrega.entregue:
+            return "Por entregar", "badge-por-entregar", 0.0
+        if trabalho.data_limite and entrega.data_entrega and entrega.data_entrega > trabalho.data_limite:
+            return "Atrasado", "badge-atrasado", 0.5
+        return "No prazo", "badge-no-prazo", 1.0
+
+    def _calcular_metricas_entrega(trabalho, entrega, params_map, parametros):
+        estado, estado_css, fator_estado = _estado_info(trabalho, entrega)
+
+        valores = []
+        if entrega:
+            if entrega.consecucao is not None:
+                valores.append(float(entrega.consecucao))
+            if entrega.qualidade is not None:
+                valores.append(float(entrega.qualidade))
+
+            for p in parametros:
+                if p.tipo != "numerico":
+                    continue
+                ep = params_map.get(p.id)
+                if ep and ep.valor_numerico is not None:
+                    valores.append(float(ep.valor_numerico))
+
+        media_base = (sum(valores) / len(valores)) if valores else 0.0
+        nota_final = media_base * fator_estado
+
+        return {
+            "estado": estado,
+            "estado_css": estado_css,
+            "fator_estado": fator_estado,
+            "media_base": media_base,
+            "nota_final": nota_final,
+        }
+
     def _ensure_individual_groups(trabalho):
         alunos = _listar_alunos_turma(trabalho.turma_id)
         existing_members = {m.aluno_id for g in trabalho.grupos for m in g.membros}
@@ -4226,15 +4261,7 @@ def create_app():
                 for ep in entrega.parametros:
                     params_map[ep.parametro_definicao_id] = ep
 
-            estado = "Por entregar"
-            estado_css = "badge-por-entregar"
-            if entrega and entrega.entregue:
-                if trabalho.data_limite and entrega.data_entrega and entrega.data_entrega > trabalho.data_limite:
-                    estado = "Atrasado"
-                    estado_css = "badge-atrasado"
-                else:
-                    estado = "No prazo"
-                    estado_css = "badge-no-prazo"
+            metrics = _calcular_metricas_entrega(trabalho, entrega, params_map, parametros)
 
             membros = sorted(
                 [m.aluno for m in grupo.membros if m.aluno],
@@ -4252,8 +4279,11 @@ def create_app():
                 "params": params_map,
                 "membros": membros,
                 "aluno_label": aluno_label,
-                "estado": estado,
-                "estado_css": estado_css,
+                "estado": metrics["estado"],
+                "estado_css": metrics["estado_css"],
+                "media_base": metrics["media_base"],
+                "fator_estado": metrics["fator_estado"],
+                "nota_final": metrics["nota_final"],
             })
 
         return parametros, rows[:30]
@@ -4385,6 +4415,64 @@ def create_app():
 
         trabalhos = Trabalho.query.filter_by(turma_id=turma.id).order_by(Trabalho.created_at.desc()).all()
         return render_template("trabalhos/list.html", turma=turma, trabalhos=trabalhos)
+
+    @app.route("/turmas/<int:turma_id>/trabalhos/mapa")
+    def turma_trabalhos_mapa(turma_id):
+        turma = Turma.query.get_or_404(turma_id)
+        trabalhos = Trabalho.query.filter_by(turma_id=turma.id).order_by(Trabalho.created_at.asc(), Trabalho.id.asc()).all()
+
+        houve_alteracao = False
+        for trabalho in trabalhos:
+            if trabalho.modo == "individual":
+                before = sum(len(g.membros) for g in trabalho.grupos)
+                _ensure_individual_groups(trabalho)
+                after = sum(len(g.membros) for g in trabalho.grupos)
+                if after != before:
+                    houve_alteracao = True
+        if houve_alteracao:
+            db.session.commit()
+            trabalhos = Trabalho.query.filter_by(turma_id=turma.id).order_by(Trabalho.created_at.asc(), Trabalho.id.asc()).all()
+
+        alunos = _listar_alunos_turma(turma.id)
+        parametros_por_trabalho = {
+            t.id: sorted(t.parametros, key=lambda p: (p.ordem, p.id))
+            for t in trabalhos
+        }
+
+        grupo_por_aluno_trabalho = {}
+        for t in trabalhos:
+            mapping = {}
+            for g in t.grupos:
+                for m in g.membros:
+                    mapping[m.aluno_id] = g
+            grupo_por_aluno_trabalho[t.id] = mapping
+
+        entregas_por_chave = {}
+        for t in trabalhos:
+            for e in t.entregas:
+                entregas_por_chave[(t.id, e.trabalho_grupo_id)] = e
+
+        mapa_rows = []
+        for aluno in alunos:
+            cells = []
+            notas = []
+            for t in trabalhos:
+                grupo = grupo_por_aluno_trabalho.get(t.id, {}).get(aluno.id)
+                entrega = entregas_por_chave.get((t.id, grupo.id)) if grupo else None
+                params_map = {ep.parametro_definicao_id: ep for ep in (entrega.parametros if entrega else [])}
+                metrics = _calcular_metricas_entrega(t, entrega, params_map, parametros_por_trabalho.get(t.id, []))
+                nota = metrics["nota_final"] if entrega else 0.0
+                cells.append({"nota_final": nota})
+                notas.append(nota)
+
+            media_global = (sum(notas) / len(notas)) if notas else 0.0
+            mapa_rows.append({
+                "aluno": aluno,
+                "cells": cells,
+                "media_global": media_global,
+            })
+
+        return render_template("trabalhos/mapa.html", turma=turma, trabalhos=trabalhos, mapa_rows=mapa_rows)
 
     @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/delete", methods=["POST"])
     def trabalho_delete(turma_id, trabalho_id):
@@ -4685,22 +4773,18 @@ def create_app():
 
         db.session.commit()
 
-        estado = "Por entregar"
-        estado_css = "badge-por-entregar"
-        if entrega.entregue:
-            if trabalho.data_limite and entrega.data_entrega and entrega.data_entrega > trabalho.data_limite:
-                estado = "Atrasado"
-                estado_css = "badge-atrasado"
-            else:
-                estado = "No prazo"
-                estado_css = "badge-no-prazo"
+        params_map = {ep.parametro_definicao_id: ep for ep in entrega.parametros}
+        metrics = _calcular_metricas_entrega(trabalho, entrega, params_map, parametros)
 
         return jsonify({
             "ok": True,
             "updated_at": entrega.updated_at.isoformat(timespec="seconds"),
             "data_entrega": entrega.data_entrega.isoformat() if entrega.data_entrega else None,
-            "estado": estado,
-            "estado_css": estado_css,
+            "estado": metrics["estado"],
+            "estado_css": metrics["estado_css"],
+            "media_base": round(metrics["media_base"], 2),
+            "fator_estado": round(metrics["fator_estado"], 2),
+            "nota_final": round(metrics["nota_final"], 2),
         })
 
     @app.route("/turmas/<int:turma_id>/calendario")
