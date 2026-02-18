@@ -1085,12 +1085,12 @@ def create_app():
         insp = inspect(db.engine)
         trabalho_cols = {c["name"] for c in insp.get_columns("trabalhos")} if "trabalhos" in insp.get_table_names() else set()
         if "data_limite" not in trabalho_cols:
-            db.session.execute(text("ALTER TABLE trabalhos ADD COLUMN data_limite DATETIME"))
+            db.session.execute(text("ALTER TABLE trabalhos ADD COLUMN data_limite DATE"))
             db.session.commit()
 
         entrega_cols = {c["name"] for c in insp.get_columns("entregas")} if "entregas" in insp.get_table_names() else set()
         if "data_entrega" not in entrega_cols:
-            db.session.execute(text("ALTER TABLE entregas ADD COLUMN data_entrega DATETIME"))
+            db.session.execute(text("ALTER TABLE entregas ADD COLUMN data_entrega DATE"))
         if "observacoes" not in entrega_cols:
             db.session.execute(text("ALTER TABLE entregas ADD COLUMN observacoes TEXT"))
         db.session.commit()
@@ -4187,6 +4187,22 @@ def create_app():
                     continue
         return None
 
+    def _parse_date_local(raw):
+        if not raw:
+            return None
+        raw = str(raw).strip()
+        if not raw:
+            return None
+        try:
+            return date.fromisoformat(raw)
+        except Exception:
+            for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
+                try:
+                    return datetime.strptime(raw, fmt).date()
+                except Exception:
+                    continue
+        return None
+
     def _ensure_individual_groups(trabalho):
         alunos = _listar_alunos_turma(trabalho.turma_id)
         existing_members = {m.aluno_id for g in trabalho.grupos for m in g.membros}
@@ -4282,7 +4298,7 @@ def create_app():
                 titulo=titulo,
                 descricao=(request.form.get("descricao") or "").strip() or None,
                 modo=(request.form.get("modo") or "individual").strip().lower(),
-                data_limite=_parse_datetime_local(request.form.get("data_limite")),
+                data_limite=_parse_date_local(request.form.get("data_limite")),
             )
             if trabalho.modo not in {"individual", "grupo"}:
                 trabalho.modo = "individual"
@@ -4371,7 +4387,7 @@ def create_app():
             if modo not in {"individual", "grupo"}:
                 modo = trabalho.modo if trabalho.modo in {"individual", "grupo"} else "individual"
 
-            parsed_data_limite = _parse_datetime_local(data_limite_raw)
+            parsed_data_limite = _parse_date_local(data_limite_raw)
             if data_limite_raw and str(data_limite_raw).strip() and parsed_data_limite is None:
                 flash("Data limite inválida.", "error")
                 return redirect(url_for("trabalho_edit", turma_id=turma_id, trabalho_id=trabalho_id, toast="error"))
@@ -4550,11 +4566,11 @@ def create_app():
         entrega.qualidade = qualidade
         entrega.observacoes = (payload.get("observacoes") or "").strip() or None
 
-        parsed_data_entrega = _parse_datetime_local(payload.get("data_entrega"))
+        parsed_data_entrega = _parse_date_local(payload.get("data_entrega"))
         if entregue:
-            entrega.data_entrega = parsed_data_entrega or entrega.data_entrega or datetime.utcnow()
+            entrega.data_entrega = parsed_data_entrega or date.today()
         else:
-            entrega.data_entrega = parsed_data_entrega
+            entrega.data_entrega = None
         entrega.updated_at = datetime.utcnow()
 
         parametros = ParametroDefinicao.query.filter_by(trabalho_id=trabalho.id).all()
@@ -4603,7 +4619,7 @@ def create_app():
         return jsonify({
             "ok": True,
             "updated_at": entrega.updated_at.isoformat(timespec="seconds"),
-            "data_entrega": entrega.data_entrega.isoformat(timespec="seconds") if entrega.data_entrega else None,
+            "data_entrega": entrega.data_entrega.isoformat() if entrega.data_entrega else None,
             "estado": estado,
         })
 

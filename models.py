@@ -577,7 +577,7 @@ class Trabalho(db.Model):
     titulo = db.Column(db.String(255), nullable=False)
     descricao = db.Column(db.Text)
     modo = db.Column(db.String(20), nullable=False, default="individual", server_default="individual")
-    data_limite = db.Column(db.DateTime)
+    data_limite = db.Column(db.Date)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, server_default=db.text("now()"))
 
     turma = db.relationship("Turma", backref=db.backref("trabalhos", cascade="all, delete-orphan"))
@@ -620,7 +620,7 @@ class Entrega(db.Model):
     trabalho_grupo_id = db.Column(db.Integer, db.ForeignKey("trabalho_grupos.id"), nullable=False, index=True)
 
     entregue = db.Column(db.Boolean, nullable=False, default=False, server_default=db.text("false"))
-    data_entrega = db.Column(db.DateTime)
+    data_entrega = db.Column(db.Date)
     consecucao = db.Column(db.Integer)
     qualidade = db.Column(db.Integer)
     observacoes = db.Column(db.Text)

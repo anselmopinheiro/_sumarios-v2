@@ -2,7 +2,7 @@
 {% block content %}
 <h2>{{ trabalho.titulo }} <small class="text-muted">({{ trabalho.modo }})</small></h2>
 <p class="text-muted">{{ trabalho.descricao or '' }}</p>
-<p class="text-muted">Data limite: <strong>{{ trabalho.data_limite.strftime('%d/%m/%Y %H:%M') if trabalho.data_limite else '—' }}</strong></p>
+<p class="text-muted">Data limite: <strong>{{ trabalho.data_limite.strftime('%d/%m/%Y') if trabalho.data_limite else '—' }}</strong></p>
 <div class="mb-3 d-flex gap-2 flex-wrap">
   <a class="btn btn-outline-secondary" href="{{ url_for('turma_trabalhos', turma_id=turma.id) }}">Voltar</a>
   <a class="btn btn-outline-primary" href="{{ url_for('trabalho_edit', turma_id=turma.id, trabalho_id=trabalho.id) }}">Editar trabalho</a>
@@ -129,7 +129,7 @@
         {% endif %}
         <td class="field-estado">{{ row.estado }}</td>
         <td><input type="checkbox" class="form-check-input field-entregue" {% if entrega and entrega.entregue %}checked{% endif %}></td>
-        <td><input type="datetime-local" class="form-control form-control-sm field-data-entrega" value="{{ entrega.data_entrega.strftime('%Y-%m-%dT%H:%M') if entrega and entrega.data_entrega else '' }}"></td>
+        <td><input type="date" class="form-control form-control-sm field-data-entrega" value="{{ entrega.data_entrega.strftime('%Y-%m-%d') if entrega and entrega.data_entrega else '' }}"></td>
         <td>
           <select class="form-select form-select-sm field-consecucao">
             <option value=""></option>
@@ -212,7 +212,7 @@
     if(data.data_entrega){
       const dt = tr.querySelector('.field-data-entrega');
       if(dt && !dt.value){
-        dt.value = data.data_entrega.replace(' ', 'T').slice(0,16);
+        dt.value = data.data_entrega;
       }
     }
     toast('Linha guardada com sucesso', 'success');
