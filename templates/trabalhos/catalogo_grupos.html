@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Grupos da turma — {{ turma.nome }}</h2>
+<div class="mb-3"><a class="btn btn-outline-secondary" href="{{ url_for('turma_trabalhos', turma_id=turma.id) }}">Voltar</a></div>
+
+<div class="card mb-4">
+  <div class="card-header">Novo grupo do catálogo</div>
+  <div class="card-body">
+    <form method="post" class="row g-2">
+      <div class="col-md-4"><input class="form-control" name="nome" placeholder="Nome" required></div>
+      <div class="col-md-6">
+        <select class="form-select" name="aluno_ids" multiple size="4">
+          {% for a in alunos %}<option value="{{ a.id }}">{{ a.numero or '—' }} - {{ a.nome }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2"><button class="btn btn-primary w-100" type="submit">Criar</button></div>
+    </form>
+  </div>
+</div>
+
+<div class="table-responsive">
+  <table class="table table-sm">
+    <thead><tr><th>Grupo</th><th>Membros</th><th></th></tr></thead>
+    <tbody>
+      {% for g in grupos %}
+      <tr>
+        <td>{{ g.nome }}</td>
+        <td>{% for m in g.membros %}{{ m.aluno.nome_curto or m.aluno.nome }}{% if not loop.last %}, {% endif %}{% endfor %}</td>
+        <td class="text-end">
+          <form method="post" action="{{ url_for('turma_grupo_catalogo_delete', turma_id=turma.id, grupo_id=g.id) }}" onsubmit="return confirm('Remover grupo?')">
+            <button class="btn btn-sm btn-outline-danger" type="submit">Apagar</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="text-muted">Sem grupos de catálogo.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

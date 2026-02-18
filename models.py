@@ -527,6 +527,35 @@ class AulaAluno(db.Model):
     )
 
 
+class GrupoTurma(db.Model):
+    __tablename__ = "grupos_turma"
+
+    id = db.Column(db.Integer, primary_key=True)
+    turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), nullable=False, index=True)
+    nome = db.Column(db.String(255), nullable=False)
+
+    turma = db.relationship("Turma", backref=db.backref("grupos_catalogo", cascade="all, delete-orphan"))
+
+    __table_args__ = (
+        db.UniqueConstraint("turma_id", "nome", name="uq_grupo_turma_nome"),
+    )
+
+
+class GrupoTurmaMembro(db.Model):
+    __tablename__ = "grupo_turma_membros"
+
+    id = db.Column(db.Integer, primary_key=True)
+    grupo_turma_id = db.Column(db.Integer, db.ForeignKey("grupos_turma.id"), nullable=False, index=True)
+    aluno_id = db.Column(db.Integer, db.ForeignKey("alunos.id"), nullable=False, index=True)
+
+    grupo = db.relationship("GrupoTurma", backref=db.backref("membros", cascade="all, delete-orphan"))
+    aluno = db.relationship("Aluno")
+
+    __table_args__ = (
+        db.UniqueConstraint("grupo_turma_id", "aluno_id", name="uq_grupo_turma_membro"),
+    )
+
+
 class Trabalho(db.Model):
     __tablename__ = "trabalhos"
 
@@ -535,6 +564,7 @@ class Trabalho(db.Model):
     titulo = db.Column(db.String(255), nullable=False)
     descricao = db.Column(db.Text)
     modo = db.Column(db.String(20), nullable=False, default="individual", server_default="individual")
+    data_limite = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, server_default=db.text("now()"))
 
     turma = db.relationship("Turma", backref=db.backref("trabalhos", cascade="all, delete-orphan"))
@@ -577,8 +607,10 @@ class Entrega(db.Model):
     trabalho_grupo_id = db.Column(db.Integer, db.ForeignKey("trabalho_grupos.id"), nullable=False, index=True)
 
     entregue = db.Column(db.Boolean, nullable=False, default=False, server_default=db.text("false"))
+    data_entrega = db.Column(db.DateTime)
     consecucao = db.Column(db.Integer)
     qualidade = db.Column(db.Integer)
+    observacoes = db.Column(db.Text)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, server_default=db.text("now()"))
 
     trabalho = db.relationship("Trabalho", backref=db.backref("entregas", cascade="all, delete-orphan"))

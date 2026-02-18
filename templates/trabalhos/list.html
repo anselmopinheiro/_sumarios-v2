@@ -3,6 +3,7 @@
 <h2>Trabalhos — {{ turma.nome }}</h2>
 <div class="mb-3">
   <a class="btn btn-outline-secondary" href="{{ url_for('turma_calendario', turma_id=turma.id) }}">Voltar à turma</a>
+  <a class="btn btn-outline-dark" href="{{ url_for('turma_grupos_catalogo', turma_id=turma.id) }}">Grupos da turma</a>
 </div>
 
 <div class="card mb-4">
@@ -18,8 +19,11 @@
           <option value="grupo">Grupo</option>
         </select>
       </div>
-      <div class="col-md-5">
-        <input class="form-control" name="descricao" placeholder="Descrição (opcional)">
+      <div class="col-md-3">
+        <input class="form-control" type="datetime-local" name="data_limite" title="Data limite">
+      </div>
+      <div class="col-md-2">
+        <input class="form-control" name="descricao" placeholder="Descrição">
       </div>
       <div class="col-12">
         <button class="btn btn-primary" type="submit">Criar trabalho</button>
@@ -30,12 +34,13 @@
 
 <div class="table-responsive">
   <table class="table table-sm align-middle">
-    <thead><tr><th>Título</th><th>Modo</th><th>Criado</th><th></th></tr></thead>
+    <thead><tr><th>Título</th><th>Modo</th><th>Data limite</th><th>Criado</th><th></th></tr></thead>
     <tbody>
       {% for t in trabalhos %}
       <tr>
         <td>{{ t.titulo }}</td>
         <td>{{ t.modo }}</td>
+        <td>{{ t.data_limite.strftime('%d/%m/%Y %H:%M') if t.data_limite else '—' }}</td>
         <td>{{ t.created_at.strftime('%d/%m/%Y %H:%M') if t.created_at else '—' }}</td>
         <td class="text-end">
           <a class="btn btn-sm btn-outline-primary" href="{{ url_for('trabalho_detail', turma_id=turma.id, trabalho_id=t.id) }}">Abrir</a>
@@ -45,7 +50,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="4" class="text-muted">Sem trabalhos.</td></tr>
+      <tr><td colspan="5" class="text-muted">Sem trabalhos.</td></tr>
       {% endfor %}
     </tbody>
   </table>

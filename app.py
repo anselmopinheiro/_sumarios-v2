@@ -103,6 +103,8 @@ from models import (
     DTDisciplina,
     DTOcorrencia,
     Trabalho,
+    GrupoTurma,
+    GrupoTurmaMembro,
     TrabalhoGrupo,
     TrabalhoGrupoMembro,
     Entrega,
@@ -1053,6 +1055,8 @@ def create_app():
             "entregas",
             "parametro_definicoes",
             "entrega_parametros",
+            "grupos_turma",
+            "grupo_turma_membros",
         }
         insp = inspect(db.engine)
         existing = set(insp.get_table_names())
@@ -1070,11 +1074,26 @@ def create_app():
                 Entrega.__table__,
                 ParametroDefinicao.__table__,
                 EntregaParametro.__table__,
+                GrupoTurma.__table__,
+                GrupoTurmaMembro.__table__,
             ],
             checkfirst=True,
         )
         db.session.commit()
         app.logger.info("Schema de trabalhos garantido com sucesso.")
+
+        insp = inspect(db.engine)
+        trabalho_cols = {c["name"] for c in insp.get_columns("trabalhos")} if "trabalhos" in insp.get_table_names() else set()
+        if "data_limite" not in trabalho_cols:
+            db.session.execute(text("ALTER TABLE trabalhos ADD COLUMN data_limite DATETIME"))
+            db.session.commit()
+
+        entrega_cols = {c["name"] for c in insp.get_columns("entregas")} if "entregas" in insp.get_table_names() else set()
+        if "data_entrega" not in entrega_cols:
+            db.session.execute(text("ALTER TABLE entregas ADD COLUMN data_entrega DATETIME"))
+        if "observacoes" not in entrega_cols:
+            db.session.execute(text("ALTER TABLE entregas ADD COLUMN observacoes TEXT"))
+        db.session.commit()
 
     def _ensure_columns():
         if db.engine.dialect.name != "sqlite":
@@ -4152,6 +4171,22 @@ def create_app():
             .all()
         )
 
+    def _parse_datetime_local(raw):
+        if not raw:
+            return None
+        raw = str(raw).strip()
+        if not raw:
+            return None
+        try:
+            return datetime.fromisoformat(raw)
+        except Exception:
+            for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M", "%d/%m/%Y", "%d/%m/%Y %H:%M"):
+                try:
+                    return datetime.strptime(raw, fmt)
+                except Exception:
+                    continue
+        return None
+
     def _ensure_individual_groups(trabalho):
         alunos = _listar_alunos_turma(trabalho.turma_id)
         existing_members = {m.aluno_id for g in trabalho.grupos for m in g.membros}
@@ -4174,13 +4209,53 @@ def create_app():
             if entrega:
                 for ep in entrega.parametros:
                     params_map[ep.parametro_definicao_id] = ep
+
+            estado = "Por entregar"
+            if entrega and entrega.entregue:
+                if trabalho.data_limite and entrega.data_entrega and entrega.data_entrega > trabalho.data_limite:
+                    estado = "Atrasado"
+                else:
+                    estado = "No prazo"
+
             rows.append({
                 "grupo": grupo,
                 "entrega": entrega,
                 "params": params_map,
                 "membros": [m.aluno for m in grupo.membros],
+                "estado": estado,
             })
-        return parametros, rows
+
+        return parametros, rows[:30]
+
+    @app.route("/turmas/<int:turma_id>/grupos", methods=["GET", "POST"])
+    def turma_grupos_catalogo(turma_id):
+        turma = Turma.query.get_or_404(turma_id)
+        if request.method == "POST":
+            nome = (request.form.get("nome") or "").strip()
+            aluno_ids = [int(v) for v in request.form.getlist("aluno_ids") if str(v).isdigit()]
+            if not nome:
+                flash("Nome do grupo é obrigatório.", "error")
+                return redirect(url_for("turma_grupos_catalogo", turma_id=turma.id))
+            grupo = GrupoTurma(turma_id=turma.id, nome=nome)
+            db.session.add(grupo)
+            db.session.flush()
+            for aluno_id in sorted(set(aluno_ids)):
+                db.session.add(GrupoTurmaMembro(grupo_turma_id=grupo.id, aluno_id=aluno_id))
+            db.session.commit()
+            flash("Grupo da turma criado.", "success")
+            return redirect(url_for("turma_grupos_catalogo", turma_id=turma.id))
+
+        grupos = GrupoTurma.query.filter_by(turma_id=turma.id).order_by(GrupoTurma.nome).all()
+        alunos = _listar_alunos_turma(turma.id)
+        return render_template("trabalhos/catalogo_grupos.html", turma=turma, grupos=grupos, alunos=alunos)
+
+    @app.route("/turmas/<int:turma_id>/grupos/<int:grupo_id>/delete", methods=["POST"])
+    def turma_grupo_catalogo_delete(turma_id, grupo_id):
+        grupo = GrupoTurma.query.filter_by(id=grupo_id, turma_id=turma_id).first_or_404()
+        db.session.delete(grupo)
+        db.session.commit()
+        flash("Grupo do catálogo removido.", "success")
+        return redirect(url_for("turma_grupos_catalogo", turma_id=turma_id))
 
     @app.route("/turmas/<int:turma_id>/trabalhos", methods=["GET", "POST"])
     def turma_trabalhos(turma_id):
@@ -4196,6 +4271,7 @@ def create_app():
                 titulo=titulo,
                 descricao=(request.form.get("descricao") or "").strip() or None,
                 modo=(request.form.get("modo") or "individual").strip().lower(),
+                data_limite=_parse_datetime_local(request.form.get("data_limite")),
             )
             if trabalho.modo not in {"individual", "grupo"}:
                 trabalho.modo = "individual"
@@ -4214,6 +4290,32 @@ def create_app():
         db.session.commit()
         flash("Trabalho removido.", "success")
         return redirect(url_for("turma_trabalhos", turma_id=turma_id))
+
+    @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/importar-grupos", methods=["POST"])
+    def trabalho_importar_grupos_turma(turma_id, trabalho_id):
+        trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
+        catalogo = GrupoTurma.query.filter_by(turma_id=turma_id).all()
+        if not catalogo:
+            flash("Não existem grupos no catálogo da turma.", "error")
+            return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
+
+        if trabalho.modo != "grupo":
+            trabalho.modo = "grupo"
+
+        for g in catalogo:
+            nome = g.nome
+            exists = TrabalhoGrupo.query.filter_by(trabalho_id=trabalho.id, nome=nome).first()
+            if exists:
+                continue
+            ng = TrabalhoGrupo(trabalho_id=trabalho.id, nome=nome)
+            db.session.add(ng)
+            db.session.flush()
+            for m in g.membros:
+                db.session.add(TrabalhoGrupoMembro(trabalho_grupo_id=ng.id, aluno_id=m.aluno_id))
+
+        db.session.commit()
+        flash("Grupos importados para este trabalho (snapshot).", "success")
+        return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
 
     @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>")
     def trabalho_detail(turma_id, trabalho_id):
@@ -4301,6 +4403,13 @@ def create_app():
         entrega.entregue = entregue
         entrega.consecucao = consecucao
         entrega.qualidade = qualidade
+        entrega.observacoes = (payload.get("observacoes") or "").strip() or None
+
+        parsed_data_entrega = _parse_datetime_local(payload.get("data_entrega"))
+        if entregue:
+            entrega.data_entrega = parsed_data_entrega or entrega.data_entrega or datetime.utcnow()
+        else:
+            entrega.data_entrega = parsed_data_entrega
         entrega.updated_at = datetime.utcnow()
 
         parametros = ParametroDefinicao.query.filter_by(trabalho_id=trabalho.id).all()
@@ -4338,7 +4447,20 @@ def create_app():
                 ep.valor_numerico = None
 
         db.session.commit()
-        return jsonify({"ok": True, "updated_at": entrega.updated_at.isoformat(timespec="seconds")})
+
+        estado = "Por entregar"
+        if entrega.entregue:
+            if trabalho.data_limite and entrega.data_entrega and entrega.data_entrega > trabalho.data_limite:
+                estado = "Atrasado"
+            else:
+                estado = "No prazo"
+
+        return jsonify({
+            "ok": True,
+            "updated_at": entrega.updated_at.isoformat(timespec="seconds"),
+            "data_entrega": entrega.data_entrega.isoformat(timespec="seconds") if entrega.data_entrega else None,
+            "estado": estado,
+        })
 
     @app.route("/turmas/<int:turma_id>/calendario")
     def turma_calendario(turma_id):
