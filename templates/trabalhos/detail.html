@@ -59,6 +59,14 @@
     max-height: 240px;
     overflow-y: auto;
     white-space: normal;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.5rem;
+    align-items: flex-start;
+  }
+
+  .lista-membro-item {
+    white-space: nowrap;
   }
 </style>
 <div class="table-responsive">
@@ -84,7 +92,9 @@
         <td>{{ row.grupo.nome }}</td>
         <td>
           <div class="lista-membros">
-            {% for m in row.membros %}{{ m.nome_curto or m.nome }}{% if not loop.last %}, {% endif %}{% endfor %}
+            {% for m in row.membros %}
+              <span class="lista-membro-item">{{ m.numero or '—' }} {{ m.nome_curto_exibicao }}</span>
+            {% endfor %}
           </div>
         </td>
         <td class="field-estado">{{ row.estado }}</td>

@@ -181,6 +181,19 @@ class Aluno(db.Model):
     nee = db.Column(db.Text)
     observacoes = db.Column(db.Text)
 
+    @property
+    def nome_curto_exibicao(self):
+        raw = (self.nome_curto or "").strip()
+        if raw:
+            return raw
+        full_name = (self.nome or "").strip()
+        if not full_name:
+            return ""
+        parts = [p for p in full_name.split() if p]
+        if len(parts) == 1:
+            return parts[0]
+        return f"{parts[0]} {parts[-1][0]}."
+
     turma = db.relationship("Turma", back_populates="alunos")
     avaliacoes = db.relationship(
         "AulaAluno", back_populates="aluno", cascade="all, delete-orphan"
