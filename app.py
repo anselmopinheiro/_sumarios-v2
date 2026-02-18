@@ -4337,7 +4337,22 @@ def create_app():
 
         parametros, rows = _build_trabalho_grid(trabalho)
         alunos = _listar_alunos_turma(turma_id)
-        return render_template("trabalhos/detail.html", trabalho=trabalho, turma=trabalho.turma, parametros=parametros, rows=rows, alunos=alunos)
+        usados = {
+            m.aluno_id
+            for grupo in trabalho.grupos
+            for m in grupo.membros
+            if m.aluno_id is not None
+        }
+        alunos_disponiveis = [a for a in alunos if a.id not in usados]
+        return render_template(
+            "trabalhos/detail.html",
+            trabalho=trabalho,
+            turma=trabalho.turma,
+            parametros=parametros,
+            rows=rows,
+            alunos=alunos,
+            alunos_disponiveis=alunos_disponiveis,
+        )
 
     @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/edit", methods=["GET", "POST"])
     def trabalho_edit(turma_id, trabalho_id):
@@ -4404,23 +4419,79 @@ def create_app():
     @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/grupos", methods=["POST"])
     def trabalho_add_grupo(turma_id, trabalho_id):
         trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
-        nome = (request.form.get("nome") or "").strip()
-        aluno_ids = [int(v) for v in request.form.getlist("aluno_ids") if str(v).isdigit()]
+        payload = request.get_json(silent=True) if request.is_json else request.form
+        nome = (payload.get("nome") or payload.get("nome_grupo") or "").strip()
+
+        raw_ids = payload.get("aluno_ids") if request.is_json else request.form.getlist("aluno_ids")
+        if raw_ids is None:
+            raw_ids = []
+        if not isinstance(raw_ids, list):
+            raw_ids = [raw_ids]
+        aluno_ids = sorted({int(v) for v in raw_ids if str(v).isdigit()})
+
+        wants_json = request.is_json or request.accept_mimetypes.best == "application/json"
+
         if not nome:
+            if wants_json:
+                return jsonify({"ok": False, "error": "Nome do grupo é obrigatório."}), 400
             flash("Nome do grupo é obrigatório.", "error")
             return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
         if trabalho.modo != "grupo":
+            if wants_json:
+                return jsonify({"ok": False, "error": "Trabalho está em modo individual."}), 400
             flash("Trabalho está em modo individual.", "error")
+            return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
+
+        usados = {
+            m.aluno_id
+            for grupo in trabalho.grupos
+            for m in grupo.membros
+            if m.aluno_id is not None
+        }
+        duplicados = [aid for aid in aluno_ids if aid in usados]
+        if duplicados:
+            msg = "Um ou mais alunos já estão atribuídos a outro grupo deste trabalho."
+            if wants_json:
+                return jsonify({"ok": False, "error": msg, "aluno_ids": duplicados}), 400
+            flash(msg, "error")
             return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
 
         grupo = TrabalhoGrupo(trabalho_id=trabalho.id, nome=nome)
         db.session.add(grupo)
         db.session.flush()
-        for aluno_id in sorted(set(aluno_ids)):
+        for aluno_id in aluno_ids:
             db.session.add(TrabalhoGrupoMembro(trabalho_grupo_id=grupo.id, aluno_id=aluno_id))
         db.session.commit()
+
+        if wants_json:
+            return jsonify({"ok": True, "grupo_id": grupo.id, "membros_ids": aluno_ids})
+
         flash("Grupo criado.", "success")
         return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
+
+    @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/grupos/<int:grupo_id>/membros/<int:aluno_id>/remove", methods=["POST"])
+    def trabalho_remove_membro_grupo(turma_id, trabalho_id, grupo_id, aluno_id):
+        trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
+        grupo = TrabalhoGrupo.query.filter_by(id=grupo_id, trabalho_id=trabalho.id).first_or_404()
+
+        membro = TrabalhoGrupoMembro.query.filter_by(trabalho_grupo_id=grupo.id, aluno_id=aluno_id).first()
+        if not membro:
+            return jsonify({"ok": False, "error": "Aluno não pertence a este grupo."}), 404
+
+        aluno = Aluno.query.filter_by(id=aluno_id, turma_id=turma_id).first()
+        numero = aluno.numero if (aluno and aluno.numero is not None) else "—"
+        nome_curto = aluno.nome_curto_exibicao if aluno else "Aluno"
+
+        db.session.delete(membro)
+        db.session.commit()
+
+        return jsonify({
+            "ok": True,
+            "aluno": {
+                "id": aluno_id,
+                "label": f"{numero} {nome_curto}".strip(),
+            },
+        })
 
     @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/entregas/<int:grupo_id>/save", methods=["POST"])
     def trabalho_save_entrega(turma_id, trabalho_id, grupo_id):

@@ -37,11 +37,11 @@
     <div class="card">
       <div class="card-header">Criar grupo (ajuste deste trabalho)</div>
       <div class="card-body">
-        <form method="post" action="{{ url_for('trabalho_add_grupo', turma_id=turma.id, trabalho_id=trabalho.id) }}" class="row g-2">
+        <form id="create-grupo-form" method="post" action="{{ url_for('trabalho_add_grupo', turma_id=turma.id, trabalho_id=trabalho.id) }}" class="row g-2">
           <div class="col-md-5"><input class="form-control" name="nome" placeholder="Nome grupo" required></div>
           <div class="col-md-5">
-            <select class="form-select membros-picker" name="aluno_ids" multiple size="{{ [alunos|length, 30]|min }}" aria-label="Selecionar membros do grupo">
-              {% for a in alunos %}
+            <select id="membros-picker" class="form-select membros-picker" name="aluno_ids" multiple size="{{ [alunos_disponiveis|length, 30]|min }}" aria-label="Selecionar membros do grupo">
+              {% for a in alunos_disponiveis %}
               <option value="{{ a.id }}">{{ a.numero or '—' }} {{ a.nome_curto_exibicao }}</option>
               {% endfor %}
             </select>
@@ -68,6 +68,12 @@
 
   .lista-membro-item {
     white-space: nowrap;
+  }
+
+  .btn-remove-member {
+    font-size: 0.75rem;
+    text-decoration: none;
+    margin-left: 0.25rem;
   }
 
   .membros-picker {
@@ -111,7 +117,10 @@
         <td>
           <div class="lista-membros">
             {% for m in row.membros %}
-              <span class="lista-membro-item">{{ m.numero or '—' }} {{ m.nome_curto_exibicao }}</span>
+              <span class="lista-membro-item" data-aluno-id="{{ m.id }}">
+                {{ m.numero or '—' }} {{ m.nome_curto_exibicao }}
+                <button type="button" class="btn btn-link btn-sm p-0 text-danger btn-remove-member" data-grupo-id="{{ row.grupo.id }}" data-aluno-id="{{ m.id }}" title="Remover membro">remover</button>
+              </span>
             {% endfor %}
           </div>
         </td>
@@ -209,7 +218,65 @@
     toast('Linha guardada com sucesso', 'success');
   }
 
-  grid.addEventListener('click', (ev)=>{
+  const createGroupForm = document.getElementById('create-grupo-form');
+  const membrosPicker = document.getElementById('membros-picker');
+
+  if(createGroupForm && membrosPicker){
+    createGroupForm.addEventListener('submit', async (ev)=>{
+      ev.preventDefault();
+      const formData = new FormData(createGroupForm);
+      const nome = (formData.get('nome') || '').toString().trim();
+      const alunoIds = Array.from(membrosPicker.selectedOptions).map((opt)=>Number(opt.value));
+
+      const resp = await fetch(createGroupForm.action, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','Accept':'application/json'},
+        body: JSON.stringify({nome, aluno_ids: alunoIds})
+      });
+      const data = await resp.json().catch(()=>({ok:false,error:'Erro inesperado'}));
+      if(!resp.ok || !data.ok){
+        toast(data.error || 'Erro ao criar grupo', 'error');
+        return;
+      }
+
+      const idsToRemove = new Set((data.membros_ids || []).map((v)=>String(v)));
+      Array.from(membrosPicker.options).forEach((opt)=>{
+        if(idsToRemove.has(opt.value)) opt.remove();
+      });
+      membrosPicker.selectedIndex = -1;
+      const nomeInput = createGroupForm.querySelector('input[name="nome"]');
+      if(nomeInput) nomeInput.value = '';
+      toast('Grupo criado', 'success');
+      window.location.reload();
+    });
+  }
+
+  grid.addEventListener('click', async (ev)=>{
+    const rmBtn = ev.target.closest('.btn-remove-member');
+    if(rmBtn){
+      ev.preventDefault();
+      const grupoId = rmBtn.dataset.grupoId;
+      const alunoId = rmBtn.dataset.alunoId;
+      const url = "{{ url_for('trabalho_remove_membro_grupo', turma_id=turma.id, trabalho_id=trabalho.id, grupo_id=0, aluno_id=0) }}".replace('/0/membros/0/remove', `/${grupoId}/membros/${alunoId}/remove`);
+      const resp = await fetch(url, {method:'POST', headers:{'Accept':'application/json'}});
+      const data = await resp.json().catch(()=>({ok:false,error:'Erro inesperado'}));
+      if(!resp.ok || !data.ok){
+        toast(data.error || 'Erro ao remover membro', 'error');
+        return;
+      }
+
+      const item = rmBtn.closest('.lista-membro-item');
+      if(item) item.remove();
+      if(membrosPicker && data.aluno && data.aluno.id){
+        const opt = document.createElement('option');
+        opt.value = String(data.aluno.id);
+        opt.textContent = data.aluno.label || String(data.aluno.id);
+        membrosPicker.appendChild(opt);
+      }
+      toast('Membro removido', 'success');
+      return;
+    }
+
     const btn = ev.target.closest('.btn-save-row');
     if(!btn) return;
     ev.preventDefault();
