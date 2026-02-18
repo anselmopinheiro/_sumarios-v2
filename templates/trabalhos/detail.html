@@ -40,7 +40,7 @@
         <form method="post" action="{{ url_for('trabalho_add_grupo', turma_id=turma.id, trabalho_id=trabalho.id) }}" class="row g-2">
           <div class="col-md-5"><input class="form-control" name="nome" placeholder="Nome grupo" required></div>
           <div class="col-md-5">
-            <select class="form-select membros-picker" name="aluno_ids" multiple size="20" aria-label="Selecionar membros do grupo">
+            <select class="form-select membros-picker" name="aluno_ids" multiple size="{{ [alunos|length, 30]|min }}" aria-label="Selecionar membros do grupo">
               {% for a in alunos %}
               <option value="{{ a.id }}">{{ a.numero or '—' }} {{ a.nome_curto_exibicao }}</option>
               {% endfor %}
@@ -71,7 +71,8 @@
   }
 
   .membros-picker {
-    max-height: 420px;
+    width: 100%;
+    max-height: 520px;
     overflow-y: auto;
     white-space: normal;
     padding: 6px;
