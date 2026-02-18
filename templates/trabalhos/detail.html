@@ -127,7 +127,7 @@
         {% else %}
         <td>{{ row.aluno_label }}</td>
         {% endif %}
-        <td class="field-estado">{{ row.estado }}</td>
+        <td class="field-estado"><span class="badge-estado {{ row.estado_css }}">{{ row.estado }}</span></td>
         <td><input type="checkbox" class="form-check-input field-entregue" {% if entrega and entrega.entregue %}checked{% endif %}></td>
         <td><input type="date" class="form-control form-control-sm field-data-entrega" value="{{ entrega.data_entrega.strftime('%Y-%m-%d') if entrega and entrega.data_entrega else '' }}"></td>
         <td>
@@ -207,7 +207,18 @@
     }
     if(data.estado){
       const el = tr.querySelector('.field-estado');
-      if(el) el.textContent = data.estado;
+      if(el){
+        const badge = el.querySelector('.badge-estado');
+        if(badge){
+          badge.textContent = data.estado;
+          badge.classList.remove('badge-por-entregar', 'badge-no-prazo', 'badge-atrasado');
+          if(data.estado_css){
+            badge.classList.add(data.estado_css);
+          }
+        } else {
+          el.innerHTML = `<span class="badge-estado ${data.estado_css || 'badge-por-entregar'}">${data.estado}</span>`;
+        }
+      }
     }
     if(data.data_entrega){
       const dt = tr.querySelector('.field-data-entrega');

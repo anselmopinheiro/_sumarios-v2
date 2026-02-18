@@ -4227,11 +4227,14 @@ def create_app():
                     params_map[ep.parametro_definicao_id] = ep
 
             estado = "Por entregar"
+            estado_css = "badge-por-entregar"
             if entrega and entrega.entregue:
                 if trabalho.data_limite and entrega.data_entrega and entrega.data_entrega > trabalho.data_limite:
                     estado = "Atrasado"
+                    estado_css = "badge-atrasado"
                 else:
                     estado = "No prazo"
+                    estado_css = "badge-no-prazo"
 
             membros = sorted(
                 [m.aluno for m in grupo.membros if m.aluno],
@@ -4250,6 +4253,7 @@ def create_app():
                 "membros": membros,
                 "aluno_label": aluno_label,
                 "estado": estado,
+                "estado_css": estado_css,
             })
 
         return parametros, rows[:30]
@@ -4682,17 +4686,21 @@ def create_app():
         db.session.commit()
 
         estado = "Por entregar"
+        estado_css = "badge-por-entregar"
         if entrega.entregue:
             if trabalho.data_limite and entrega.data_entrega and entrega.data_entrega > trabalho.data_limite:
                 estado = "Atrasado"
+                estado_css = "badge-atrasado"
             else:
                 estado = "No prazo"
+                estado_css = "badge-no-prazo"
 
         return jsonify({
             "ok": True,
             "updated_at": entrega.updated_at.isoformat(timespec="seconds"),
             "data_entrega": entrega.data_entrega.isoformat() if entrega.data_entrega else None,
             "estado": estado,
+            "estado_css": estado_css,
         })
 
     @app.route("/turmas/<int:turma_id>/calendario")
