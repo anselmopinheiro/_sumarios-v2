@@ -4483,10 +4483,33 @@ def create_app():
         nome_curto = aluno.nome_curto_exibicao if aluno else "Aluno"
 
         db.session.delete(membro)
-        db.session.commit()
+        db.session.flush()
 
+        restantes = TrabalhoGrupoMembro.query.filter_by(trabalho_grupo_id=grupo.id).count()
+        if restantes == 0:
+            entrega = Entrega.query.filter_by(trabalho_grupo_id=grupo.id).first()
+            if entrega:
+                for ep in list(entrega.parametros):
+                    db.session.delete(ep)
+                db.session.delete(entrega)
+            grupo_id_deleted = grupo.id
+            db.session.delete(grupo)
+            db.session.commit()
+            return jsonify({
+                "ok": True,
+                "deleted": True,
+                "grupo_id": grupo_id_deleted,
+                "aluno": {
+                    "id": aluno_id,
+                    "label": f"{numero} {nome_curto}".strip(),
+                },
+            })
+
+        db.session.commit()
         return jsonify({
             "ok": True,
+            "deleted": False,
+            "grupo_id": grupo.id,
             "aluno": {
                 "id": aluno_id,
                 "label": f"{numero} {nome_curto}".strip(),

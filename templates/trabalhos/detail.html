@@ -268,12 +268,22 @@
       const item = rmBtn.closest('.lista-membro-item');
       if(item) item.remove();
       if(membrosPicker && data.aluno && data.aluno.id){
-        const opt = document.createElement('option');
-        opt.value = String(data.aluno.id);
-        opt.textContent = data.aluno.label || String(data.aluno.id);
-        membrosPicker.appendChild(opt);
+        const exists = Array.from(membrosPicker.options).some((opt)=>opt.value === String(data.aluno.id));
+        if(!exists){
+          const opt = document.createElement('option');
+          opt.value = String(data.aluno.id);
+          opt.textContent = data.aluno.label || String(data.aluno.id);
+          membrosPicker.appendChild(opt);
+        }
       }
-      toast('Membro removido', 'success');
+
+      if(data.deleted){
+        const tr = rmBtn.closest('tr[data-grupo-id]');
+        if(tr) tr.remove();
+        toast('Grupo eliminado (sem membros)', 'success');
+      } else {
+        toast('Membro removido', 'success');
+      }
       return;
     }
 
