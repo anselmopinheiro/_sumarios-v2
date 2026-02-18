@@ -44,6 +44,7 @@
         <td>{{ t.created_at.strftime('%d/%m/%Y %H:%M') if t.created_at else '—' }}</td>
         <td class="text-end">
           <a class="btn btn-sm btn-outline-primary" href="{{ url_for('trabalho_detail', turma_id=turma.id, trabalho_id=t.id) }}">Abrir</a>
+          <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('trabalho_edit', turma_id=turma.id, trabalho_id=t.id) }}">Editar</a>
           <form method="post" action="{{ url_for('trabalho_delete', turma_id=turma.id, trabalho_id=t.id) }}" class="d-inline" onsubmit="return confirm('Remover trabalho?')">
             <button class="btn btn-sm btn-outline-danger" type="submit">Apagar</button>
           </form>

@@ -4328,6 +4328,46 @@ def create_app():
         alunos = _listar_alunos_turma(turma_id)
         return render_template("trabalhos/detail.html", trabalho=trabalho, turma=trabalho.turma, parametros=parametros, rows=rows, alunos=alunos)
 
+    @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/edit", methods=["GET", "POST"])
+    def trabalho_edit(turma_id, trabalho_id):
+        trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
+
+        if request.method == "POST":
+            titulo = (request.form.get("titulo") or "").strip()
+            descricao = (request.form.get("descricao") or "").strip() or None
+            modo = (request.form.get("modo") or trabalho.modo or "individual").strip().lower()
+            data_limite_raw = request.form.get("data_limite")
+
+            if not titulo:
+                flash("Título é obrigatório.", "error")
+                return redirect(url_for("trabalho_edit", turma_id=turma_id, trabalho_id=trabalho_id, toast="error"))
+
+            if modo not in {"individual", "grupo"}:
+                modo = trabalho.modo if trabalho.modo in {"individual", "grupo"} else "individual"
+
+            parsed_data_limite = _parse_datetime_local(data_limite_raw)
+            if data_limite_raw and str(data_limite_raw).strip() and parsed_data_limite is None:
+                flash("Data limite inválida.", "error")
+                return redirect(url_for("trabalho_edit", turma_id=turma_id, trabalho_id=trabalho_id, toast="error"))
+
+            try:
+                trabalho.titulo = titulo
+                trabalho.descricao = descricao
+                trabalho.modo = modo
+                trabalho.data_limite = parsed_data_limite
+                if trabalho.modo == "individual":
+                    _ensure_individual_groups(trabalho)
+                db.session.commit()
+                flash("Trabalho atualizado.", "success")
+                return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id, toast="updated"))
+            except Exception:
+                db.session.rollback()
+                app.logger.exception("Erro ao atualizar trabalho id=%s turma=%s", trabalho_id, turma_id)
+                flash("Erro ao atualizar trabalho.", "error")
+                return redirect(url_for("trabalho_edit", turma_id=turma_id, trabalho_id=trabalho_id, toast="error"))
+
+        return render_template("trabalhos/edit.html", trabalho=trabalho, turma=trabalho.turma)
+
     @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/parametros", methods=["POST"])
     def trabalho_add_parametro(turma_id, trabalho_id):
         trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
