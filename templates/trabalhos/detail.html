@@ -54,6 +54,13 @@
 </div>
 
 <div class="alert alert-secondary py-2">Visualização simultânea: {{ rows|length }} linha(s) (máx. 30).</div>
+<style>
+  .lista-membros {
+    max-height: 240px;
+    overflow-y: auto;
+    white-space: normal;
+  }
+</style>
 <div class="table-responsive">
   <table class="table table-sm align-middle" id="trabalhos-grid">
     <thead>
@@ -75,7 +82,11 @@
       {% set entrega = row.entrega %}
       <tr data-grupo-id="{{ row.grupo.id }}">
         <td>{{ row.grupo.nome }}</td>
-        <td>{% for m in row.membros %}{{ m.nome_curto or m.nome }}{% if not loop.last %}, {% endif %}{% endfor %}</td>
+        <td>
+          <div class="lista-membros">
+            {% for m in row.membros %}{{ m.nome_curto or m.nome }}{% if not loop.last %}, {% endif %}{% endfor %}
+          </div>
+        </td>
         <td class="field-estado">{{ row.estado }}</td>
         <td><input type="checkbox" class="form-check-input field-entregue" {% if entrega and entrega.entregue %}checked{% endif %}></td>
         <td><input type="datetime-local" class="form-control form-control-sm field-data-entrega" value="{{ entrega.data_entrega.strftime('%Y-%m-%dT%H:%M') if entrega and entrega.data_entrega else '' }}"></td>
