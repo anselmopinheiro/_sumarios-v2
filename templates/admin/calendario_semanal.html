@@ -1,0 +1,19 @@
+{% extends "admin_base.html" %}
+{% block admin_content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3 class="h5 mb-0">Calendário semanal</h3>
+  <a class="btn btn-outline-primary btn-sm" href="{{ url_for('calendario_semana') }}">Abrir calendário semanal</a>
+</div>
+<p class="text-muted">Configuração de horário por turma (dia, hora, duração, disciplina e sala), com validação de sobreposições no ecrã de gestão do calendário.</p>
+
+<ul class="list-group">
+  {% for turma in turmas %}
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+      <span>{{ turma.nome }}</span>
+      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('turma_calendario', turma_id=turma.id) }}">Gerir horário</a>
+    </li>
+  {% else %}
+    <li class="list-group-item text-muted">Sem turmas disponíveis.</li>
+  {% endfor %}
+</ul>
+{% endblock %}

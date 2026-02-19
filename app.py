@@ -23,6 +23,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 from urllib.parse import urlparse, parse_qsl, urlsplit
 from collections import defaultdict
+from functools import wraps
 from datetime import datetime, date, timedelta
 
 from flask import (
@@ -2165,6 +2166,121 @@ def create_app():
             aula.total_geral or 0,
             aula.id,
         )
+
+    def admin_required(view):
+        @wraps(view)
+        def wrapped(*args, **kwargs):
+            if not app.config.get("ADMIN_ENABLED", True):
+                abort(403)
+            return view(*args, **kwargs)
+
+        return wrapped
+
+    def _admin_nav_items():
+        return [
+            ("admin_anos_letivos", "Anos letivos"),
+            ("admin_calendario_semanal", "Calendário semanal"),
+            ("admin_calendario_diario", "Calendário diário"),
+            ("admin_turmas", "Turmas"),
+            ("admin_direcao_turma", "Direção de Turma"),
+            ("admin_disciplinas_dt", "Disciplinas (DT)"),
+            ("admin_offline", "Offline"),
+        ]
+
+    # ----------------------------------------
+    # ADMIN
+    # ----------------------------------------
+    @app.route("/admin")
+    @admin_required
+    def admin_home():
+        return redirect(url_for("admin_anos_letivos"))
+
+    @app.route("/admin/anos-letivos")
+    @admin_required
+    def admin_anos_letivos():
+        anos = AnoLetivo.query.order_by(AnoLetivo.id.desc()).all()
+        return render_template("admin/anos_letivos.html", anos=anos, admin_nav_items=_admin_nav_items())
+
+    @app.route("/admin/calendario-semanal")
+    @admin_required
+    def admin_calendario_semanal():
+        turmas = Turma.query.order_by(Turma.nome.asc()).all()
+        return render_template("admin/calendario_semanal.html", turmas=turmas, admin_nav_items=_admin_nav_items())
+
+    @app.route("/admin/calendario-diario")
+    @admin_required
+    def admin_calendario_diario():
+        data_ref = request.args.get("data", type=str)
+        data_ref = _parse_date_local(data_ref) if data_ref else date.today()
+
+        aulas = (
+            CalendarioAula.query
+            .filter(CalendarioAula.data == data_ref)
+            .filter(CalendarioAula.apagado == False)  # noqa: E712
+            .order_by(CalendarioAula.id.asc())
+            .all()
+        )
+        exclusoes = Exclusao.query.filter(Exclusao.data == data_ref).all()
+        extras = Extra.query.filter(Extra.data == data_ref).all()
+        feriados = Feriado.query.filter(Feriado.data == data_ref).all()
+        interrupcoes = (
+            InterrupcaoLetiva.query
+            .filter(InterrupcaoLetiva.data_inicio <= data_ref)
+            .filter(InterrupcaoLetiva.data_fim >= data_ref)
+            .all()
+        )
+
+        return render_template(
+            "admin/calendario_diario.html",
+            data_ref=data_ref,
+            aulas=aulas,
+            exclusoes=exclusoes,
+            extras=extras,
+            feriados=feriados,
+            interrupcoes=interrupcoes,
+            admin_nav_items=_admin_nav_items(),
+        )
+
+    @app.route("/admin/turmas")
+    @admin_required
+    def admin_turmas():
+        turmas = Turma.query.order_by(Turma.nome.asc()).all()
+        return render_template("admin/turmas.html", turmas=turmas, admin_nav_items=_admin_nav_items())
+
+    @app.route("/admin/direcao-turma")
+    @admin_required
+    def admin_direcao_turma():
+        dts = DTTurma.query.order_by(DTTurma.id.desc()).all()
+        return render_template("admin/direcao_turma.html", dts=dts, admin_nav_items=_admin_nav_items())
+
+    @app.route("/admin/disciplinas-dt")
+    @admin_required
+    def admin_disciplinas_dt():
+        disciplinas = DTDisciplina.query.order_by(DTDisciplina.id.desc()).all()
+        return render_template("admin/disciplinas_dt.html", disciplinas=disciplinas, admin_nav_items=_admin_nav_items())
+
+    @app.route("/admin/offline")
+    @admin_required
+    def admin_offline():
+        snapshot_status = _carregar_backup_status()
+        return render_template(
+            "admin/offline.html",
+            pending_offline=pending_count(app.instance_path),
+            last_error=get_last_error(app.instance_path),
+            snapshot_interval_seconds=app.config.get("SNAPSHOT_INTERVAL_SECONDS", 60),
+            snapshot_status=snapshot_status,
+            admin_nav_items=_admin_nav_items(),
+        )
+
+    @app.route("/admin/offline/snapshot", methods=["POST"])
+    @admin_required
+    def admin_offline_snapshot():
+        result = snapshot_remote_to_local(app.instance_path)
+        if result.get("ok"):
+            flash("Snapshot offline atualizado com sucesso.", "success")
+        else:
+            flash(result.get("error") or "Falha ao atualizar snapshot offline.", "error")
+        return redirect(url_for("admin_offline"))
 
     # ----------------------------------------
     # DASHBOARD

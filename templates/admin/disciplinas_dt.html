@@ -1,0 +1,18 @@
+{% extends "admin_base.html" %}
+{% block admin_content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3 class="h5 mb-0">Disciplinas (DT)</h3>
+  <a class="btn btn-primary btn-sm" href="{{ url_for('dt_disciplinas_new') }}">Nova disciplina DT</a>
+</div>
+
+<ul class="list-group">
+  {% for d in disciplinas %}
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+      <span>{{ d.nome }}</span>
+      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('dt_disciplinas_edit', disciplina_id=d.id) }}">Editar</a>
+    </li>
+  {% else %}
+    <li class="list-group-item text-muted">Sem disciplinas DT.</li>
+  {% endfor %}
+</ul>
+{% endblock %}
