@@ -2180,7 +2180,7 @@ def create_app():
         return [
             ("admin_anos_letivos", "Anos letivos"),
             ("admin_calendario_semanal", "Calendário semanal"),
-            ("admin_calendario_diario", "Calendário diário"),
+            ("/calendario/dia", "Calendário diário"),
             ("admin_turmas", "Turmas"),
             ("admin_direcao_turma", "Direção de Turma"),
             ("admin_disciplinas_dt", "Disciplinas (DT)"),

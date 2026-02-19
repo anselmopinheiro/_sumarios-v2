@@ -44,7 +44,9 @@
 <div class="admin-layout">
   <aside class="admin-sidebar">
     {% for endpoint, label in admin_nav_items %}
-      <a class="admin-link {% if request.endpoint == endpoint %}active{% endif %}" href="{{ url_for(endpoint) }}">{{ label }}</a>
+      {% set href = endpoint if endpoint.startswith('/') else url_for(endpoint) %}
+      {% set is_active = (request.path == href) if endpoint.startswith('/') else (request.endpoint == endpoint) %}
+      <a class="admin-link {% if is_active %}active{% endif %}" href="{{ href }}">{{ label }}</a>
     {% endfor %}
   </aside>
 
