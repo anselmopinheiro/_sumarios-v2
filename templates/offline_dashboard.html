@@ -2,10 +2,17 @@
 {% block content %}
 <h2>Modo offline</h2>
 <p class="text-muted">Sem rede para a BD remota. Trabalhe com o snapshot local.</p>
-<div class="card mb-3">
+<style>
+  .home-search-box {
+    display: block !important;
+    border: 2px solid #cfe2ff;
+    background: #ffffff;
+  }
+</style>
+<div class="card mb-3 home-search-box">
   <div class="card-body">
-    <label for="q" class="form-label mb-1">Pesquisa rápida</label>
-    <input type="search" id="q" class="form-control" placeholder="Pesquisar...">
+    <label for="offline-search-q" class="form-label mb-1 fw-semibold">Pesquisa rápida</label>
+    <input type="search" id="offline-search-q" class="form-control" placeholder="Pesquisar...">
     <div class="form-text">Filtra turmas e atalhos desta página em tempo real.</div>
   </div>
 </div>
@@ -40,7 +47,7 @@
   window.SNAPSHOT_TOAST_CONFIG = { enabled: true, intervalSeconds: {{ config.get("SNAPSHOT_INTERVAL_SECONDS", 60) }}, statusElementId: "snapshot-status-inline" };
 
   (() => {
-    const q = document.getElementById('q');
+    const q = document.getElementById('offline-search-q');
     if (!q) return;
     const items = Array.from(document.querySelectorAll('[data-search-item]'));
     const norm = (v) => (v || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();

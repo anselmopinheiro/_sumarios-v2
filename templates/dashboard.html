@@ -2,10 +2,10 @@
 {% block content %}
 <h2 class="mb-3">Dashboard</h2>
 
-<div class="card mb-3">
+<div class="card mb-3 home-search-box">
   <div class="card-body">
-    <label for="q" class="form-label mb-1">Pesquisa rápida</label>
-    <input type="search" id="q" class="form-control" placeholder="Pesquisar...">
+    <label for="home-search-q" class="form-label mb-1 fw-semibold">Pesquisa rápida</label>
+    <input type="search" id="home-search-q" class="form-control" placeholder="Pesquisar...">
     <div class="form-text">Filtra turmas e atalhos desta página em tempo real.</div>
   </div>
 </div>
@@ -21,6 +21,12 @@
     border-radius: 0.5rem;
     padding: 0.75rem 1rem;
     margin-bottom: 1rem;
+  }
+
+  .home-search-box {
+    display: block !important;
+    border: 2px solid #cfe2ff;
+    background: #ffffff;
   }
 
   .status-ligacao {
@@ -185,7 +191,7 @@
   window.SNAPSHOT_TOAST_CONFIG = { enabled: true, intervalSeconds: {{ config.get("SNAPSHOT_INTERVAL_SECONDS", 60) }}, statusElementId: "snapshot-status-inline" };
 
   (() => {
-    const q = document.getElementById('q');
+    const q = document.getElementById('home-search-q');
     if (!q) return;
     const items = Array.from(document.querySelectorAll('[data-search-item]'));
 
