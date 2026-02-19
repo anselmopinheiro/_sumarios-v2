@@ -334,7 +334,24 @@ def normalize_aulas_alunos_payload(payload):
 
 def apply_upsert_aulas_alunos(session, aula_id, aluno_id, payload):
     dados = normalize_aulas_alunos_payload(payload)
-    avaliacao = session.query(AulaAluno).filter_by(aula_id=aula_id, aluno_id=aluno_id).first()
+
+    avaliacao = None
+
+    for obj in session.new:
+        if isinstance(obj, AulaAluno) and obj.aula_id == aula_id and obj.aluno_id == aluno_id:
+            avaliacao = obj
+            break
+
+    if not avaliacao:
+        for obj in session.identity_map.values():
+            if isinstance(obj, AulaAluno) and obj.aula_id == aula_id and obj.aluno_id == aluno_id:
+                avaliacao = obj
+                break
+
+    if not avaliacao:
+        with session.no_autoflush:
+            avaliacao = session.query(AulaAluno).filter_by(aula_id=aula_id, aluno_id=aluno_id).first()
+
     if not avaliacao:
         avaliacao = AulaAluno(aula_id=aula_id, aluno_id=aluno_id)
         session.add(avaliacao)
@@ -1893,7 +1910,16 @@ def create_app():
             )
 
     def _apply_payloads(payloads):
+        dedup = {}
         for item in payloads:
+            key = (int(item["aula_id"]), int(item["aluno_id"]))
+            dedup[key] = {
+                "aula_id": key[0],
+                "aluno_id": key[1],
+                "payload": item["payload"],
+            }
+
+        for item in dedup.values():
             apply_upsert_aulas_alunos(
                 db.session,
                 item["aula_id"],
