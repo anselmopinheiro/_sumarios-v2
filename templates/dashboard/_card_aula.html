@@ -1,0 +1,27 @@
+<div class="card h-100 card-principal">
+  <div class="card-body">
+    <h3 class="h5 mb-3">Aula / Hoje</h3>
+
+    {% if aula_hoje %}
+      <p class="mb-3">
+        Hoje: <strong>{{ aula_hoje.data.strftime('%d/%m/%Y') if aula_hoje.data else '—' }}</strong>
+        {% if aula_hoje.numero_modulo %}<span class="text-muted">· Módulo {{ aula_hoje.numero_modulo }}</span>{% endif %}
+      </p>
+      <a class="btn btn-primary btn-lg w-100 mb-3" href="{{ url_for('calendario_aula_alunos', turma_id=turma_atual.id, aula_id=aula_hoje.id) }}">Abrir aula</a>
+    {% elif proxima_aula %}
+      <p class="mb-3">Sem aula hoje.</p>
+      <p class="mb-3">Próxima aula: <strong>{{ proxima_aula.data.strftime('%d/%m/%Y') if proxima_aula.data else '—' }}</strong></p>
+      <a class="btn btn-outline-primary w-100 mb-3" href="{{ url_for('turma_calendario', turma_id=turma_atual.id) }}">Abrir calendário</a>
+    {% else %}
+      <p class="mb-3">Sem aula agendada.</p>
+      <a class="btn btn-outline-primary w-100 mb-3" href="{{ url_for('turma_calendario', turma_id=turma_atual.id) }}">Abrir calendário</a>
+    {% endif %}
+
+    <div class="small text-uppercase text-muted mb-2">Checklist</div>
+    <ul class="list-unstyled mb-0 checklist-simples">
+      <li><span class="estado {{ 'ok' if checklist.sumario else 'no' }}">{{ 'sim' if checklist.sumario else 'não' }}</span> Sumário preenchido</li>
+      <li><span class="estado {{ 'ok' if checklist.faltas else 'no' }}">{{ 'sim' if checklist.faltas else 'não' }}</span> Faltas registadas</li>
+      <li><span class="estado {{ 'ok' if checklist.avaliacao else 'no' }}">{{ 'sim' if checklist.avaliacao else 'não' }}</span> Avaliação registada</li>
+    </ul>
+  </div>
+</div>

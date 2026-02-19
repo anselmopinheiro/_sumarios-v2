@@ -59,7 +59,7 @@ def _load_dotenv_if_available():
 
 
 _load_dotenv_if_available()
-from sqlalchemy import create_engine, func, inspect, text
+from sqlalchemy import create_engine, func, inspect, or_, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.engine import Engine
 from sqlalchemy import event
@@ -2173,25 +2173,141 @@ def create_app():
     def dashboard():
         turmas = turmas_abertas_ativas()
         ano_atual = get_ano_letivo_atual()
-        termo = (request.args.get("q") or "").strip()
-        resultados_sumarios = []
-        if termo:
-            like = f"%{termo}%"
-            resultados_sumarios = (
+        turma_id = request.args.get("turma_id", type=int)
+        turma_atual = next((t for t in turmas if t.id == turma_id), None)
+        if not turma_atual and turmas:
+            turma_atual = turmas[0]
+
+        hoje = date.today()
+        aula_hoje = None
+        proxima_aula = None
+        checklist = {
+            "sumario": False,
+            "faltas": False,
+            "avaliacao": False,
+        }
+        trabalhos_ativos = []
+        indicadores = {
+            "por_entregar": 0,
+            "atrasadas": 0,
+            "media_global": None,
+            "nota_zero": 0,
+        }
+        disciplina_atual = None
+
+        if turma_atual:
+            disciplina_atual = turma_atual.disciplinas[0] if getattr(turma_atual, "disciplinas", None) else None
+
+            aula_hoje = (
                 CalendarioAula.query
-                .filter(CalendarioAula.apagado == False)  # noqa: E712
-                .filter(CalendarioAula.sumario.isnot(None))
-                .filter(CalendarioAula.sumario.ilike(like))
-                .order_by(CalendarioAula.data.desc(), CalendarioAula.id.desc())
-                .limit(50)
+                .filter_by(turma_id=turma_atual.id, data=hoje, apagado=False)
+                .order_by(CalendarioAula.numero_modulo.asc(), CalendarioAula.id.asc())
+                .first()
+            )
+            if not aula_hoje:
+                proxima_aula = (
+                    CalendarioAula.query
+                    .filter(CalendarioAula.turma_id == turma_atual.id)
+                    .filter(CalendarioAula.apagado == False)  # noqa: E712
+                    .filter(CalendarioAula.data >= hoje)
+                    .order_by(CalendarioAula.data.asc(), CalendarioAula.numero_modulo.asc(), CalendarioAula.id.asc())
+                    .first()
+                )
+
+            aula_ref = aula_hoje or proxima_aula
+            if aula_ref:
+                checklist["sumario"] = bool((aula_ref.sumario or "").strip())
+                checklist["faltas"] = (
+                    db.session.query(AulaAluno.id)
+                    .filter(AulaAluno.aula_id == aula_ref.id)
+                    .first()
+                    is not None
+                )
+                checklist["avaliacao"] = (
+                    db.session.query(AulaAluno.id)
+                    .filter(AulaAluno.aula_id == aula_ref.id)
+                    .filter(
+                        or_(
+                            AulaAluno.responsabilidade.isnot(None),
+                            AulaAluno.comportamento.isnot(None),
+                            AulaAluno.participacao.isnot(None),
+                            AulaAluno.trabalho_autonomo.isnot(None),
+                            AulaAluno.portatil_material.isnot(None),
+                            AulaAluno.atividade.isnot(None),
+                        )
+                    )
+                    .first()
+                    is not None
+                )
+
+            trabalhos_ativos = (
+                Trabalho.query
+                .filter(Trabalho.turma_id == turma_atual.id)
+                .order_by(
+                    Trabalho.data_limite.is_(None),
+                    Trabalho.data_limite.asc(),
+                    Trabalho.created_at.desc(),
+                )
+                .limit(5)
                 .all()
             )
+
+            notas = []
+            for trabalho in trabalhos_ativos:
+                total_grupos = len(trabalho.grupos)
+                entregues = 0
+                atrasadas = 0
+                for entrega in trabalho.entregas:
+                    if not entrega.entregue:
+                        continue
+                    entregues += 1
+                    if trabalho.data_limite and entrega.data_entrega and entrega.data_entrega > trabalho.data_limite:
+                        atrasadas += 1
+                trabalho.total_grupos_dashboard = total_grupos
+                trabalho.entregues_dashboard = entregues
+                trabalho.atrasadas_dashboard = atrasadas
+                trabalho.percent_entregues_dashboard = round((entregues / total_grupos) * 100) if total_grupos else 0
+
+                por_entregar = max(total_grupos - entregues, 0)
+                indicadores["por_entregar"] += por_entregar
+                indicadores["atrasadas"] += atrasadas
+
+                for entrega in trabalho.entregas:
+                    if not entrega.entregue:
+                        notas.append(0.0)
+                        indicadores["nota_zero"] += 1
+                        continue
+                    valores = []
+                    if entrega.consecucao is not None:
+                        valores.append(float(entrega.consecucao))
+                    if entrega.qualidade is not None:
+                        valores.append(float(entrega.qualidade))
+                    for ep in entrega.parametros:
+                        if ep.valor_numerico is not None:
+                            valores.append(float(ep.valor_numerico))
+                    media_base = (sum(valores) / len(valores)) if valores else 0.0
+                    fator = 1.0
+                    if trabalho.data_limite and entrega.data_entrega and entrega.data_entrega > trabalho.data_limite:
+                        fator = 0.5
+                    nota_final = media_base * fator
+                    notas.append(nota_final)
+                    if nota_final == 0:
+                        indicadores["nota_zero"] += 1
+
+            if notas:
+                indicadores["media_global"] = round(sum(notas) / len(notas), 2)
+
         return render_template(
             "dashboard.html",
             turmas=turmas,
             ano_atual=ano_atual,
-            termo=termo,
-            resultados_sumarios=resultados_sumarios,
+            turma_atual=turma_atual,
+            disciplina_atual=disciplina_atual,
+            aula_hoje=aula_hoje,
+            proxima_aula=proxima_aula,
+            checklist=checklist,
+            trabalhos_ativos=trabalhos_ativos,
+            indicadores=indicadores,
         )
 
     @app.route("/backups")
