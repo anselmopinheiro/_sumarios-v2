@@ -2,6 +2,13 @@
 {% block content %}
 <h2>Modo offline</h2>
 <p class="text-muted">Sem rede para a BD remota. Trabalhe com o snapshot local.</p>
+<div class="card mb-3">
+  <div class="card-body">
+    <label for="q" class="form-label mb-1">Pesquisa rápida</label>
+    <input type="search" id="q" class="form-control" placeholder="Pesquisar...">
+    <div class="form-text">Filtra turmas e atalhos desta página em tempo real.</div>
+  </div>
+</div>
 <div class="mb-3">
   <form method="post" action="{{ url_for('offline.snapshot_now') }}" class="d-inline">
     <button class="btn btn-outline-primary" type="submit">Actualizar dados para offline</button>
@@ -17,10 +24,34 @@
 <a class="btn btn-outline-secondary" href="{{ url_for('offline.status_page') }}">Status</a>
 <a class="btn btn-outline-secondary" href="{{ url_for('offline.history_page') }}">Histórico</a>
 <a class="btn btn-outline-secondary" href="{{ url_for('offline.settings_page') }}">Definições</a>
+
+<div class="mt-3 d-grid gap-2" id="offline-quick-links">
+  <a class="btn btn-outline-dark" data-search-item data-text="turmas offline" href="{{ url_for('offline.turmas') }}">Turmas offline</a>
+  <a class="btn btn-outline-dark" data-search-item data-text="sincronizar" href="{{ url_for('offline.sync_page') }}">Sincronizar</a>
+  <a class="btn btn-outline-dark" data-search-item data-text="status offline" href="{{ url_for('offline.status_page') }}">Estado offline</a>
+  {% for turma in turmas %}
+    <a class="btn btn-outline-dark" data-search-item data-text="turma {{ turma.nome|lower }}" href="{{ url_for('offline.turmas') }}">Turma {{ turma.nome }}</a>
+  {% endfor %}
+</div>
 {% endblock %}
 
 {% block extra_scripts %}
 <script>
   window.SNAPSHOT_TOAST_CONFIG = { enabled: true, intervalSeconds: {{ config.get("SNAPSHOT_INTERVAL_SECONDS", 60) }}, statusElementId: "snapshot-status-inline" };
+
+  (() => {
+    const q = document.getElementById('q');
+    if (!q) return;
+    const items = Array.from(document.querySelectorAll('[data-search-item]'));
+    const norm = (v) => (v || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+
+    q.addEventListener('input', () => {
+      const term = norm(q.value);
+      items.forEach((el) => {
+        const text = norm(el.dataset.text || el.textContent);
+        el.style.display = (!term || text.includes(term)) ? '' : 'none';
+      });
+    });
+  })();
 </script>
 {% endblock %}

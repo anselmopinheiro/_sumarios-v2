@@ -2,6 +2,14 @@
 {% block content %}
 <h2 class="mb-3">Dashboard</h2>
 
+<div class="card mb-3">
+  <div class="card-body">
+    <label for="q" class="form-label mb-1">Pesquisa rápida</label>
+    <input type="search" id="q" class="form-control" placeholder="Pesquisar...">
+    <div class="form-text">Filtra turmas e atalhos desta página em tempo real.</div>
+  </div>
+</div>
+
 {% if turma_atual %}
 <style>
   .dashboard-context {
@@ -99,6 +107,23 @@
     font-weight: 700;
   }
 
+  .quick-links-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .quick-link-item {
+    display: block;
+    border: 1px solid #dee2e6;
+    border-radius: 0.45rem;
+    padding: 0.45rem 0.55rem;
+    text-decoration: none;
+    color: inherit;
+    background: #fff;
+  }
+
   @media (max-width: 992px) {
     .dashboard-grid {
       grid-template-columns: 1fr;
@@ -129,6 +154,16 @@
   </div>
 </div>
 
+<div class="quick-links-grid" id="quick-links-grid">
+  {% for t in turmas %}
+    <a class="quick-link-item" data-search-item data-text="turma {{ t.nome|lower }} {{ t.tipo|lower }}" href="{{ url_for('dashboard', turma_id=t.id) }}">Turma {{ t.nome }}</a>
+  {% endfor %}
+  <a class="quick-link-item" data-search-item data-text="calendario semanal" href="{{ url_for('calendario_semana') }}">Calendário semanal</a>
+  <a class="quick-link-item" data-search-item data-text="calendario diario" href="{{ url_for('turma_calendario_dia') }}">Calendário diário</a>
+  <a class="quick-link-item" data-search-item data-text="admin configuracao" href="{{ url_for('admin_home') }}">Admin</a>
+  <a class="quick-link-item" data-search-item data-text="turmas gestao" href="{{ url_for('turmas_list') }}">Gerir turmas</a>
+</div>
+
 <div class="dashboard-grid">
   <div class="dashboard-col">
     {% include "dashboard/_card_aula.html" %}
@@ -148,5 +183,21 @@
 {% block extra_scripts %}
 <script>
   window.SNAPSHOT_TOAST_CONFIG = { enabled: true, intervalSeconds: {{ config.get("SNAPSHOT_INTERVAL_SECONDS", 60) }}, statusElementId: "snapshot-status-inline" };
+
+  (() => {
+    const q = document.getElementById('q');
+    if (!q) return;
+    const items = Array.from(document.querySelectorAll('[data-search-item]'));
+
+    const norm = (v) => (v || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+
+    q.addEventListener('input', () => {
+      const term = norm(q.value);
+      items.forEach((el) => {
+        const text = norm(el.dataset.text || el.textContent);
+        el.style.display = (!term || text.includes(term)) ? '' : 'none';
+      });
+    });
+  })();
 </script>
 {% endblock %}
