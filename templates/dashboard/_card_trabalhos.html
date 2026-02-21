@@ -1,0 +1,26 @@
+<div class="card h-100">
+  <div class="card-body d-flex flex-column">
+    <h3 class="h5 mb-3">Trabalhos ativos</h3>
+
+    {% if trabalhos_ativos %}
+      <ul class="list-unstyled mb-3 trabalhos-curtos">
+        {% for t in trabalhos_ativos %}
+          <li class="trabalho-item">
+            <div class="linha-topo">
+              <span class="data">{{ t.data_limite.strftime('%d/%m/%Y') if t.data_limite else '—' }}</span>
+              <span class="percent">{{ t.percent_entregues_dashboard }}%</span>
+            </div>
+            <div class="titulo">{{ t.titulo }}</div>
+            <div class="meta text-muted small">{{ t.entregues_dashboard }}/{{ t.total_grupos_dashboard }} entregues · {{ t.atrasadas_dashboard }} atrasados</div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="text-muted">Sem trabalhos ativos.</p>
+    {% endif %}
+
+    <div class="mt-auto">
+      <a class="btn btn-outline-primary w-100" href="{{ url_for('turma_trabalhos', turma_id=turma_atual.id) }}">Ver todos os trabalhos</a>
+    </div>
+  </div>
+</div>

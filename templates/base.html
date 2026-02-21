@@ -80,22 +80,64 @@
       .richtext-highlight {
         background-color: #fff3cd;
       }
+
+      .offline-banner {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        background: #dc3545;
+        color: #fff;
+        text-align: center;
+        padding: 0.35rem 0.75rem;
+        z-index: 2000;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+      }
+
+      body.with-offline-banner {
+        padding-top: 2.1rem;
+      }
+
+      .badge-estado {
+        display: inline-block;
+        padding: 0.25rem 0.5rem;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        line-height: 1;
+      }
+
+      .badge-por-entregar {
+        background-color: #6c757d;
+        color: #fff;
+      }
+
+      .badge-no-prazo {
+        background-color: #198754;
+        color: #fff;
+      }
+
+      .badge-atrasado {
+        background-color: #dc3545;
+        color: #fff;
+      }
     </style>
 </head>
 
-<body class="bg-light">
+<body class="bg-light {% if is_offline %}with-offline-banner{% endif %}">
+{% if is_offline %}<div class="offline-banner">OFFLINE</div>{% endif %}
 
 <nav class="navbar navbar-dark bg-dark navbar-expand-lg mb-4">
     <div class="container">
         <a class="navbar-brand" href="/">Gestor Lectivo</a>
 
         <ul class="navbar-nav ms-auto">
-            <li class="nav-item"><a class="nav-link" href="/anos-letivos">Anos Letivos</a></li>
             <li class="nav-item"><a class="nav-link" href="/calendario/semana">Calendário Semanal</a></li>
             <li class="nav-item"><a class="nav-link" href="/calendario/dia">Calendário Diário</a></li>
             <li class="nav-item"><a class="nav-link" href="/turmas">Turmas</a></li>
+            <li class="nav-item"><a class="nav-link" href="/admin">Admin</a></li>
             <li class="nav-item"><a class="nav-link" href="/direcao-turma">Direção de Turma</a></li>
-            <li class="nav-item"><a class="nav-link" href="/dt-disciplinas">Disciplinas (DT)</a></li>
             <li class="nav-item">
                 <form class="d-inline" method="post" action="{{ url_for('backups_trigger') }}">
                     <button class="btn btn-outline-light btn-sm ms-lg-2" type="submit">Backup BD</button>
@@ -393,7 +435,8 @@
       }, 20000);
     };
 
-    const obterPrevisaoContexto = (btn) => {
+    if (!window.app) window.app = {};
+    window.app.obterPrevisaoContexto = window.app.obterPrevisaoContexto || function (btn) {
       if (!btn) return { input: null, editor: null };
       const wrapper = btn.closest('.js-richtext-wrapper') || btn.closest('form');
       if (!wrapper) return { input: null, editor: null };
@@ -401,70 +444,7 @@
       const editor = wrapper.querySelector('.js-richtext-editor');
       return { input, editor };
     };
-
-    const definirPrevisao = (input, editor, valor) => {
-      if (!input && !editor) return;
-      const sanitized = sanitizeRichtext(valor || '');
-      if (input) {
-        input.value = sanitized;
-        input.dispatchEvent(new Event('change', { bubbles: true }));
-      }
-      if (editor) {
-        editor.innerHTML = sanitized;
-        syncRichtext(editor);
-        editor.dispatchEvent(new Event('input', { bubbles: true }));
-      }
-    };
-
-    const obterListaPrevisoes = (turmaId = null) => {
-      const lista = Array.from(document.querySelectorAll('input[name="previsao"]'));
-      const filtrada = turmaId ? lista.filter((item) => item.dataset.turmaId === turmaId) : lista;
-      return filtrada.sort((a, b) => {
-        const ordemA = a.dataset.sortKey || '';
-        const ordemB = b.dataset.sortKey || '';
-        if (ordemA === ordemB) return 0;
-        return ordemA < ordemB ? -1 : 1;
-      });
-    };
-
-    const limparPrevisao = (btn) => {
-      const { input, editor } = obterPrevisaoContexto(btn);
-      if (!input && !editor) return;
-      definirPrevisao(input, editor, '');
-    };
-
-    const copiarPrevisaoAnterior = (btn) => {
-      const { input, editor } = obterPrevisaoContexto(btn);
-      if (!input) return;
-      const lista = obterListaPrevisoes();
-      const idx = lista.indexOf(input);
-      if (idx <= 0) return;
-      const valor = lista[idx - 1]?.value || '';
-      definirPrevisao(input, editor, valor);
-    };
-
-    const enviarPrevisaoSeguinte = (btn) => {
-      const { input, editor } = obterPrevisaoContexto(btn);
-      if (!input) return;
-      const turmaId = input.dataset.turmaId || null;
-      const lista = obterListaPrevisoes(turmaId);
-      const idx = lista.indexOf(input);
-      if (idx < 0 || idx >= lista.length - 1) return;
-      const atual = input.value || '';
-      const nextInput = lista[idx + 1];
-      const nextWrapper = nextInput?.closest('.js-richtext-wrapper') || nextInput?.closest('form');
-      const nextEditor = nextWrapper?.querySelector('.js-richtext-editor') || null;
-      definirPrevisao(nextInput, nextEditor, atual);
-    };
-
-    const obterPrevisaoContexto = (btn) => {
-      if (!btn) return { input: null, editor: null };
-      const wrapper = btn.closest('.js-richtext-wrapper') || btn.closest('form');
-      if (!wrapper) return { input: null, editor: null };
-      const input = wrapper.querySelector('[name="previsao"]');
-      const editor = wrapper.querySelector('.js-richtext-editor');
-      return { input, editor };
-    };
+    var obterPrevisaoContexto = window.app.obterPrevisaoContexto;
 
     const definirPrevisao = (input, editor, valor) => {
       if (!input && !editor) return;
@@ -814,6 +794,79 @@
     }
   })();
 </script>
+
+
+<script>
+  (() => {
+    const container = document.getElementById('toast-container');
+
+    window.showToast = window.showToast || function (message, level = 'info', timeoutMs = 4000) {
+      if (!container || !message) return;
+      const klass = level === 'error' ? 'text-bg-danger' : (level === 'success' ? 'text-bg-success' : 'text-bg-secondary');
+      const toastEl = document.createElement('div');
+      toastEl.className = `toast align-items-center ${klass} border-0`;
+      toastEl.setAttribute('role', 'alert');
+      toastEl.setAttribute('aria-live', 'assertive');
+      toastEl.setAttribute('aria-atomic', 'true');
+      toastEl.innerHTML = `<div class="d-flex"><div class="toast-body">${message}</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button></div>`;
+      container.appendChild(toastEl);
+      const toast = new bootstrap.Toast(toastEl, { delay: timeoutMs });
+      toastEl.addEventListener('hidden.bs.toast', () => toastEl.remove());
+      toast.show();
+    };
+
+    const cfg = window.SNAPSHOT_TOAST_CONFIG;
+    if (!cfg || !cfg.enabled) return;
+
+    let lastSignature = null;
+    const statusNode = document.getElementById(cfg.statusElementId || 'snapshot-status-inline');
+
+    const renderStatus = (payload) => {
+      if (!statusNode) return;
+      const snapshot = payload?.snapshot || {};
+      const lastRun = snapshot?.last_run || null;
+      const ok = lastRun && Number(lastRun.ok) === 1;
+      const finished = lastRun?.finished_at || lastRun?.started_at || '—';
+      const counts = snapshot?.counts || {};
+      statusNode.textContent = `Último snapshot: ${finished} | Estado: ${ok ? 'OK' : 'ERRO'} | Turmas:${counts.turmas || 0} Alunos:${counts.alunos || 0} Aulas:${counts.aulas || 0}`;
+    };
+
+    const poll = async () => {
+      try {
+        const resp = await fetch('/offline/status?format=json', { headers: { Accept: 'application/json' } });
+        if (!resp.ok) return;
+        const payload = await resp.json();
+        renderStatus(payload);
+
+        const lastRun = payload?.snapshot?.last_run;
+        if (!lastRun) return;
+        const signature = `${lastRun.id || 'x'}:${lastRun.ok || 0}:${lastRun.finished_at || ''}`;
+        if (lastSignature === null) {
+          lastSignature = signature;
+          return;
+        }
+        if (signature === lastSignature) return;
+        lastSignature = signature;
+
+        if (Number(lastRun.ok) === 1) {
+          const counts = payload?.snapshot?.counts || {};
+          window.showToast(`Snapshot concluído (turmas:${counts.turmas || 0}, alunos:${counts.alunos || 0}, aulas:${counts.aulas || 0})`, 'success');
+        } else {
+          const err = (lastRun.error || 'Falha no snapshot').toString().slice(0, 120);
+          window.showToast(`Snapshot falhou: ${err}`, 'error');
+        }
+      } catch (err) {
+        // silencioso
+      }
+    };
+
+    window.showToast('Snapshot automático iniciado.', 'info', 2500);
+    poll();
+    const interval = Math.max(5, Number(cfg.intervalSeconds || 60));
+    setInterval(poll, interval * 1000);
+  })();
+</script>
+{% block extra_scripts %}{% endblock %}
 
 </body>
 </html>

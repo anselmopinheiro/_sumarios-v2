@@ -15,3 +15,6 @@ gestor_lectivo.db
 *.class
 *.o
 *.a
+.env
+
+logs/

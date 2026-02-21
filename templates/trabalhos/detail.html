@@ -1,0 +1,327 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>{{ trabalho.titulo }} <small class="text-muted">({{ trabalho.modo }})</small></h2>
+<p class="text-muted">{{ trabalho.descricao or '' }}</p>
+<p class="text-muted">Data limite: <strong>{{ trabalho.data_limite.strftime('%d/%m/%Y') if trabalho.data_limite else '—' }}</strong></p>
+<div class="mb-3 d-flex gap-2 flex-wrap">
+  <a class="btn btn-outline-secondary" href="{{ url_for('turma_trabalhos', turma_id=turma.id) }}">Voltar</a>
+  <a class="btn btn-outline-primary" href="{{ url_for('trabalho_edit', turma_id=turma.id, trabalho_id=trabalho.id) }}">Editar trabalho</a>
+  {% if trabalho.modo == 'grupo' %}
+  <form method="post" action="{{ url_for('trabalho_importar_grupos_turma', turma_id=turma.id, trabalho_id=trabalho.id) }}">
+    <button class="btn btn-outline-dark" type="submit">Importar grupos da turma</button>
+  </form>
+  {% endif %}
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header">Adicionar parâmetro</div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('trabalho_add_parametro', turma_id=turma.id, trabalho_id=trabalho.id) }}" class="row g-2">
+          <div class="col-md-6"><input class="form-control" name="nome" placeholder="Nome" required></div>
+          <div class="col-md-4">
+            <select class="form-select" name="tipo">
+              <option value="numerico">Numérico 1..5</option>
+              <option value="texto">Texto</option>
+            </select>
+          </div>
+          <div class="col-md-2"><button class="btn btn-primary w-100" type="submit">Adicionar</button></div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  {% if trabalho.modo == 'grupo' %}
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header">Criar grupo (ajuste deste trabalho)</div>
+      <div class="card-body">
+        <form id="create-grupo-form" method="post" action="{{ url_for('trabalho_add_grupo', turma_id=turma.id, trabalho_id=trabalho.id) }}" class="row g-2">
+          <div class="col-md-5"><input class="form-control" name="nome" placeholder="Nome grupo" required></div>
+          <div class="col-md-5">
+            <select id="membros-picker" class="form-select membros-picker" name="aluno_ids" multiple size="{{ [alunos_disponiveis|length, 30]|min }}" aria-label="Selecionar membros do grupo">
+              {% for a in alunos_disponiveis %}
+              <option value="{{ a.id }}">{{ a.numero or '—' }} {{ a.nome_curto_exibicao }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-2"><button class="btn btn-primary w-100" type="submit">Criar</button></div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="alert alert-secondary py-2">Visualização simultânea: {{ rows|length }} linha(s) (máx. 30).</div>
+<style>
+  .lista-membros {
+    max-height: 240px;
+    overflow-y: auto;
+    white-space: normal;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.5rem;
+    align-items: flex-start;
+  }
+
+  .lista-membro-item {
+    white-space: nowrap;
+  }
+
+  .btn-remove-member {
+    font-size: 0.75rem;
+    text-decoration: none;
+    margin-left: 0.25rem;
+  }
+
+  .membros-picker {
+    width: 100%;
+    max-height: 520px;
+    overflow-y: auto;
+    white-space: normal;
+    padding: 6px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+  }
+
+  .membros-picker option {
+    white-space: normal;
+    line-height: 1.25;
+    padding: 2px 0;
+  }
+</style>
+<div class="table-responsive">
+  <table class="table table-sm align-middle" id="trabalhos-grid">
+    <thead>
+      <tr>
+        <th>{{ 'Grupo' if trabalho.modo == 'grupo' else 'Aluno' }}</th>
+        {% if trabalho.modo == 'grupo' %}<th>Membros</th>{% endif %}
+        <th>Estado</th>
+        <th>Média</th>
+        <th>Fator</th>
+        <th>Nota final</th>
+        <th>Entregue</th>
+        <th>Data entrega</th>
+        <th>Consec.</th>
+        <th>Qualidade</th>
+        <th>Observações</th>
+        {% for p in parametros %}<th>{{ p.nome }}</th>{% endfor %}
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      {% set entrega = row.entrega %}
+      <tr data-grupo-id="{{ row.grupo.id }}">
+        {% if trabalho.modo == 'grupo' %}
+        <td>{{ row.grupo.nome }}</td>
+        <td>
+          <div class="lista-membros">
+            {% for m in row.membros %}
+              <span class="lista-membro-item" data-aluno-id="{{ m.id }}">
+                {{ m.numero or '—' }} {{ m.nome_curto_exibicao }}
+                <button type="button" class="btn btn-link btn-sm p-0 text-danger btn-remove-member" data-grupo-id="{{ row.grupo.id }}" data-aluno-id="{{ m.id }}" title="Remover membro">remover</button>
+              </span>
+            {% endfor %}
+          </div>
+        </td>
+        {% else %}
+        <td>{{ row.aluno_label }}</td>
+        {% endif %}
+        <td class="field-estado"><span class="badge-estado {{ row.estado_css }}">{{ row.estado }}</span></td>
+        <td class="field-media-base">{{ '%.2f'|format(row.media_base) }}</td>
+        <td class="field-fator-estado">{{ '%.2f'|format(row.fator_estado) }}</td>
+        <td class="field-nota-final">{{ '%.2f'|format(row.nota_final) }}</td>
+        <td><input type="checkbox" class="form-check-input field-entregue" {% if entrega and entrega.entregue %}checked{% endif %}></td>
+        <td><input type="date" class="form-control form-control-sm field-data-entrega" value="{{ entrega.data_entrega.strftime('%Y-%m-%d') if entrega and entrega.data_entrega else '' }}"></td>
+        <td>
+          <select class="form-select form-select-sm field-consecucao">
+            <option value=""></option>
+            {% for i in range(1,6) %}<option value="{{ i }}" {% if entrega and entrega.consecucao==i %}selected{% endif %}>{{ i }}</option>{% endfor %}
+          </select>
+        </td>
+        <td>
+          <select class="form-select form-select-sm field-qualidade">
+            <option value=""></option>
+            {% for i in range(1,6) %}<option value="{{ i }}" {% if entrega and entrega.qualidade==i %}selected{% endif %}>{{ i }}</option>{% endfor %}
+          </select>
+        </td>
+        <td><input class="form-control form-control-sm field-observacoes" value="{{ entrega.observacoes if entrega else '' }}"></td>
+        {% for p in parametros %}
+        {% set ep = row.params.get(p.id) %}
+        <td>
+          {% if p.tipo == 'numerico' %}
+          <select class="form-select form-select-sm field-extra" data-param-id="{{ p.id }}">
+            <option value=""></option>
+            {% for i in range(1,6) %}<option value="{{ i }}" {% if ep and ep.valor_numerico==i %}selected{% endif %}>{{ i }}</option>{% endfor %}
+          </select>
+          {% else %}
+          <input class="form-control form-control-sm field-extra" data-param-id="{{ p.id }}" value="{{ ep.valor_texto if ep else '' }}">
+          {% endif %}
+        </td>
+        {% endfor %}
+        <td><button class="btn btn-sm btn-primary btn-save-row">Guardar</button></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function(){
+  function toast(msg, level='info'){
+    if(window.showToast){ window.showToast(msg, level); return; }
+    alert(msg);
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  if(params.get('toast') === 'updated'){
+    toast('Trabalho atualizado', 'success');
+  }
+
+  const grid = document.getElementById('trabalhos-grid');
+  if(!grid) return;
+
+  async function saveRow(tr){
+    const grupoId = tr.dataset.grupoId;
+    const payload = {
+      entregue: tr.querySelector('.field-entregue')?.checked || false,
+      data_entrega: tr.querySelector('.field-data-entrega')?.value || null,
+      consecucao: tr.querySelector('.field-consecucao')?.value || null,
+      qualidade: tr.querySelector('.field-qualidade')?.value || null,
+      observacoes: tr.querySelector('.field-observacoes')?.value || null,
+      extra: {}
+    };
+    tr.querySelectorAll('.field-extra').forEach((el)=>{
+      payload.extra[el.dataset.paramId] = el.value;
+    });
+
+    const url = "{{ url_for('trabalho_save_entrega', turma_id=turma.id, trabalho_id=trabalho.id, grupo_id=0) }}".replace('/0/save', `/${grupoId}/save`);
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','Accept':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await resp.json().catch(()=>({ok:false,error:'Erro inesperado'}));
+    if(!resp.ok || !data.ok){
+      toast(data.error || 'Falha ao guardar', 'error');
+      return;
+    }
+    if(data.estado){
+      const el = tr.querySelector('.field-estado');
+      if(el){
+        const badge = el.querySelector('.badge-estado');
+        if(badge){
+          badge.textContent = data.estado;
+          badge.classList.remove('badge-por-entregar', 'badge-no-prazo', 'badge-atrasado');
+          if(data.estado_css){
+            badge.classList.add(data.estado_css);
+          }
+        } else {
+          el.innerHTML = `<span class="badge-estado ${data.estado_css || 'badge-por-entregar'}">${data.estado}</span>`;
+        }
+      }
+    }
+    if(typeof data.media_base !== 'undefined'){
+      const mediaCell = tr.querySelector('.field-media-base');
+      if(mediaCell) mediaCell.textContent = Number(data.media_base).toFixed(2);
+    }
+    if(typeof data.fator_estado !== 'undefined'){
+      const fatorCell = tr.querySelector('.field-fator-estado');
+      if(fatorCell) fatorCell.textContent = Number(data.fator_estado).toFixed(2);
+    }
+    if(typeof data.nota_final !== 'undefined'){
+      const notaCell = tr.querySelector('.field-nota-final');
+      if(notaCell) notaCell.textContent = Number(data.nota_final).toFixed(2);
+    }
+    if(data.data_entrega){
+      const dt = tr.querySelector('.field-data-entrega');
+      if(dt && !dt.value){
+        dt.value = data.data_entrega;
+      }
+    }
+    toast('Linha guardada com sucesso', 'success');
+  }
+
+  const createGroupForm = document.getElementById('create-grupo-form');
+  const membrosPicker = document.getElementById('membros-picker');
+
+  if(createGroupForm && membrosPicker){
+    createGroupForm.addEventListener('submit', async (ev)=>{
+      ev.preventDefault();
+      const formData = new FormData(createGroupForm);
+      const nome = (formData.get('nome') || '').toString().trim();
+      const alunoIds = Array.from(membrosPicker.selectedOptions).map((opt)=>Number(opt.value));
+
+      const resp = await fetch(createGroupForm.action, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','Accept':'application/json'},
+        body: JSON.stringify({nome, aluno_ids: alunoIds})
+      });
+      const data = await resp.json().catch(()=>({ok:false,error:'Erro inesperado'}));
+      if(!resp.ok || !data.ok){
+        toast(data.error || 'Erro ao criar grupo', 'error');
+        return;
+      }
+
+      const idsToRemove = new Set((data.membros_ids || []).map((v)=>String(v)));
+      Array.from(membrosPicker.options).forEach((opt)=>{
+        if(idsToRemove.has(opt.value)) opt.remove();
+      });
+      membrosPicker.selectedIndex = -1;
+      const nomeInput = createGroupForm.querySelector('input[name="nome"]');
+      if(nomeInput) nomeInput.value = '';
+      toast('Grupo criado', 'success');
+      window.location.reload();
+    });
+  }
+
+  grid.addEventListener('click', async (ev)=>{
+    const rmBtn = ev.target.closest('.btn-remove-member');
+    if(rmBtn){
+      ev.preventDefault();
+      const grupoId = rmBtn.dataset.grupoId;
+      const alunoId = rmBtn.dataset.alunoId;
+      const url = "{{ url_for('trabalho_remove_membro_grupo', turma_id=turma.id, trabalho_id=trabalho.id, grupo_id=0, aluno_id=0) }}".replace('/0/membros/0/remove', `/${grupoId}/membros/${alunoId}/remove`);
+      const resp = await fetch(url, {method:'POST', headers:{'Accept':'application/json'}});
+      const data = await resp.json().catch(()=>({ok:false,error:'Erro inesperado'}));
+      if(!resp.ok || !data.ok){
+        toast(data.error || 'Erro ao remover membro', 'error');
+        return;
+      }
+
+      const item = rmBtn.closest('.lista-membro-item');
+      if(item) item.remove();
+      if(membrosPicker && data.aluno && data.aluno.id){
+        const exists = Array.from(membrosPicker.options).some((opt)=>opt.value === String(data.aluno.id));
+        if(!exists){
+          const opt = document.createElement('option');
+          opt.value = String(data.aluno.id);
+          opt.textContent = data.aluno.label || String(data.aluno.id);
+          membrosPicker.appendChild(opt);
+        }
+      }
+
+      if(data.deleted){
+        const tr = rmBtn.closest('tr[data-grupo-id]');
+        if(tr) tr.remove();
+        toast('Grupo eliminado (sem membros)', 'success');
+      } else {
+        toast('Membro removido', 'success');
+      }
+      return;
+    }
+
+    const btn = ev.target.closest('.btn-save-row');
+    if(!btn) return;
+    ev.preventDefault();
+    const tr = btn.closest('tr[data-grupo-id]');
+    if(tr) saveRow(tr);
+  });
+})();
+</script>
+{% endblock %}

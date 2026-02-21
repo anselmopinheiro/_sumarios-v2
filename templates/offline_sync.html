@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Sincronização offline</h2>
+<div class="alert alert-secondary">
+  Pendentes: <strong>{{ status.pending }}</strong> | Erros: <strong>{{ status.errors }}</strong>
+  {% if status.last_error %}<br><small>{{ status.last_error }}</small>{% endif %}
+</div>
+<form method="post">
+  <button class="btn btn-success" type="submit">Sincronizar agora</button>
+</form>
+{% endblock %}

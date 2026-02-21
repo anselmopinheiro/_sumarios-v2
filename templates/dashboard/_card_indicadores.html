@@ -1,0 +1,27 @@
+<div class="card h-100">
+  <div class="card-body d-flex flex-column">
+    <h3 class="h5 mb-3">Indicadores rápidos</h3>
+    <div class="indicadores-grid mb-3">
+      <div class="indicador">
+        <div class="label">Trabalhos por entregar</div>
+        <div class="valor">{{ indicadores.por_entregar }}</div>
+      </div>
+      <div class="indicador">
+        <div class="label">Entregas atrasadas</div>
+        <div class="valor">{{ indicadores.atrasadas }}</div>
+      </div>
+      <div class="indicador">
+        <div class="label">Média global</div>
+        <div class="valor">{{ ('%.2f'|format(indicadores.media_global)) if indicadores.media_global is not none else '—' }}</div>
+      </div>
+      <div class="indicador">
+        <div class="label">Alunos com nota 0</div>
+        <div class="valor">{{ indicadores.nota_zero }}</div>
+      </div>
+    </div>
+
+    <div class="mt-auto">
+      <a class="btn btn-outline-secondary w-100" href="{{ url_for('turma_trabalhos_mapa', turma_id=turma_atual.id) }}">Detalhes</a>
+    </div>
+  </div>
+</div>

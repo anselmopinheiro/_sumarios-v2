@@ -1,102 +1,209 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>Dashboard</h2>
-<a class="btn btn-secondary" href="/calendario-escolar">
-    Ver Calendário Escolar
-</a>
+<h2 class="mb-3">Dashboard</h2>
 
-<p>
-  <a href="{{ url_for('anos_letivos_list') }}">Gerir Anos Letivos</a> |
-  <a href="{{ url_for('calendario_escolar') }}">Ver Calendário Escolar</a> |
-  <a href="{{ url_for('calendario_escolar_gestao') }}">Gerir Calendário Escolar</a>
-</p>
-
-<div class="mb-3">
-  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('calendario_outras_datas') }}">Outras datas</a>
-  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('calendario_sumarios_pendentes') }}">Sumários pendentes</a>
-  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('backups_list') }}">Backups</a>
-</div>
-
-<div class="card shadow-sm mb-4">
+<div class="card mb-3 home-search-box">
   <div class="card-body">
-    <h3 class="h5 mb-3">Pesquisa de sumários</h3>
-    <form class="row g-2" method="get" action="{{ url_for('dashboard') }}">
-      <div class="col-md-8">
-        <input
-          class="form-control"
-          type="search"
-          name="q"
-          placeholder="Pesquisar palavras nos sumários..."
-          value="{{ termo or '' }}"
-        >
-      </div>
-      <div class="col-md-4 d-grid">
-        <button class="btn btn-primary" type="submit">Pesquisar</button>
-      </div>
-    </form>
-    {% if termo %}
-      <div class="mt-3">
-        <p class="text-muted mb-2">
-          Resultados para <strong>{{ termo }}</strong>
-          ({{ resultados_sumarios|length }} encontrados).
-        </p>
-        {% if resultados_sumarios %}
-          <div class="table-responsive">
-            <table class="table table-sm align-middle">
-              <thead class="table-light">
-                <tr>
-                  <th>Data</th>
-                  <th>Turma</th>
-                  <th>Sumário</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for aula in resultados_sumarios %}
-                  <tr>
-                    <td>{{ aula.data.strftime("%d/%m/%Y") if aula.data else "—" }}</td>
-                    <td>{{ aula.turma.nome if aula.turma else "—" }}</td>
-                    <td>{{ aula.sumario or "—" }}</td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        {% else %}
-          <div class="alert alert-secondary mb-0">Nenhum sumário encontrado.</div>
-        {% endif %}
-      </div>
-    {% endif %}
+    <label for="home-search-q" class="form-label mb-1 fw-semibold">Pesquisa rápida</label>
+    <input type="search" id="home-search-q" class="form-control" placeholder="Pesquisar...">
+    <div class="form-text">Filtra turmas e atalhos desta página em tempo real.</div>
   </div>
 </div>
 
-<h3>Turmas</h3>
-{% if turmas %}
-  <div class="table-responsive">
-    <table class="table align-middle">
-      <thead>
-        <tr>
-          <th>Turma</th>
-          <th class="text-end">Ações</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for turma in turmas %}
-          <tr>
-            <td class="fw-semibold">{{ turma.nome }} <small class="text-muted">({{ turma.tipo }})</small></td>
-            <td class="text-end">
-              <div class="btn-group" role="group">
-                <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('turma_alunos', turma_id=turma.id) }}">Alunos</a>
-                <a class="btn btn-sm btn-outline-info" href="{{ url_for('turma_calendario', turma_id=turma.id) }}">Calendário</a>
-                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('turma_calendario_simplificado', turma_id=turma.id) }}">Calendário simplificado</a>
-                <a class="btn btn-sm btn-outline-success" href="{{ url_for('turma_mapa_avaliacao_diaria', turma_id=turma.id) }}">Mapa avaliações</a>
-              </div>
-            </td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+{% if turma_atual %}
+<style>
+  .dashboard-context {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 0.5rem;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .home-search-box {
+    display: block !important;
+    border: 2px solid #cfe2ff;
+    background: #ffffff;
+  }
+
+  .status-ligacao {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+
+  .status-online { background: #198754; color: #fff; }
+  .status-offline { background: #dc3545; color: #fff; }
+
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: 1.25fr 1fr;
+    gap: 1rem;
+  }
+
+  .dashboard-col {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .card-principal {
+    border: 2px solid #cfe2ff;
+  }
+
+  .checklist-simples .estado {
+    display: inline-block;
+    min-width: 2.2rem;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    font-weight: 700;
+    margin-right: 0.35rem;
+  }
+
+  .checklist-simples .estado.ok { color: #198754; }
+  .checklist-simples .estado.no { color: #dc3545; }
+
+  .trabalhos-curtos {
+    display: grid;
+    gap: 0.65rem;
+  }
+
+  .trabalho-item {
+    border: 1px solid #e9ecef;
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.65rem;
+    background: #f8f9fa;
+  }
+
+  .trabalho-item .linha-topo {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+  }
+
+  .trabalho-item .titulo {
+    font-weight: 600;
+    margin: 0.2rem 0;
+  }
+
+  .indicadores-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.6rem;
+  }
+
+  .indicador {
+    border: 1px solid #e9ecef;
+    border-radius: 0.5rem;
+    padding: 0.55rem;
+    background: #fff;
+  }
+
+  .indicador .label {
+    font-size: 0.75rem;
+    color: #6c757d;
+  }
+
+  .indicador .valor {
+    font-size: 1.2rem;
+    font-weight: 700;
+  }
+
+  .quick-links-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .quick-link-item {
+    display: block;
+    border: 1px solid #dee2e6;
+    border-radius: 0.45rem;
+    padding: 0.45rem 0.55rem;
+    text-decoration: none;
+    color: inherit;
+    background: #fff;
+  }
+
+  @media (max-width: 992px) {
+    .dashboard-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div class="dashboard-context">
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+    <div>
+      <div class="fw-semibold">Turma: {{ turma_atual.nome }}</div>
+      <div class="text-muted small">
+        {% if disciplina_atual %}{{ disciplina_atual.nome }} · {% endif %}
+        {{ turma_atual.ano_letivo.nome if turma_atual.ano_letivo else (ano_atual.nome if ano_atual else 'Ano letivo —') }}
+      </div>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+      <span class="status-ligacao {{ 'status-offline' if is_offline else 'status-online' }}">{{ 'OFFLINE' if is_offline else 'ONLINE' }}</span>
+      <form method="get" action="{{ url_for('dashboard') }}">
+        <select class="form-select form-select-sm" name="turma_id" onchange="this.form.submit()">
+          {% for t in turmas %}
+            <option value="{{ t.id }}" {% if t.id == turma_atual.id %}selected{% endif %}>{{ t.nome }}</option>
+          {% endfor %}
+        </select>
+      </form>
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('turmas_list') }}">Mudar turma</a>
+    </div>
   </div>
+</div>
+
+<div class="quick-links-grid" id="quick-links-grid">
+  {% for t in turmas %}
+    <a class="quick-link-item" data-search-item data-text="turma {{ t.nome|lower }} {{ t.tipo|lower }}" href="{{ url_for('dashboard', turma_id=t.id) }}">Turma {{ t.nome }}</a>
+  {% endfor %}
+  <a class="quick-link-item" data-search-item data-text="calendario semanal" href="{{ url_for('calendario_semana') }}">Calendário semanal</a>
+  <a class="quick-link-item" data-search-item data-text="calendario diario" href="{{ url_for('turma_calendario_dia') }}">Calendário diário</a>
+  <a class="quick-link-item" data-search-item data-text="admin configuracao" href="{{ url_for('admin_home') }}">Admin</a>
+  <a class="quick-link-item" data-search-item data-text="turmas gestao" href="{{ url_for('turmas_list') }}">Gerir turmas</a>
+</div>
+
+<div class="dashboard-grid">
+  <div class="dashboard-col">
+    {% include "dashboard/_card_aula.html" %}
+    {% include "dashboard/_card_indicadores.html" %}
+  </div>
+  <div class="dashboard-col">
+    {% include "dashboard/_card_trabalhos.html" %}
+  </div>
+</div>
+
 {% else %}
-  <div class="alert alert-secondary">Nenhuma turma registada.</div>
+<div class="alert alert-secondary">Nenhuma turma ativa. Crie ou ative uma turma para começar.</div>
+<a class="btn btn-primary" href="{{ url_for('turmas_list') }}">Ir para turmas</a>
 {% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  window.SNAPSHOT_TOAST_CONFIG = { enabled: true, intervalSeconds: {{ config.get("SNAPSHOT_INTERVAL_SECONDS", 60) }}, statusElementId: "snapshot-status-inline" };
+
+  (() => {
+    const q = document.getElementById('home-search-q');
+    if (!q) return;
+    const items = Array.from(document.querySelectorAll('[data-search-item]'));
+
+    const norm = (v) => (v || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+
+    q.addEventListener('input', () => {
+      const term = norm(q.value);
+      items.forEach((el) => {
+        const text = norm(el.dataset.text || el.textContent);
+        el.style.display = (!term || text.includes(term)) ? '' : 'none';
+      });
+    });
+  })();
+</script>
 {% endblock %}

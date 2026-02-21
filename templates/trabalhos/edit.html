@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Editar trabalho — {{ turma.nome }}</h2>
+<div class="mb-3 d-flex gap-2 flex-wrap">
+  <a class="btn btn-outline-secondary" href="{{ url_for('trabalho_detail', turma_id=turma.id, trabalho_id=trabalho.id) }}">Voltar ao trabalho</a>
+  <a class="btn btn-outline-dark" href="{{ url_for('turma_trabalhos', turma_id=turma.id) }}">Lista de trabalhos</a>
+</div>
+
+<div class="card">
+  <div class="card-header">Dados do trabalho</div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('trabalho_edit', turma_id=turma.id, trabalho_id=trabalho.id) }}" class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label">Título</label>
+        <input class="form-control" name="titulo" value="{{ trabalho.titulo }}" required>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Modo</label>
+        <select class="form-select" name="modo">
+          <option value="individual" {% if trabalho.modo == 'individual' %}selected{% endif %}>Individual</option>
+          <option value="grupo" {% if trabalho.modo == 'grupo' %}selected{% endif %}>Grupo</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Data limite</label>
+        <input class="form-control" type="date" name="data_limite" value="{{ trabalho.data_limite.strftime('%Y-%m-%d') if trabalho.data_limite else '' }}">
+      </div>
+      <div class="col-12">
+        <label class="form-label">Descrição</label>
+        <textarea class="form-control" name="descricao" rows="3">{{ trabalho.descricao or '' }}</textarea>
+      </div>
+      <div class="col-12">
+        <button class="btn btn-primary" type="submit">Guardar alterações</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function(){
+  const params = new URLSearchParams(window.location.search);
+  if(params.get('toast') === 'error' && window.showToast){
+    window.showToast('Erro ao atualizar', 'error');
+  }
+})();
+</script>
+{% endblock %}

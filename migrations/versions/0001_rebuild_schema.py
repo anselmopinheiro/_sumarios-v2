@@ -28,13 +28,13 @@ def upgrade():
             "ativo",
             sa.Boolean(),
             nullable=False,
-            server_default=sa.text("0"),
+            server_default=sa.text("false"),
         ),
         sa.Column(
             "fechado",
             sa.Boolean(),
             nullable=False,
-            server_default=sa.text("0"),
+            server_default=sa.text("false"),
         ),
     )
 
@@ -62,7 +62,7 @@ def upgrade():
         sa.Column("tempo_quarta", sa.Integer()),
         sa.Column("tempo_quinta", sa.Integer()),
         sa.Column("tempo_sexta", sa.Integer()),
-        sa.Column("letiva", sa.Boolean(), nullable=False, server_default="1"),
+        sa.Column("letiva", sa.Boolean(), nullable=False, server_default=sa.text("true")),
     )
 
     op.create_table(
@@ -201,6 +201,21 @@ def upgrade():
         ),
     )
 
+
+    op.create_table(
+        "alunos",
+        sa.Column("id", sa.Integer(), sa.Identity(always=False), primary_key=True),
+        sa.Column(
+            "turma_id", sa.Integer(), sa.ForeignKey("turmas.id"), nullable=False
+        ),
+        sa.Column("processo", sa.String(length=50)),
+        sa.Column("numero", sa.Integer()),
+        sa.Column("nome", sa.String(length=255), nullable=False),
+        sa.Column("nome_curto", sa.String(length=100)),
+        sa.Column("nee", sa.Text()),
+        sa.Column("observacoes", sa.Text()),
+    )
+
     op.create_table(
         "calendario_aulas",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -224,8 +239,32 @@ def upgrade():
     )
 
 
+    op.create_table(
+        "aulas_alunos",
+        sa.Column("id", sa.Integer(), sa.Identity(always=False), primary_key=True),
+        sa.Column(
+            "aula_id",
+            sa.Integer(),
+            sa.ForeignKey("calendario_aulas.id"),
+            nullable=False,
+        ),
+        sa.Column("aluno_id", sa.Integer(), sa.ForeignKey("alunos.id"), nullable=False),
+        sa.Column("atraso", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column("faltas", sa.Integer(), nullable=False, server_default=sa.text("0")),
+        sa.Column("responsabilidade", sa.Integer(), server_default=sa.text("5")),
+        sa.Column("comportamento", sa.Integer(), server_default=sa.text("5")),
+        sa.Column("participacao", sa.Integer(), server_default=sa.text("5")),
+        sa.Column("trabalho_autonomo", sa.Integer(), server_default=sa.text("5")),
+        sa.Column("portatil_material", sa.Integer(), server_default=sa.text("5")),
+        sa.Column("atividade", sa.Integer(), server_default=sa.text("5")),
+        sa.UniqueConstraint("aula_id", "aluno_id", name="uq_aula_aluno"),
+    )
+
+
 def downgrade():
+    op.drop_table("aulas_alunos")
     op.drop_table("calendario_aulas")
+    op.drop_table("alunos")
     op.drop_table("livros_turmas")
     op.drop_table("turmas_disciplinas")
     op.drop_table("periodos")

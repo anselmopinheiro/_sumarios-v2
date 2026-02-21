@@ -23,9 +23,13 @@ Aplicação Flask para gestão de turmas, calendários de aulas, sumários e ava
    ```bash
    pip install -r requirements.txt
    ```
-3. **Configurar variáveis (opcional)**
-   - `FLASK_APP=app.py`
-   - `FLASK_ENV=development` (para reloading automático)
+3. **Configurar variáveis (desenvolvimento)**
+   - Copiar o template e preencher valores:
+     ```bash
+     cp .env.example .env
+     ```
+   - A app carrega automaticamente `.env` **apenas em desenvolvimento** (`FLASK_ENV=development`).
+   - O ficheiro `.env` deve manter-se local e já está no `.gitignore`.
 
 4. **Criar base de dados**
    - Por omissão é usado `sqlite:///instance/gestor_lectivo.db` (sempre local).
@@ -45,6 +49,91 @@ Aplicação Flask para gestão de turmas, calendários de aulas, sumários e ava
    ```bash
    flask run
    ```
+
+
+## Supabase / PostgreSQL
+- A app usa uma configuração única via `APP_DB_MODE`:
+  - `APP_DB_MODE=sqlite` usa ficheiro local (`SQLITE_PATH`, default `gestor_lectivo.db`).
+  - `APP_DB_MODE=postgres` usa `DATABASE_URL` (normaliza `postgres://` e força `sslmode=require` quando falta).
+- Para backend Flask tradicional, preferir **Direct connection** (ligações long-lived). O **Pooler** é mais indicado para workloads serverless/funções com muitas ligações curtas.
+
+### Arrancar em SQLite (dev/offline)
+```bash
+export APP_DB_MODE=sqlite
+export SQLITE_PATH=gestor_lectivo.db
+flask db upgrade
+python app.py
+```
+
+### Arrancar em Supabase Postgres
+```bash
+export APP_DB_MODE=postgres
+export DATABASE_URL='postgresql+psycopg://USER:PASSWORD@HOST:5432/postgres?sslmode=require'
+export SUPABASE_DB_MODE=direct   # direct|pooler
+export SUPABASE_DB_PORT=5432     # 6543 para pooler
+export SQLALCHEMY_ECHO=0
+flask db upgrade
+python app.py
+```
+
+### Modo offline (snapshot + outbox local)
+Quando `APP_DB_MODE=postgres` e a ligação remota falha, a app ativa o fluxo offline em `/offline`.
+
+1. Preparar snapshot antes de ficar sem rede:
+   ```bash
+   flask offline snapshot
+   ```
+2. Sem rede, usar `/offline` para:
+   - escolher turma/aula do snapshot;
+   - lançar presenças/avaliação por aluno;
+   - guardar sumário/observações locais.
+3. Quando a rede regressar, sincronizar:
+   - pela UI em `/offline/sync`, ou
+   - via botão "Sincronizar" no dashboard offline.
+
+> O armazenamento offline usa sempre `instance/offline.db` (SQLite local), independentemente da base principal.
+
+
+### Healthcheck da ligação remota
+```bash
+flask offline healthcheck
+# ou HTTP:
+curl -s http://127.0.0.1:5000/api/health/db
+```
+
+### Exportar schema atual do SQLite (baseline)
+```bash
+python tools/dump_sqlite_schema.py --sqlite-path gestor_lectivo.db --output tools/schema_sqlite.json
+```
+
+### Migrações de schema (Alembic)
+Em PostgreSQL, o schema deve ser criado por migrações Alembic (não por DDL em runtime):
+```bash
+export DATABASE_URL='postgresql+psycopg://USER:PASSWORD@HOST:5432/postgres?sslmode=require'
+flask db upgrade
+```
+
+> Nota: durante a migração inicial para Supabase, aplique em base **vazia**. Se já existir schema antigo/parcial, faça reset do schema `public` antes de correr `flask db upgrade` para evitar conflitos de baseline.
+
+### Reparar sequences no Supabase (PK id duplicada)
+Se aparecer erro `duplicate key value violates unique constraint ..._pkey` em tabelas com `id`:
+
+1. Via CLI da app (recomendado):
+```bash
+flask supabase-fix-sequences
+```
+2. Ou via Supabase SQL Editor: usar `db/supabase_fix_sequences.sql`.
+
+### Migração de dados SQLite -> Postgres
+Depois do schema criado no Postgres, migrar os dados:
+```bash
+python tools/migrate_sqlite_to_postgres.py
+```
+
+Opções úteis:
+- `--sqlite-path instance/gestor_lectivo.db`
+- `--database-url 'postgresql+psycopg://...'`
+- `--wipe` para limpar o destino antes da importação.
 
 ## Utilização rápida
 - **Anos letivos**: criar/editar e marcar como ativo/aberto. Turmas são agrupadas por ano aberto/fechado na listagem.
@@ -130,3 +219,29 @@ Está prevista a migração para um sistema servidor (MySQL/PostgreSQL), permiti
 - Histórico imutável.
 - Conformidade legal reforçada.
 - Backups transacionais.
+
+
+### Snapshot automático (60s)
+Em desenvolvimento/local:
+```bash
+pip install -r requirements.txt
+export DEV_LOCAL_SCHEDULER=1
+export SNAPSHOT_INTERVAL_SECONDS=60
+python app.py
+```
+
+> Nota: o scheduler local usa `APScheduler`. Se faltar a dependência, o log mostra `DEV_LOCAL_SCHEDULER=1 mas APScheduler não está disponível.`
+
+Em produção/serverless, use cron para chamar:
+```bash
+curl -X POST https://SEU_HOST/offline/snapshot?format=json
+```
+
+### Variáveis recomendadas (.env)
+```env
+DATABASE_URL=postgresql+psycopg://USER:PASSWORD@HOST:5432/postgres?sslmode=require
+OFFLINE_DB_PATH=instance/offline.db
+SUPABASE_DB_MODE=direct
+DEV_LOCAL_SCHEDULER=1
+SNAPSHOT_INTERVAL_SECONDS=60
+```

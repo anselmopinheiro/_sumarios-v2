@@ -41,10 +41,10 @@ class AnoLetivo(db.Model):
     descricao = db.Column(db.String(255))
 
     # Ano letivo actualmente em uso (“Corrente”)
-    ativo = db.Column(db.Boolean, nullable=False, default=False)
+    ativo = db.Column(db.Boolean, nullable=False, default=False, server_default=db.text("false"))
 
     # Anos passados que ficam só para consulta/exportação
-    fechado = db.Column(db.Boolean, nullable=False, default=False)
+    fechado = db.Column(db.Boolean, nullable=False, default=False, server_default=db.text("false"))
 
     # Relações opcionais, se as tiveres:
     # turmas = db.relationship("Turma", back_populates="ano_letivo")
@@ -88,7 +88,7 @@ class Turma(db.Model):
     tempo_quarta = db.Column(db.Integer, nullable=True)
     tempo_quinta = db.Column(db.Integer, nullable=True)
     tempo_sexta = db.Column(db.Integer, nullable=True)
-    letiva = db.Column(db.Boolean, nullable=False, default=True, server_default="1")
+    letiva = db.Column(db.Boolean, nullable=False, default=True, server_default=db.text("true"))
     # relação many-to-many com disciplina
     turmas_disciplinas = db.relationship(
         "TurmaDisciplina",
@@ -181,6 +181,19 @@ class Aluno(db.Model):
     nee = db.Column(db.Text)
     observacoes = db.Column(db.Text)
 
+    @property
+    def nome_curto_exibicao(self):
+        raw = (self.nome_curto or "").strip()
+        if raw:
+            return raw
+        full_name = (self.nome or "").strip()
+        if not full_name:
+            return ""
+        parts = [p for p in full_name.split() if p]
+        if len(parts) == 1:
+            return parts[0]
+        return f"{parts[0]} {parts[-1][0]}."
+
     turma = db.relationship("Turma", back_populates="alunos")
     avaliacoes = db.relationship(
         "AulaAluno", back_populates="aluno", cascade="all, delete-orphan"
@@ -271,7 +284,7 @@ class DTDisciplina(db.Model):
     nome = db.Column(db.String(120), nullable=False, unique=True)
     nome_curto = db.Column(db.String(40))
     professor_nome = db.Column(db.String(120))
-    ativa = db.Column(db.Boolean, nullable=False, default=True, server_default=db.text("1"))
+    ativa = db.Column(db.Boolean, nullable=False, default=True, server_default=db.text("true"))
 
 
 class DTOcorrenciaAluno(db.Model):
@@ -299,8 +312,8 @@ class DTOcorrencia(db.Model):
     num_tempos = db.Column(db.Integer)
     dt_disciplina_id = db.Column(db.Integer, db.ForeignKey("dt_disciplinas.id"), nullable=False, index=True)
     observacoes = db.Column(db.Text)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, server_default=db.text("now()"))
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=db.text("now()"))
 
     dt_turma = db.relationship("DTTurma", back_populates="ocorrencias")
     disciplina = db.relationship("DTDisciplina", backref="ocorrencias")
@@ -454,7 +467,7 @@ class CalendarioAula(db.Model):
     # normal / greve / servico_oficial / extra
     tipo = db.Column(db.String(50), default="normal", nullable=False)
 
-    apagado = db.Column(db.Boolean, default=False, nullable=False)
+    apagado = db.Column(db.Boolean, default=False, nullable=False, server_default=db.text("false"))
 
     # Número de tempos que não contam para a numeração (aplicável em faltas, serviço oficial, etc.)
     tempos_sem_aula = db.Column(db.Integer, default=0)
@@ -462,7 +475,7 @@ class CalendarioAula(db.Model):
     observacoes = db.Column(db.Text)
     sumario = db.Column(db.Text)
     previsao = db.Column(db.Text)
-    atividade = db.Column(db.Boolean, default=False, server_default="0", nullable=False)
+    atividade = db.Column(db.Boolean, default=False, server_default=db.text("false"), nullable=False)
     atividade_nome = db.Column(db.Text)
 
     turma = db.relationship("Turma", backref="calendario_aulas")
@@ -484,7 +497,7 @@ class AulaSumarioHistorico(db.Model):
     calendario_aula_id = db.Column(
         db.Integer, db.ForeignKey("calendario_aulas.id"), nullable=False
     )
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, server_default=db.text("now()"))
     acao = db.Column(db.String(50), nullable=False)
     sumario_anterior = db.Column(db.Text)
     sumario_novo = db.Column(db.Text)
@@ -505,7 +518,7 @@ class AulaAluno(db.Model):
     aluno_id = db.Column(db.Integer, db.ForeignKey("alunos.id"), nullable=False)
 
     # True = atraso; False = pontual
-    atraso = db.Column(db.Boolean, default=False, nullable=False)
+    atraso = db.Column(db.Boolean, default=False, nullable=False, server_default=db.text("false"))
     # Número de tempos em falta (0 = presente)
     faltas = db.Column(db.Integer, default=0, nullable=False)
 
@@ -524,4 +537,134 @@ class AulaAluno(db.Model):
         db.UniqueConstraint("aula_id", "aluno_id", name="uq_aula_aluno"),
         db.Index("ix_aulas_alunos_aula", "aula_id"),
         db.Index("ix_aulas_alunos_aluno", "aluno_id"),
+    )
+
+
+class GrupoTurma(db.Model):
+    __tablename__ = "grupos_turma"
+
+    id = db.Column(db.Integer, primary_key=True)
+    turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), nullable=False, index=True)
+    nome = db.Column(db.String(255), nullable=False)
+
+    turma = db.relationship("Turma", backref=db.backref("grupos_catalogo", cascade="all, delete-orphan"))
+
+    __table_args__ = (
+        db.UniqueConstraint("turma_id", "nome", name="uq_grupo_turma_nome"),
+    )
+
+
+class GrupoTurmaMembro(db.Model):
+    __tablename__ = "grupo_turma_membros"
+
+    id = db.Column(db.Integer, primary_key=True)
+    grupo_turma_id = db.Column(db.Integer, db.ForeignKey("grupos_turma.id"), nullable=False, index=True)
+    aluno_id = db.Column(db.Integer, db.ForeignKey("alunos.id"), nullable=False, index=True)
+
+    grupo = db.relationship("GrupoTurma", backref=db.backref("membros", cascade="all, delete-orphan"))
+    aluno = db.relationship("Aluno")
+
+    __table_args__ = (
+        db.UniqueConstraint("grupo_turma_id", "aluno_id", name="uq_grupo_turma_membro"),
+    )
+
+
+class Trabalho(db.Model):
+    __tablename__ = "trabalhos"
+
+    id = db.Column(db.Integer, primary_key=True)
+    turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), nullable=False, index=True)
+    titulo = db.Column(db.String(255), nullable=False)
+    descricao = db.Column(db.Text)
+    modo = db.Column(db.String(20), nullable=False, default="individual", server_default="individual")
+    data_limite = db.Column(db.Date)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, server_default=db.text("now()"))
+
+    turma = db.relationship("Turma", backref=db.backref("trabalhos", cascade="all, delete-orphan"))
+
+
+class TrabalhoGrupo(db.Model):
+    __tablename__ = "trabalho_grupos"
+
+    id = db.Column(db.Integer, primary_key=True)
+    trabalho_id = db.Column(db.Integer, db.ForeignKey("trabalhos.id"), nullable=False, index=True)
+    nome = db.Column(db.String(255), nullable=False)
+
+    trabalho = db.relationship("Trabalho", backref=db.backref("grupos", cascade="all, delete-orphan"))
+
+    __table_args__ = (
+        db.UniqueConstraint("trabalho_id", "nome", name="uq_trabalho_grupo_nome"),
+    )
+
+
+class TrabalhoGrupoMembro(db.Model):
+    __tablename__ = "trabalho_grupo_membros"
+
+    id = db.Column(db.Integer, primary_key=True)
+    trabalho_grupo_id = db.Column(db.Integer, db.ForeignKey("trabalho_grupos.id"), nullable=False, index=True)
+    aluno_id = db.Column(db.Integer, db.ForeignKey("alunos.id"), nullable=False, index=True)
+
+    grupo = db.relationship("TrabalhoGrupo", backref=db.backref("membros", cascade="all, delete-orphan"))
+    aluno = db.relationship("Aluno")
+
+    __table_args__ = (
+        db.UniqueConstraint("trabalho_grupo_id", "aluno_id", name="uq_trabalho_grupo_membro"),
+    )
+
+
+class Entrega(db.Model):
+    __tablename__ = "entregas"
+
+    id = db.Column(db.Integer, primary_key=True)
+    trabalho_id = db.Column(db.Integer, db.ForeignKey("trabalhos.id"), nullable=False, index=True)
+    trabalho_grupo_id = db.Column(db.Integer, db.ForeignKey("trabalho_grupos.id"), nullable=False, index=True)
+
+    entregue = db.Column(db.Boolean, nullable=False, default=False, server_default=db.text("false"))
+    data_entrega = db.Column(db.Date)
+    consecucao = db.Column(db.Integer)
+    qualidade = db.Column(db.Integer)
+    observacoes = db.Column(db.Text)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, server_default=db.text("now()"))
+
+    trabalho = db.relationship("Trabalho", backref=db.backref("entregas", cascade="all, delete-orphan"))
+    grupo = db.relationship("TrabalhoGrupo", backref=db.backref("entrega", uselist=False, cascade="all, delete-orphan"))
+
+    __table_args__ = (
+        db.UniqueConstraint("trabalho_id", "trabalho_grupo_id", name="uq_entrega_trabalho_grupo"),
+        db.CheckConstraint("consecucao IS NULL OR (consecucao >= 1 AND consecucao <= 5)", name="ck_entrega_consecucao_1_5"),
+        db.CheckConstraint("qualidade IS NULL OR (qualidade >= 1 AND qualidade <= 5)", name="ck_entrega_qualidade_1_5"),
+    )
+
+
+class ParametroDefinicao(db.Model):
+    __tablename__ = "parametro_definicoes"
+
+    id = db.Column(db.Integer, primary_key=True)
+    trabalho_id = db.Column(db.Integer, db.ForeignKey("trabalhos.id"), nullable=False, index=True)
+    nome = db.Column(db.String(120), nullable=False)
+    tipo = db.Column(db.String(20), nullable=False, default="numerico", server_default="numerico")
+    ordem = db.Column(db.Integer, nullable=False, default=0, server_default="0")
+
+    trabalho = db.relationship("Trabalho", backref=db.backref("parametros", cascade="all, delete-orphan"))
+
+    __table_args__ = (
+        db.UniqueConstraint("trabalho_id", "nome", name="uq_parametro_trabalho_nome"),
+    )
+
+
+class EntregaParametro(db.Model):
+    __tablename__ = "entrega_parametros"
+
+    id = db.Column(db.Integer, primary_key=True)
+    entrega_id = db.Column(db.Integer, db.ForeignKey("entregas.id"), nullable=False, index=True)
+    parametro_definicao_id = db.Column(db.Integer, db.ForeignKey("parametro_definicoes.id"), nullable=False, index=True)
+    valor_numerico = db.Column(db.Integer)
+    valor_texto = db.Column(db.Text)
+
+    entrega = db.relationship("Entrega", backref=db.backref("parametros", cascade="all, delete-orphan"))
+    parametro = db.relationship("ParametroDefinicao")
+
+    __table_args__ = (
+        db.UniqueConstraint("entrega_id", "parametro_definicao_id", name="uq_entrega_parametro"),
+        db.CheckConstraint("valor_numerico IS NULL OR (valor_numerico >= 1 AND valor_numerico <= 5)", name="ck_entrega_parametro_num_1_5"),
     )

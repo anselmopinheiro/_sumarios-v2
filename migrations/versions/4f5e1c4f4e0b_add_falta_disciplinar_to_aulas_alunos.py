@@ -16,12 +16,22 @@ depends_on = None
 
 
 def upgrade():
-    op.add_column(
-        "aulas_alunos",
-        sa.Column("falta_disciplinar", sa.Integer(), nullable=False, server_default="0"),
-    )
-    op.alter_column("aulas_alunos", "falta_disciplinar", server_default=None)
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    columns = {col["name"] for col in inspector.get_columns("aulas_alunos")}
+
+    if "falta_disciplinar" not in columns:
+        op.add_column(
+            "aulas_alunos",
+            sa.Column("falta_disciplinar", sa.Integer(), nullable=False, server_default=sa.text("0")),
+        )
+        op.alter_column("aulas_alunos", "falta_disciplinar", server_default=None)
 
 
 def downgrade():
-    op.drop_column("aulas_alunos", "falta_disciplinar")
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    columns = {col["name"] for col in inspector.get_columns("aulas_alunos")}
+
+    if "falta_disciplinar" in columns:
+        op.drop_column("aulas_alunos", "falta_disciplinar")

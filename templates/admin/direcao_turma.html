@@ -1,0 +1,21 @@
+{% extends "admin_base.html" %}
+{% block admin_content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3 class="h5 mb-0">Direção de Turma</h3>
+  <a class="btn btn-primary btn-sm" href="{{ url_for('direcao_turma_add') }}">Adicionar DT</a>
+</div>
+
+<ul class="list-group">
+  {% for dt in dts %}
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+      <div>
+        <div class="fw-semibold">{{ dt.turma.nome if dt.turma else 'Turma —' }}</div>
+        <small class="text-muted">{{ dt.ano_letivo.nome if dt.ano_letivo else 'Ano letivo —' }}</small>
+      </div>
+      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('direcao_turma_edit', dt_id=dt.id) }}">Gerir</a>
+    </li>
+  {% else %}
+    <li class="list-group-item text-muted">Sem registos de DT.</li>
+  {% endfor %}
+</ul>
+{% endblock %}

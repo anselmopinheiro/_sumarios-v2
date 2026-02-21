@@ -2,6 +2,8 @@ import calendar
 import csv
 import gc
 import html
+import importlib
+import importlib.util
 import io
 import json
 import os
@@ -17,8 +19,11 @@ import uuid
 import platform
 import sys
 import unicodedata
-from urllib.parse import urlparse, parse_qsl
+import logging
+from logging.handlers import RotatingFileHandler
+from urllib.parse import urlparse, parse_qsl, urlsplit
 from collections import defaultdict
+from functools import wraps
 from datetime import datetime, date, timedelta
 
 from flask import (
@@ -33,15 +38,46 @@ from flask import (
     send_from_directory,
     abort,
     has_app_context,
+    g,
 )
 
 from flask_migrate import Migrate
 from alembic.script import ScriptDirectory
-from sqlalchemy import func, inspect, text
+
+
+def _load_dotenv_if_available():
+    project_env_path = os.path.join(os.path.dirname(__file__), ".env")
+    is_development = os.environ.get("FLASK_ENV", "development") == "development"
+    if not is_development or not os.path.exists(project_env_path):
+        return
+
+    dotenv_spec = importlib.util.find_spec("dotenv")
+    if dotenv_spec is None:
+        return
+
+    dotenv_module = importlib.import_module("dotenv")
+    dotenv_module.load_dotenv(project_env_path)
+
+
+_load_dotenv_if_available()
+from sqlalchemy import create_engine, func, inspect, or_, text
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.engine import Engine
 from sqlalchemy import event
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, sessionmaker
 
 from config import Config
+from offline_blueprint import offline_bp, refresh_snapshot_from_remote, snapshot_remote_to_local
+from offline_store import init_offline_db as init_offline_store_db
+from sync import fix_sequences_remote, sync_outbox
+from offline_queue import (
+    clear_sent,
+    enqueue_upsert_aulas_alunos,
+    flush_pending,
+    get_last_error,
+    init_offline_db,
+    pending_count,
+)
 from config_store import ConfigStore
 from models import (
     db,
@@ -67,6 +103,14 @@ from models import (
     DTMotivoDia,
     DTDisciplina,
     DTOcorrencia,
+    Trabalho,
+    GrupoTurma,
+    GrupoTurmaMembro,
+    TrabalhoGrupo,
+    TrabalhoGrupoMembro,
+    Entrega,
+    EntregaParametro,
+    ParametroDefinicao,
 )
 
 from calendario_service import (
@@ -231,6 +275,136 @@ def _parse_time_form(value):
         return datetime.strptime(value, "%H:%M").time()
     except ValueError:
         return None
+
+
+AULAS_ALUNOS_FIELDS = {
+    "atraso",
+    "faltas",
+    "responsabilidade",
+    "comportamento",
+    "participacao",
+    "trabalho_autonomo",
+    "portatil_material",
+    "atividade",
+    "falta_disciplinar",
+}
+
+
+def _as_bool(value, default=False):
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return bool(value)
+    value_txt = str(value).strip().lower()
+    if value_txt in {"1", "true", "t", "yes", "y", "on", "sim"}:
+        return True
+    if value_txt in {"0", "false", "f", "no", "n", "off", "nao", "não", ""}:
+        return False
+    return default
+
+
+def normalize_aulas_alunos_payload(payload):
+    payload = payload or {}
+    normalized = {}
+    if "atraso" in payload:
+        normalized["atraso"] = _as_bool(payload.get("atraso"), default=False)
+
+    if "faltas" in payload:
+        normalized["faltas"] = _clamp_int(payload.get("faltas"), default=0, min_val=0, max_val=6) or 0
+
+    for campo in [
+        "responsabilidade",
+        "comportamento",
+        "participacao",
+        "trabalho_autonomo",
+        "portatil_material",
+        "atividade",
+    ]:
+        if campo in payload:
+            normalized[campo] = _clamp_int(payload.get(campo), default=3, min_val=1, max_val=5) or 3
+
+    if "falta_disciplinar" in payload:
+        normalized["falta_disciplinar"] = (
+            _clamp_int(payload.get("falta_disciplinar"), default=0, min_val=0, max_val=2) or 0
+        )
+
+    return normalized
+
+
+def apply_upsert_aulas_alunos(session, aula_id, aluno_id, payload):
+    dados = normalize_aulas_alunos_payload(payload)
+
+    avaliacao = None
+
+    for obj in session.new:
+        if isinstance(obj, AulaAluno) and obj.aula_id == aula_id and obj.aluno_id == aluno_id:
+            avaliacao = obj
+            break
+
+    if not avaliacao:
+        for obj in session.identity_map.values():
+            if isinstance(obj, AulaAluno) and obj.aula_id == aula_id and obj.aluno_id == aluno_id:
+                avaliacao = obj
+                break
+
+    if not avaliacao:
+        with session.no_autoflush:
+            avaliacao = session.query(AulaAluno).filter_by(aula_id=aula_id, aluno_id=aluno_id).first()
+
+    if not avaliacao:
+        avaliacao = AulaAluno(aula_id=aula_id, aluno_id=aluno_id)
+        session.add(avaliacao)
+
+    for campo, valor in dados.items():
+        if campo in AULAS_ALUNOS_FIELDS:
+            setattr(avaliacao, campo, valor)
+
+    return avaliacao
+
+
+def parse_aulas_alunos_tsv(raw_text, aula_id_default=None):
+    rows = []
+    if not raw_text:
+        return rows
+
+    lines = [line for line in str(raw_text).splitlines() if line.strip()]
+    if not lines:
+        return rows
+
+    headers = [h.strip() for h in lines[0].split("	")]
+    has_header = "aluno_id" in headers
+    data_lines = lines[1:] if has_header else lines
+
+    expected = [
+        "aula_id",
+        "aluno_id",
+        "atraso",
+        "faltas",
+        "responsabilidade",
+        "comportamento",
+        "participacao",
+        "trabalho_autonomo",
+        "portatil_material",
+        "atividade",
+        "falta_disciplinar",
+    ]
+
+    for idx, line in enumerate(data_lines, start=1):
+        parts = [p.strip() for p in line.split("	")]
+        if len(parts) < len(expected):
+            raise ValueError(f"Linha TSV inválida (campos insuficientes) na linha {idx}.")
+
+        record = dict(zip(expected, parts[: len(expected)]))
+        aula_id = int(record["aula_id"] or aula_id_default)
+        aluno_id = int(record["aluno_id"])
+        payload = normalize_aulas_alunos_payload(record)
+        payload["client_ts"] = datetime.utcnow().isoformat(timespec="seconds")
+
+        rows.append({"aula_id": aula_id, "aluno_id": aluno_id, "payload": payload})
+
+    return rows
 
 
 def _dt_periodo_range(dt_turma, periodo):
@@ -518,13 +692,155 @@ def criar_periodo_modular_para_modulo(modulo: Modulo) -> Periodo:
     return p
 
 
+
+def _safe_db_target_from_uri(uri):
+    try:
+        parsed = urlsplit(uri or "")
+        host = parsed.hostname or "-"
+        port = parsed.port or "-"
+        db_name = (parsed.path or "/").lstrip("/") or "-"
+        return {"host": host, "port": port, "db": db_name}
+    except Exception:
+        return {"host": "-", "port": "-", "db": "-"}
+
+
+def _configure_logging(app):
+    os.makedirs(os.path.join(app.root_path, "logs"), exist_ok=True)
+    log_file = os.path.join(app.root_path, "logs", "app.log")
+
+    formatter = logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s")
+
+    file_handler_exists = any(
+        isinstance(h, RotatingFileHandler) and getattr(h, "baseFilename", None) == log_file
+        for h in app.logger.handlers
+    )
+    if not file_handler_exists:
+        file_handler = RotatingFileHandler(log_file, maxBytes=2 * 1024 * 1024, backupCount=5, encoding="utf-8")
+        file_handler.setFormatter(formatter)
+        file_handler.setLevel(logging.INFO)
+        app.logger.addHandler(file_handler)
+
+    if app.debug:
+        console_exists = any(isinstance(h, logging.StreamHandler) for h in app.logger.handlers)
+        if not console_exists:
+            console = logging.StreamHandler()
+            console.setFormatter(formatter)
+            console.setLevel(logging.DEBUG)
+            app.logger.addHandler(console)
+
+    app.logger.setLevel(logging.DEBUG if app.debug else logging.INFO)
+
+
+
+def _bind_label(connection):
+    try:
+        backend = connection.engine.url.get_backend_name()
+    except Exception:
+        backend = "unknown"
+    if backend == "postgresql":
+        return "postgres"
+    if backend == "sqlite":
+        return "sqlite"
+    return backend
+
+
+def _setup_tx_logging(app):
+    if getattr(_setup_tx_logging, "_registered", False):
+        return
+
+    @event.listens_for(Engine, "begin")
+    def _tx_begin(conn):
+        app.logger.info("TX BEGIN | bind=%s", _bind_label(conn))
+
+    @event.listens_for(Engine, "commit")
+    def _tx_commit(conn):
+        app.logger.info("TX COMMIT | bind=%s", _bind_label(conn))
+
+    @event.listens_for(Engine, "rollback")
+    def _tx_rollback(conn):
+        app.logger.info("TX ROLLBACK | bind=%s", _bind_label(conn))
+
+    _setup_tx_logging._registered = True
+
+def _setup_dual_db_engines(app):
+    local_uri = f"sqlite:///{os.path.join(app.instance_path, 'offline.db')}"
+    remote_uri = app.config.get("SQLALCHEMY_DATABASE_URI")
+
+    app.extensions["engine_local"] = create_engine(local_uri, future=True)
+    app.extensions["session_local_factory"] = sessionmaker(bind=app.extensions["engine_local"], future=True)
+
+    app.extensions["engine_remote"] = None
+    app.extensions["session_remote_factory"] = None
+
+    if (app.config.get("APP_DB_MODE") or "sqlite").lower() == "postgres" and remote_uri:
+        try:
+            app.extensions["engine_remote"] = create_engine(
+                remote_uri,
+                future=True,
+                pool_pre_ping=True,
+                pool_recycle=1800,
+                connect_args={
+                    "connect_timeout": int(app.config.get("SUPABASE_CONNECT_TIMEOUT", 5) or 5),
+                    "options": f"-c statement_timeout={int(app.config.get('SUPABASE_STATEMENT_TIMEOUT_MS', 15000) or 15000)}",
+                },
+            )
+            app.extensions["session_remote_factory"] = sessionmaker(bind=app.extensions["engine_remote"], future=True)
+        except Exception as exc:
+            target = _safe_db_target_from_uri(remote_uri)
+            app.logger.exception(
+                "Não foi possível preparar engine remota (host=%s port=%s db=%s): %s",
+                target["host"],
+                target["port"],
+                target["db"],
+                exc,
+            )
+
+
+
+def _remote_healthcheck(app, use_cache=True):
+    now = time.time()
+    cache = app.extensions.setdefault("remote_health_cache", {"ts": 0.0, "ok": False, "error": "", "latency_ms": None})
+    ttl = float(app.config.get("REMOTE_HEALTHCHECK_TTL_SECONDS", 5) or 5)
+
+    if use_cache and (now - cache.get("ts", 0.0)) < ttl:
+        return dict(cache)
+
+    started = time.perf_counter()
+    if (app.config.get("APP_DB_MODE") or "sqlite").lower() != "postgres":
+        cache.update({"ts": now, "ok": False, "error": "APP_DB_MODE não está em postgres.", "latency_ms": None})
+        return dict(cache)
+
+    try:
+        db.session.execute(text("SELECT 1"))
+        latency = int((time.perf_counter() - started) * 1000)
+        cache.update({"ts": now, "ok": True, "error": "", "latency_ms": latency})
+    except Exception as exc:
+        db.session.rollback()
+        latency = int((time.perf_counter() - started) * 1000)
+        cache.update({"ts": now, "ok": False, "error": str(exc), "latency_ms": latency})
+        target = _safe_db_target_from_uri(app.config.get("SQLALCHEMY_DATABASE_URI") or "")
+        app.logger.exception(
+            "Healthcheck remoto falhou (host=%s port=%s db=%s): %s",
+            target["host"],
+            target["port"],
+            target["db"],
+            exc,
+        )
+    return dict(cache)
+
+
+def _is_remote_online(app, use_cache=True):
+    return bool(_remote_healthcheck(app, use_cache=use_cache).get("ok"))
+
 def create_app():
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_object(Config)
 
     os.makedirs(app.instance_path, exist_ok=True)
-    app.config["DB_PATH"] = os.path.join(app.instance_path, "gestor_lectivo.db")
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + app.config["DB_PATH"]
+    _configure_logging(app)
+    _setup_tx_logging(app)
+    _setup_dual_db_engines(app)
+    app.extensions["is_remote_online"] = lambda use_cache=True: _is_remote_online(app, use_cache=use_cache)
     backup_override = os.environ.get("DB_BACKUP_DIR")
     if backup_override and os.path.isabs(backup_override):
         app.config["BACKUP_DIR"] = backup_override
@@ -533,8 +849,128 @@ def create_app():
 
     db.init_app(app)
     Migrate(app, db)
+    app.register_blueprint(offline_bp)
+
+    @app.before_request
+    def _set_connectivity_state():
+        g.is_online = _is_remote_online(app, use_cache=True)
+        g.is_offline = not g.is_online
+        if request.path == "/" and g.is_offline:
+            return redirect(url_for("offline.dashboard"))
+
+    @app.cli.group("offline")
+    def offline_cli():
+        """Comandos de preparação/sincronização offline."""
+
+    @offline_cli.command("snapshot")
+    def offline_snapshot_command():
+        result = refresh_snapshot_from_remote()
+        if result.get("ok"):
+            print(
+                f"Snapshot offline atualizado: {result['turmas']} turma(s), "
+                f"{result['alunos']} aluno(s), {result['aulas']} aula(s)."
+            )
+        else:
+            raise SystemExit(result.get("error") or "Falha ao atualizar snapshot offline.")
+
+    @offline_cli.command("healthcheck")
+    def offline_healthcheck_command():
+        target = _safe_db_target_from_uri(app.config.get("SQLALCHEMY_DATABASE_URI") or "")
+        if (app.config.get("APP_DB_MODE") or "sqlite").lower() != "postgres":
+            raise SystemExit("APP_DB_MODE não está em postgres.")
+        try:
+            db.session.execute(text("SELECT 1"))
+            print(json.dumps({"ok": True, **target}, ensure_ascii=False))
+        except Exception as exc:
+            app.logger.exception(
+                "Healthcheck CLI falhou (host=%s port=%s db=%s): %s",
+                target["host"],
+                target["port"],
+                target["db"],
+                exc,
+            )
+            raise SystemExit(json.dumps({"ok": False, "error": str(exc), **target}, ensure_ascii=False))
+
+    @app.cli.command("supabase-fix-sequences")
+    def supabase_fix_sequences_command():
+        """Alinha sequences das tabelas do schema public com coluna id."""
+        if (app.config.get("APP_DB_MODE") or "sqlite").lower() != "postgres":
+            raise SystemExit("APP_DB_MODE não está em postgres.")
+
+        sql_path = os.path.join(app.root_path, "db", "supabase_fix_sequences.sql")
+        if not os.path.exists(sql_path):
+            raise SystemExit(f"Ficheiro SQL não encontrado: {sql_path}")
+
+        try:
+            sql_script = open(sql_path, "r", encoding="utf-8").read()
+            db.session.execute(text(sql_script))
+            db.session.commit()
+
+            result = fix_sequences_remote(app, schema_name="public")
+            for table_name in result.get("tables", []):
+                app.logger.info("FIX SEQ OK | table=%s", table_name)
+            print(json.dumps({"ok": True, "tables": result.get("tables", [])}, ensure_ascii=False))
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.exception("Falha no comando supabase-fix-sequences: %s", exc)
+            raise SystemExit(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
+
+    @app.get("/health/db")
+    @app.get("/api/health/db")
+    def api_health_db():
+        target = _safe_db_target_from_uri(app.config.get("SQLALCHEMY_DATABASE_URI") or "")
+        info = _remote_healthcheck(app, use_cache=False)
+        if (app.config.get("APP_DB_MODE") or "sqlite").lower() != "postgres":
+            return jsonify({"ok": False, "error": "APP_DB_MODE não está em postgres.", **target}), 400
+        if info.get("ok"):
+            return jsonify({"ok": True, "latency_ms": info.get("latency_ms"), **target})
+        return jsonify({"ok": False, "error": info.get("error"), "latency_ms": info.get("latency_ms"), **target}), 503
+
+    @app.get("/health/db-write")
+    def api_health_db_write():
+        target = _safe_db_target_from_uri(app.config.get("SQLALCHEMY_DATABASE_URI") or "")
+        if (app.config.get("APP_DB_MODE") or "sqlite").lower() != "postgres":
+            return jsonify({"ok": False, "error": "APP_DB_MODE não está em postgres.", **target}), 400
+
+        try:
+            db.session.execute(text("SELECT 1"))
+            db.session.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS __write_probe (
+                      id BIGSERIAL PRIMARY KEY,
+                      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    )
+                    """
+                )
+            )
+            db.session.execute(text("INSERT INTO __write_probe DEFAULT VALUES"))
+            rows = db.session.execute(text("SELECT COUNT(*) FROM __write_probe")).scalar() or 0
+            db.session.commit()
+            return jsonify({"ok": True, "rows": int(rows), **target})
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.exception("Healthcheck DB-WRITE falhou (host=%s port=%s db=%s): %s", target["host"], target["port"], target["db"], exc)
+            return jsonify({"ok": False, "error": str(exc), **target}), 500
 
     config_store = ConfigStore(app.instance_path, logger=app.logger)
+
+    def get_db_sessions(mode="auto"):
+        remote_session = db.session
+        local_factory = app.extensions.get("session_local_factory")
+
+        resolved_mode = mode
+        if mode == "auto":
+            resolved_mode = "remote" if _is_remote_online(app, use_cache=True) else "local"
+
+        if resolved_mode == "remote" and (app.config.get("APP_DB_MODE") or "sqlite").lower() != "postgres":
+            app.logger.warning("Pedido de sessão remota em APP_DB_MODE=%s", app.config.get("APP_DB_MODE"))
+
+        return {
+            "mode": resolved_mode,
+            "remote": remote_session,
+            "local_factory": local_factory,
+        }
 
     def _default_csv_dir():
         return app.config.get("CSV_EXPORT_DIR") or os.path.join(app.root_path, "exports")
@@ -618,15 +1054,69 @@ def create_app():
 
     @app.context_processor
     def inject_footer_info():
+        health = _remote_healthcheck(app, use_cache=True)
         return {
             "app_version_timestamp": app.config.get("APP_VERSION_TIMESTAMP"),
             "last_save_timestamp": _formatar_data_hora(_load_last_save()),
+            "is_offline": not bool(health.get("ok")),
+            "remote_health": health,
         }
 
     # Garantir que colunas recentes existem em instalações que ainda não
     # aplicaram as migrações correspondentes (evita erros em bases de dados
     # antigas carregadas a partir de ficheiro).
+    def _ensure_trabalhos_tables():
+        required = {
+            "trabalhos",
+            "trabalho_grupos",
+            "trabalho_grupo_membros",
+            "entregas",
+            "parametro_definicoes",
+            "entrega_parametros",
+            "grupos_turma",
+            "grupo_turma_membros",
+        }
+        insp = inspect(db.engine)
+        existing = set(insp.get_table_names())
+        missing = sorted(required - existing)
+        if not missing:
+            return
+
+        app.logger.warning("Tabelas de trabalhos em falta (%s). A criar automaticamente.", ", ".join(missing))
+        db.metadata.create_all(
+            bind=db.engine,
+            tables=[
+                Trabalho.__table__,
+                TrabalhoGrupo.__table__,
+                TrabalhoGrupoMembro.__table__,
+                Entrega.__table__,
+                ParametroDefinicao.__table__,
+                EntregaParametro.__table__,
+                GrupoTurma.__table__,
+                GrupoTurmaMembro.__table__,
+            ],
+            checkfirst=True,
+        )
+        db.session.commit()
+        app.logger.info("Schema de trabalhos garantido com sucesso.")
+
+        insp = inspect(db.engine)
+        trabalho_cols = {c["name"] for c in insp.get_columns("trabalhos")} if "trabalhos" in insp.get_table_names() else set()
+        if "data_limite" not in trabalho_cols:
+            db.session.execute(text("ALTER TABLE trabalhos ADD COLUMN data_limite DATE"))
+            db.session.commit()
+
+        entrega_cols = {c["name"] for c in insp.get_columns("entregas")} if "entregas" in insp.get_table_names() else set()
+        if "data_entrega" not in entrega_cols:
+            db.session.execute(text("ALTER TABLE entregas ADD COLUMN data_entrega DATE"))
+        if "observacoes" not in entrega_cols:
+            db.session.execute(text("ALTER TABLE entregas ADD COLUMN observacoes TEXT"))
+        db.session.commit()
+
     def _ensure_columns():
+        if db.engine.dialect.name != "sqlite":
+            return
+
         insp = inspect(db.engine)
         tabelas = set(insp.get_table_names())
 
@@ -1062,13 +1552,28 @@ def create_app():
         return False, ultimo_erro
 
     def _running_flask_cli():
-        if os.environ.get("FLASK_RUN_FROM_CLI") == "true":
-            return True
+        """Deteta comandos utilitários de CLI (não inclui `flask run`)."""
         args = " ".join(sys.argv).lower()
         return any(
             token in args
-            for token in ["flask db", "flask shell", "migrate", "upgrade", "current"]
+            for token in ["flask db", "flask shell", "flask routes", "migrate", "upgrade", "current"]
         )
+
+    def _should_run_startup_jobs():
+        if _running_flask_cli():
+            return False
+        if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+            return True
+        if os.environ.get("FLASK_DEBUG") in {"1", "true", "True"}:
+            return False
+        return True
+
+    def get_db_mode():
+        mode = (app.config.get("APP_DB_MODE") or "sqlite").strip().lower()
+        return "postgres" if mode == "postgres" else "sqlite"
+
+    def _sqlite_backups_enabled():
+        return get_db_mode() == "sqlite"
 
     def _get_machine_name():
         return os.environ.get("COMPUTERNAME") or platform.node() or socket.gethostname()
@@ -1123,6 +1628,10 @@ def create_app():
             app.logger.warning("Não foi possível gravar estado do backup.")
 
     def _backup_database(reason="manual"):
+        if not _sqlite_backups_enabled():
+            app.logger.info("Backups SQLite desativados (modo postgres)")
+            return {"ok": False, "error": "Backups SQLite desativados (modo postgres)."}
+
         inicio = time.monotonic()
         backup_dir = app.config.get("BACKUP_DIR")
         db_path = _get_db_path()
@@ -1301,48 +1810,251 @@ def create_app():
         entries.sort(key=lambda item: item["timestamp"], reverse=True)
         return entries[:20]
 
-    def _registar_sumario_historico(aula, acao, anterior, novo, autor="local"):
-        registo = AulaSumarioHistorico(
-            calendario_aula_id=aula.id,
-            acao=acao,
-            sumario_anterior=anterior,
-            sumario_novo=novo,
-            autor=autor,
+    def _registar_sumario_historico(aula, acao, anterior, novo, autor="local", session=None, ignore_errors=False):
+        sess = session or db.session
+        try:
+            registo = AulaSumarioHistorico(
+                calendario_aula_id=aula.id,
+                acao=acao,
+                sumario_anterior=anterior,
+                sumario_novo=novo,
+                autor=autor,
+            )
+            sess.add(registo)
+            excessos = (
+                sess.query(AulaSumarioHistorico)
+                .filter_by(calendario_aula_id=aula.id)
+                .order_by(AulaSumarioHistorico.created_at.desc(), AulaSumarioHistorico.id.desc())
+                .offset(10)
+                .all()
+            )
+            if excessos:
+                for item in excessos:
+                    sess.delete(item)
+            return registo
+        except IntegrityError as exc:
+            sess.rollback()
+            app.logger.exception(
+                "HIST FAIL (ignored) | aula_id=%s | acao=%s | erro=%s",
+                getattr(aula, "id", None),
+                acao,
+                exc,
+            )
+            if ignore_errors:
+                return None
+            raise
+
+    def _registar_sumario_historico_isolado(aula_id, acao, anterior, novo, autor="local"):
+        session_factory = app.extensions.get("session_remote_factory")
+        if session_factory is None:
+            bind = db.session.get_bind()
+            session_factory = sessionmaker(bind=bind, future=True)
+
+        hist_session = session_factory()
+        try:
+            aula_hist = hist_session.get(CalendarioAula, int(aula_id))
+            if not aula_hist:
+                app.logger.warning("HIST FAIL (ignored) | aula_id=%s | motivo=aula_inexistente", aula_id)
+                hist_session.rollback()
+                return False
+
+            registo = _registar_sumario_historico(
+                aula_hist,
+                acao,
+                anterior,
+                novo,
+                autor=autor,
+                session=hist_session,
+                ignore_errors=True,
+            )
+            if registo is None:
+                hist_session.rollback()
+                return False
+
+            hist_session.commit()
+            app.logger.info("HIST OK | aula_id=%s | acao=%s", aula_id, acao)
+            return True
+        except Exception as exc:
+            hist_session.rollback()
+            app.logger.exception("HIST FAIL (ignored) | aula_id=%s | acao=%s | erro=%s", aula_id, acao, exc)
+            return False
+        finally:
+            hist_session.close()
+
+    def _build_payloads_from_form(aula, alunos):
+        payloads = []
+        for aluno in alunos:
+            payload = normalize_aulas_alunos_payload(
+                {
+                    "atraso": bool(request.form.get(f"atraso_{aluno.id}")),
+                    "faltas": request.form.get(f"faltas_{aluno.id}"),
+                    "responsabilidade": request.form.get(f"responsabilidade_{aluno.id}"),
+                    "comportamento": request.form.get(f"comportamento_{aluno.id}"),
+                    "participacao": request.form.get(f"participacao_{aluno.id}"),
+                    "trabalho_autonomo": request.form.get(f"trabalho_autonomo_{aluno.id}"),
+                    "portatil_material": request.form.get(f"portatil_material_{aluno.id}"),
+                    "atividade": request.form.get(f"atividade_{aluno.id}"),
+                    "falta_disciplinar": request.form.get(f"falta_disciplinar_{aluno.id}"),
+                }
+            )
+            payload["client_ts"] = datetime.utcnow().isoformat(timespec="seconds")
+            payloads.append({"aula_id": aula.id, "aluno_id": aluno.id, "payload": payload})
+        return payloads
+
+    def _enqueue_payloads(payloads):
+        for item in payloads:
+            enqueue_upsert_aulas_alunos(
+                item["aula_id"],
+                item["aluno_id"],
+                item["payload"],
+                instance_path=app.instance_path,
+            )
+
+    def _apply_payloads(payloads):
+        dedup = {}
+        for item in payloads:
+            key = (int(item["aula_id"]), int(item["aluno_id"]))
+            dedup[key] = {
+                "aula_id": key[0],
+                "aluno_id": key[1],
+                "payload": item["payload"],
+            }
+
+        for item in dedup.values():
+            apply_upsert_aulas_alunos(
+                db.session,
+                item["aula_id"],
+                item["aluno_id"],
+                item["payload"],
+            )
+
+    def _log_db_mode():
+        db_mode = app.config.get("APP_DB_MODE", "sqlite")
+        uri = app.config.get("SQLALCHEMY_DATABASE_URI", "")
+        if db_mode == "postgres":
+            parsed = urlsplit(uri)
+            host = parsed.hostname or "-"
+            port = parsed.port or "-"
+            db_name = (parsed.path or "/").lstrip("/") or "-"
+            supabase_mode = app.config.get("SUPABASE_DB_MODE", "direct")
+            app.logger.info(
+                "DB mode: postgres | host: %s | port: %s | db: %s | supabase_mode: %s",
+                host,
+                port,
+                db_name,
+                supabase_mode,
+            )
+        else:
+            app.logger.info("DB mode: sqlite | uri: %s", uri)
+
+    def try_flush_outbox(limit=200):
+        try:
+            db.session.execute(text("SELECT 1"))
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.warning("Sem ligação à BD principal; flush adiado: %s", exc)
+            return {"ok": False, "applied": 0, "errors": 0, "remaining": pending_count(app.instance_path)}
+
+        def _apply_from_outbox(payload):
+            with db.session.begin():
+                apply_upsert_aulas_alunos(
+                    db.session,
+                    int(payload["aula_id"]),
+                    int(payload["aluno_id"]),
+                    payload.get("payload") or {},
+                )
+
+        result = flush_pending(_apply_from_outbox, limit=limit, instance_path=app.instance_path)
+        clear_sent(instance_path=app.instance_path)
+        result["ok"] = True
+        return result
+
+    def _start_dev_snapshot_scheduler():
+        if os.environ.get("DEV_LOCAL_SCHEDULER", "0") != "1":
+            return
+        if not _should_run_startup_jobs():
+            app.logger.info("Scheduler snapshot ignorado neste processo (reloader/CLI).")
+            return
+        if app.extensions.get("offline_scheduler"):
+            app.logger.info("Scheduler snapshot já ativo; sem duplicação de job.")
+            return
+
+        try:
+            from apscheduler.schedulers.background import BackgroundScheduler
+        except Exception:
+            app.logger.warning("DEV_LOCAL_SCHEDULER=1 mas APScheduler não está disponível.")
+            return
+
+        try:
+            interval = int(os.environ.get("SNAPSHOT_INTERVAL_SECONDS", "60") or "60")
+        except Exception:
+            interval = 60
+        interval = max(5, interval)
+        scheduler = BackgroundScheduler(daemon=True)
+
+        def _scheduled_job():
+            with app.app_context():
+                from offline_store import get_setting
+
+                enabled = get_setting(app.instance_path, "snapshot_enabled", "1")
+                if enabled != "1":
+                    app.logger.info("Snapshot automático ignorado: snapshot_enabled=0")
+                    return
+
+                app.logger.info("Snapshot automático iniciado (interval=%ss)", interval)
+                result = snapshot_remote_to_local(mode="auto")
+                if result.get("ok"):
+                    app.logger.info(
+                        "Snapshot automático concluído: turmas=%s alunos=%s aulas=%s periodos=%s modulos=%s",
+                        result.get("turmas", 0),
+                        result.get("alunos", 0),
+                        result.get("aulas", 0),
+                        result.get("periodos", 0),
+                        result.get("modulos", 0),
+                    )
+                else:
+                    app.logger.warning("Snapshot automático falhou: %s", result.get("error"))
+
+        scheduler.add_job(
+            _scheduled_job,
+            "interval",
+            seconds=interval,
+            id="offline_snapshot_job",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
         )
-        db.session.add(registo)
-        db.session.flush()
-        excessos = (
-            AulaSumarioHistorico.query
-            .filter_by(calendario_aula_id=aula.id)
-            .order_by(AulaSumarioHistorico.created_at.desc(), AulaSumarioHistorico.id.desc())
-            .offset(10)
-            .all()
-        )
-        if excessos:
-            for item in excessos:
-                db.session.delete(item)
-        return registo
+        scheduler.start()
+        app.extensions["offline_scheduler"] = scheduler
+        app.logger.info("Scheduler local de snapshot ativo: %ss", interval)
 
     with app.app_context():
+        init_offline_db(app.instance_path)
+        init_offline_store_db(app.instance_path)
         _ensure_columns()
+        _ensure_trabalhos_tables()
         try:
-            engine_db = db.engine.url.database
-            config_db = app.config.get("DB_PATH")
-            if engine_db and config_db and os.path.abspath(engine_db) != os.path.abspath(config_db):
-                app.logger.warning(
-                    "DB path diverge do esperado: engine=%s | config=%s",
-                    engine_db,
-                    config_db,
-                )
+            _log_db_mode()
         except Exception:
-            app.logger.warning("Não foi possível validar coerência do caminho da BD.")
-        if app.config.get("BACKUP_ON_STARTUP", True) and not _running_flask_cli():
-            app.logger.info("Backups automáticos ativos no arranque.")
-            _backup_database(reason="startup")
-        elif _running_flask_cli():
-            app.logger.info("CLI detetada: backups automáticos desativados.")
+            app.logger.warning("Não foi possível emitir informação do backend de BD.")
+        if _sqlite_backups_enabled():
+            if app.config.get("BACKUP_ON_STARTUP", True) and _should_run_startup_jobs():
+                app.logger.info("Backups SQLite ativos")
+                _backup_database(reason="startup")
+            elif not _should_run_startup_jobs():
+                app.logger.info("Arranque secundário/CLI detetado: tarefas de startup desativadas.")
+        else:
+            app.logger.info("Backups SQLite desativados (modo postgres)")
+
+        flush_result = try_flush_outbox(limit=200)
+        if flush_result.get("applied"):
+            app.logger.info("Outbox sincronizada no arranque: %s item(ns).", flush_result["applied"])
+
+    _start_dev_snapshot_scheduler()
 
     def _agendar_backup_change():
+        if not _sqlite_backups_enabled():
+            return
         estado = _carregar_backup_state()
         agora = datetime.now().isoformat(timespec="seconds")
         estado["pending_changes_count"] = int(estado.get("pending_changes_count") or 0) + 1
@@ -1359,6 +2071,9 @@ def create_app():
 
     def _backup_scheduler():
         if _running_flask_cli():
+            return
+        if not _sqlite_backups_enabled():
+            app.logger.info("Backups SQLite desativados (modo postgres)")
             return
         intervalo = max(5, app.config.get("BACKUP_CHECK_INTERVAL_SECONDS", 30))
         debounce = max(0, app.config.get("BACKUP_DEBOUNCE_SECONDS", 300))
@@ -1387,7 +2102,7 @@ def create_app():
                 else:
                     app.logger.warning("Backup automático falhou: %s", resultado.get("error"))
 
-    if not _running_flask_cli():
+    if not _running_flask_cli() and _sqlite_backups_enabled():
         threading.Thread(target=_backup_scheduler, daemon=True).start()
 
     # ----------------------------------------
@@ -1452,6 +2167,121 @@ def create_app():
             aula.id,
         )
 
+    def admin_required(view):
+        @wraps(view)
+        def wrapped(*args, **kwargs):
+            if not app.config.get("ADMIN_ENABLED", True):
+                abort(403)
+            return view(*args, **kwargs)
+
+        return wrapped
+
+    def _admin_nav_items():
+        return [
+            ("admin_anos_letivos", "Anos letivos"),
+            ("admin_calendario_semanal", "Calendário semanal"),
+            ("/calendario/dia", "Calendário diário"),
+            ("admin_turmas", "Turmas"),
+            ("admin_direcao_turma", "Direção de Turma"),
+            ("admin_disciplinas_dt", "Disciplinas (DT)"),
+            ("admin_offline", "Offline"),
+        ]
+
+    # ----------------------------------------
+    # ADMIN
+    # ----------------------------------------
+    @app.route("/admin")
+    @admin_required
+    def admin_home():
+        return redirect(url_for("admin_anos_letivos"))
+
+    @app.route("/admin/anos-letivos")
+    @admin_required
+    def admin_anos_letivos():
+        anos = AnoLetivo.query.order_by(AnoLetivo.id.desc()).all()
+        return render_template("admin/anos_letivos.html", anos=anos, admin_nav_items=_admin_nav_items())
+
+    @app.route("/admin/calendario-semanal")
+    @admin_required
+    def admin_calendario_semanal():
+        turmas = Turma.query.order_by(Turma.nome.asc()).all()
+        return render_template("admin/calendario_semanal.html", turmas=turmas, admin_nav_items=_admin_nav_items())
+
+    @app.route("/admin/calendario-diario")
+    @admin_required
+    def admin_calendario_diario():
+        data_ref = request.args.get("data", type=str)
+        data_ref = _parse_date_local(data_ref) if data_ref else date.today()
+
+        aulas = (
+            CalendarioAula.query
+            .filter(CalendarioAula.data == data_ref)
+            .filter(CalendarioAula.apagado == False)  # noqa: E712
+            .order_by(CalendarioAula.id.asc())
+            .all()
+        )
+        exclusoes = Exclusao.query.filter(Exclusao.data == data_ref).all()
+        extras = Extra.query.filter(Extra.data == data_ref).all()
+        feriados = Feriado.query.filter(Feriado.data == data_ref).all()
+        interrupcoes = (
+            InterrupcaoLetiva.query
+            .filter(InterrupcaoLetiva.data_inicio <= data_ref)
+            .filter(InterrupcaoLetiva.data_fim >= data_ref)
+            .all()
+        )
+
+        return render_template(
+            "admin/calendario_diario.html",
+            data_ref=data_ref,
+            aulas=aulas,
+            exclusoes=exclusoes,
+            extras=extras,
+            feriados=feriados,
+            interrupcoes=interrupcoes,
+            admin_nav_items=_admin_nav_items(),
+        )
+
+    @app.route("/admin/turmas")
+    @admin_required
+    def admin_turmas():
+        turmas = Turma.query.order_by(Turma.nome.asc()).all()
+        return render_template("admin/turmas.html", turmas=turmas, admin_nav_items=_admin_nav_items())
+
+    @app.route("/admin/direcao-turma")
+    @admin_required
+    def admin_direcao_turma():
+        dts = DTTurma.query.order_by(DTTurma.id.desc()).all()
+        return render_template("admin/direcao_turma.html", dts=dts, admin_nav_items=_admin_nav_items())
+
+    @app.route("/admin/disciplinas-dt")
+    @admin_required
+    def admin_disciplinas_dt():
+        disciplinas = DTDisciplina.query.order_by(DTDisciplina.id.desc()).all()
+        return render_template("admin/disciplinas_dt.html", disciplinas=disciplinas, admin_nav_items=_admin_nav_items())
+
+    @app.route("/admin/offline")
+    @admin_required
+    def admin_offline():
+        snapshot_status = _carregar_backup_status()
+        return render_template(
+            "admin/offline.html",
+            pending_offline=pending_count(app.instance_path),
+            last_error=get_last_error(app.instance_path),
+            snapshot_interval_seconds=app.config.get("SNAPSHOT_INTERVAL_SECONDS", 60),
+            snapshot_status=snapshot_status,
+            admin_nav_items=_admin_nav_items(),
+        )
+
+    @app.route("/admin/offline/snapshot", methods=["POST"])
+    @admin_required
+    def admin_offline_snapshot():
+        result = snapshot_remote_to_local(app.instance_path)
+        if result.get("ok"):
+            flash("Snapshot offline atualizado com sucesso.", "success")
+        else:
+            flash(result.get("error") or "Falha ao atualizar snapshot offline.", "error")
+        return redirect(url_for("admin_offline"))
+
     # ----------------------------------------
     # DASHBOARD
     # ----------------------------------------
@@ -1459,25 +2289,141 @@ def create_app():
     def dashboard():
         turmas = turmas_abertas_ativas()
         ano_atual = get_ano_letivo_atual()
-        termo = (request.args.get("q") or "").strip()
-        resultados_sumarios = []
-        if termo:
-            like = f"%{termo}%"
-            resultados_sumarios = (
+        turma_id = request.args.get("turma_id", type=int)
+        turma_atual = next((t for t in turmas if t.id == turma_id), None)
+        if not turma_atual and turmas:
+            turma_atual = turmas[0]
+
+        hoje = date.today()
+        aula_hoje = None
+        proxima_aula = None
+        checklist = {
+            "sumario": False,
+            "faltas": False,
+            "avaliacao": False,
+        }
+        trabalhos_ativos = []
+        indicadores = {
+            "por_entregar": 0,
+            "atrasadas": 0,
+            "media_global": None,
+            "nota_zero": 0,
+        }
+        disciplina_atual = None
+
+        if turma_atual:
+            disciplina_atual = turma_atual.disciplinas[0] if getattr(turma_atual, "disciplinas", None) else None
+
+            aula_hoje = (
                 CalendarioAula.query
-                .filter(CalendarioAula.apagado == False)  # noqa: E712
-                .filter(CalendarioAula.sumario.isnot(None))
-                .filter(CalendarioAula.sumario.ilike(like))
-                .order_by(CalendarioAula.data.desc(), CalendarioAula.id.desc())
-                .limit(50)
+                .filter_by(turma_id=turma_atual.id, data=hoje, apagado=False)
+                .order_by(CalendarioAula.numero_modulo.asc(), CalendarioAula.id.asc())
+                .first()
+            )
+            if not aula_hoje:
+                proxima_aula = (
+                    CalendarioAula.query
+                    .filter(CalendarioAula.turma_id == turma_atual.id)
+                    .filter(CalendarioAula.apagado == False)  # noqa: E712
+                    .filter(CalendarioAula.data >= hoje)
+                    .order_by(CalendarioAula.data.asc(), CalendarioAula.numero_modulo.asc(), CalendarioAula.id.asc())
+                    .first()
+                )
+
+            aula_ref = aula_hoje or proxima_aula
+            if aula_ref:
+                checklist["sumario"] = bool((aula_ref.sumario or "").strip())
+                checklist["faltas"] = (
+                    db.session.query(AulaAluno.id)
+                    .filter(AulaAluno.aula_id == aula_ref.id)
+                    .first()
+                    is not None
+                )
+                checklist["avaliacao"] = (
+                    db.session.query(AulaAluno.id)
+                    .filter(AulaAluno.aula_id == aula_ref.id)
+                    .filter(
+                        or_(
+                            AulaAluno.responsabilidade.isnot(None),
+                            AulaAluno.comportamento.isnot(None),
+                            AulaAluno.participacao.isnot(None),
+                            AulaAluno.trabalho_autonomo.isnot(None),
+                            AulaAluno.portatil_material.isnot(None),
+                            AulaAluno.atividade.isnot(None),
+                        )
+                    )
+                    .first()
+                    is not None
+                )
+
+            trabalhos_ativos = (
+                Trabalho.query
+                .filter(Trabalho.turma_id == turma_atual.id)
+                .order_by(
+                    Trabalho.data_limite.is_(None),
+                    Trabalho.data_limite.asc(),
+                    Trabalho.created_at.desc(),
+                )
+                .limit(5)
                 .all()
             )
+
+            notas = []
+            for trabalho in trabalhos_ativos:
+                total_grupos = len(trabalho.grupos)
+                entregues = 0
+                atrasadas = 0
+                for entrega in trabalho.entregas:
+                    if not entrega.entregue:
+                        continue
+                    entregues += 1
+                    if trabalho.data_limite and entrega.data_entrega and entrega.data_entrega > trabalho.data_limite:
+                        atrasadas += 1
+                trabalho.total_grupos_dashboard = total_grupos
+                trabalho.entregues_dashboard = entregues
+                trabalho.atrasadas_dashboard = atrasadas
+                trabalho.percent_entregues_dashboard = round((entregues / total_grupos) * 100) if total_grupos else 0
+
+                por_entregar = max(total_grupos - entregues, 0)
+                indicadores["por_entregar"] += por_entregar
+                indicadores["atrasadas"] += atrasadas
+
+                for entrega in trabalho.entregas:
+                    if not entrega.entregue:
+                        notas.append(0.0)
+                        indicadores["nota_zero"] += 1
+                        continue
+                    valores = []
+                    if entrega.consecucao is not None:
+                        valores.append(float(entrega.consecucao))
+                    if entrega.qualidade is not None:
+                        valores.append(float(entrega.qualidade))
+                    for ep in entrega.parametros:
+                        if ep.valor_numerico is not None:
+                            valores.append(float(ep.valor_numerico))
+                    media_base = (sum(valores) / len(valores)) if valores else 0.0
+                    fator = 1.0
+                    if trabalho.data_limite and entrega.data_entrega and entrega.data_entrega > trabalho.data_limite:
+                        fator = 0.5
+                    nota_final = media_base * fator
+                    notas.append(nota_final)
+                    if nota_final == 0:
+                        indicadores["nota_zero"] += 1
+
+            if notas:
+                indicadores["media_global"] = round(sum(notas) / len(notas), 2)
+
         return render_template(
             "dashboard.html",
             turmas=turmas,
             ano_atual=ano_atual,
-            termo=termo,
-            resultados_sumarios=resultados_sumarios,
+            turma_atual=turma_atual,
+            disciplina_atual=disciplina_atual,
+            aula_hoje=aula_hoje,
+            proxima_aula=proxima_aula,
+            checklist=checklist,
+            trabalhos_ativos=trabalhos_ativos,
+            indicadores=indicadores,
         )
 
     @app.route("/backups")
@@ -3476,6 +4422,629 @@ def create_app():
 
         return redirect(url_for("turma_alunos", turma_id=turma_origem.id))
 
+    def _listar_alunos_turma(turma_id):
+        return (
+            Aluno.query.filter_by(turma_id=turma_id)
+            .order_by(Aluno.numero.is_(None), Aluno.numero, Aluno.nome)
+            .all()
+        )
+
+    def _parse_datetime_local(raw):
+        if not raw:
+            return None
+        raw = str(raw).strip()
+        if not raw:
+            return None
+        try:
+            return datetime.fromisoformat(raw)
+        except Exception:
+            for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M", "%d/%m/%Y", "%d/%m/%Y %H:%M"):
+                try:
+                    return datetime.strptime(raw, fmt)
+                except Exception:
+                    continue
+        return None
+
+    def _parse_date_local(raw):
+        if not raw:
+            return None
+        raw = str(raw).strip()
+        if not raw:
+            return None
+        try:
+            return date.fromisoformat(raw)
+        except Exception:
+            for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
+                try:
+                    return datetime.strptime(raw, fmt).date()
+                except Exception:
+                    continue
+        return None
+
+    def _estado_info(trabalho, entrega):
+        if not entrega or not entrega.entregue:
+            return "Por entregar", "badge-por-entregar", 0.0
+        if trabalho.data_limite and entrega.data_entrega and entrega.data_entrega > trabalho.data_limite:
+            return "Atrasado", "badge-atrasado", 0.5
+        return "No prazo", "badge-no-prazo", 1.0
+
+    def _calcular_metricas_entrega(trabalho, entrega, params_map, parametros):
+        estado, estado_css, fator_estado = _estado_info(trabalho, entrega)
+
+        valores = []
+        if entrega:
+            if entrega.consecucao is not None:
+                valores.append(float(entrega.consecucao))
+            if entrega.qualidade is not None:
+                valores.append(float(entrega.qualidade))
+
+            for p in parametros:
+                if p.tipo != "numerico":
+                    continue
+                ep = params_map.get(p.id)
+                if ep and ep.valor_numerico is not None:
+                    valores.append(float(ep.valor_numerico))
+
+        media_base = (sum(valores) / len(valores)) if valores else 0.0
+        nota_final = media_base * fator_estado
+
+        return {
+            "estado": estado,
+            "estado_css": estado_css,
+            "fator_estado": fator_estado,
+            "media_base": media_base,
+            "nota_final": nota_final,
+        }
+
+    def _ensure_individual_groups(trabalho):
+        alunos = _listar_alunos_turma(trabalho.turma_id)
+        existing_members = {m.aluno_id for g in trabalho.grupos for m in g.membros}
+        for aluno in alunos:
+            if aluno.id in existing_members:
+                continue
+            nome = (aluno.nome_curto or aluno.nome or f"Aluno {aluno.id}").strip()
+            grupo = TrabalhoGrupo(trabalho_id=trabalho.id, nome=nome)
+            db.session.add(grupo)
+            db.session.flush()
+            db.session.add(TrabalhoGrupoMembro(trabalho_grupo_id=grupo.id, aluno_id=aluno.id))
+
+    def _build_trabalho_grid(trabalho):
+        parametros = sorted(trabalho.parametros, key=lambda p: (p.ordem, p.id))
+        entregas = {e.trabalho_grupo_id: e for e in trabalho.entregas}
+        rows = []
+        for grupo in sorted(trabalho.grupos, key=lambda g: g.nome.lower() if g.nome else ""):
+            entrega = entregas.get(grupo.id)
+            params_map = {}
+            if entrega:
+                for ep in entrega.parametros:
+                    params_map[ep.parametro_definicao_id] = ep
+
+            metrics = _calcular_metricas_entrega(trabalho, entrega, params_map, parametros)
+
+            membros = sorted(
+                [m.aluno for m in grupo.membros if m.aluno],
+                key=lambda a: ((a.numero is None), a.numero if a.numero is not None else 0, (a.nome or "").lower()),
+            )
+            aluno_principal = membros[0] if membros else None
+            aluno_label = ""
+            if aluno_principal:
+                numero = aluno_principal.numero if aluno_principal.numero is not None else "—"
+                aluno_label = f"{numero} {aluno_principal.nome_curto_exibicao}".strip()
+
+            rows.append({
+                "grupo": grupo,
+                "entrega": entrega,
+                "params": params_map,
+                "membros": membros,
+                "aluno_label": aluno_label,
+                "estado": metrics["estado"],
+                "estado_css": metrics["estado_css"],
+                "media_base": metrics["media_base"],
+                "fator_estado": metrics["fator_estado"],
+                "nota_final": metrics["nota_final"],
+            })
+
+        return parametros, rows[:30]
+
+    @app.route("/turmas/<int:turma_id>/grupos", methods=["GET", "POST"])
+    def turma_grupos_catalogo(turma_id):
+        turma = Turma.query.get_or_404(turma_id)
+        if request.method == "POST":
+            payload = request.get_json(silent=True) if request.is_json else request.form
+            nome = (payload.get("nome") or payload.get("nome_grupo") or "").strip()
+            raw_ids = payload.get("aluno_ids") if request.is_json else request.form.getlist("aluno_ids")
+            if raw_ids is None:
+                raw_ids = []
+            if not isinstance(raw_ids, list):
+                raw_ids = [raw_ids]
+            aluno_ids = sorted({int(v) for v in raw_ids if str(v).isdigit()})
+            wants_json = request.is_json or request.accept_mimetypes.best == "application/json"
+
+            if not nome:
+                if wants_json:
+                    return jsonify({"ok": False, "error": "Nome do grupo é obrigatório."}), 400
+                flash("Nome do grupo é obrigatório.", "error")
+                return redirect(url_for("turma_grupos_catalogo", turma_id=turma.id))
+
+            usados = {
+                m.aluno_id
+                for g in GrupoTurma.query.filter_by(turma_id=turma.id).all()
+                for m in g.membros
+                if m.aluno_id is not None
+            }
+            duplicados = [aid for aid in aluno_ids if aid in usados]
+            if duplicados:
+                msg = "Um ou mais alunos já estão atribuídos a outro grupo da turma."
+                if wants_json:
+                    return jsonify({"ok": False, "error": msg, "aluno_ids": duplicados}), 400
+                flash(msg, "error")
+                return redirect(url_for("turma_grupos_catalogo", turma_id=turma.id))
+
+            grupo = GrupoTurma(turma_id=turma.id, nome=nome)
+            db.session.add(grupo)
+            db.session.flush()
+            for aluno_id in aluno_ids:
+                db.session.add(GrupoTurmaMembro(grupo_turma_id=grupo.id, aluno_id=aluno_id))
+            db.session.commit()
+
+            if wants_json:
+                membros_payload = []
+                if aluno_ids:
+                    alunos_map = {
+                        a.id: a
+                        for a in Aluno.query.filter(Aluno.id.in_(aluno_ids)).all()
+                    }
+                    for aid in aluno_ids:
+                        a = alunos_map.get(aid)
+                        if not a:
+                            continue
+                        numero = a.numero if a.numero is not None else "—"
+                        membros_payload.append({"id": aid, "label": f"{numero} {a.nome_curto_exibicao}".strip()})
+                return jsonify({"ok": True, "grupo_id": grupo.id, "nome": grupo.nome, "membros_ids": aluno_ids, "membros": membros_payload})
+
+            flash("Grupo da turma criado.", "success")
+            return redirect(url_for("turma_grupos_catalogo", turma_id=turma.id))
+
+        grupos = GrupoTurma.query.filter_by(turma_id=turma.id).order_by(GrupoTurma.nome).all()
+        alunos = _listar_alunos_turma(turma.id)
+        usados = {
+            m.aluno_id
+            for g in grupos
+            for m in g.membros
+            if m.aluno_id is not None
+        }
+        alunos_disponiveis = [a for a in alunos if a.id not in usados]
+        return render_template("trabalhos/catalogo_grupos.html", turma=turma, grupos=grupos, alunos=alunos, alunos_disponiveis=alunos_disponiveis)
+
+    @app.route("/turmas/<int:turma_id>/grupos/<int:grupo_id>/delete", methods=["POST"])
+    def turma_grupo_catalogo_delete(turma_id, grupo_id):
+        grupo = GrupoTurma.query.filter_by(id=grupo_id, turma_id=turma_id).first_or_404()
+        db.session.delete(grupo)
+        db.session.commit()
+        flash("Grupo do catálogo removido.", "success")
+        return redirect(url_for("turma_grupos_catalogo", turma_id=turma_id))
+
+    @app.route("/turmas/<int:turma_id>/grupos/<int:grupo_id>/membros/<int:aluno_id>/remove", methods=["POST"])
+    def turma_grupo_remove_membro(turma_id, grupo_id, aluno_id):
+        grupo = GrupoTurma.query.filter_by(id=grupo_id, turma_id=turma_id).first_or_404()
+        membro = GrupoTurmaMembro.query.filter_by(grupo_turma_id=grupo.id, aluno_id=aluno_id).first()
+        if not membro:
+            return jsonify({"ok": False, "error": "Aluno não pertence a este grupo."}), 404
+
+        aluno = Aluno.query.filter_by(id=aluno_id, turma_id=turma_id).first()
+        numero = aluno.numero if (aluno and aluno.numero is not None) else "—"
+        nome_curto = aluno.nome_curto_exibicao if aluno else "Aluno"
+
+        db.session.delete(membro)
+        db.session.flush()
+
+        restantes = GrupoTurmaMembro.query.filter_by(grupo_turma_id=grupo.id).count()
+        if restantes == 0:
+            gid = grupo.id
+            db.session.delete(grupo)
+            db.session.commit()
+            return jsonify({"ok": True, "deleted": True, "grupo_id": gid, "membros_repostos": [{"id": aluno_id, "label": f"{numero} {nome_curto}".strip()}]})
+
+        db.session.commit()
+        return jsonify({"ok": True, "deleted": False, "grupo_id": grupo.id, "removed_members_ids": [aluno_id], "membros_repostos": [{"id": aluno_id, "label": f"{numero} {nome_curto}".strip()}]})
+
+    @app.route("/turmas/<int:turma_id>/trabalhos", methods=["GET", "POST"])
+    def turma_trabalhos(turma_id):
+        turma = Turma.query.get_or_404(turma_id)
+        if request.method == "POST":
+            titulo = (request.form.get("titulo") or "").strip()
+            if not titulo:
+                flash("Título é obrigatório.", "error")
+                return redirect(url_for("turma_trabalhos", turma_id=turma.id))
+
+            trabalho = Trabalho(
+                turma_id=turma.id,
+                titulo=titulo,
+                descricao=(request.form.get("descricao") or "").strip() or None,
+                modo=(request.form.get("modo") or "individual").strip().lower(),
+                data_limite=_parse_date_local(request.form.get("data_limite")),
+            )
+            if trabalho.modo not in {"individual", "grupo"}:
+                trabalho.modo = "individual"
+            db.session.add(trabalho)
+            db.session.commit()
+            flash("Trabalho criado.", "success")
+            return redirect(url_for("trabalho_detail", turma_id=turma.id, trabalho_id=trabalho.id))
+
+        trabalhos = Trabalho.query.filter_by(turma_id=turma.id).order_by(Trabalho.created_at.desc()).all()
+        return render_template("trabalhos/list.html", turma=turma, trabalhos=trabalhos)
+
+    @app.route("/turmas/<int:turma_id>/trabalhos/mapa")
+    def turma_trabalhos_mapa(turma_id):
+        turma = Turma.query.get_or_404(turma_id)
+        trabalhos = Trabalho.query.filter_by(turma_id=turma.id).order_by(Trabalho.created_at.asc(), Trabalho.id.asc()).all()
+
+        houve_alteracao = False
+        for trabalho in trabalhos:
+            if trabalho.modo == "individual":
+                before = sum(len(g.membros) for g in trabalho.grupos)
+                _ensure_individual_groups(trabalho)
+                after = sum(len(g.membros) for g in trabalho.grupos)
+                if after != before:
+                    houve_alteracao = True
+        if houve_alteracao:
+            db.session.commit()
+            trabalhos = Trabalho.query.filter_by(turma_id=turma.id).order_by(Trabalho.created_at.asc(), Trabalho.id.asc()).all()
+
+        alunos = _listar_alunos_turma(turma.id)
+        parametros_por_trabalho = {
+            t.id: sorted(t.parametros, key=lambda p: (p.ordem, p.id))
+            for t in trabalhos
+        }
+
+        grupo_por_aluno_trabalho = {}
+        for t in trabalhos:
+            mapping = {}
+            for g in t.grupos:
+                for m in g.membros:
+                    mapping[m.aluno_id] = g
+            grupo_por_aluno_trabalho[t.id] = mapping
+
+        entregas_por_chave = {}
+        for t in trabalhos:
+            for e in t.entregas:
+                entregas_por_chave[(t.id, e.trabalho_grupo_id)] = e
+
+        mapa_rows = []
+        for aluno in alunos:
+            cells = []
+            notas = []
+            for t in trabalhos:
+                grupo = grupo_por_aluno_trabalho.get(t.id, {}).get(aluno.id)
+                entrega = entregas_por_chave.get((t.id, grupo.id)) if grupo else None
+                params_map = {ep.parametro_definicao_id: ep for ep in (entrega.parametros if entrega else [])}
+                metrics = _calcular_metricas_entrega(t, entrega, params_map, parametros_por_trabalho.get(t.id, []))
+                nota = metrics["nota_final"] if entrega else 0.0
+                cells.append({"nota_final": nota})
+                notas.append(nota)
+
+            media_global = (sum(notas) / len(notas)) if notas else 0.0
+            mapa_rows.append({
+                "aluno": aluno,
+                "cells": cells,
+                "media_global": media_global,
+            })
+
+        return render_template("trabalhos/mapa.html", turma=turma, trabalhos=trabalhos, mapa_rows=mapa_rows)
+
+    @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/delete", methods=["POST"])
+    def trabalho_delete(turma_id, trabalho_id):
+        trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
+        db.session.delete(trabalho)
+        db.session.commit()
+        flash("Trabalho removido.", "success")
+        return redirect(url_for("turma_trabalhos", turma_id=turma_id))
+
+    @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/importar-grupos", methods=["POST"])
+    def trabalho_importar_grupos_turma(turma_id, trabalho_id):
+        trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
+        catalogo = GrupoTurma.query.filter_by(turma_id=turma_id).all()
+        if not catalogo:
+            flash("Não existem grupos no catálogo da turma.", "error")
+            return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
+
+        if trabalho.modo != "grupo":
+            trabalho.modo = "grupo"
+
+        for g in catalogo:
+            nome = g.nome
+            exists = TrabalhoGrupo.query.filter_by(trabalho_id=trabalho.id, nome=nome).first()
+            if exists:
+                continue
+            ng = TrabalhoGrupo(trabalho_id=trabalho.id, nome=nome)
+            db.session.add(ng)
+            db.session.flush()
+            for m in g.membros:
+                db.session.add(TrabalhoGrupoMembro(trabalho_grupo_id=ng.id, aluno_id=m.aluno_id))
+
+        db.session.commit()
+        flash("Grupos importados para este trabalho (snapshot).", "success")
+        return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
+
+    @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>")
+    def trabalho_detail(turma_id, trabalho_id):
+        trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
+        if trabalho.modo == "individual":
+            _ensure_individual_groups(trabalho)
+            db.session.commit()
+
+        parametros, rows = _build_trabalho_grid(trabalho)
+        alunos = _listar_alunos_turma(turma_id)
+        usados = {
+            m.aluno_id
+            for grupo in trabalho.grupos
+            for m in grupo.membros
+            if m.aluno_id is not None
+        }
+        alunos_disponiveis = [a for a in alunos if a.id not in usados]
+        return render_template(
+            "trabalhos/detail.html",
+            trabalho=trabalho,
+            turma=trabalho.turma,
+            parametros=parametros,
+            rows=rows,
+            alunos=alunos,
+            alunos_disponiveis=alunos_disponiveis,
+        )
+
+    @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/edit", methods=["GET", "POST"])
+    def trabalho_edit(turma_id, trabalho_id):
+        trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
+
+        if request.method == "POST":
+            titulo = (request.form.get("titulo") or "").strip()
+            descricao = (request.form.get("descricao") or "").strip() or None
+            modo = (request.form.get("modo") or trabalho.modo or "individual").strip().lower()
+            data_limite_raw = request.form.get("data_limite")
+
+            if not titulo:
+                flash("Título é obrigatório.", "error")
+                return redirect(url_for("trabalho_edit", turma_id=turma_id, trabalho_id=trabalho_id, toast="error"))
+
+            if modo not in {"individual", "grupo"}:
+                modo = trabalho.modo if trabalho.modo in {"individual", "grupo"} else "individual"
+
+            parsed_data_limite = _parse_date_local(data_limite_raw)
+            if data_limite_raw and str(data_limite_raw).strip() and parsed_data_limite is None:
+                flash("Data limite inválida.", "error")
+                return redirect(url_for("trabalho_edit", turma_id=turma_id, trabalho_id=trabalho_id, toast="error"))
+
+            try:
+                trabalho.titulo = titulo
+                trabalho.descricao = descricao
+                trabalho.modo = modo
+                trabalho.data_limite = parsed_data_limite
+                if trabalho.modo == "individual":
+                    _ensure_individual_groups(trabalho)
+                db.session.commit()
+                flash("Trabalho atualizado.", "success")
+                return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id, toast="updated"))
+            except Exception:
+                db.session.rollback()
+                app.logger.exception("Erro ao atualizar trabalho id=%s turma=%s", trabalho_id, turma_id)
+                flash("Erro ao atualizar trabalho.", "error")
+                return redirect(url_for("trabalho_edit", turma_id=turma_id, trabalho_id=trabalho_id, toast="error"))
+
+        return render_template("trabalhos/edit.html", trabalho=trabalho, turma=trabalho.turma)
+
+    @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/parametros", methods=["POST"])
+    def trabalho_add_parametro(turma_id, trabalho_id):
+        trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
+        nome = (request.form.get("nome") or "").strip()
+        tipo = (request.form.get("tipo") or "numerico").strip().lower()
+        if tipo not in {"numerico", "texto"}:
+            tipo = "numerico"
+        if not nome:
+            flash("Nome do parâmetro é obrigatório.", "error")
+            return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
+
+        exists = ParametroDefinicao.query.filter_by(trabalho_id=trabalho.id, nome=nome).first()
+        if exists:
+            flash("Já existe um parâmetro com esse nome.", "error")
+            return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
+
+        ordem = (db.session.query(func.max(ParametroDefinicao.ordem)).filter_by(trabalho_id=trabalho.id).scalar() or 0) + 1
+        db.session.add(ParametroDefinicao(trabalho_id=trabalho.id, nome=nome, tipo=tipo, ordem=ordem))
+        db.session.commit()
+        flash("Parâmetro adicionado.", "success")
+        return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
+
+    @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/grupos", methods=["POST"])
+    def trabalho_add_grupo(turma_id, trabalho_id):
+        trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
+        payload = request.get_json(silent=True) if request.is_json else request.form
+        nome = (payload.get("nome") or payload.get("nome_grupo") or "").strip()
+
+        raw_ids = payload.get("aluno_ids") if request.is_json else request.form.getlist("aluno_ids")
+        if raw_ids is None:
+            raw_ids = []
+        if not isinstance(raw_ids, list):
+            raw_ids = [raw_ids]
+        aluno_ids = sorted({int(v) for v in raw_ids if str(v).isdigit()})
+
+        wants_json = request.is_json or request.accept_mimetypes.best == "application/json"
+
+        if not nome:
+            if wants_json:
+                return jsonify({"ok": False, "error": "Nome do grupo é obrigatório."}), 400
+            flash("Nome do grupo é obrigatório.", "error")
+            return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
+        if trabalho.modo != "grupo":
+            if wants_json:
+                return jsonify({"ok": False, "error": "Trabalho está em modo individual."}), 400
+            flash("Trabalho está em modo individual.", "error")
+            return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
+
+        usados = {
+            m.aluno_id
+            for grupo in trabalho.grupos
+            for m in grupo.membros
+            if m.aluno_id is not None
+        }
+        duplicados = [aid for aid in aluno_ids if aid in usados]
+        if duplicados:
+            msg = "Um ou mais alunos já estão atribuídos a outro grupo deste trabalho."
+            if wants_json:
+                return jsonify({"ok": False, "error": msg, "aluno_ids": duplicados}), 400
+            flash(msg, "error")
+            return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
+
+        grupo = TrabalhoGrupo(trabalho_id=trabalho.id, nome=nome)
+        db.session.add(grupo)
+        db.session.flush()
+        for aluno_id in aluno_ids:
+            db.session.add(TrabalhoGrupoMembro(trabalho_grupo_id=grupo.id, aluno_id=aluno_id))
+        db.session.commit()
+
+        if wants_json:
+            return jsonify({"ok": True, "grupo_id": grupo.id, "membros_ids": aluno_ids})
+
+        flash("Grupo criado.", "success")
+        return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
+
+    @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/grupos/<int:grupo_id>/membros/<int:aluno_id>/remove", methods=["POST"])
+    def trabalho_remove_membro_grupo(turma_id, trabalho_id, grupo_id, aluno_id):
+        trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
+        grupo = TrabalhoGrupo.query.filter_by(id=grupo_id, trabalho_id=trabalho.id).first_or_404()
+
+        membro = TrabalhoGrupoMembro.query.filter_by(trabalho_grupo_id=grupo.id, aluno_id=aluno_id).first()
+        if not membro:
+            return jsonify({"ok": False, "error": "Aluno não pertence a este grupo."}), 404
+
+        aluno = Aluno.query.filter_by(id=aluno_id, turma_id=turma_id).first()
+        numero = aluno.numero if (aluno and aluno.numero is not None) else "—"
+        nome_curto = aluno.nome_curto_exibicao if aluno else "Aluno"
+
+        db.session.delete(membro)
+        db.session.flush()
+
+        restantes = TrabalhoGrupoMembro.query.filter_by(trabalho_grupo_id=grupo.id).count()
+        if restantes == 0:
+            entrega = Entrega.query.filter_by(trabalho_grupo_id=grupo.id).first()
+            if entrega:
+                for ep in list(entrega.parametros):
+                    db.session.delete(ep)
+                db.session.delete(entrega)
+            grupo_id_deleted = grupo.id
+            db.session.delete(grupo)
+            db.session.commit()
+            return jsonify({
+                "ok": True,
+                "deleted": True,
+                "grupo_id": grupo_id_deleted,
+                "aluno": {
+                    "id": aluno_id,
+                    "label": f"{numero} {nome_curto}".strip(),
+                },
+            })
+
+        db.session.commit()
+        return jsonify({
+            "ok": True,
+            "deleted": False,
+            "grupo_id": grupo.id,
+            "aluno": {
+                "id": aluno_id,
+                "label": f"{numero} {nome_curto}".strip(),
+            },
+        })
+
+    @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/entregas/<int:grupo_id>/save", methods=["POST"])
+    def trabalho_save_entrega(turma_id, trabalho_id, grupo_id):
+        trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
+        grupo = TrabalhoGrupo.query.filter_by(id=grupo_id, trabalho_id=trabalho.id).first_or_404()
+
+        payload = request.get_json(silent=True) or request.form
+        entregue = bool(payload.get("entregue"))
+
+        def _score(name):
+            raw = payload.get(name)
+            if raw in (None, ""):
+                return None
+            v = int(raw)
+            if v < 1 or v > 5:
+                raise ValueError(f"{name} fora do intervalo 1..5")
+            return v
+
+        try:
+            consecucao = _score("consecucao")
+            qualidade = _score("qualidade")
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+        entrega = Entrega.query.filter_by(trabalho_id=trabalho.id, trabalho_grupo_id=grupo.id).first()
+        if not entrega:
+            entrega = Entrega(trabalho_id=trabalho.id, trabalho_grupo_id=grupo.id)
+            db.session.add(entrega)
+            db.session.flush()
+
+        entrega.entregue = entregue
+        entrega.consecucao = consecucao
+        entrega.qualidade = qualidade
+        entrega.observacoes = (payload.get("observacoes") or "").strip() or None
+
+        parsed_data_entrega = _parse_date_local(payload.get("data_entrega"))
+        if entregue:
+            entrega.data_entrega = parsed_data_entrega or date.today()
+        else:
+            entrega.data_entrega = None
+        entrega.updated_at = datetime.utcnow()
+
+        parametros = ParametroDefinicao.query.filter_by(trabalho_id=trabalho.id).all()
+        defs_by_id = {p.id: p for p in parametros}
+        extra = payload.get("extra") or {}
+        if isinstance(extra, str):
+            extra = {}
+
+        for param_id, value in extra.items():
+            try:
+                pid = int(param_id)
+            except Exception:
+                continue
+            definicao = defs_by_id.get(pid)
+            if not definicao:
+                continue
+
+            ep = EntregaParametro.query.filter_by(entrega_id=entrega.id, parametro_definicao_id=pid).first()
+            if not ep:
+                ep = EntregaParametro(entrega_id=entrega.id, parametro_definicao_id=pid)
+                db.session.add(ep)
+
+            if definicao.tipo == "numerico":
+                if value in (None, ""):
+                    ep.valor_numerico = None
+                    ep.valor_texto = None
+                else:
+                    iv = int(value)
+                    if iv < 1 or iv > 5:
+                        return jsonify({"ok": False, "error": f"{definicao.nome} fora do intervalo 1..5"}), 400
+                    ep.valor_numerico = iv
+                    ep.valor_texto = None
+            else:
+                ep.valor_texto = (str(value).strip() if value is not None else None) or None
+                ep.valor_numerico = None
+
+        db.session.commit()
+
+        params_map = {ep.parametro_definicao_id: ep for ep in entrega.parametros}
+        metrics = _calcular_metricas_entrega(trabalho, entrega, params_map, parametros)
+
+        return jsonify({
+            "ok": True,
+            "updated_at": entrega.updated_at.isoformat(timespec="seconds"),
+            "data_entrega": entrega.data_entrega.isoformat() if entrega.data_entrega else None,
+            "estado": metrics["estado"],
+            "estado_css": metrics["estado_css"],
+            "media_base": round(metrics["media_base"], 2),
+            "fator_estado": round(metrics["fator_estado"], 2),
+            "nota_final": round(metrics["nota_final"], 2),
+        })
+
     @app.route("/turmas/<int:turma_id>/calendario")
     def turma_calendario(turma_id):
         turma = Turma.query.get_or_404(turma_id)
@@ -4780,18 +6349,6 @@ def create_app():
             for avaliacao in AulaAluno.query.filter_by(aula_id=aula.id).all()
         }
 
-        def _parse_nota(field_name, default_val=3):
-            valor = request.form.get(field_name)
-            if valor in (None, ""):
-                return default_val
-            return _clamp_int(valor, min_val=1, max_val=5)
-
-        def _parse_falta_disciplinar(field_name):
-            valor = request.form.get(field_name)
-            if valor in (None, ""):
-                return 0
-            return _clamp_int(valor, min_val=1, max_val=2)
-
         if request.method == "POST":
             if ano_fechado:
                 flash("Ano letivo fechado: apenas leitura.", "error")
@@ -4803,30 +6360,23 @@ def create_app():
                 request.form.get("atividade_nome") if aula.atividade else None
             )
 
-            for aluno in alunos:
-                avaliacao = avaliacoes.get(aluno.id)
-                if not avaliacao:
-                    avaliacao = AulaAluno(aula=aula, aluno=aluno)
-                    db.session.add(avaliacao)
-                    avaliacoes[aluno.id] = avaliacao
+            payloads = _build_payloads_from_form(aula, alunos)
+            sessions = get_db_sessions("remote")
+            if sessions["mode"] != "remote":
+                app.logger.warning("Write de calendário em modo não-remoto: %s", sessions["mode"])
+            try:
+                _apply_payloads(payloads)
+                db.session.commit()
+                flash("Avaliações de alunos guardadas.", "success")
+            except Exception as exc:
+                db.session.rollback()
+                app.logger.exception("Falha ao gravar avaliações na BD principal: %s", exc)
+                if g.is_offline:
+                    _enqueue_payloads(payloads)
+                    flash("Registo guardado localmente; sincronizará quando houver rede.", "warning")
+                else:
+                    flash("Falha ao guardar na BD remota. Tente novamente.", "error")
 
-                avaliacao.atraso = bool(request.form.get(f"atraso_{aluno.id}"))
-                avaliacao.faltas = (
-                    _clamp_int(request.form.get(f"faltas_{aluno.id}"), default=0, min_val=0, max_val=6)
-                    or 0
-                )
-                avaliacao.responsabilidade = _parse_nota(f"responsabilidade_{aluno.id}")
-                avaliacao.comportamento = _parse_nota(f"comportamento_{aluno.id}")
-                avaliacao.participacao = _parse_nota(f"participacao_{aluno.id}")
-                avaliacao.trabalho_autonomo = _parse_nota(f"trabalho_autonomo_{aluno.id}")
-                avaliacao.portatil_material = _parse_nota(f"portatil_material_{aluno.id}")
-                avaliacao.atividade = _parse_nota(f"atividade_{aluno.id}")
-                avaliacao.falta_disciplinar = _parse_falta_disciplinar(
-                    f"falta_disciplinar_{aluno.id}"
-                )
-
-            db.session.commit()
-            flash("Avaliações de alunos guardadas.", "success")
             destino = return_url or url_for("turma_calendario", turma_id=turma.id)
             return redirect(destino)
 
@@ -4838,6 +6388,127 @@ def create_app():
             avaliacoes=avaliacoes,
             ano_fechado=ano_fechado,
             return_url=return_url,
+            pending_offline=pending_count(app.instance_path),
+        )
+
+    @app.route("/aulas/<int:aula_id>/aulas_alunos/save", methods=["POST"])
+    def aulas_alunos_save(aula_id):
+        aula = CalendarioAula.query.filter_by(id=aula_id, apagado=False).first_or_404()
+        turma = Turma.query.options(joinedload(Turma.ano_letivo)).get_or_404(aula.turma_id)
+        ano = turma.ano_letivo
+        if ano and ano.fechado:
+            return jsonify({"ok": False, "error": "Ano letivo fechado."}), 400
+
+        items = request.get_json(silent=True) or {}
+        payloads = items.get("items") or []
+        if not isinstance(payloads, list):
+            return jsonify({"ok": False, "error": "Payload inválido."}), 400
+
+        normalized_payloads = []
+        for item in payloads:
+            aluno_id = int(item.get("aluno_id"))
+            payload = normalize_aulas_alunos_payload(item.get("payload") or {})
+            payload["client_ts"] = item.get("client_ts") or datetime.utcnow().isoformat(timespec="seconds")
+            normalized_payloads.append({"aula_id": aula.id, "aluno_id": aluno_id, "payload": payload})
+
+        sessions = get_db_sessions("remote")
+        if sessions["mode"] != "remote":
+            app.logger.warning("/aulas_alunos/save em modo não-remoto: %s", sessions["mode"])
+
+        try:
+            _apply_payloads(normalized_payloads)
+            db.session.commit()
+            return jsonify({"ok": True, "offline": False, "pending": pending_count(app.instance_path)})
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.exception("Falha no save de aulas_alunos: %s", exc)
+            if g.is_offline:
+                _enqueue_payloads(normalized_payloads)
+                return jsonify({"ok": True, "offline": True, "pending": pending_count(app.instance_path)})
+            return jsonify({"ok": False, "error": "Falha ao guardar na BD remota."}), 503
+
+    @app.route("/aulas/<int:aula_id>/aulas_alunos/import_tsv", methods=["POST"])
+    def aulas_alunos_import_tsv(aula_id):
+        aula = CalendarioAula.query.filter_by(id=aula_id, apagado=False).first_or_404()
+        turma = Turma.query.options(joinedload(Turma.ano_letivo)).get_or_404(aula.turma_id)
+        ano = turma.ano_letivo
+        if ano and ano.fechado:
+            return jsonify({"ok": False, "error": "Ano letivo fechado."}), 400
+
+        content_type = (request.content_type or "").lower()
+        if "application/json" in content_type:
+            payload = request.get_json(silent=True) or {}
+            raw_tsv = payload.get("tsv") or ""
+        else:
+            raw_tsv = request.get_data(as_text=True) or ""
+
+        try:
+            rows = parse_aulas_alunos_tsv(raw_tsv, aula_id_default=aula.id)
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+        sessions = get_db_sessions("remote")
+        if sessions["mode"] != "remote":
+            app.logger.warning("/import_tsv em modo não-remoto: %s", sessions["mode"])
+
+        try:
+            _apply_payloads(rows)
+            db.session.commit()
+            return jsonify({"ok": True, "offline": False, "imported": len(rows), "pending": pending_count(app.instance_path)})
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.exception("Falha ao importar TSV para BD principal: %s", exc)
+            if g.is_offline:
+                _enqueue_payloads(rows)
+                return jsonify({"ok": True, "offline": True, "imported": len(rows), "pending": pending_count(app.instance_path)})
+            return jsonify({"ok": False, "error": "Falha ao importar para BD remota."}), 503
+
+    @app.route("/api/sync/apply", methods=["POST"])
+    def api_sync_apply():
+        data = request.get_json(silent=True) or {}
+        items = data.get("items")
+        if not isinstance(items, list):
+            return jsonify({"ok": False, "error": "items inválido"}), 400
+
+        applied = 0
+        try:
+            with db.session.begin():
+                for item in items:
+                    if item.get("entity") != "aulas_alunos" or item.get("action") != "upsert":
+                        continue
+                    aula_id = int(item.get("aula_id"))
+                    aluno_id = int(item.get("aluno_id"))
+                    payload = item.get("payload") or {}
+                    apply_upsert_aulas_alunos(db.session, aula_id, aluno_id, payload)
+                    applied += 1
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.exception("/api/sync/apply falhou: %s", exc)
+            return jsonify({"ok": False, "error": "Falha ao aplicar sincronização."}), 500
+
+        return jsonify({"ok": True, "applied": applied})
+
+    @app.route("/api/sync/status", methods=["GET"])
+    def api_sync_status():
+        return jsonify(
+            {
+                "ok": True,
+                "pending": pending_count(app.instance_path),
+                "last_error": get_last_error(app.instance_path),
+            }
+        )
+
+    @app.route("/sync/flush", methods=["POST"])
+    def sync_flush():
+        result = try_flush_outbox(limit=200)
+        return jsonify(
+            {
+                "ok": bool(result.get("ok", True)),
+                "applied": result.get("applied", 0),
+                "errors": result.get("errors", 0),
+                "pending": result.get("remaining", pending_count(app.instance_path)),
+                "last_error": get_last_error(app.instance_path),
+            }
         )
 
     @app.route(
@@ -4845,165 +6516,203 @@ def create_app():
         methods=["POST"],
     )
     def calendario_update_sumario(turma_id, aula_id):
-        turma = Turma.query.get_or_404(turma_id)
-        ano = turma.ano_letivo
-        if ano and ano.fechado:
-            flash("Ano letivo fechado: não é possível editar o calendário.", "error")
-            return redirect(url_for("turma_calendario", turma_id=turma.id))
-
-        aula = (
-            CalendarioAula.query.filter_by(id=aula_id, apagado=False)
-            .first_or_404()
-        )
-        if aula.turma_id != turma.id:
-            flash("Linha de calendário não pertence a esta turma.", "error")
-            return redirect(url_for("turma_calendario", turma_id=turma.id))
-
-        aceita_json = request.headers.get("X-Requested-With") == "XMLHttpRequest"
-
-        sumario_txt = request.form.get("sumario")
-        if sumario_txt is not None:
-            sumario_atual = aula.sumario or ""
-            sumario_novo = sumario_txt.strip()
-            if sumario_novo != sumario_atual:
-                _registar_sumario_historico(
-                    aula,
-                    "edicao_manual",
-                    sumario_atual,
-                    sumario_novo,
-                )
-            aula.sumario = sumario_novo
-
-        previsao_txt = request.form.get("previsao")
-        if previsao_txt is not None:
-            aula.previsao = previsao_txt.strip()
-
-        observacoes_txt = request.form.get("observacoes")
-        if observacoes_txt is not None:
-            aula.observacoes = observacoes_txt.strip()
-
-        tipo_original = aula.tipo
-        tempos_originais = aula.tempos_sem_aula or 0
-        novo_tipo_raw = request.form.get("tipo")
-        novo_tipo = (novo_tipo_raw if novo_tipo_raw is not None else aula.tipo) or "normal"
-        if isinstance(novo_tipo, str):
-            novo_tipo = novo_tipo.strip()
-        aula.tipo = novo_tipo
-
-        tempos_sem_aula = request.form.get("tempos_sem_aula", type=int)
-        total_previsto = _total_previsto_ui(
-            aula.sumarios,
-            tempos_sem_aula if tempos_sem_aula is not None else aula.tempos_sem_aula,
-        )
-        if tempos_sem_aula is None:
-            if novo_tipo in DEFAULT_TIPOS_SEM_AULA:
-                tempos_sem_aula = (
-                    aula.tempos_sem_aula
-                    if aula.tempos_sem_aula is not None
-                    else total_previsto
-                )
-            else:
-                tempos_sem_aula = 0
-        tempos_sem_aula = max(0, min(tempos_sem_aula, total_previsto))
-        aula.tempos_sem_aula = (
-            tempos_sem_aula if novo_tipo in DEFAULT_TIPOS_SEM_AULA else 0
+        aceita_json = (
+            request.headers.get("X-Requested-With") == "XMLHttpRequest"
+            or request.accept_mimetypes.best == "application/json"
         )
 
-        mudou_tempos = aula.tempos_sem_aula != tempos_originais
+        def _json_error(message, status=500):
+            if aceita_json:
+                return jsonify({"ok": False, "error": message}), status
+            flash(message, "error")
+            return redirect(url_for("turma_calendario", turma_id=turma_id))
 
-        db.session.commit()
+        try:
+            turma = Turma.query.get_or_404(turma_id)
+            ano = turma.ano_letivo
+            if ano and ano.fechado:
+                return _json_error("Ano letivo fechado: não é possível editar o calendário.", 400)
 
-        mensagem = "Sumário atualizado."
-
-        if novo_tipo != tipo_original or mudou_tempos:
-            renumerar_calendario_turma(turma.id)
-            novas = completar_modulos_profissionais(
-                turma.id,
-                data_removida=aula.data,
-                modulo_removido_id=aula.modulo_id,
+            aula = (
+                CalendarioAula.query.filter_by(id=aula_id, apagado=False)
+                .first_or_404()
             )
-            if novas:
-                renumerar_calendario_turma(turma.id)
-                mensagem = (
-                    "Tipo de aula atualizado e "
-                    f"{novas} aula(s) adicionadas para cumprir o total do módulo."
-                )
-            else:
-                mensagem = "Sumário e contagens atualizados."
+            if aula.turma_id != turma.id:
+                return _json_error("Linha de calendário não pertence a esta turma.", 400)
 
-        if not aceita_json:
-            flash(mensagem, "success")
-        else:
-            return jsonify(
-                {
-                    "status": "ok",
-                    "sumario": aula.sumario or "",
-                    "previsao": aula.previsao or "",
-                    "tipo": aula.tipo,
-                    "tempos_sem_aula": aula.tempos_sem_aula or 0,
-                    "last_save": _formatar_data_hora(_load_last_save()),
-                }
+            historico_pendente = None
+            sumario_txt = request.form.get("sumario")
+            if sumario_txt is not None:
+                sumario_atual = aula.sumario or ""
+                sumario_novo = sumario_txt.strip()
+                if sumario_novo != sumario_atual:
+                    historico_pendente = {
+                        "acao": "edicao_manual",
+                        "anterior": sumario_atual,
+                        "novo": sumario_novo,
+                    }
+                aula.sumario = sumario_novo
+
+            previsao_txt = request.form.get("previsao")
+            if previsao_txt is not None:
+                aula.previsao = previsao_txt.strip()
+
+            observacoes_txt = request.form.get("observacoes")
+            if observacoes_txt is not None:
+                aula.observacoes = observacoes_txt.strip()
+
+            tipo_original = aula.tipo
+            tempos_originais = aula.tempos_sem_aula or 0
+            novo_tipo_raw = request.form.get("tipo")
+            novo_tipo = (novo_tipo_raw if novo_tipo_raw is not None else aula.tipo) or "normal"
+            if isinstance(novo_tipo, str):
+                novo_tipo = novo_tipo.strip()
+            aula.tipo = novo_tipo
+
+            tempos_sem_aula = request.form.get("tempos_sem_aula", type=int)
+            total_previsto = _total_previsto_ui(
+                aula.sumarios,
+                tempos_sem_aula if tempos_sem_aula is not None else aula.tempos_sem_aula,
             )
-
-        periodo_id = request.form.get("periodo_id", type=int)
-        redirect_view = request.form.get("view")
-        data_ref = request.form.get("data_ref")
-        turma_filtro = request.form.get("turma_filtro", type=int)
-
-        if redirect_view == "pendentes":
-            filtros = {}
-            turma_filtro = request.form.get("turma_filtro", type=int)
-            if turma_filtro:
-                filtros["turma_id"] = turma_filtro
-            return redirect(url_for("calendario_sumarios_pendentes", **filtros))
-
-        if redirect_view == "outras_datas":
-            filtros = {
-                "tipo": request.form.get("tipo_filtro") or None,
-                "turma_id": request.form.get("turma_filtro", type=int),
-                "data_inicio": request.form.get("data_inicio") or None,
-                "data_fim": request.form.get("data_fim") or None,
-            }
-            filtros_limpos = {k: v for k, v in filtros.items() if v}
-            return redirect(url_for("calendario_outras_datas", **filtros_limpos))
-
-        if redirect_view == "dia" and data_ref:
-            destino = {"data": data_ref}
-            if periodo_id:
-                destino["periodo_id"] = periodo_id
-            if turma_filtro:
-                return redirect(
-                    url_for(
-                        "turma_calendario_dia",
-                        turma_id=turma_filtro,
-                        **destino,
+            if tempos_sem_aula is None:
+                if novo_tipo in DEFAULT_TIPOS_SEM_AULA:
+                    tempos_sem_aula = (
+                        aula.tempos_sem_aula
+                        if aula.tempos_sem_aula is not None
+                        else total_previsto
                     )
-                )
-            return redirect(url_for("turma_calendario_dia", **destino))
-        if redirect_view == "semana":
-            filtros = {}
-            if data_ref:
-                filtros["data"] = data_ref
-            turma_filtro = request.form.get("turma_id", type=int)
-            if turma_filtro:
-                filtros["turma_id"] = turma_filtro
-            if periodo_id:
-                filtros["periodo_id"] = periodo_id
-            return redirect(url_for("calendario_semana", **filtros))
-        if redirect_view == "semana_previsao":
-            filtros = {}
-            if data_ref:
-                filtros["data"] = data_ref
-            turma_filtro = request.form.get("turma_id", type=int)
-            if turma_filtro:
-                filtros["turma_id"] = turma_filtro
-            if periodo_id:
-                filtros["periodo_id"] = periodo_id
-            return redirect(url_for("calendario_semana_previsao", **filtros))
+                else:
+                    tempos_sem_aula = 0
+            tempos_sem_aula = max(0, min(tempos_sem_aula, total_previsto))
+            aula.tempos_sem_aula = (
+                tempos_sem_aula if novo_tipo in DEFAULT_TIPOS_SEM_AULA else 0
+            )
 
-        return redirect(
-            url_for("turma_calendario", turma_id=turma.id, periodo_id=periodo_id)
-        )
+            mudou_tempos = aula.tempos_sem_aula != tempos_originais
+
+            db.session.commit()
+            app.logger.info(
+                "SAVE OK | turma_id=%s | aula_id=%s | endpoint=calendario_update_sumario",
+                turma_id,
+                aula_id,
+            )
+            if historico_pendente:
+                _registar_sumario_historico_isolado(
+                    aula_id=aula.id,
+                    acao=historico_pendente["acao"],
+                    anterior=historico_pendente["anterior"],
+                    novo=historico_pendente["novo"],
+                )
+
+            mensagem = "Sumário atualizado."
+
+            if novo_tipo != tipo_original or mudou_tempos:
+                try:
+                    renumerar_calendario_turma(turma.id)
+                    novas = completar_modulos_profissionais(
+                        turma.id,
+                        data_removida=aula.data,
+                        modulo_removido_id=aula.modulo_id,
+                    )
+                    if novas:
+                        renumerar_calendario_turma(turma.id)
+                        mensagem = (
+                            "Tipo de aula atualizado e "
+                            f"{novas} aula(s) adicionadas para cumprir o total do módulo."
+                        )
+                    else:
+                        mensagem = "Sumário e contagens atualizados."
+                except Exception as pos_exc:
+                    app.logger.exception(
+                        "Falha pós-gravação ao renumerar/completar módulo (turma_id=%s aula_id=%s): %s",
+                        turma_id,
+                        aula_id,
+                        pos_exc,
+                    )
+
+            if aceita_json:
+                return jsonify(
+                    {
+                        "status": "ok",
+                        "ok": True,
+                        "sumario": aula.sumario or "",
+                        "previsao": aula.previsao or "",
+                        "tipo": aula.tipo,
+                        "tempos_sem_aula": aula.tempos_sem_aula or 0,
+                        "last_save": _formatar_data_hora(_load_last_save()),
+                    }
+                )
+
+            flash(mensagem, "success")
+
+            periodo_id = request.form.get("periodo_id", type=int)
+            redirect_view = request.form.get("view")
+            data_ref = request.form.get("data_ref")
+            turma_filtro = request.form.get("turma_filtro", type=int)
+
+            if redirect_view == "pendentes":
+                filtros = {}
+                turma_filtro = request.form.get("turma_filtro", type=int)
+                if turma_filtro:
+                    filtros["turma_id"] = turma_filtro
+                return redirect(url_for("calendario_sumarios_pendentes", **filtros))
+
+            if redirect_view == "outras_datas":
+                filtros = {
+                    "tipo": request.form.get("tipo_filtro") or None,
+                    "turma_id": request.form.get("turma_filtro", type=int),
+                    "data_inicio": request.form.get("data_inicio") or None,
+                    "data_fim": request.form.get("data_fim") or None,
+                }
+                filtros_limpos = {k: v for k, v in filtros.items() if v}
+                return redirect(url_for("calendario_outras_datas", **filtros_limpos))
+
+            if redirect_view == "dia" and data_ref:
+                destino = {"data": data_ref}
+                if periodo_id:
+                    destino["periodo_id"] = periodo_id
+                if turma_filtro:
+                    return redirect(
+                        url_for(
+                            "turma_calendario_dia",
+                            turma_id=turma_filtro,
+                            **destino,
+                        )
+                    )
+                return redirect(url_for("turma_calendario_dia", **destino))
+            if redirect_view == "semana":
+                filtros = {}
+                if data_ref:
+                    filtros["data"] = data_ref
+                turma_filtro = request.form.get("turma_id", type=int)
+                if turma_filtro:
+                    filtros["turma_id"] = turma_filtro
+                if periodo_id:
+                    filtros["periodo_id"] = periodo_id
+                return redirect(url_for("calendario_semana", **filtros))
+            if redirect_view == "semana_previsao":
+                filtros = {}
+                if data_ref:
+                    filtros["data"] = data_ref
+                turma_filtro = request.form.get("turma_id", type=int)
+                if turma_filtro:
+                    filtros["turma_id"] = turma_filtro
+                if periodo_id:
+                    filtros["periodo_id"] = periodo_id
+                return redirect(url_for("calendario_semana_previsao", **filtros))
+
+            return redirect(
+                url_for("turma_calendario", turma_id=turma.id, periodo_id=periodo_id)
+            )
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.exception(
+                "Erro ao guardar sumário (turma_id=%s aula_id=%s): %s",
+                turma_id,
+                aula_id,
+                exc,
+            )
+            return _json_error("Falha ao guardar sumário.", 500)
 
     # ----------------------------------------
     # ANOS LETIVOS – CRUD

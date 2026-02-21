@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Grupos da turma — {{ turma.nome }}</h2>
+<div class="mb-3"><a class="btn btn-outline-secondary" href="{{ url_for('turma_trabalhos', turma_id=turma.id) }}">Voltar</a></div>
+
+<style>
+  .membros-picker {
+    width: 100%;
+    height: auto !important;
+    max-height: 640px;
+    overflow-y: auto;
+  }
+
+  .membros-picker option {
+    white-space: normal;
+    line-height: 1.25;
+  }
+
+  .grupo-membro-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    margin-right: 0.4rem;
+    margin-bottom: 0.15rem;
+    white-space: nowrap;
+  }
+
+  .btn-remove-membro {
+    font-size: 0.75rem;
+    padding: 0;
+    line-height: 1;
+    text-decoration: none;
+  }
+</style>
+
+<div class="card mb-4">
+  <div class="card-header">Novo grupo do catálogo</div>
+  <div class="card-body">
+    <form id="create-turma-grupo-form" method="post" class="row g-2" action="{{ url_for('turma_grupos_catalogo', turma_id=turma.id) }}">
+      <div class="col-md-4"><input class="form-control" name="nome" placeholder="Nome" required></div>
+      <div class="col-md-6">
+        <select id="membros-picker-turma" class="form-select membros-picker" name="aluno_ids" multiple size="{{ [alunos_disponiveis|length, 30]|min }}">
+          {% for a in alunos_disponiveis %}<option value="{{ a.id }}">{{ a.numero or '—' }} {{ a.nome_curto or a.nome_curto_exibicao }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2"><button class="btn btn-primary w-100" type="submit">Criar</button></div>
+    </form>
+  </div>
+</div>
+
+<div class="table-responsive">
+  <table class="table table-sm" id="grupos-turma-table">
+    <thead><tr><th>Grupo</th><th>Membros</th><th></th></tr></thead>
+    <tbody>
+      {% for g in grupos %}
+      <tr data-grupo-id="{{ g.id }}">
+        <td>{{ g.nome }}</td>
+        <td>
+          {% for m in g.membros %}
+            <span class="grupo-membro-item" data-aluno-id="{{ m.aluno.id }}">
+              {{ m.aluno.numero or '—' }} {{ m.aluno.nome_curto or m.aluno.nome_curto_exibicao }}
+              <button type="button" class="btn btn-link text-danger btn-remove-membro" data-grupo-id="{{ g.id }}" data-aluno-id="{{ m.aluno.id }}">remover</button>
+            </span>
+          {% endfor %}
+        </td>
+        <td class="text-end">
+          <form method="post" action="{{ url_for('turma_grupo_catalogo_delete', turma_id=turma.id, grupo_id=g.id) }}" onsubmit="return confirm('Remover grupo?')">
+            <button class="btn btn-sm btn-outline-danger" type="submit">Apagar</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="text-muted">Sem grupos de catálogo.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function(){
+  const picker = document.getElementById('membros-picker-turma');
+  const form = document.getElementById('create-turma-grupo-form');
+  const table = document.getElementById('grupos-turma-table');
+
+  function toast(msg, level='info'){
+    if(window.showToast){ window.showToast(msg, level); return; }
+    alert(msg);
+  }
+
+  function appendAvailableOption(member){
+    if(!picker || !member || !member.id) return;
+    const idStr = String(member.id);
+    const exists = Array.from(picker.options).some((opt)=>opt.value === idStr);
+    if(exists) return;
+    const opt = document.createElement('option');
+    opt.value = idStr;
+    opt.textContent = member.label || idStr;
+    picker.appendChild(opt);
+  }
+
+  if(form && picker){
+    form.addEventListener('submit', async (ev)=>{
+      ev.preventDefault();
+      const nome = (form.querySelector('input[name="nome"]')?.value || '').trim();
+      const alunoIds = Array.from(picker.selectedOptions).map((opt)=>Number(opt.value));
+      const resp = await fetch(form.action, {
+        method:'POST',
+        headers:{'Content-Type':'application/json','Accept':'application/json'},
+        body: JSON.stringify({nome:nome, aluno_ids:alunoIds})
+      });
+      const data = await resp.json().catch(()=>({ok:false,error:'Erro inesperado'}));
+      if(!resp.ok || !data.ok){
+        toast(data.error || 'Erro ao criar grupo', 'error');
+        return;
+      }
+
+      const idsToRemove = new Set((data.membros_ids || []).map((v)=>String(v)));
+      Array.from(picker.options).forEach((opt)=>{ if(idsToRemove.has(opt.value)) opt.remove(); });
+      picker.selectedIndex = -1;
+      const nameInput = form.querySelector('input[name="nome"]');
+      if(nameInput) nameInput.value = '';
+      toast('Grupo criado', 'success');
+      window.location.reload();
+    });
+  }
+
+  if(table){
+    table.addEventListener('click', async (ev)=>{
+      const btn = ev.target.closest('.btn-remove-membro');
+      if(!btn) return;
+      ev.preventDefault();
+      const grupoId = btn.dataset.grupoId;
+      const alunoId = btn.dataset.alunoId;
+      const url = "{{ url_for('turma_grupo_remove_membro', turma_id=turma.id, grupo_id=0, aluno_id=0) }}".replace('/0/membros/0/remove', `/${grupoId}/membros/${alunoId}/remove`);
+      const resp = await fetch(url, {method:'POST', headers:{'Accept':'application/json'}});
+      const data = await resp.json().catch(()=>({ok:false,error:'Erro inesperado'}));
+      if(!resp.ok || !data.ok){
+        toast(data.error || 'Erro ao remover membro', 'error');
+        return;
+      }
+
+      (data.membros_repostos || []).forEach(appendAvailableOption);
+
+      if(data.deleted){
+        const tr = btn.closest('tr[data-grupo-id]');
+        if(tr) tr.remove();
+        toast('Grupo eliminado (sem membros)', 'success');
+      } else {
+        const item = btn.closest('.grupo-membro-item');
+        if(item) item.remove();
+        toast('Membro removido', 'success');
+      }
+    });
+  }
+})();
+</script>
+{% endblock %}

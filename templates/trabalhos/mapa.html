@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Mapa de notas — {{ turma.nome }}</h2>
+<div class="mb-3 d-flex gap-2 flex-wrap">
+  <a class="btn btn-outline-secondary" href="{{ url_for('turma_trabalhos', turma_id=turma.id) }}">Voltar aos trabalhos</a>
+  <a class="btn btn-outline-dark" href="{{ url_for('turma_grupos_catalogo', turma_id=turma.id) }}">Grupos da turma</a>
+</div>
+
+<style>
+  .col-header {
+    white-space: nowrap;
+    font-weight: 600;
+  }
+
+  .info-trabalho {
+    margin-left: 0.2rem;
+    font-weight: 500;
+    cursor: help;
+    text-decoration: none;
+  }
+
+  .nota-link {
+    display: inline-block;
+    min-width: 4.5rem;
+    text-align: center;
+    text-decoration: none;
+    color: inherit;
+    padding: 0.1rem 0.2rem;
+    border-radius: 0.25rem;
+  }
+
+  .nota-link:hover,
+  .nota-link:focus {
+    text-decoration: underline;
+    background: rgba(13, 110, 253, 0.08);
+  }
+</style>
+
+<div class="table-responsive">
+  <table class="table table-sm align-middle table-bordered">
+    <thead>
+      <tr>
+        <th>Aluno</th>
+        {% for trabalho in trabalhos %}
+          <th class="col-header">
+            {{ trabalho.data_limite.strftime('%d/%m/%Y') if trabalho.data_limite else '—' }}
+            <span class="info-trabalho" title="{{ trabalho.titulo }}">(i)</span>
+          </th>
+        {% endfor %}
+        <th>Média global</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in mapa_rows %}
+        <tr>
+          <td>{{ row.aluno.numero or '—' }} {{ row.aluno.nome_curto_exibicao }}</td>
+          {% for cell in row.cells %}
+            {% set trabalho = trabalhos[loop.index0] %}
+            <td>
+              <a
+                class="nota-link"
+                href="{{ url_for('trabalho_detail', turma_id=turma.id, trabalho_id=trabalho.id) }}"
+                title="Abrir trabalho"
+              >{{ '%.2f'|format(cell.nota_final) }}</a>
+            </td>
+          {% endfor %}
+          <td><strong>{{ '%.2f'|format(row.media_global) }}</strong></td>
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="{{ trabalhos|length + 2 }}" class="text-muted">Sem dados para apresentar.</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

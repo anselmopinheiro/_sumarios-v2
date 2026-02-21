@@ -9,6 +9,37 @@ branch_labels = None
 depends_on = None
 
 
+def _drop_dependent_dt_justificacoes_fks(inspector):
+    tables = set(inspector.get_table_names())
+    if "dt_justificacoes" not in tables:
+        return []
+
+    dropped = []
+    for fk in inspector.get_foreign_keys("dt_justificacoes"):
+        if fk.get("referred_table") != "dt_alunos":
+            continue
+        name = fk.get("name")
+        constrained_cols = fk.get("constrained_columns") or []
+        referred_cols = fk.get("referred_columns") or ["id"]
+        if name:
+            op.drop_constraint(name, "dt_justificacoes", type_="foreignkey")
+            dropped.append((name, constrained_cols, referred_cols))
+    return dropped
+
+
+def _restore_dependent_dt_justificacoes_fks(dropped_constraints):
+    for name, constrained_cols, referred_cols in dropped_constraints:
+        if not constrained_cols:
+            continue
+        op.create_foreign_key(
+            name,
+            "dt_justificacoes",
+            "dt_alunos",
+            constrained_cols,
+            referred_cols,
+        )
+
+
 def upgrade():
     bind = op.get_bind()
     inspector = sa.inspect(bind)
@@ -17,7 +48,11 @@ def upgrade():
         return
 
     cols = {col["name"] for col in inspector.get_columns("dt_alunos")}
+    indexes = {idx["name"] for idx in inspector.get_indexes("dt_alunos")}
+    dialect_name = bind.dialect.name
     if cols == {"id", "dt_turma_id", "aluno_id"}:
+        if "ix_dt_alunos_turma_aluno" not in indexes:
+            op.create_index("ix_dt_alunos_turma_aluno", "dt_alunos", ["dt_turma_id", "aluno_id"])
         return
 
     op.create_table(
@@ -30,17 +65,24 @@ def upgrade():
     )
 
     if {"processo", "numero", "nome"}.issubset(cols):
+        numero_match = (
+            "a.numero IS NOT DISTINCT FROM d.numero"
+            if dialect_name == "postgresql"
+            else "(a.numero IS d.numero OR a.numero = d.numero)"
+        )
         op.execute(
-            """
-            INSERT INTO dt_alunos_new (dt_turma_id, aluno_id)
-            SELECT d.dt_turma_id, a.id
-            FROM dt_alunos d
-            JOIN alunos a
-              ON a.processo = d.processo
-             AND (a.numero IS d.numero OR (a.numero = d.numero))
-             AND a.nome = d.nome
-            WHERE a.id IS NOT NULL
-            """
+            sa.text(
+                f"""
+                INSERT INTO dt_alunos_new (dt_turma_id, aluno_id)
+                SELECT d.dt_turma_id, a.id
+                FROM dt_alunos d
+                JOIN alunos a
+                  ON a.processo = d.processo
+                 AND {numero_match}
+                 AND a.nome = d.nome
+                WHERE a.id IS NOT NULL
+                """
+            )
         )
     elif "aluno_id" in cols:
         op.execute(
@@ -52,9 +94,18 @@ def upgrade():
             """
         )
 
+    inspector = sa.inspect(bind)
+    dropped_constraints = _drop_dependent_dt_justificacoes_fks(inspector)
+
     op.drop_table("dt_alunos")
     op.rename_table("dt_alunos_new", "dt_alunos")
-    op.create_index("ix_dt_alunos_turma_aluno", "dt_alunos", ["dt_turma_id", "aluno_id"])
+
+    inspector = sa.inspect(bind)
+    new_indexes = {idx["name"] for idx in inspector.get_indexes("dt_alunos")}
+    if "ix_dt_alunos_turma_aluno" not in new_indexes:
+        op.create_index("ix_dt_alunos_turma_aluno", "dt_alunos", ["dt_turma_id", "aluno_id"])
+
+    _restore_dependent_dt_justificacoes_fks(dropped_constraints)
 
 
 def downgrade():
@@ -92,5 +143,10 @@ def downgrade():
         """
     )
 
+    inspector = sa.inspect(bind)
+    dropped_constraints = _drop_dependent_dt_justificacoes_fks(inspector)
+
     op.drop_table("dt_alunos")
     op.rename_table("dt_alunos_old", "dt_alunos")
+
+    _restore_dependent_dt_justificacoes_fks(dropped_constraints)
