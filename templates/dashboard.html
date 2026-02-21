@@ -155,7 +155,6 @@
           {% endfor %}
         </select>
       </form>
-      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('turmas_list') }}">Mudar turma</a>
     </div>
   </div>
 </div>
@@ -164,10 +163,6 @@
   {% for t in turmas %}
     <a class="quick-link-item" data-search-item data-text="turma {{ t.nome|lower }} {{ t.tipo|lower }}" href="{{ url_for('dashboard', turma_id=t.id) }}">Turma {{ t.nome }}</a>
   {% endfor %}
-  <a class="quick-link-item" data-search-item data-text="calendario semanal" href="{{ url_for('calendario_semana') }}">Calendário semanal</a>
-  <a class="quick-link-item" data-search-item data-text="calendario diario" href="{{ url_for('turma_calendario_dia') }}">Calendário diário</a>
-  <a class="quick-link-item" data-search-item data-text="admin configuracao" href="{{ url_for('admin_home') }}">Admin</a>
-  <a class="quick-link-item" data-search-item data-text="turmas gestao" href="{{ url_for('turmas_list') }}">Gerir turmas</a>
 </div>
 
 <div class="dashboard-grid">
