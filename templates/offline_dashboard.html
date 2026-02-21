@@ -1,64 +1,367 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>Modo offline</h2>
-<p class="text-muted">Sem rede para a BD remota. Trabalhe com o snapshot local.</p>
+<h2 class="mb-3">Modo offline</h2>
+
 <style>
-  .home-search-box {
-    display: block !important;
-    border: 2px solid #cfe2ff;
-    background: #ffffff;
+  .offline-card {
+    border: 1px solid #d9e2ef;
+    box-shadow: 0 0.2rem 0.6rem rgba(13, 110, 253, 0.08);
+  }
+
+  .offline-mini-metric {
+    border: 1px solid #e9ecef;
+    border-radius: 0.5rem;
+    padding: 0.6rem 0.75rem;
+    background: #fff;
+    height: 100%;
+  }
+
+  .offline-error-pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 0.85rem;
+    max-height: 260px;
+    overflow: auto;
   }
 </style>
-<div class="card mb-3 home-search-box">
+
+<div class="card offline-card mb-3">
   <div class="card-body">
-    <label for="offline-search-q" class="form-label mb-1 fw-semibold">Pesquisa rápida</label>
-    <input type="search" id="offline-search-q" class="form-control" placeholder="Pesquisar...">
-    <div class="form-text">Filtra turmas e atalhos desta página em tempo real.</div>
+    <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
+      <div>
+        <h3 class="h5 mb-1">Estado da ligacao</h3>
+        <p class="text-muted mb-0">
+          {% if online %}
+            Ligacao remota disponivel.
+          {% else %}
+            Sem rede para a BD remota. A trabalhar com snapshot local.
+          {% endif %}
+        </p>
+      </div>
+      <span class="badge {{ 'text-bg-success' if online else 'text-bg-danger' }} fs-6">{{ 'ONLINE' if online else 'OFFLINE' }}</span>
+    </div>
+
+    <div class="row g-2 mb-2">
+      <div class="col-md-3">
+        <div class="offline-mini-metric">
+          <div class="text-muted small">Ultimo snapshot OK</div>
+          <div class="fw-semibold">{{ last_snapshot_ok_at_display }}</div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="offline-mini-metric">
+          <div class="text-muted small">Ultima sincronizacao OK</div>
+          <div class="fw-semibold">{{ last_sync_ok_at_display }}</div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="offline-mini-metric">
+          <div class="text-muted small">Ultimo erro</div>
+          <div class="fw-semibold" id="last-error-at">{{ last_error_at_display if error_count > 0 else 'Sem erros' }}</div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="offline-mini-metric">
+          <div class="text-muted small">Contadores</div>
+          <div class="fw-semibold">
+            Pendentes: <span id="pending-count">{{ status.pending }}</span> | Erros: <span id="error-count">{{ error_count }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="text-muted small" id="snapshot-status-inline">
+      Ultimo snapshot: {{ snapshot_last_run_at_display }} | Estado: {{ snapshot_last_run_status }}
+    </div>
   </div>
 </div>
-<div class="mb-3">
-  <form method="post" action="{{ url_for('offline.snapshot_now') }}" class="d-inline">
-    <button class="btn btn-outline-primary" type="submit">Actualizar dados para offline</button>
-  </form>
-  <a class="btn btn-outline-success" href="{{ url_for('offline.sync_page') }}">Sincronizar</a>
-</div>
-<div class="mb-2 text-muted small" id="snapshot-status-inline">Último snapshot: — | Estado: —</div>
-<div class="alert alert-secondary">
-  Pendentes: <strong>{{ status.pending }}</strong> | Erros: <strong>{{ status.errors }}</strong>
-  {% if status.last_error %}<br><small>{{ status.last_error }}</small>{% endif %}
-</div>
-<a class="btn btn-primary" href="{{ url_for('offline.turmas') }}">Abrir turmas offline</a>
-<a class="btn btn-outline-secondary" href="{{ url_for('offline.status_page') }}">Status</a>
-<a class="btn btn-outline-secondary" href="{{ url_for('offline.history_page') }}">Histórico</a>
-<a class="btn btn-outline-secondary" href="{{ url_for('offline.settings_page') }}">Definições</a>
 
-<div class="mt-3 d-grid gap-2" id="offline-quick-links">
-  <a class="btn btn-outline-dark" data-search-item data-text="turmas offline" href="{{ url_for('offline.turmas') }}">Turmas offline</a>
-  <a class="btn btn-outline-dark" data-search-item data-text="sincronizar" href="{{ url_for('offline.sync_page') }}">Sincronizar</a>
-  <a class="btn btn-outline-dark" data-search-item data-text="status offline" href="{{ url_for('offline.status_page') }}">Estado offline</a>
-  {% for turma in turmas %}
-    <a class="btn btn-outline-dark" data-search-item data-text="turma {{ turma.nome|lower }}" href="{{ url_for('offline.turmas') }}">Turma {{ turma.nome }}</a>
-  {% endfor %}
+<div class="card offline-card mb-3">
+  <div class="card-body">
+    <h3 class="h5 mb-3">Acoes principais</h3>
+    <div class="row g-2">
+      <div class="col-md-6">
+        <form method="post" action="{{ url_for('offline.sync_page') }}" class="d-grid js-offline-action-form">
+          <input type="hidden" name="next" value="dashboard">
+          <button class="btn btn-success btn-lg js-action-btn" type="submit" data-loading-label="A sincronizar...">
+            Sincronizar com base remota
+          </button>
+        </form>
+      </div>
+      <div class="col-md-6">
+        <form method="post" action="{{ url_for('offline.snapshot_now') }}" class="d-grid js-offline-action-form">
+          <input type="hidden" name="next" value="dashboard">
+          <button class="btn btn-outline-primary btn-lg js-action-btn" type="submit" data-loading-label="A atualizar...">
+            Atualizar snapshot local
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card offline-card mb-3">
+  <div class="card-body">
+    <h3 class="h5 mb-3">Turmas offline</h3>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0" id="offline-turmas-table">
+        <thead>
+          <tr>
+            <th>Turma</th>
+            <th>Ultima atualizacao</th>
+            <th>Pendentes</th>
+            <th>Estado</th>
+            <th class="text-end">Acao</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for turma in turmas %}
+            <tr data-search-item data-text="turma {{ turma.nome|lower }} {{ turma.tipo|default('', true)|lower }}">
+              <td class="fw-semibold">{{ turma.nome }}</td>
+              <td>{{ turma.updated_at_display }}</td>
+              <td>
+                {{ turma.pending }}
+                {% if turma.error_ops > 0 %}
+                  <span class="text-danger">(+{{ turma.error_ops }} erro{{ 's' if turma.error_ops != 1 else '' }})</span>
+                {% endif %}
+              </td>
+              <td><span class="badge {{ turma.status_badge }}">{{ turma.status_label }}</span></td>
+              <td class="text-end">
+                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('offline.turma_aulas', turma_id=turma.id) }}">Abrir</a>
+              </td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="5" class="text-muted">Sem turmas no snapshot.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="card offline-card mb-3">
+  <div class="card-body">
+    <h3 class="h5 mb-2">Pesquisa rapida</h3>
+    <input type="search" id="offline-search-q" class="form-control" placeholder="Pesquisar...">
+    <div class="form-text">Filtra os atalhos desta pagina em tempo real.</div>
+  </div>
+</div>
+
+<div class="card offline-card mb-3" id="offline-errors-card">
+  <div class="card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
+    <button class="btn btn-link p-0 text-decoration-none fw-semibold" type="button" data-bs-toggle="collapse" data-bs-target="#offline-errors-body" aria-expanded="true" aria-controls="offline-errors-body">
+      Erros (<span id="errors-count-header">{{ error_count }}</span>)
+    </button>
+    <button type="button" class="btn btn-outline-danger btn-sm {% if error_count == 0 %}d-none{% endif %}" id="clear-all-errors-btn">
+      Limpar tudo
+    </button>
+  </div>
+
+  <div id="offline-errors-body" class="collapse show">
+    <div class="card-body">
+      <div id="offline-errors-empty" class="{% if error_count > 0 %}d-none{% endif %}">
+        <p class="mb-1 fw-semibold">Sem erros.</p>
+        <p class="text-muted mb-0 small">
+          Ultima sincronizacao bem-sucedida: {{ last_sync_ok_at_display }}<br>
+          Ultimo snapshot bem-sucedido: {{ last_snapshot_ok_at_display }}
+        </p>
+      </div>
+
+      <div id="offline-errors-list" class="{% if error_count == 0 %}d-none{% endif %}">
+        <div class="list-group">
+          {% for err in errors %}
+            <div class="list-group-item" id="offline-error-row-{{ err.id }}" data-error-row data-search-item data-text="erro {{ err.operation|lower }} {{ err.summary|lower }}">
+              <div class="row g-2 align-items-start">
+                <div class="col-md-2 small text-muted">{{ err.created_at_display }}</div>
+                <div class="col-md-2"><span class="badge text-bg-secondary">{{ err.operation }}</span></div>
+                <div class="col-md-5">{{ err.summary }}</div>
+                <div class="col-md-3 d-flex flex-wrap gap-1 justify-content-md-end">
+                  <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#error-details-{{ err.id }}" aria-expanded="false" aria-controls="error-details-{{ err.id }}">Detalhes</button>
+                  <button class="btn btn-sm btn-outline-dark js-copy-error" type="button" data-copy-target="error-details-content-{{ err.id }}">Copiar</button>
+                  <button class="btn btn-sm btn-outline-danger js-remove-error" type="button" data-error-id="{{ err.id }}">Remover</button>
+                </div>
+              </div>
+              <div class="collapse mt-2" id="error-details-{{ err.id }}">
+                <div class="border rounded bg-light p-2">
+                  <div class="small text-muted mb-1">Detalhes tecnicos</div>
+                  <pre id="error-details-content-{{ err.id }}" class="offline-error-pre mb-0">{{ err.details }}{% if err.context_pretty %}
+
+Contexto:
+{{ err.context_pretty }}{% endif %}</pre>
+                </div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="d-flex gap-2 flex-wrap mb-3" id="offline-footer-links">
+  <a class="btn btn-outline-secondary" data-search-item data-text="status offline" href="{{ url_for('offline.status_page') }}">Status</a>
+  <a class="btn btn-outline-secondary" data-search-item data-text="historico" href="{{ url_for('offline.history_page') }}">Historico</a>
+  <a class="btn btn-outline-secondary" data-search-item data-text="definicoes" href="{{ url_for('offline.settings_page') }}">Definicoes</a>
 </div>
 {% endblock %}
 
 {% block extra_scripts %}
 <script>
-  window.SNAPSHOT_TOAST_CONFIG = { enabled: true, intervalSeconds: {{ config.get("SNAPSHOT_INTERVAL_SECONDS", 60) }}, statusElementId: "snapshot-status-inline" };
+  window.SNAPSHOT_TOAST_CONFIG = {
+    enabled: true,
+    intervalSeconds: {{ config.get("SNAPSHOT_INTERVAL_SECONDS", 60) }},
+    statusElementId: "snapshot-status-inline"
+  };
 
   (() => {
-    const q = document.getElementById('offline-search-q');
-    if (!q) return;
-    const items = Array.from(document.querySelectorAll('[data-search-item]'));
-    const norm = (v) => (v || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    const norm = (v) => (v || "")
+      .toString()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim();
 
-    q.addEventListener('input', () => {
-      const term = norm(q.value);
-      items.forEach((el) => {
-        const text = norm(el.dataset.text || el.textContent);
-        el.style.display = (!term || text.includes(term)) ? '' : 'none';
+    const setVisible = (el, visible) => {
+      if (el.tagName === "TR") {
+        el.style.display = visible ? "" : "none";
+        return;
+      }
+      el.classList.toggle("d-none", !visible);
+    };
+
+    const searchInput = document.getElementById("offline-search-q");
+    const searchItems = Array.from(document.querySelectorAll("[data-search-item]"));
+    if (searchInput) {
+      searchInput.addEventListener("input", () => {
+        const term = norm(searchInput.value);
+        searchItems.forEach((el) => {
+          const text = norm(el.dataset.text || el.textContent);
+          setVisible(el, !term || text.includes(term));
+        });
+      });
+    }
+
+    const actionButtons = Array.from(document.querySelectorAll(".js-offline-action-form .js-action-btn"));
+    document.querySelectorAll(".js-offline-action-form").forEach((form) => {
+      form.addEventListener("submit", (event) => {
+        const btn = form.querySelector(".js-action-btn");
+        if (!btn) return;
+        if (btn.disabled) {
+          event.preventDefault();
+          return;
+        }
+
+        btn.dataset.originalLabel = btn.textContent.trim();
+        btn.disabled = true;
+        btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>${btn.dataset.loadingLabel || "A processar..."}`;
+        actionButtons.forEach((otherBtn) => {
+          if (otherBtn !== btn) {
+            otherBtn.disabled = true;
+          }
+        });
       });
     });
+
+    const errorCountNode = document.getElementById("error-count");
+    const errorCountHeaderNode = document.getElementById("errors-count-header");
+    const lastErrorNode = document.getElementById("last-error-at");
+    const clearAllBtn = document.getElementById("clear-all-errors-btn");
+    const emptyNode = document.getElementById("offline-errors-empty");
+    const listNode = document.getElementById("offline-errors-list");
+
+    const syncErrorUIFromPayload = (payload) => {
+      const count = Number(payload?.error_count || 0);
+      if (errorCountNode) errorCountNode.textContent = String(count);
+      if (errorCountHeaderNode) errorCountHeaderNode.textContent = String(count);
+      if (lastErrorNode) {
+        lastErrorNode.textContent = payload?.last_error_at_display || "Sem erros";
+      }
+      if (clearAllBtn) {
+        clearAllBtn.classList.toggle("d-none", count === 0);
+      }
+      if (emptyNode) {
+        emptyNode.classList.toggle("d-none", count > 0);
+      }
+      if (listNode) {
+        listNode.classList.toggle("d-none", count === 0);
+      }
+    };
+
+    document.querySelectorAll(".js-copy-error").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const targetId = btn.dataset.copyTarget;
+        const node = targetId ? document.getElementById(targetId) : null;
+        if (!node) return;
+        const text = node.textContent || "";
+        try {
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(text);
+          } else {
+            const area = document.createElement("textarea");
+            area.value = text;
+            document.body.appendChild(area);
+            area.select();
+            document.execCommand("copy");
+            area.remove();
+          }
+          window.showToast("Detalhes copiados.", "success", 2200);
+        } catch (err) {
+          window.showToast("Nao foi possivel copiar.", "error", 2600);
+        }
+      });
+    });
+
+    document.querySelectorAll(".js-remove-error").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (btn.disabled) return;
+        btn.disabled = true;
+        const errorId = btn.dataset.errorId;
+        try {
+          const response = await fetch(`/offline/errors/${errorId}`, {
+            method: "DELETE",
+            headers: { Accept: "application/json" },
+          });
+          const payload = await response.json();
+          if (!response.ok || !payload.ok) {
+            throw new Error(payload.message || "Falha ao remover erro.");
+          }
+
+          const row = document.getElementById(`offline-error-row-${errorId}`);
+          if (row) row.remove();
+          syncErrorUIFromPayload(payload);
+        } catch (err) {
+          window.showToast(err.message || "Falha ao remover erro.", "error");
+          btn.disabled = false;
+        }
+      });
+    });
+
+    if (clearAllBtn) {
+      clearAllBtn.addEventListener("click", async () => {
+        if (clearAllBtn.disabled) return;
+        clearAllBtn.disabled = true;
+        try {
+          const response = await fetch("/offline/errors/clear", {
+            method: "POST",
+            headers: { Accept: "application/json" },
+          });
+          const payload = await response.json();
+          if (!response.ok || !payload.ok) {
+            throw new Error(payload.message || "Falha ao limpar erros.");
+          }
+
+          document.querySelectorAll("[data-error-row]").forEach((row) => row.remove());
+          syncErrorUIFromPayload(payload);
+          window.showToast("Erros limpos.", "success", 2200);
+        } catch (err) {
+          window.showToast(err.message || "Falha ao limpar erros.", "error");
+        } finally {
+          clearAllBtn.disabled = false;
+        }
+      });
+    }
   })();
 </script>
 {% endblock %}

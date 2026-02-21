@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import func
 from sqlalchemy.ext.associationproxy import association_proxy
 
 db = SQLAlchemy()
@@ -668,3 +669,31 @@ class EntregaParametro(db.Model):
         db.UniqueConstraint("entrega_id", "parametro_definicao_id", name="uq_entrega_parametro"),
         db.CheckConstraint("valor_numerico IS NULL OR (valor_numerico >= 1 AND valor_numerico <= 5)", name="ck_entrega_parametro_num_1_5"),
     )
+
+
+class OfflineError(db.Model):
+    __tablename__ = "offline_errors"
+
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        default=func.now(),
+        server_default=func.now(),
+        index=True,
+    )
+    operation = db.Column(db.String(32), nullable=False)
+    summary = db.Column(db.Text, nullable=False)
+    details = db.Column(db.Text)
+    context_json = db.Column(db.JSON, nullable=True)
+
+    __table_args__ = (
+        db.Index("ix_offline_errors_operation", "operation"),
+    )
+
+
+class OfflineState(db.Model):
+    __tablename__ = "offline_state"
+
+    key = db.Column(db.String(64), primary_key=True)
+    value = db.Column(db.Text)

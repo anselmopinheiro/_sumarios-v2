@@ -1,5 +1,7 @@
-from datetime import datetime
+import json
+from datetime import datetime, timezone
 from threading import Lock
+from zoneinfo import ZoneInfo
 
 from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, url_for
 import sqlalchemy as sa
@@ -7,20 +9,29 @@ from sqlalchemy.engine import make_url
 
 from models import Aluno, AnoLetivo, CalendarioAula, Modulo, Periodo, Turma, db
 from offline_store import (
+    clear_offline_errors,
+    count_offline_errors,
+    delete_offline_error,
     enqueue_outbox,
     finish_snapshot_run,
+    get_last_offline_error,
     get_offline_aulas_alunos,
     get_offline_sumario,
     get_setting,
     get_snapshot_aula,
     get_snapshot_status,
+    get_state_datetime,
     is_online,
+    list_offline_errors,
+    list_outbox,
     list_snapshot_aulas,
     list_snapshot_alunos,
     list_snapshot_runs,
     list_snapshot_turmas,
     outbox_status,
+    record_offline_error,
     set_setting,
+    set_state_datetime,
     start_snapshot_run,
     upsert_offline_aulas_alunos,
     upsert_offline_sumario,
@@ -28,8 +39,12 @@ from offline_store import (
 )
 from sync import sync_outbox
 
+
 offline_bp = Blueprint("offline", __name__, url_prefix="/offline")
 SNAPSHOT_RUN_LOCK = Lock()
+LISBON_TZ = ZoneInfo("Europe/Lisbon")
+STATE_LAST_SYNC_OK_AT = "last_sync_ok_at"
+STATE_LAST_SNAPSHOT_OK_AT = "last_snapshot_ok_at"
 
 
 def _get_online_state():
@@ -52,6 +67,119 @@ def _remote_db_meta():
         }
     except Exception:
         return {"host": "-", "port": "-", "db": "-", "mode": mode}
+
+
+def _parse_utc_datetime(raw):
+    if not raw:
+        return None
+    if isinstance(raw, datetime):
+        dt = raw
+    else:
+        value = str(raw).strip()
+        if not value:
+            return None
+        if value.endswith("Z"):
+            value = value[:-1] + "+00:00"
+        try:
+            dt = datetime.fromisoformat(value)
+        except ValueError:
+            return None
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _fmt_dt_pt(raw, fallback="-"):
+    dt = _parse_utc_datetime(raw)
+    if not dt:
+        return fallback
+    return dt.astimezone(LISBON_TZ).strftime("%d/%m/%Y %H:%M")
+
+
+def _safe_record_offline_error(operation, exc, context=None):
+    try:
+        record_offline_error(current_app.instance_path, operation, exc, context=context)
+    except Exception:
+        current_app.logger.exception("Falha ao registar erro offline (operation=%s).", operation)
+
+
+def _mark_success_state(key):
+    try:
+        set_state_datetime(current_app.instance_path, key, datetime.now(timezone.utc))
+    except Exception:
+        current_app.logger.exception("Falha ao atualizar estado offline '%s'.", key)
+
+
+def _build_turma_outbox_stats(instance_path, turmas):
+    stats = {int(t["id"]): {"pending": 0, "errors": 0} for t in turmas}
+    if not stats:
+        return stats
+
+    aula_turma_cache = {}
+    status_mappings = (
+        ("pending", "pending"),
+        ("error", "errors"),
+    )
+
+    for outbox_status_name, stats_field in status_mappings:
+        for item in list_outbox(instance_path, status=outbox_status_name, limit=5000):
+            payload = item.get("payload") or {}
+            turma_id = payload.get("turma_id")
+
+            if turma_id is None:
+                aula_id = payload.get("aula_id")
+                try:
+                    aula_id = int(aula_id) if aula_id is not None else None
+                except (TypeError, ValueError):
+                    aula_id = None
+                if aula_id is not None:
+                    if aula_id not in aula_turma_cache:
+                        aula = get_snapshot_aula(instance_path, aula_id)
+                        aula_turma_cache[aula_id] = int(aula["turma_id"]) if aula and aula.get("turma_id") else None
+                    turma_id = aula_turma_cache.get(aula_id)
+
+            try:
+                turma_id = int(turma_id) if turma_id is not None else None
+            except (TypeError, ValueError):
+                turma_id = None
+
+            if turma_id in stats:
+                stats[turma_id][stats_field] += 1
+
+    return stats
+
+
+def _serialize_error_for_ui(item):
+    context = item.get("context_json")
+    if context is None:
+        context_pretty = ""
+    elif isinstance(context, (dict, list)):
+        context_pretty = json.dumps(context, ensure_ascii=False, indent=2, sort_keys=True)
+    else:
+        context_pretty = str(context)
+
+    created_at = item.get("created_at")
+    return {
+        "id": item.get("id"),
+        "created_at": created_at,
+        "created_at_display": _fmt_dt_pt(created_at),
+        "operation": item.get("operation") or "other",
+        "summary": item.get("summary") or "Erro sem resumo.",
+        "details": item.get("details") or "",
+        "context_pretty": context_pretty,
+    }
+
+
+def _error_counts_payload(instance_path):
+    error_count = count_offline_errors(instance_path)
+    last_error = get_last_offline_error(instance_path)
+    last_error_at = last_error.get("created_at") if last_error else None
+    return {
+        "error_count": error_count,
+        "last_error_at": last_error_at,
+        "last_error_at_display": _fmt_dt_pt(last_error_at, fallback="Sem erros"),
+    }
 
 
 def _normalize_payload(item):
@@ -85,21 +213,27 @@ def snapshot_remote_to_local(mode="manual"):
     target = _remote_db_meta()
 
     if not SNAPSHOT_RUN_LOCK.acquire(blocking=False):
-        app.logger.info("Snapshot já em execução; pedido ignorado.")
-        return {"ok": False, "error": "Snapshot já em execução."}
+        app.logger.info("Snapshot ja em execucao; pedido ignorado.")
+        return {"ok": False, "error": "Snapshot ja em execucao."}
 
     run_id, started_at = start_snapshot_run(app.instance_path, mode=mode)
 
     if not _get_online_state():
+        msg = "Sem ligacao a BD remota."
         app.logger.warning(
-            "Snapshot offline abortado: sem ligação remota (host=%s port=%s db=%s mode=%s)",
+            "Snapshot offline abortado: sem ligacao remota (host=%s port=%s db=%s mode=%s)",
             target["host"],
             target["port"],
             target["db"],
             target["mode"],
         )
-        finish_snapshot_run(app.instance_path, run_id, ok=False, error="Sem ligação à BD remota.")
-        return {"ok": False, "error": "Sem ligação à BD remota.", "run_id": run_id, "started_at": started_at}
+        finish_snapshot_run(app.instance_path, run_id, ok=False, error=msg)
+        _safe_record_offline_error(
+            "snapshot",
+            RuntimeError(msg),
+            context={"mode": mode, "phase": "remote_healthcheck", "target": target},
+        )
+        return {"ok": False, "error": msg, "run_id": run_id, "started_at": started_at}
 
     try:
         ano_ativo = AnoLetivo.query.filter_by(ativo=True).first()
@@ -193,6 +327,7 @@ def snapshot_remote_to_local(mode="manual"):
 
         counts = upsert_snapshot_batch(app.instance_path, payload)
         finish_snapshot_run(app.instance_path, run_id, ok=True, counts=counts)
+        _mark_success_state(STATE_LAST_SNAPSHOT_OK_AT)
 
         app.logger.info(
             "Snapshot offline atualizado (host=%s port=%s db=%s mode=%s): turmas=%s alunos=%s aulas=%s",
@@ -225,11 +360,16 @@ def snapshot_remote_to_local(mode="manual"):
             exc,
         )
         finish_snapshot_run(app.instance_path, run_id, ok=False, error=str(exc))
+        _safe_record_offline_error(
+            "snapshot",
+            exc,
+            context={"mode": mode, "phase": "snapshot_remote_to_local", "target": target},
+        )
         if target["mode"] == "pooler":
             app.logger.warning(
                 "Dica Supabase pooler: confirme porta/URL (pooler=6543, direct=5432), role e password."
             )
-        return {"ok": False, "error": "Sem ligação à BD remota.", "run_id": run_id, "started_at": started_at}
+        return {"ok": False, "error": "Sem ligacao a BD remota.", "run_id": run_id, "started_at": started_at}
     finally:
         SNAPSHOT_RUN_LOCK.release()
 
@@ -240,19 +380,85 @@ def refresh_snapshot_from_remote():
 
 @offline_bp.route("/")
 def dashboard():
-    status = outbox_status(current_app.instance_path)
-    turmas = list_snapshot_turmas(current_app.instance_path)
-    snapshot = get_snapshot_status(current_app.instance_path)
-    return render_template("offline_dashboard.html", status=status, turmas=turmas, snapshot=snapshot)
+    instance_path = current_app.instance_path
+
+    online = _get_online_state()
+    status = outbox_status(instance_path)
+    snapshot = get_snapshot_status(instance_path)
+    snapshot_last_run = (snapshot or {}).get("last_run") or {}
+    snapshot_last_run_at = snapshot_last_run.get("finished_at") or snapshot_last_run.get("started_at")
+    snapshot_last_run_ok = bool(snapshot_last_run and int(snapshot_last_run.get("ok") or 0) == 1)
+
+    turmas_raw = list_snapshot_turmas(instance_path)
+    turma_stats = _build_turma_outbox_stats(instance_path, turmas_raw)
+    turmas = []
+    for turma in turmas_raw:
+        turma_id = int(turma["id"])
+        pending = int(turma_stats.get(turma_id, {}).get("pending", 0))
+        error_ops = int(turma_stats.get(turma_id, {}).get("errors", 0))
+
+        if error_ops > 0:
+            status_label = "Erro"
+            status_badge = "text-bg-danger"
+        elif pending > 0:
+            status_label = "Pendentes"
+            status_badge = "text-bg-warning"
+        else:
+            status_label = "OK"
+            status_badge = "text-bg-success"
+
+        row = dict(turma)
+        row.update(
+            {
+                "updated_at_display": _fmt_dt_pt(turma.get("updated_at")),
+                "pending": pending,
+                "error_ops": error_ops,
+                "status_label": status_label,
+                "status_badge": status_badge,
+            }
+        )
+        turmas.append(row)
+
+    errors = [_serialize_error_for_ui(item) for item in list_offline_errors(instance_path, limit=50)]
+    errors_meta = _error_counts_payload(instance_path)
+
+    last_sync_ok_at = get_state_datetime(instance_path, STATE_LAST_SYNC_OK_AT)
+    last_snapshot_ok_at = get_state_datetime(instance_path, STATE_LAST_SNAPSHOT_OK_AT)
+
+    return render_template(
+        "offline_dashboard.html",
+        online=online,
+        status=status,
+        snapshot=snapshot,
+        snapshot_last_run_at_display=_fmt_dt_pt(snapshot_last_run_at),
+        snapshot_last_run_status=("OK" if snapshot_last_run_ok else ("ERRO" if snapshot_last_run else "-")),
+        turmas=turmas,
+        errors=errors,
+        error_count=errors_meta["error_count"],
+        last_error_at=errors_meta["last_error_at"],
+        last_error_at_display=errors_meta["last_error_at_display"],
+        last_sync_ok_at=last_sync_ok_at,
+        last_sync_ok_at_display=_fmt_dt_pt(last_sync_ok_at),
+        last_snapshot_ok_at=last_snapshot_ok_at,
+        last_snapshot_ok_at_display=_fmt_dt_pt(last_snapshot_ok_at),
+    )
 
 
 @offline_bp.route("/status")
 def status_page():
+    errors_meta = _error_counts_payload(current_app.instance_path)
+    last_sync_ok = get_state_datetime(current_app.instance_path, STATE_LAST_SYNC_OK_AT)
+    last_snapshot_ok = get_state_datetime(current_app.instance_path, STATE_LAST_SNAPSHOT_OK_AT)
     payload = {
         "ok": True,
         "online": _get_online_state(),
         "snapshot": get_snapshot_status(current_app.instance_path),
         "outbox": outbox_status(current_app.instance_path),
+        "errors": errors_meta,
+        "state": {
+            "last_sync_ok_at": last_sync_ok.isoformat() if last_sync_ok else None,
+            "last_snapshot_ok_at": last_snapshot_ok.isoformat() if last_snapshot_ok else None,
+        },
         "settings": {
             "enabled": get_setting(current_app.instance_path, "snapshot_enabled", "1"),
             "interval_seconds": get_setting(current_app.instance_path, "snapshot_interval_seconds", "60"),
@@ -281,7 +487,7 @@ def settings_page():
 
         set_setting(current_app.instance_path, "snapshot_enabled", enabled)
         set_setting(current_app.instance_path, "snapshot_interval_seconds", interval)
-        flash("Definições offline guardadas.", "success")
+        flash("Definicoes offline guardadas.", "success")
         return redirect(url_for("offline.settings_page"))
 
     settings = {
@@ -303,12 +509,16 @@ def snapshot_now():
             (
                 "Snapshot atualizado: "
                 f"{result['turmas']} turma(s), {result['alunos']} aluno(s), {result['aulas']} aula(s), "
-                f"{result.get('periodos', 0)} período(s), {result.get('modulos', 0)} módulo(s)."
+                f"{result.get('periodos', 0)} periodo(s), {result.get('modulos', 0)} modulo(s)."
             ),
             "success",
         )
     else:
         flash(result.get("error") or "Falha ao atualizar snapshot.", "error")
+
+    next_page = request.form.get("next") or request.args.get("next")
+    if next_page == "dashboard":
+        return redirect(url_for("offline.dashboard"))
     return redirect(url_for("offline.dashboard"))
 
 
@@ -316,7 +526,7 @@ def snapshot_now():
 def healthcheck_db():
     target = _remote_db_meta()
     if (current_app.config.get("APP_DB_MODE") or "sqlite").lower() != "postgres":
-        return jsonify({"ok": False, "error": "APP_DB_MODE não está em postgres.", **target}), 400
+        return jsonify({"ok": False, "error": "APP_DB_MODE nao esta em postgres.", **target}), 400
 
     try:
         db.session.execute(sa.text("SELECT 1"))
@@ -349,7 +559,7 @@ def turma_aulas(turma_id):
 def aula_presencas(aula_id):
     aula = get_snapshot_aula(current_app.instance_path, aula_id)
     if not aula:
-        flash("Aula não encontrada no snapshot offline.", "error")
+        flash("Aula nao encontrada no snapshot offline.", "error")
         return redirect(url_for("offline.turmas"))
 
     alunos = list_snapshot_alunos(current_app.instance_path, aula["turma_id"])
@@ -383,7 +593,7 @@ def aula_presencas(aula_id):
                 "updated_at": datetime.utcnow().isoformat(timespec="seconds"),
             },
         )
-        flash("Presenças/avaliações guardadas localmente.", "success")
+        flash("Presencas/avaliacoes guardadas localmente.", "success")
         return redirect(url_for("offline.aula_presencas", aula_id=aula_id))
 
     offline_map = get_offline_aulas_alunos(current_app.instance_path, aula_id)
@@ -413,7 +623,7 @@ def aula_sumario(aula_id):
             "updated_at": datetime.utcnow().isoformat(timespec="seconds"),
         },
     )
-    flash("Sumário/observações guardados localmente.", "success")
+    flash("Sumario/observacoes guardados localmente.", "success")
     return redirect(url_for("offline.aula_presencas", aula_id=aula_id))
 
 
@@ -421,13 +631,61 @@ def aula_sumario(aula_id):
 def sync_page():
     if request.method == "POST":
         result = sync_outbox(current_app, limit=500)
-        if result.get("ok"):
+
+        if result.get("ok") and int(result.get("errored", 0)) == 0:
+            _mark_success_state(STATE_LAST_SYNC_OK_AT)
             flash(
-                f"Sincronização concluída. Aplicados: {result.get('applied', 0)} | erros: {result.get('errored', 0)}",
+                f"Sincronizacao concluida. Aplicados: {result.get('applied', 0)} | erros: {result.get('errored', 0)}",
                 "success",
             )
+        elif result.get("ok"):
+            _safe_record_offline_error(
+                "sync",
+                RuntimeError("Sincronizacao concluida com erros."),
+                context={
+                    "applied": int(result.get("applied", 0)),
+                    "errored": int(result.get("errored", 0)),
+                    "pending": int(result.get("pending", 0)),
+                    "errors": int(result.get("errors", 0)),
+                },
+            )
+            flash(
+                f"Sincronizacao com erros. Aplicados: {result.get('applied', 0)} | erros: {result.get('errored', 0)}",
+                "warning",
+            )
         else:
-            flash(result.get("error") or "Não foi possível sincronizar agora.", "error")
+            _safe_record_offline_error(
+                "sync",
+                RuntimeError(result.get("error") or "Nao foi possivel sincronizar agora."),
+                context={
+                    "applied": int(result.get("applied", 0)),
+                    "errored": int(result.get("errored", 0)),
+                    "pending": int(result.get("pending", 0)),
+                    "errors": int(result.get("errors", 0)),
+                },
+            )
+            flash(result.get("error") or "Nao foi possivel sincronizar agora.", "error")
+
+        next_page = request.form.get("next") or request.args.get("next")
+        if next_page == "dashboard":
+            return redirect(url_for("offline.dashboard"))
         return redirect(url_for("offline.sync_page"))
 
     return render_template("offline_sync.html", status=outbox_status(current_app.instance_path))
+
+
+@offline_bp.route("/errors/<int:error_id>", methods=["DELETE"])
+def delete_error(error_id):
+    ok = delete_offline_error(current_app.instance_path, error_id)
+    payload = {"ok": bool(ok), **_error_counts_payload(current_app.instance_path)}
+    if not ok:
+        payload["message"] = "Erro nao encontrado."
+        return jsonify(payload), 404
+    return jsonify(payload)
+
+
+@offline_bp.route("/errors/clear", methods=["POST"])
+def clear_errors():
+    deleted = clear_offline_errors(current_app.instance_path)
+    payload = {"ok": True, "deleted": int(deleted), **_error_counts_payload(current_app.instance_path)}
+    return jsonify(payload)

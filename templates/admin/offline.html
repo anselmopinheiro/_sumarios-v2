@@ -17,6 +17,7 @@
 {% endif %}
 
 <div class="d-flex gap-2 flex-wrap">
+  <a class="btn btn-primary btn-sm" href="{{ url_for('offline.dashboard') }}">Conteudos offline</a>
   <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('offline.status_page') }}">Estado offline</a>
   <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('offline.history_page') }}">Histórico</a>
   <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('offline.settings_page') }}">Definições</a>

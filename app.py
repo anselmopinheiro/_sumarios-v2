@@ -2275,7 +2275,7 @@ def create_app():
     @app.route("/admin/offline/snapshot", methods=["POST"])
     @admin_required
     def admin_offline_snapshot():
-        result = snapshot_remote_to_local(app.instance_path)
+        result = snapshot_remote_to_local(mode="manual")
         if result.get("ok"):
             flash("Snapshot offline atualizado com sucesso.", "success")
         else:
