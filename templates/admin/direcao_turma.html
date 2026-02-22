@@ -1,18 +1,24 @@
 {% extends "admin_base.html" %}
 {% block admin_content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
-  <h3 class="h5 mb-0">Direção de Turma</h3>
+  <h3 class="h5 mb-0">Direcao de Turma</h3>
   <a class="btn btn-primary btn-sm" href="{{ url_for('direcao_turma_add') }}">Adicionar DT</a>
 </div>
 
 <ul class="list-group">
   {% for dt in dts %}
-    <li class="list-group-item d-flex justify-content-between align-items-center">
+    <li class="list-group-item d-flex flex-column flex-md-row justify-content-between align-items-start gap-2">
       <div>
-        <div class="fw-semibold">{{ dt.turma.nome if dt.turma else 'Turma —' }}</div>
-        <small class="text-muted">{{ dt.ano_letivo.nome if dt.ano_letivo else 'Ano letivo —' }}</small>
+        <div class="fw-semibold">{{ dt.turma.nome if dt.turma else 'Turma -' }}</div>
+        <small class="text-muted">{{ dt.ano_letivo.nome if dt.ano_letivo else 'Ano letivo -' }}</small>
       </div>
-      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('direcao_turma_edit', dt_id=dt.id) }}">Gerir</a>
+
+      <div class="btn-group btn-group-sm flex-wrap" role="group" aria-label="Acessos DT">
+        <a class="btn btn-outline-secondary" href="{{ url_for('direcao_turma_alunos', dt_id=dt.id) }}">Alunos</a>
+        <a class="btn btn-outline-info" href="{{ url_for('direcao_turma_mapa_mensal', dt_id=dt.id) }}">Mapa justificacoes</a>
+        <a class="btn btn-outline-dark" href="{{ url_for('direcao_turma_ocorrencias', dt_id=dt.id) }}">Ocorrencias</a>
+        <a class="btn btn-outline-warning" href="{{ url_for('direcao_turma_edit', dt_id=dt.id) }}">Gerir</a>
+      </div>
     </li>
   {% else %}
     <li class="list-group-item text-muted">Sem registos de DT.</li>
