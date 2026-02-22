@@ -2,7 +2,11 @@
 {% block admin_content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h3 class="h5 mb-0">Anos letivos</h3>
-  <a class="btn btn-primary btn-sm" href="{{ url_for('anos_letivos_add') }}">Novo ano letivo</a>
+  <div class="d-flex gap-2">
+   
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('anos_letivos_list') }}">Mais</a>
+    <a class="btn btn-primary btn-sm" href="{{ url_for('anos_letivos_add') }}">Novo ano letivo</a>
+  </div>
 </div>
 
 {% if anos %}
@@ -14,6 +18,8 @@
           <small class="text-muted">{{ 'Ativo' if ano.ativo else 'Inativo' }} · {{ 'Fechado' if ano.fechado else 'Aberto' }}</small>
         </div>
         <div class="d-flex gap-2">
+          <a class="btn btn-outline-info btn-sm" href="{{ url_for('calendario_escolar', ano_id=ano.id) }}">Ver calendario</a>
+          <a class="btn btn-outline-warning btn-sm" href="{{ url_for('calendario_escolar_gestao', ano_id=ano.id) }}">Gerir calendario</a>
           <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('anos_letivos_edit', ano_id=ano.id) }}">Editar</a>
           {% if not ano.ativo %}
           <form method="post" action="{{ url_for('anos_letivos_set_ativo', ano_id=ano.id) }}">

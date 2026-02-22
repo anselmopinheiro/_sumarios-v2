@@ -1,96 +1,166 @@
 {% extends "base.html" %}
-
+{% set title = "Calendário escolar - " ~ (ano.nome if ano else "Sem ano letivo") %}
 
 {% block content %}
-<p>
-  <a href="{{ url_for('calendario_escolar_json') }}">Ver JSON</a> |
-  <a href="{{ url_for('calendario_escolar_json', download=1) }}">Descarregar JSON</a>
-  | <a href="{{ url_for('calendario_escolar_importar') }}">Importar calendário</a>
-</p>
+{% set json_url = url_for('calendario_escolar_json', ano_id=ano.id) if ano else url_for('calendario_escolar_json') %}
+{% set json_download_url = url_for('calendario_escolar_json', ano_id=ano.id, download=1) if ano else url_for('calendario_escolar_json', download=1) %}
+{% set gestao_url = url_for('calendario_escolar_gestao', ano_id=ano.id) if ano else url_for('calendario_escolar_gestao') %}
 
-<p>
-  <a href="{{ url_for('calendario_escolar_gestao') }}">Editar calendário escolar</a>
-</p>
-<p>
-  <a href="{{ url_for('anos_letivos_list') }}">Gerir Anos Letivos</a> |
-  <a href="{{ url_for('calendario_escolar_gestao') }}">Editar interrupções e feriados</a>
-</p>
+<div class="mx-auto py-3 py-md-4" style="max-width: 1200px;">
+  <p class="small text-muted mb-3">Admin / Calendário escolar / {{ ano.nome if ano else "Sem ano letivo" }}</p>
 
-<h2>Calendário Escolar — {{ ano.nome if ano else "Sem Ano Letivo" }}</h2>
+  <section class="card shadow-sm border-0 mb-4">
+    <div class="card-body p-4">
+      <h1 class="h3 mb-1">Calendário escolar</h1>
+      <p class="text-muted mb-0">Ano letivo {{ ano.nome if ano else "não definido" }}</p>
 
-{% if not ano %}
-<p><strong>Não existe ano letivo definido.</strong></p>
-{% else %}
+      <div class="d-flex flex-column flex-xl-row gap-4 mt-4">
+        <div class="d-flex flex-column gap-2">
+          <div class="small text-uppercase text-muted fw-semibold">Dados</div>
+          <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-outline-primary btn-sm" href="{{ json_url }}">Ver JSON</a>
+            <a class="btn btn-outline-primary btn-sm" href="{{ json_download_url }}">Descarregar JSON</a>
+            <a class="btn btn-primary btn-sm" href="{{ url_for('calendario_escolar_importar') }}">Importar calendário</a>
+          </div>
+        </div>
 
-<h3>Datas principais</h3>
-<ul>
-    <li><strong>Início do ano:</strong> {{ ano.data_inicio_ano.strftime("%d/%m/%Y") }}</li>
-    <li><strong>Fim do ano:</strong> {{ ano.data_fim_ano.strftime("%d/%m/%Y") }}</li>
-    <li><strong>Fim do 1.º Semestre:</strong> {{ ano.data_fim_semestre1.strftime("%d/%m/%Y") }}</li>
-    <li><strong>Início do 2.º Semestre:</strong> {{ ano.data_inicio_semestre2.strftime("%d/%m/%Y") }}</li>
-</ul>
+        <div class="d-flex flex-column gap-2 ms-xl-auto">
+          <div class="small text-uppercase text-muted fw-semibold text-xl-end">Gestão</div>
+          <div class="d-flex flex-wrap gap-2 justify-content-xl-end">
+            <a class="btn btn-outline-secondary btn-sm" href="{{ gestao_url }}">Editar calendário escolar</a>
+            <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('anos_letivos_list') }}">Gerir anos letivos</a>
+            <a class="btn btn-outline-secondary btn-sm" href="{{ gestao_url }}">Editar interrupções e feriados</a>
+          </div>
+        </div>
+      </div>
 
-<hr>
+      <div class="d-flex flex-wrap gap-3 mt-4 pt-3 border-top">
+        <a class="small" href="#sec-interrupcoes">Ir para Interrupções letivas</a>
+        <a class="small" href="#sec-feriados">Ir para Feriados</a>
+      </div>
+    </div>
+  </section>
 
-<h3>Interrupções Letivas</h3>
-{% if interrupcoes %}
-<table class="table table-striped">
-    <thead>
-        <tr>
-            <th>Tipo</th>
-            <th>Datas</th>
-            <th>Descrição</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for i in interrupcoes %}
-        <tr>
-            <td>{{ i.tipo }}</td>
-            <td>
-                {% if i.data_text %}
-                    {{ i.data_text }}
-                {% else %}
-                    {{ i.data_inicio.strftime("%d/%m/%Y") }} a {{ i.data_fim.strftime("%d/%m/%Y") }}
-                {% endif %}
-            </td>
-            <td>{{ i.descricao or "" }}</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-{% else %}
-<p>Não existem interrupções registadas.</p>
-{% endif %}
+  {% if not ano %}
+    <div class="alert alert-secondary mb-0">Não existe ano letivo definido.</div>
+  {% else %}
+    <section class="mb-4">
+      <h2 class="h5 mb-3">Datas principais</h2>
+      <div class="row g-3">
+        <div class="col-12 col-sm-6 col-lg-3">
+          <div class="card h-100 shadow-sm border-0">
+            <div class="card-body">
+              <div class="small text-muted mb-1">Início do ano</div>
+              <div class="fs-5">{{ ano.data_inicio_ano.strftime("%d/%m/%Y") if ano.data_inicio_ano else "-" }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-sm-6 col-lg-3">
+          <div class="card h-100 shadow-sm border-0">
+            <div class="card-body">
+              <div class="small text-muted mb-1">Fim do ano</div>
+              <div class="fs-5">{{ ano.data_fim_ano.strftime("%d/%m/%Y") if ano.data_fim_ano else "-" }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-sm-6 col-lg-3">
+          <div class="card h-100 shadow-sm border-0">
+            <div class="card-body">
+              <div class="small text-muted mb-1">Fim do 1.º semestre</div>
+              <div class="fs-5">{{ ano.data_fim_semestre1.strftime("%d/%m/%Y") if ano.data_fim_semestre1 else "-" }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-sm-6 col-lg-3">
+          <div class="card h-100 shadow-sm border-0">
+            <div class="card-body">
+              <div class="small text-muted mb-1">Início do 2.º semestre</div>
+              <div class="fs-5">{{ ano.data_inicio_semestre2.strftime("%d/%m/%Y") if ano.data_inicio_semestre2 else "-" }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
 
-<hr>
+    <section id="sec-interrupcoes" class="card shadow-sm border-0 mb-4">
+      <div class="card-header bg-white py-3">
+        <h2 class="h5 mb-0">Interrupções letivas</h2>
+      </div>
+      <div class="card-body p-0">
+        {% if interrupcoes %}
+          <div class="table-responsive table-sticky-wrapper">
+            <table class="table table-hover table-striped table-sticky-header align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th scope="col">Tipo</th>
+                  <th scope="col">Datas</th>
+                  <th scope="col">Descrição</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for i in interrupcoes %}
+                <tr>
+                  <td>{{ i.tipo }}</td>
+                  <td>
+                    {% if i.data_text %}
+                      {{ i.data_text }}
+                    {% elif i.data_inicio and i.data_fim %}
+                      {{ i.data_inicio.strftime("%d/%m/%Y") }} a {{ i.data_fim.strftime("%d/%m/%Y") }}
+                    {% elif i.data_inicio %}
+                      {{ i.data_inicio.strftime("%d/%m/%Y") }}
+                    {% else %}
+                      -
+                    {% endif %}
+                  </td>
+                  <td>{{ i.descricao or "" }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="p-4 text-muted">Sem registos.</div>
+        {% endif %}
+      </div>
+    </section>
 
-<h3>Feriados</h3>
-{% if feriados %}
-<table class="table table-bordered">
-    <thead>
-        <tr>
-            <th>Data</th>
-            <th>Nome</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for f in feriados %}
-        <tr>
-            <td>
-                {% if f.data_text %}
-                    {{ f.data_text }}
-                {% else %}
-                    {{ f.data.strftime("%d/%m/%Y") }}
-                {% endif %}
-            </td>
-            <td>{{ f.nome }}</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-{% else %}
-<p>Não existem feriados registados.</p>
-{% endif %}
-
-{% endif %}
+    <section id="sec-feriados" class="card shadow-sm border-0">
+      <div class="card-header bg-white py-3">
+        <h2 class="h5 mb-0">Feriados</h2>
+      </div>
+      <div class="card-body p-0">
+        {% if feriados %}
+          <div class="table-responsive table-sticky-wrapper">
+            <table class="table table-hover table-striped table-sticky-header align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th scope="col">Data</th>
+                  <th scope="col">Nome</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for f in feriados %}
+                <tr>
+                  <td>
+                    {% if f.data_text %}
+                      {{ f.data_text }}
+                    {% elif f.data %}
+                      {{ f.data.strftime("%d/%m/%Y") }}
+                    {% else %}
+                      -
+                    {% endif %}
+                  </td>
+                  <td>{{ f.nome }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="p-4 text-muted">Sem registos.</div>
+        {% endif %}
+      </div>
+    </section>
+  {% endif %}
+</div>
 {% endblock %}

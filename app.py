@@ -2188,6 +2188,7 @@ def create_app():
             ("admin_anos_letivos", "Anos letivos"),
             ("admin_calendario_semanal", "Calendário semanal"),
             ("/calendario/dia", "Calendário diário"),
+            ("calendario_outras_datas", "Outras datas"),
             ("admin_turmas", "Turmas"),
             ("admin_direcao_turma", "Direção de Turma"),
             ("admin_disciplinas_dt", "Disciplinas (DT)"),
@@ -2278,6 +2279,15 @@ def create_app():
             snapshot_status=snapshot_status,
             admin_nav_items=_admin_nav_items(),
         )
+
+    @app.route("/admin/tipos-aula")
+    @admin_required
+    def admin_tipos_aula():
+        return redirect(url_for("calendario_outras_datas"), code=301)
+
+    @app.route("/definicoes/tipos-aula")
+    def definicoes_tipos_aula():
+        return redirect(url_for("calendario_outras_datas"), code=301)
 
     @app.route("/admin/offline/snapshot", methods=["POST"])
     @admin_required
