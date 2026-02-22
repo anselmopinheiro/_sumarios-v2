@@ -203,17 +203,20 @@
   <div class="card-body">
     <h3 class="h5 mb-3">Acoes principais</h3>
     <div class="row g-2">
-      <div class="col-md-6">
+      <div class="col-md-4">
         <form method="post" action="{{ url_for('offline.sync_page') }}" class="d-grid">
           <input type="hidden" name="next" value="dashboard">
           <button class="btn btn-success btn-lg" type="submit">Sincronizar com base remota</button>
         </form>
       </div>
-      <div class="col-md-6">
+      <div class="col-md-4">
         <form method="post" action="{{ url_for('offline.snapshot_now') }}" class="d-grid">
           <input type="hidden" name="next" value="dashboard">
           <button class="btn btn-outline-primary btn-lg" type="submit">Atualizar snapshot local</button>
         </form>
+      </div>
+      <div class="col-md-4">
+        <a class="btn btn-outline-secondary btn-lg w-100" href="{{ url_for('offline.dashboard') }}">Abrir modo offline</a>
       </div>
     </div>
   </div>
