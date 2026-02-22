@@ -68,7 +68,14 @@ from sqlalchemy.orm import joinedload, sessionmaker
 
 from config import Config
 from offline_blueprint import offline_bp, refresh_snapshot_from_remote, snapshot_remote_to_local
-from offline_store import init_offline_db as init_offline_store_db
+from offline_store import (
+    count_offline_errors,
+    get_last_offline_error,
+    get_snapshot_status,
+    get_state_datetime,
+    init_offline_db as init_offline_store_db,
+    outbox_status,
+)
 from sync import fix_sequences_remote, sync_outbox
 from offline_queue import (
     clear_sent,
@@ -2310,6 +2317,36 @@ def create_app():
             "nota_zero": 0,
         }
         disciplina_atual = None
+        offline_pending = 0
+        offline_error_count = 0
+        dashboard_last_snapshot_ok_display = "-"
+        dashboard_last_sync_ok_display = "-"
+        dashboard_last_error_display = "Sem erros"
+        dashboard_snapshot_last_run_display = "-"
+        dashboard_snapshot_last_run_status = "-"
+
+        try:
+            offline_outbox = outbox_status(app.instance_path)
+            offline_pending = int(offline_outbox.get("pending", 0))
+            offline_error_count = int(count_offline_errors(app.instance_path))
+
+            last_sync_ok_at = get_state_datetime(app.instance_path, "last_sync_ok_at")
+            last_snapshot_ok_at = get_state_datetime(app.instance_path, "last_snapshot_ok_at")
+            dashboard_last_sync_ok_display = _formatar_data_hora(last_sync_ok_at) or "-"
+            dashboard_last_snapshot_ok_display = _formatar_data_hora(last_snapshot_ok_at) or "-"
+
+            last_error_row = get_last_offline_error(app.instance_path)
+            if last_error_row and offline_error_count > 0:
+                dashboard_last_error_display = _formatar_data_hora(last_error_row.get("created_at")) or "Com erros"
+
+            snapshot_status = get_snapshot_status(app.instance_path)
+            last_run = (snapshot_status or {}).get("last_run") or {}
+            snapshot_last_run_at = last_run.get("finished_at") or last_run.get("started_at")
+            dashboard_snapshot_last_run_display = _formatar_data_hora(snapshot_last_run_at) or "-"
+            if last_run:
+                dashboard_snapshot_last_run_status = "OK" if int(last_run.get("ok") or 0) == 1 else "ERRO"
+        except Exception as exc:
+            app.logger.exception("Falha ao carregar resumo offline da dashboard: %s", exc)
 
         if turma_atual:
             disciplina_atual = turma_atual.disciplinas[0] if getattr(turma_atual, "disciplinas", None) else None
@@ -2424,6 +2461,13 @@ def create_app():
             checklist=checklist,
             trabalhos_ativos=trabalhos_ativos,
             indicadores=indicadores,
+            offline_pending=offline_pending,
+            offline_error_count=offline_error_count,
+            dashboard_last_snapshot_ok_display=dashboard_last_snapshot_ok_display,
+            dashboard_last_sync_ok_display=dashboard_last_sync_ok_display,
+            dashboard_last_error_display=dashboard_last_error_display,
+            dashboard_snapshot_last_run_display=dashboard_snapshot_last_run_display,
+            dashboard_snapshot_last_run_status=dashboard_snapshot_last_run_status,
         )
 
     @app.route("/backups")

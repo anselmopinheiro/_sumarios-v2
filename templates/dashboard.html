@@ -55,6 +55,19 @@
     border: 2px solid #cfe2ff;
   }
 
+  .dashboard-offline-card {
+    border: 1px solid #d9e2ef;
+    box-shadow: 0 0.2rem 0.6rem rgba(13, 110, 253, 0.08);
+  }
+
+  .dashboard-mini-metric {
+    border: 1px solid #e9ecef;
+    border-radius: 0.5rem;
+    padding: 0.6rem 0.75rem;
+    background: #fff;
+    height: 100%;
+  }
+
   .checklist-simples .estado {
     display: inline-block;
     min-width: 2.2rem;
@@ -136,6 +149,75 @@
     }
   }
 </style>
+
+<div class="card dashboard-offline-card mb-3">
+  <div class="card-body">
+    <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
+      <div>
+        <h3 class="h5 mb-1">Estado da ligacao</h3>
+        <p class="text-muted mb-0">
+          {% if is_offline %}
+            Sem rede para a BD remota. A trabalhar com snapshot local.
+          {% else %}
+            Ligacao remota disponivel.
+          {% endif %}
+        </p>
+      </div>
+      <span class="status-ligacao {{ 'status-offline' if is_offline else 'status-online' }}">{{ 'OFFLINE' if is_offline else 'ONLINE' }}</span>
+    </div>
+
+    <div class="row g-2 mb-2">
+      <div class="col-md-3">
+        <div class="dashboard-mini-metric">
+          <div class="text-muted small">Ultimo snapshot OK</div>
+          <div class="fw-semibold">{{ dashboard_last_snapshot_ok_display }}</div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="dashboard-mini-metric">
+          <div class="text-muted small">Ultima sincronizacao OK</div>
+          <div class="fw-semibold">{{ dashboard_last_sync_ok_display }}</div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="dashboard-mini-metric">
+          <div class="text-muted small">Ultimo erro</div>
+          <div class="fw-semibold">{{ dashboard_last_error_display }}</div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="dashboard-mini-metric">
+          <div class="text-muted small">Contadores</div>
+          <div class="fw-semibold">Pendentes: {{ offline_pending }} | Erros: {{ offline_error_count }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="text-muted small" id="snapshot-status-inline">
+      Ultimo snapshot: {{ dashboard_snapshot_last_run_display }} | Estado: {{ dashboard_snapshot_last_run_status }}
+    </div>
+  </div>
+</div>
+
+<div class="card dashboard-offline-card mb-3">
+  <div class="card-body">
+    <h3 class="h5 mb-3">Acoes principais</h3>
+    <div class="row g-2">
+      <div class="col-md-6">
+        <form method="post" action="{{ url_for('offline.sync_page') }}" class="d-grid">
+          <input type="hidden" name="next" value="dashboard">
+          <button class="btn btn-success btn-lg" type="submit">Sincronizar com base remota</button>
+        </form>
+      </div>
+      <div class="col-md-6">
+        <form method="post" action="{{ url_for('offline.snapshot_now') }}" class="d-grid">
+          <input type="hidden" name="next" value="dashboard">
+          <button class="btn btn-outline-primary btn-lg" type="submit">Atualizar snapshot local</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
 
 <div class="dashboard-context">
   <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">

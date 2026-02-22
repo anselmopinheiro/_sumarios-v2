@@ -251,15 +251,21 @@ def record_offline_error(instance_path, operation, exc, context=None):
 
 
 def list_offline_errors(instance_path, limit=50):
+    limit_clause = ""
+    params = []
+    if limit is not None:
+        limit_clause = " LIMIT ?"
+        params.append(int(limit))
+
     with _connect(instance_path) as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT id, created_at, operation, summary, details, context_json
             FROM offline_errors
             ORDER BY created_at DESC, id DESC
-            LIMIT ?
+            {limit_clause}
             """,
-            (int(limit),),
+            tuple(params),
         ).fetchall()
 
     items = []

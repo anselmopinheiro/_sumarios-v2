@@ -23,6 +23,10 @@
     max-height: 260px;
     overflow: auto;
   }
+
+  .turma-error-hotspot {
+    cursor: pointer;
+  }
 </style>
 
 <div class="card offline-card mb-3">
@@ -51,7 +55,7 @@
       <div class="col-md-3">
         <div class="offline-mini-metric">
           <div class="text-muted small">Ultima sincronizacao OK</div>
-          <div class="fw-semibold">{{ last_sync_ok_at_display }}</div>
+          <div class="fw-semibold" id="last-sync-ok-at">{{ last_sync_ok_at_display }}</div>
         </div>
       </div>
       <div class="col-md-3">
@@ -116,16 +120,36 @@
         </thead>
         <tbody>
           {% for turma in turmas %}
-            <tr data-search-item data-text="turma {{ turma.nome|lower }} {{ turma.tipo|default('', true)|lower }}">
+            <tr
+              id="turma-row-{{ turma.id }}"
+              data-search-item
+              data-text="turma {{ turma.nome|lower }} {{ turma.tipo|default('', true)|lower }}"
+              data-turma-id="{{ turma.id }}"
+              data-pending="{{ turma.pending }}"
+            >
               <td class="fw-semibold">{{ turma.nome }}</td>
               <td>{{ turma.updated_at_display }}</td>
               <td>
-                {{ turma.pending }}
-                {% if turma.error_ops > 0 %}
-                  <span class="text-danger">(+{{ turma.error_ops }} erro{{ 's' if turma.error_ops != 1 else '' }})</span>
-                {% endif %}
+                <span id="turma-pending-{{ turma.id }}">{{ turma.pending }}</span>
+                <button
+                  type="button"
+                  class="btn btn-link btn-sm p-0 ms-1 text-danger js-open-turma-errors {% if turma.error_ops == 0 %}d-none{% endif %}"
+                  id="turma-error-link-{{ turma.id }}"
+                  data-turma-id="{{ turma.id }}"
+                >
+                  (+<span id="turma-error-count-{{ turma.id }}">{{ turma.error_ops }}</span> erro)
+                </button>
               </td>
-              <td><span class="badge {{ turma.status_badge }}">{{ turma.status_label }}</span></td>
+              <td>
+                <button
+                  type="button"
+                  class="badge border-0 {{ turma.status_badge }} {% if turma.error_ops > 0 %}turma-error-hotspot js-open-turma-errors{% endif %}"
+                  id="turma-status-badge-{{ turma.id }}"
+                  {% if turma.error_ops > 0 %}data-turma-id="{{ turma.id }}"{% else %}disabled{% endif %}
+                >
+                  <span id="turma-status-label-{{ turma.id }}">{{ turma.status_label }}</span>
+                </button>
+              </td>
               <td class="text-end">
                 <a class="btn btn-sm btn-outline-primary" href="{{ url_for('offline.turma_aulas', turma_id=turma.id) }}">Abrir</a>
               </td>
@@ -161,6 +185,18 @@
 
   <div id="offline-errors-body" class="collapse show">
     <div class="card-body">
+      <div class="row g-2 mb-3">
+        <div class="col-md-4">
+          <label for="errors-turma-filter" class="form-label mb-1 small text-muted">Filtro por turma</label>
+          <select id="errors-turma-filter" class="form-select form-select-sm">
+            <option value="">Todas as turmas</option>
+            {% for turma in turmas %}
+              <option value="{{ turma.id }}">{{ turma.nome }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
       <div id="offline-errors-empty" class="{% if error_count > 0 %}d-none{% endif %}">
         <p class="mb-1 fw-semibold">Sem erros.</p>
         <p class="text-muted mb-0 small">
@@ -170,31 +206,7 @@
       </div>
 
       <div id="offline-errors-list" class="{% if error_count == 0 %}d-none{% endif %}">
-        <div class="list-group">
-          {% for err in errors %}
-            <div class="list-group-item" id="offline-error-row-{{ err.id }}" data-error-row data-search-item data-text="erro {{ err.operation|lower }} {{ err.summary|lower }}">
-              <div class="row g-2 align-items-start">
-                <div class="col-md-2 small text-muted">{{ err.created_at_display }}</div>
-                <div class="col-md-2"><span class="badge text-bg-secondary">{{ err.operation }}</span></div>
-                <div class="col-md-5">{{ err.summary }}</div>
-                <div class="col-md-3 d-flex flex-wrap gap-1 justify-content-md-end">
-                  <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#error-details-{{ err.id }}" aria-expanded="false" aria-controls="error-details-{{ err.id }}">Detalhes</button>
-                  <button class="btn btn-sm btn-outline-dark js-copy-error" type="button" data-copy-target="error-details-content-{{ err.id }}">Copiar</button>
-                  <button class="btn btn-sm btn-outline-danger js-remove-error" type="button" data-error-id="{{ err.id }}">Remover</button>
-                </div>
-              </div>
-              <div class="collapse mt-2" id="error-details-{{ err.id }}">
-                <div class="border rounded bg-light p-2">
-                  <div class="small text-muted mb-1">Detalhes tecnicos</div>
-                  <pre id="error-details-content-{{ err.id }}" class="offline-error-pre mb-0">{{ err.details }}{% if err.context_pretty %}
-
-Contexto:
-{{ err.context_pretty }}{% endif %}</pre>
-                </div>
-              </div>
-            </div>
-          {% endfor %}
-        </div>
+        <div class="list-group" id="offline-errors-list-group"></div>
       </div>
     </div>
   </div>
@@ -223,6 +235,15 @@ Contexto:
       .replace(/[\u0300-\u036f]/g, "")
       .trim();
 
+    const escapeHtml = (value) =>
+      (value || "")
+        .toString()
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+
     const setVisible = (el, visible) => {
       if (el.tagName === "TR") {
         el.style.display = visible ? "" : "none";
@@ -232,11 +253,10 @@ Contexto:
     };
 
     const searchInput = document.getElementById("offline-search-q");
-    const searchItems = Array.from(document.querySelectorAll("[data-search-item]"));
     if (searchInput) {
       searchInput.addEventListener("input", () => {
         const term = norm(searchInput.value);
-        searchItems.forEach((el) => {
+        Array.from(document.querySelectorAll("[data-search-item]")).forEach((el) => {
           const text = norm(el.dataset.text || el.textContent);
           setVisible(el, !term || text.includes(term));
         });
@@ -253,13 +273,10 @@ Contexto:
           return;
         }
 
-        btn.dataset.originalLabel = btn.textContent.trim();
         btn.disabled = true;
         btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>${btn.dataset.loadingLabel || "A processar..."}`;
         actionButtons.forEach((otherBtn) => {
-          if (otherBtn !== btn) {
-            otherBtn.disabled = true;
-          }
+          if (otherBtn !== btn) otherBtn.disabled = true;
         });
       });
     });
@@ -270,32 +287,176 @@ Contexto:
     const clearAllBtn = document.getElementById("clear-all-errors-btn");
     const emptyNode = document.getElementById("offline-errors-empty");
     const listNode = document.getElementById("offline-errors-list");
+    const listGroup = document.getElementById("offline-errors-list-group");
+    const turmaFilter = document.getElementById("errors-turma-filter");
+
+    const buildCopyPayload = (item) => {
+      const ctx = item.context_json ? JSON.stringify(item.context_json, null, 2) : "{}";
+      return [
+        `summary: ${item.summary || ""}`,
+        `created_at: ${item.created_at || ""}`,
+        `operation: ${item.operation || ""}`,
+        `context_json: ${ctx}`,
+        "details:",
+        item.details || "",
+      ].join("\n");
+    };
+
+    const updateTurmaStatus = (turmaErrorCounts) => {
+      const rows = Array.from(document.querySelectorAll("tr[data-turma-id]"));
+      rows.forEach((row) => {
+        const turmaId = row.dataset.turmaId;
+        const pending = Number(row.dataset.pending || 0);
+        const errorCount = Number((turmaErrorCounts || {})[turmaId] || 0);
+
+        const errorLink = document.getElementById(`turma-error-link-${turmaId}`);
+        const errorCountNodeLocal = document.getElementById(`turma-error-count-${turmaId}`);
+        const badge = document.getElementById(`turma-status-badge-${turmaId}`);
+        const badgeLabel = document.getElementById(`turma-status-label-${turmaId}`);
+
+        if (errorCountNodeLocal) errorCountNodeLocal.textContent = String(errorCount);
+        if (errorLink) {
+          errorLink.classList.toggle("d-none", errorCount === 0);
+        }
+
+        if (!badge || !badgeLabel) return;
+        badge.classList.remove("text-bg-danger", "text-bg-warning", "text-bg-success", "turma-error-hotspot", "js-open-turma-errors");
+        badge.removeAttribute("data-turma-id");
+        badge.disabled = true;
+
+        if (errorCount > 0) {
+          badge.classList.add("text-bg-danger", "turma-error-hotspot", "js-open-turma-errors");
+          badge.setAttribute("data-turma-id", turmaId);
+          badgeLabel.textContent = "Erro";
+          badge.disabled = false;
+        } else if (pending > 0) {
+          badge.classList.add("text-bg-warning");
+          badgeLabel.textContent = "Pendentes";
+        } else {
+          badge.classList.add("text-bg-success");
+          badgeLabel.textContent = "OK";
+        }
+      });
+    };
+
+    const renderErrorRows = (items) => {
+      listGroup.innerHTML = "";
+      (items || []).forEach((item) => {
+        const row = document.createElement("div");
+        row.className = "list-group-item";
+        row.id = `offline-error-row-${item.id}`;
+        row.setAttribute("data-error-row", "1");
+        row.setAttribute("data-search-item", "1");
+        row.dataset.text = `erro ${(item.turma_nome || "").toLowerCase()} ${(item.operation || "").toLowerCase()} ${(item.summary || "").toLowerCase()}`;
+
+        const detailsId = `error-details-${item.id}`;
+        const copyPayload = escapeHtml(buildCopyPayload(item));
+        const detailsText = escapeHtml(item.details || "");
+        const contextText = item.context_pretty ? `\n\nContexto:\n${escapeHtml(item.context_pretty)}` : "";
+
+        row.innerHTML = `
+          <div class="row g-2 align-items-start">
+            <div class="col-md-2 small text-muted">${escapeHtml(item.created_at_display || "-")}</div>
+            <div class="col-md-2">${escapeHtml(item.turma_nome || "-")}</div>
+            <div class="col-md-2"><span class="badge text-bg-secondary">${escapeHtml(item.operation || "other")}</span></div>
+            <div class="col-md-3">${escapeHtml(item.summary || "")}</div>
+            <div class="col-md-3 d-flex flex-wrap gap-1 justify-content-md-end">
+              <button class="btn btn-sm btn-outline-secondary js-toggle-details" type="button" data-target="${detailsId}">Detalhes</button>
+              <button class="btn btn-sm btn-outline-dark js-copy-error" type="button" data-copy="${copyPayload}">Copiar</button>
+              <button class="btn btn-sm btn-outline-danger js-remove-error" type="button" data-error-id="${item.id}">Ignorar</button>
+            </div>
+          </div>
+          <div class="mt-2 d-none" id="${detailsId}">
+            <div class="border rounded bg-light p-2">
+              <div class="small text-muted mb-1">Detalhes tecnicos</div>
+              <pre class="offline-error-pre mb-0">${detailsText}${contextText}</pre>
+            </div>
+          </div>
+        `;
+
+        listGroup.appendChild(row);
+      });
+    };
 
     const syncErrorUIFromPayload = (payload) => {
       const count = Number(payload?.error_count || 0);
       if (errorCountNode) errorCountNode.textContent = String(count);
       if (errorCountHeaderNode) errorCountHeaderNode.textContent = String(count);
-      if (lastErrorNode) {
-        lastErrorNode.textContent = payload?.last_error_at_display || "Sem erros";
-      }
-      if (clearAllBtn) {
-        clearAllBtn.classList.toggle("d-none", count === 0);
-      }
-      if (emptyNode) {
-        emptyNode.classList.toggle("d-none", count > 0);
-      }
-      if (listNode) {
-        listNode.classList.toggle("d-none", count === 0);
-      }
+      if (lastErrorNode) lastErrorNode.textContent = payload?.last_error_at_display || "Sem erros";
+      if (clearAllBtn) clearAllBtn.classList.toggle("d-none", count === 0);
+      if (emptyNode) emptyNode.classList.toggle("d-none", count > 0);
+      if (listNode) listNode.classList.toggle("d-none", count === 0);
+      updateTurmaStatus(payload?.turma_error_counts || {});
     };
 
-    document.querySelectorAll(".js-copy-error").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const targetId = btn.dataset.copyTarget;
-        const node = targetId ? document.getElementById(targetId) : null;
-        if (!node) return;
-        const text = node.textContent || "";
+    const loadErrors = async (turmaId = "") => {
+      const params = new URLSearchParams();
+      params.set("limit", "50");
+      if (turmaId) params.set("turma_id", String(turmaId));
+
+      const response = await fetch(`/offline/errors?${params.toString()}`, {
+        headers: { Accept: "application/json" },
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.message || "Falha ao carregar erros.");
+      }
+
+      renderErrorRows(payload.items || []);
+      syncErrorUIFromPayload(payload);
+      if (searchInput && searchInput.value) {
+        searchInput.dispatchEvent(new Event("input"));
+      }
+      return payload;
+    };
+
+    const removeError = async (errorId) => {
+      const response = await fetch(`/offline/errors/${errorId}`, {
+        method: "DELETE",
+        headers: { Accept: "application/json" },
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.message || "Falha ao remover erro.");
+      }
+      return payload;
+    };
+
+    const clearErrors = async () => {
+      const response = await fetch("/offline/errors/clear", {
+        method: "POST",
+        headers: { Accept: "application/json" },
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.message || "Falha ao limpar erros.");
+      }
+      return payload;
+    };
+
+    if (turmaFilter) {
+      turmaFilter.addEventListener("change", async () => {
         try {
+          await loadErrors(turmaFilter.value || "");
+        } catch (err) {
+          window.showToast(err.message || "Falha ao carregar erros.", "error");
+        }
+      });
+    }
+
+    document.addEventListener("click", async (event) => {
+      const detailsBtn = event.target.closest(".js-toggle-details");
+      if (detailsBtn) {
+        const targetId = detailsBtn.dataset.target;
+        const detailsNode = targetId ? document.getElementById(targetId) : null;
+        if (detailsNode) detailsNode.classList.toggle("d-none");
+        return;
+      }
+
+      const copyBtn = event.target.closest(".js-copy-error");
+      if (copyBtn) {
+        try {
+          const text = copyBtn.dataset.copy || "";
           if (navigator.clipboard?.writeText) {
             await navigator.clipboard.writeText(text);
           } else {
@@ -306,36 +467,41 @@ Contexto:
             document.execCommand("copy");
             area.remove();
           }
-          window.showToast("Detalhes copiados.", "success", 2200);
+          window.showToast("Erro copiado.", "success", 2200);
         } catch (err) {
           window.showToast("Nao foi possivel copiar.", "error", 2600);
         }
-      });
-    });
+        return;
+      }
 
-    document.querySelectorAll(".js-remove-error").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        if (btn.disabled) return;
-        btn.disabled = true;
-        const errorId = btn.dataset.errorId;
+      const removeBtn = event.target.closest(".js-remove-error");
+      if (removeBtn) {
+        if (removeBtn.disabled) return;
+        removeBtn.disabled = true;
+        const errorId = removeBtn.dataset.errorId;
         try {
-          const response = await fetch(`/offline/errors/${errorId}`, {
-            method: "DELETE",
-            headers: { Accept: "application/json" },
-          });
-          const payload = await response.json();
-          if (!response.ok || !payload.ok) {
-            throw new Error(payload.message || "Falha ao remover erro.");
-          }
-
-          const row = document.getElementById(`offline-error-row-${errorId}`);
-          if (row) row.remove();
-          syncErrorUIFromPayload(payload);
+          await removeError(errorId);
+          await loadErrors(turmaFilter ? turmaFilter.value || "" : "");
         } catch (err) {
-          window.showToast(err.message || "Falha ao remover erro.", "error");
-          btn.disabled = false;
+          window.showToast(err.message || "Falha ao ignorar erro.", "error");
+          removeBtn.disabled = false;
         }
-      });
+        return;
+      }
+
+      const openTurmaBtn = event.target.closest(".js-open-turma-errors");
+      if (openTurmaBtn) {
+        const turmaId = openTurmaBtn.dataset.turmaId || "";
+        if (turmaFilter) turmaFilter.value = turmaId;
+        try {
+          await loadErrors(turmaId);
+          const card = document.getElementById("offline-errors-card");
+          if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+        } catch (err) {
+          window.showToast(err.message || "Falha ao carregar erros da turma.", "error");
+        }
+        return;
+      }
     });
 
     if (clearAllBtn) {
@@ -343,17 +509,8 @@ Contexto:
         if (clearAllBtn.disabled) return;
         clearAllBtn.disabled = true;
         try {
-          const response = await fetch("/offline/errors/clear", {
-            method: "POST",
-            headers: { Accept: "application/json" },
-          });
-          const payload = await response.json();
-          if (!response.ok || !payload.ok) {
-            throw new Error(payload.message || "Falha ao limpar erros.");
-          }
-
-          document.querySelectorAll("[data-error-row]").forEach((row) => row.remove());
-          syncErrorUIFromPayload(payload);
+          await clearErrors();
+          await loadErrors(turmaFilter ? turmaFilter.value || "" : "");
           window.showToast("Erros limpos.", "success", 2200);
         } catch (err) {
           window.showToast(err.message || "Falha ao limpar erros.", "error");
@@ -362,6 +519,10 @@ Contexto:
         }
       });
     }
+
+    loadErrors("").catch((err) => {
+      window.showToast(err.message || "Falha ao carregar erros.", "error");
+    });
   })();
 </script>
 {% endblock %}

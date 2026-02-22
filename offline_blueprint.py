@@ -111,43 +111,77 @@ def _mark_success_state(key):
         current_app.logger.exception("Falha ao atualizar estado offline '%s'.", key)
 
 
-def _build_turma_outbox_stats(instance_path, turmas):
-    stats = {int(t["id"]): {"pending": 0, "errors": 0} for t in turmas}
+def _safe_int(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_turma_info_from_context(context):
+    if not isinstance(context, dict):
+        return None, None
+    turma_id = _safe_int(context.get("turma_id"))
+    turma_nome = context.get("turma_nome")
+    if turma_nome is not None:
+        turma_nome = str(turma_nome)
+    return turma_id, turma_nome
+
+
+def _resolve_turma_from_payload_or_aula(payload, turma_ids_set, aula_turma_cache, instance_path):
+    turma_id = _safe_int(payload.get("turma_id"))
+    if turma_id is None:
+        aula_id = _safe_int(payload.get("aula_id"))
+        if aula_id is not None:
+            if aula_id not in aula_turma_cache:
+                aula = get_snapshot_aula(instance_path, aula_id)
+                aula_turma_cache[aula_id] = _safe_int((aula or {}).get("turma_id"))
+            turma_id = aula_turma_cache.get(aula_id)
+    return turma_id if turma_id in turma_ids_set else None
+
+
+def _build_turma_pending_counts(instance_path, turmas):
+    stats = {int(t["id"]): 0 for t in turmas}
     if not stats:
         return stats
 
+    turma_ids_set = set(stats.keys())
     aula_turma_cache = {}
-    status_mappings = (
-        ("pending", "pending"),
-        ("error", "errors"),
-    )
-
-    for outbox_status_name, stats_field in status_mappings:
-        for item in list_outbox(instance_path, status=outbox_status_name, limit=5000):
-            payload = item.get("payload") or {}
-            turma_id = payload.get("turma_id")
-
-            if turma_id is None:
-                aula_id = payload.get("aula_id")
-                try:
-                    aula_id = int(aula_id) if aula_id is not None else None
-                except (TypeError, ValueError):
-                    aula_id = None
-                if aula_id is not None:
-                    if aula_id not in aula_turma_cache:
-                        aula = get_snapshot_aula(instance_path, aula_id)
-                        aula_turma_cache[aula_id] = int(aula["turma_id"]) if aula and aula.get("turma_id") else None
-                    turma_id = aula_turma_cache.get(aula_id)
-
-            try:
-                turma_id = int(turma_id) if turma_id is not None else None
-            except (TypeError, ValueError):
-                turma_id = None
-
-            if turma_id in stats:
-                stats[turma_id][stats_field] += 1
-
+    for item in list_outbox(instance_path, status="pending", limit=5000):
+        payload = item.get("payload") or {}
+        turma_id = _resolve_turma_from_payload_or_aula(payload, turma_ids_set, aula_turma_cache, instance_path)
+        if turma_id is not None:
+            stats[turma_id] += 1
     return stats
+
+
+def _build_turma_error_counts(errors):
+    counts = {}
+    for item in errors:
+        turma_id, _ = _extract_turma_info_from_context(item.get("context_json"))
+        if turma_id is None:
+            continue
+        counts[turma_id] = int(counts.get(turma_id, 0)) + 1
+    return counts
+
+
+def _normalized_limit(raw_limit, default=50, max_limit=500):
+    try:
+        limit = int(raw_limit if raw_limit is not None else default)
+    except (TypeError, ValueError):
+        limit = default
+    return max(1, min(max_limit, limit))
+
+
+def _load_filtered_errors(instance_path, turma_id=None, limit=50):
+    all_errors = list_offline_errors(instance_path, limit=None)
+    filtered = []
+    for item in all_errors:
+        ctx_turma_id, _ = _extract_turma_info_from_context(item.get("context_json"))
+        if turma_id is not None and ctx_turma_id != turma_id:
+            continue
+        filtered.append(item)
+    return filtered[: int(limit)]
 
 
 def _serialize_error_for_ui(item):
@@ -160,6 +194,7 @@ def _serialize_error_for_ui(item):
         context_pretty = str(context)
 
     created_at = item.get("created_at")
+    turma_id, turma_nome = _extract_turma_info_from_context(context)
     return {
         "id": item.get("id"),
         "created_at": created_at,
@@ -168,6 +203,9 @@ def _serialize_error_for_ui(item):
         "summary": item.get("summary") or "Erro sem resumo.",
         "details": item.get("details") or "",
         "context_pretty": context_pretty,
+        "context_json": context,
+        "turma_id": turma_id,
+        "turma_nome": turma_nome or "-",
     }
 
 
@@ -179,6 +217,24 @@ def _error_counts_payload(instance_path):
         "error_count": error_count,
         "last_error_at": last_error_at,
         "last_error_at_display": _fmt_dt_pt(last_error_at, fallback="Sem erros"),
+    }
+
+
+def _serialize_errors_payload(instance_path, turma_id=None, limit=50):
+    limit = _normalized_limit(limit)
+    items = [_serialize_error_for_ui(item) for item in _load_filtered_errors(instance_path, turma_id=turma_id, limit=limit)]
+    errors_meta = _error_counts_payload(instance_path)
+    all_errors = list_offline_errors(instance_path, limit=None)
+    turma_error_counts = _build_turma_error_counts(all_errors)
+    return {
+        "ok": True,
+        "items": items,
+        "filter_turma_id": turma_id,
+        "limit": limit,
+        "error_count": errors_meta["error_count"],
+        "last_error_at": errors_meta["last_error_at"],
+        "last_error_at_display": errors_meta["last_error_at_display"],
+        "turma_error_counts": {str(k): int(v) for k, v in turma_error_counts.items()},
     }
 
 
@@ -389,13 +445,17 @@ def dashboard():
     snapshot_last_run_at = snapshot_last_run.get("finished_at") or snapshot_last_run.get("started_at")
     snapshot_last_run_ok = bool(snapshot_last_run and int(snapshot_last_run.get("ok") or 0) == 1)
 
+    all_errors = list_offline_errors(instance_path, limit=None)
+    turma_error_counts = _build_turma_error_counts(all_errors)
+
     turmas_raw = list_snapshot_turmas(instance_path)
-    turma_stats = _build_turma_outbox_stats(instance_path, turmas_raw)
+    turma_pending_counts = _build_turma_pending_counts(instance_path, turmas_raw)
+
     turmas = []
     for turma in turmas_raw:
         turma_id = int(turma["id"])
-        pending = int(turma_stats.get(turma_id, {}).get("pending", 0))
-        error_ops = int(turma_stats.get(turma_id, {}).get("errors", 0))
+        pending = int(turma_pending_counts.get(turma_id, 0))
+        error_ops = int(turma_error_counts.get(turma_id, 0))
 
         if error_ops > 0:
             status_label = "Erro"
@@ -419,7 +479,7 @@ def dashboard():
         )
         turmas.append(row)
 
-    errors = [_serialize_error_for_ui(item) for item in list_offline_errors(instance_path, limit=50)]
+    errors = [_serialize_error_for_ui(item) for item in _load_filtered_errors(instance_path, turma_id=None, limit=50)]
     errors_meta = _error_counts_payload(instance_path)
 
     last_sync_ok_at = get_state_datetime(instance_path, STATE_LAST_SYNC_OK_AT)
@@ -442,6 +502,14 @@ def dashboard():
         last_snapshot_ok_at=last_snapshot_ok_at,
         last_snapshot_ok_at_display=_fmt_dt_pt(last_snapshot_ok_at),
     )
+
+
+@offline_bp.route("/errors", methods=["GET"])
+def list_errors():
+    turma_id = request.args.get("turma_id", type=int)
+    limit = _normalized_limit(request.args.get("limit"), default=50, max_limit=500)
+    payload = _serialize_errors_payload(current_app.instance_path, turma_id=turma_id, limit=limit)
+    return jsonify(payload)
 
 
 @offline_bp.route("/status")
@@ -639,16 +707,6 @@ def sync_page():
                 "success",
             )
         elif result.get("ok"):
-            _safe_record_offline_error(
-                "sync",
-                RuntimeError("Sincronizacao concluida com erros."),
-                context={
-                    "applied": int(result.get("applied", 0)),
-                    "errored": int(result.get("errored", 0)),
-                    "pending": int(result.get("pending", 0)),
-                    "errors": int(result.get("errors", 0)),
-                },
-            )
             flash(
                 f"Sincronizacao com erros. Aplicados: {result.get('applied', 0)} | erros: {result.get('errored', 0)}",
                 "warning",
@@ -658,6 +716,7 @@ def sync_page():
                 "sync",
                 RuntimeError(result.get("error") or "Nao foi possivel sincronizar agora."),
                 context={
+                    "phase": "sync_page",
                     "applied": int(result.get("applied", 0)),
                     "errored": int(result.get("errored", 0)),
                     "pending": int(result.get("pending", 0)),
@@ -677,10 +736,20 @@ def sync_page():
 @offline_bp.route("/errors/<int:error_id>", methods=["DELETE"])
 def delete_error(error_id):
     ok = delete_offline_error(current_app.instance_path, error_id)
-    payload = {"ok": bool(ok), **_error_counts_payload(current_app.instance_path)}
     if not ok:
+        payload = {"ok": False, **_error_counts_payload(current_app.instance_path)}
         payload["message"] = "Erro nao encontrado."
+        payload["turma_error_counts"] = {
+            str(k): int(v)
+            for k, v in _build_turma_error_counts(list_offline_errors(current_app.instance_path, limit=None)).items()
+        }
         return jsonify(payload), 404
+
+    payload = {"ok": True, **_error_counts_payload(current_app.instance_path)}
+    payload["turma_error_counts"] = {
+        str(k): int(v)
+        for k, v in _build_turma_error_counts(list_offline_errors(current_app.instance_path, limit=None)).items()
+    }
     return jsonify(payload)
 
 
@@ -688,4 +757,5 @@ def delete_error(error_id):
 def clear_errors():
     deleted = clear_offline_errors(current_app.instance_path)
     payload = {"ok": True, "deleted": int(deleted), **_error_counts_payload(current_app.instance_path)}
+    payload["turma_error_counts"] = {}
     return jsonify(payload)
