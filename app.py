@@ -3125,6 +3125,38 @@ def create_app():
             query = query.filter(DTOcorrencia.alunos.any(DTAluno.id == filtros["aluno_id"]))
         return query.order_by(DTOcorrencia.data.desc(), DTOcorrencia.hora_inicio.desc(), DTOcorrencia.id.desc())
 
+    def _dt_ocorrencia_alunos_linha(ocorrencia):
+        def _ordem_dt_aluno(dt_aluno):
+            aluno = dt_aluno.aluno
+            if not aluno:
+                return (1, 1, 9999, "", dt_aluno.id or 0)
+            nome_ref = ((aluno.nome_curto_exibicao or aluno.nome or "")).strip().casefold()
+            numero = aluno.numero
+            return (
+                0,
+                numero is None,
+                numero if numero is not None else 9999,
+                nome_ref,
+                aluno.id or 0,
+            )
+
+        alunos = sorted((ocorrencia.alunos or []), key=_ordem_dt_aluno)
+        resultado = []
+        for dt_aluno in alunos:
+            aluno = dt_aluno.aluno
+            numero = aluno.numero if aluno else None
+            nome_curto = "—"
+            if aluno:
+                nome_curto = (aluno.nome_curto_exibicao or aluno.nome or "—").strip() or "—"
+            resultado.append(
+                {
+                    "numero": numero,
+                    "nome_curto": nome_curto,
+                    "dt_aluno_id": dt_aluno.id,
+                }
+            )
+        return resultado
+
     @app.route("/dt-disciplinas")
     def dt_disciplinas_list():
         termo = (request.args.get("q") or "").strip()
@@ -3674,6 +3706,8 @@ def create_app():
         filtros = _dt_ocorrencias_filters(dt_turma)
         qs = _dt_filtros_to_qs(filtros)
         ocorrencias = _dt_ocorrencias_query(dt_turma, filtros).all()
+        for ocorrencia in ocorrencias:
+            ocorrencia.alunos_linha = _dt_ocorrencia_alunos_linha(ocorrencia)
         disciplinas = DTDisciplina.query.filter_by(ativa=True).order_by(DTDisciplina.nome.asc()).all()
         alunos = (
             DTAluno.query.options(joinedload(DTAluno.aluno))

@@ -44,12 +44,73 @@
   </div>
 </form>
 
-<div class="table-responsive"><table class="table table-striped align-middle"><thead><tr><th>Data</th><th>Hora</th><th>Tempos</th><th>Disciplina</th><th>Nº Alunos</th><th>Observações</th><th class="text-end">Ações</th></tr></thead><tbody>
-{% for o in ocorrencias %}
-<tr>
-<td>{{ o.data.strftime('%d/%m/%Y') if o.data else '—' }}</td><td>{{ o.hora_inicio.strftime('%H:%M') if o.hora_inicio else '' }}{% if o.hora_fim %} - {{ o.hora_fim.strftime('%H:%M') }}{% endif %}</td><td>{{ o.num_tempos if o.num_tempos is not none else '—' }}</td><td>{% set label = o.disciplina.nome if o.disciplina else '—' %}{% if o.disciplina and o.disciplina.nome_curto %}{% set label = o.disciplina.nome_curto ~ ' — ' ~ o.disciplina.nome %}{% endif %}{% if o.disciplina and o.disciplina.professor_nome %}{% set label = label ~ ' (' ~ o.disciplina.professor_nome ~ ')' %}{% endif %}{{ label }}</td><td>{{ o.alunos|length }}</td><td>{{ (o.observacoes or '')[:80] }}{% if o.observacoes and o.observacoes|length > 80 %}…{% endif %}</td>
-<td class="text-end"><a class="btn btn-sm btn-outline-warning {% if bloqueado %}disabled{% endif %}" href="{{ url_for('direcao_turma_ocorrencias_edit', dt_id=dt_turma.id, oc_id=o.id, **qs) }}">Editar</a><form method="post" action="{{ url_for('direcao_turma_ocorrencias_delete', dt_id=dt_turma.id, oc_id=o.id) }}" class="d-inline" onsubmit="return confirm('Apagar ocorrência?');"><input type="hidden" name="_qs" value="{{ request.query_string.decode('utf-8') }}"><input type="hidden" name="next" value="{{ request.full_path }}"><button class="btn btn-sm btn-outline-danger" {% if bloqueado %}disabled{% endif %}>Apagar</button></form></td>
-</tr>
-{% else %}<tr><td colspan="7" class="text-muted">Sem ocorrências para os filtros selecionados.</td></tr>{% endfor %}
-</tbody></table></div>
+<div class="table-responsive">
+  <table class="table table-striped align-middle">
+    <thead>
+      <tr>
+        <th>Data</th>
+        <th>Hora</th>
+        <th>Tempos</th>
+        <th>Disciplina</th>
+        <th class="text-center" style="width: 5rem;">N.º</th>
+        <th>Aluno</th>
+        <th>Observações</th>
+        <th class="text-end">Ações</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for o in ocorrencias %}
+      {% set alunos_linha = o.alunos_linha if o.alunos_linha is defined else [] %}
+      <tr>
+        <td>{{ o.data.strftime('%d/%m/%Y') if o.data else '—' }}</td>
+        <td>{{ o.hora_inicio.strftime('%H:%M') if o.hora_inicio else '' }}{% if o.hora_fim %} - {{ o.hora_fim.strftime('%H:%M') }}{% endif %}</td>
+        <td>{{ o.num_tempos if o.num_tempos is not none else '—' }}</td>
+        <td>
+          {% set label = o.disciplina.nome if o.disciplina else '—' %}
+          {% if o.disciplina and o.disciplina.nome_curto %}{% set label = o.disciplina.nome_curto ~ ' — ' ~ o.disciplina.nome %}{% endif %}
+          {% if o.disciplina and o.disciplina.professor_nome %}{% set label = label ~ ' (' ~ o.disciplina.professor_nome ~ ')' %}{% endif %}
+          {{ label }}
+        </td>
+        <td class="text-center">
+          {% if alunos_linha %}
+            {% for item in alunos_linha %}
+              <div>{{ item.numero if item.numero is not none else '—' }}</div>
+            {% endfor %}
+          {% else %}
+            —
+          {% endif %}
+        </td>
+        <td>
+          {% if alunos_linha %}
+            {% for item in alunos_linha %}
+              <div>
+                {% if item.dt_aluno_id %}
+                  {{ item.nome_curto }}
+                {% else %}
+                  {{ item.nome_curto }}
+                {% endif %}
+              </div>
+            {% endfor %}
+          {% else %}
+            —
+          {% endif %}
+        </td>
+        <td>{{ (o.observacoes or '')[:80] }}{% if o.observacoes and o.observacoes|length > 80 %}…{% endif %}</td>
+        <td class="text-end">
+          <a class="btn btn-sm btn-outline-warning {% if bloqueado %}disabled{% endif %}" href="{{ url_for('direcao_turma_ocorrencias_edit', dt_id=dt_turma.id, oc_id=o.id, **qs) }}">Editar</a>
+          <form method="post" action="{{ url_for('direcao_turma_ocorrencias_delete', dt_id=dt_turma.id, oc_id=o.id) }}" class="d-inline" onsubmit="return confirm('Apagar ocorrência?');">
+            <input type="hidden" name="_qs" value="{{ request.query_string.decode('utf-8') }}">
+            <input type="hidden" name="next" value="{{ request.full_path }}">
+            <button class="btn btn-sm btn-outline-danger" {% if bloqueado %}disabled{% endif %}>Apagar</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="8" class="text-muted">Sem ocorrências para os filtros selecionados.</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% endblock %}
