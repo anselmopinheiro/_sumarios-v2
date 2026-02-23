@@ -206,6 +206,8 @@
                 {% if a.turma and a.turma.letiva %}
                   <a href="{{ url_for('calendario_aula_alunos', turma_id=a.turma_id, aula_id=a.id, return_url=request.full_path) }}"
                      class="btn btn-sm btn-outline-info mb-1">Alunos</a>
+                  <a href="{{ url_for('turma_trabalhos', turma_id=a.turma_id) }}"
+                     class="btn btn-sm btn-outline-info mb-1">Trabalhos</a>
                 {% endif %}
                 <a href="{{ url_for('calendario_edit', turma_id=a.turma_id, aula_id=a.id, view='pendentes', data_ref=a.data.isoformat() if a.data else None, periodo_id=a.periodo_id) }}"
                    class="btn btn-sm btn-warning mb-1">Editar</a>

@@ -285,6 +285,10 @@
                     class="btn btn-sm btn-outline-info">
                     Alunos
                   </a>
+                  <a href="{{ url_for('turma_trabalhos', turma_id=turma.id) }}"
+                    class="btn btn-sm btn-outline-info">
+                    Trabalhos
+                  </a>
                 {% endif %}
                 <a href="{{ url_for('calendario_edit', turma_id=turma.id, aula_id=a.id) }}"
                   class="btn btn-sm btn-warning">
