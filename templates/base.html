@@ -289,6 +289,32 @@
       return wrapper.innerHTML;
     };
 
+    const sanitizeToPlainText = (value) => {
+      if (!value) return '';
+      let out = String(value);
+      out = out.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      out = out.replace(/<\s*br\s*\/?>/gi, '\n');
+      out = out.replace(/<\/\s*(p|div|li|tr|h[1-6])\s*>/gi, '\n');
+      out = out.replace(/<\s*li(?:\s+[^>]*)?>/gi, '- ');
+      out = out.replace(/<[^>]*>/g, '');
+      out = out.replace(/\u00a0/g, ' ');
+      out = out.replace(/[ \t]+\n/g, '\n');
+      out = out.replace(/\n{3,}/g, '\n\n');
+      return out.trimEnd();
+    };
+
+    const getNamedField = (form, name, selectorFallback) => {
+      if (!form) return null;
+      const fromElements = form.elements?.namedItem?.(name) || null;
+      if (fromElements) {
+        if (typeof fromElements.length === 'number' && !fromElements.tagName) {
+          return fromElements[0] || null;
+        }
+        return fromElements;
+      }
+      return selectorFallback ? form.querySelector(selectorFallback) : null;
+    };
+
     const syncRichtext = (editor) => {
       if (!editor) return;
       const target = editor.dataset.target ? document.querySelector(editor.dataset.target) : null;
@@ -371,13 +397,21 @@
 
     const copiarPrevisao = (btn) => {
       if (!btn) return;
-      const form = btn.closest('form');
+      const form = obterForm(btn) || btn.closest('.js-sumario-form') || btn.closest('form');
       if (!form) return;
-      const previsao = form.querySelector('[name="previsao"]');
-      const sumario = form.querySelector('textarea[name="sumario"]');
+      const wrapper = btn.closest('.js-richtext-wrapper') || form;
+      const previsaoEditor = wrapper?.querySelector('.js-richtext-editor');
+      const previsao = getNamedField(form, 'previsao', '[name="previsao"]') || wrapper?.querySelector('[name="previsao"]');
+      const sumario = getNamedField(form, 'sumario', 'textarea[name="sumario"]');
       if (!previsao || !sumario) return;
       const aulaId = btn.dataset.aulaId;
-      const novoTexto = previsao.value || '';
+      const previsaoRaw =
+        previsaoEditor?.innerText ||
+        previsaoEditor?.textContent ||
+        previsao.value ||
+        previsao.textContent ||
+        '';
+      const novoTexto = sanitizeToPlainText(previsaoRaw);
       const atualTexto = sumario.value || '';
       if (atualTexto && atualTexto !== novoTexto) {
         const confirmar = window.confirm(
@@ -390,22 +424,29 @@
         method: 'POST',
         headers: {
           'X-Requested-With': 'XMLHttpRequest',
+          'Content-Type': 'application/json',
           Accept: 'application/json',
         },
+        body: JSON.stringify({ sumario: novoTexto }),
       })
         .then((resp) => resp.json())
         .then((payload) => {
           if (payload.status !== 'ok' && payload.status !== 'noop') {
             throw new Error(payload.message || 'Falha ao copiar previsão');
           }
-          if (payload.status === 'noop') return;
-          sumario.value = payload.sumario || '';
-          sumario.dispatchEvent(new Event('input', { bubbles: true }));
-          setEstadoSumario(form, 'unsaved', 'Alterações por guardar', btn);
-          if (form) {
-            guardarAutomatico(form, btn);
+          const textoFinal = sanitizeToPlainText(payload.sumario || novoTexto || '');
+          const alterou = (sumario.value || '') !== textoFinal;
+          sumario.value = textoFinal;
+          if (alterou) {
+            sumario.dispatchEvent(new Event('input', { bubbles: true }));
+            setEstadoSumario(form, 'unsaved', 'Alterações por guardar', btn);
+            if (form) {
+              guardarAutomatico(form, btn);
+            }
           }
-          mostrarToastUndo(aulaId);
+          if (payload.status === 'ok') {
+            mostrarToastUndo(aulaId);
+          }
         })
         .catch((err) => {
           console.error(err);

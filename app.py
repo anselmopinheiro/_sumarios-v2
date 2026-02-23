@@ -178,15 +178,18 @@ def _strip_html_to_text(html_text):
     if not html_text:
         return ""
     texto = str(html_text)
+    texto = texto.replace("\r\n", "\n").replace("\r", "\n")
     texto = re.sub(r"(?i)<\s*br\s*/?>", "\n", texto)
-    texto = re.sub(r"(?i)</\s*p\s*>", "\n", texto)
-    texto = re.sub(r"(?i)<\s*li\s*>", "- ", texto)
+    texto = re.sub(r"(?i)</\s*(p|div|tr|h[1-6])\s*>", "\n", texto)
+    texto = re.sub(r"(?i)<\s*li(?:\s+[^>]*)?>", "- ", texto)
+    texto = re.sub(r"(?i)</\s*li\s*>", "\n", texto)
     texto = re.sub(r"<[^>]+>", "", texto)
     texto = html.unescape(texto)
-    texto = texto.replace("\r\n", "\n").replace("\r", "\n")
+    texto = texto.replace("\u00a0", " ")
+    texto = re.sub(r"[ \t]+\n", "\n", texto)
     texto = re.sub(r"[ \t]+", " ", texto)
     texto = re.sub(r"\n{3,}", "\n\n", texto)
-    return texto.strip()
+    return texto.rstrip()
 
 
 def csv_text(value):
@@ -2515,11 +2518,14 @@ def create_app():
     @app.route("/aulas/<int:aula_id>/sumario/copiar-previsao", methods=["POST"])
     def sumario_copiar_previsao(aula_id):
         aula = CalendarioAula.query.get_or_404(aula_id)
-        previsao = (aula.previsao or "").strip()
+        payload = request.get_json(silent=True) or {}
+        previsao_origem = payload.get("sumario", None)
+        if previsao_origem is None:
+            previsao_origem = aula.previsao or ""
         anterior = aula.sumario or ""
-        novo = previsao
+        novo = _strip_html_to_text(previsao_origem)
         if anterior == novo:
-            return jsonify({"status": "noop", "sumario": aula.sumario or ""})
+            return jsonify({"status": "noop", "sumario": _strip_html_to_text(aula.sumario or "")})
         _registar_sumario_historico(
             aula,
             "copiar_previsao_para_sumario",
@@ -2531,7 +2537,7 @@ def create_app():
         return jsonify(
             {
                 "status": "ok",
-                "sumario": aula.sumario or "",
+                "sumario": novo,
                 "previous": anterior,
                 "last_save": _formatar_data_hora(_load_last_save()),
             }
