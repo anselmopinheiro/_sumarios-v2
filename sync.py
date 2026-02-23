@@ -218,10 +218,10 @@ def _apply_outbox_item(item):
                     """
                     INSERT INTO aulas_alunos
                     (aula_id, aluno_id, atraso, faltas, responsabilidade, comportamento,
-                     participacao, trabalho_autonomo, portatil_material, atividade, falta_disciplinar)
+                     participacao, trabalho_autonomo, portatil_material, atividade, falta_disciplinar, observacoes)
                     VALUES
                     (:aula_id, :aluno_id, :atraso, :faltas, :responsabilidade, :comportamento,
-                     :participacao, :trabalho_autonomo, :portatil_material, :atividade, :falta_disciplinar)
+                     :participacao, :trabalho_autonomo, :portatil_material, :atividade, :falta_disciplinar, :observacoes)
                     ON CONFLICT (aula_id, aluno_id) DO UPDATE SET
                       atraso = EXCLUDED.atraso,
                       faltas = EXCLUDED.faltas,
@@ -231,7 +231,8 @@ def _apply_outbox_item(item):
                       trabalho_autonomo = EXCLUDED.trabalho_autonomo,
                       portatil_material = EXCLUDED.portatil_material,
                       atividade = EXCLUDED.atividade,
-                      falta_disciplinar = EXCLUDED.falta_disciplinar
+                      falta_disciplinar = EXCLUDED.falta_disciplinar,
+                      observacoes = EXCLUDED.observacoes
                     """
                 ),
                 {
@@ -246,6 +247,7 @@ def _apply_outbox_item(item):
                     "portatil_material": payload.get("portatil_material"),
                     "atividade": payload.get("atividade"),
                     "falta_disciplinar": int(payload.get("falta_disciplinar") or 0),
+                    "observacoes": payload.get("observacoes"),
                 },
             )
 

@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>Presenças offline — Aula {{ aula.id }} ({{ aula.data or '' }})</h2>
+<h2>Presencas offline - Aula {{ aula.id }} ({{ aula.data or '' }})</h2>
 <div class="alert alert-secondary">Pendentes: {{ status.pending }} | Erros: {{ status.errors }}</div>
 <form method="post">
 <table class="table table-sm table-striped">
   <thead>
-    <tr><th>Nº</th><th>Nome</th><th>Atraso</th><th>Faltas</th><th>Resp</th><th>Comp</th><th>Part</th><th>Auto</th><th>Mat</th><th>At</th><th>FDis</th></tr>
+    <tr><th>No</th><th>Nome</th><th>Atraso</th><th>Faltas</th><th>Resp</th><th>Comp</th><th>Part</th><th>Auto</th><th>Mat</th><th>At</th><th>FDis</th><th>Observacoes</th></tr>
   </thead>
   <tbody>
     {% for aluno in alunos %}
@@ -19,6 +19,7 @@
         <td><input class="form-control form-control-sm" type="number" name="{{ campo }}_{{ aluno.id }}" min="1" max="5" value="{{ a[campo] if a else 3 }}"></td>
         {% endfor %}
         <td><input class="form-control form-control-sm" type="number" name="falta_disciplinar_{{ aluno.id }}" min="0" max="2" value="{{ a.falta_disciplinar if a else 0 }}"></td>
+        <td><input class="form-control form-control-sm" type="text" name="observacoes_{{ aluno.id }}" maxlength="500" placeholder="Nota curta..." value="{{ a.observacoes if a else '' }}"></td>
       </tr>
     {% endfor %}
   </tbody>
@@ -27,10 +28,10 @@
 </form>
 
 <hr>
-<h5>Sumário / Observações (offline)</h5>
+<h5>Sumario / Observacoes (offline)</h5>
 <form method="post" action="{{ url_for('offline.aula_sumario', aula_id=aula.id) }}">
-  <textarea class="form-control mb-2" name="sumario" rows="3" placeholder="Sumário">{{ sumario.sumario if sumario else "" }}</textarea>
-  <textarea class="form-control mb-2" name="observacoes" rows="2" placeholder="Observações">{{ sumario.observacoes if sumario else "" }}</textarea>
-  <button class="btn btn-outline-primary" type="submit">Guardar sumário localmente</button>
+  <textarea class="form-control mb-2" name="sumario" rows="3" placeholder="Sumario">{{ sumario.sumario if sumario else "" }}</textarea>
+  <textarea class="form-control mb-2" name="observacoes" rows="2" placeholder="Observacoes">{{ sumario.observacoes if sumario else "" }}</textarea>
+  <button class="btn btn-outline-primary" type="submit">Guardar sumario localmente</button>
 </form>
 {% endblock %}

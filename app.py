@@ -297,6 +297,7 @@ AULAS_ALUNOS_FIELDS = {
     "portatil_material",
     "atividade",
     "falta_disciplinar",
+    "observacoes",
 }
 
 
@@ -339,6 +340,16 @@ def normalize_aulas_alunos_payload(payload):
         normalized["falta_disciplinar"] = (
             _clamp_int(payload.get("falta_disciplinar"), default=0, min_val=0, max_val=2) or 0
         )
+
+    if "observacoes" in payload:
+        observacoes = payload.get("observacoes")
+        if observacoes is None:
+            normalized["observacoes"] = None
+        else:
+            texto = str(observacoes).replace("\r\n", "\n").replace("\r", "\n").strip()
+            if len(texto) > 500:
+                texto = texto[:500]
+            normalized["observacoes"] = texto or None
 
     return normalized
 
@@ -383,7 +394,7 @@ def parse_aulas_alunos_tsv(raw_text, aula_id_default=None):
     if not lines:
         return rows
 
-    headers = [h.strip() for h in lines[0].split("	")]
+    headers = [h.strip() for h in lines[0].split("\t")]
     has_header = "aluno_id" in headers
     data_lines = lines[1:] if has_header else lines
 
@@ -400,15 +411,35 @@ def parse_aulas_alunos_tsv(raw_text, aula_id_default=None):
         "atividade",
         "falta_disciplinar",
     ]
+    allowed = set(expected + ["observacoes"])
 
     for idx, line in enumerate(data_lines, start=1):
-        parts = [p.strip() for p in line.split("	")]
-        if len(parts) < len(expected):
-            raise ValueError(f"Linha TSV inválida (campos insuficientes) na linha {idx}.")
+        raw_parts = line.split("\t")
+        if has_header:
+            record = {}
+            for col_idx, raw_header in enumerate(headers):
+                header = (raw_header or "").strip()
+                if header not in allowed:
+                    continue
+                value = raw_parts[col_idx] if col_idx < len(raw_parts) else ""
+                record[header] = value.strip()
+        else:
+            parts = [p.strip() for p in raw_parts]
+            if len(parts) < len(expected):
+                raise ValueError(f"Linha TSV invalida (campos insuficientes) na linha {idx}.")
+            record = dict(zip(expected, parts[: len(expected)]))
+            if len(raw_parts) > len(expected):
+                record["observacoes"] = "\t".join(raw_parts[len(expected) :]).strip()
 
-        record = dict(zip(expected, parts[: len(expected)]))
-        aula_id = int(record["aula_id"] or aula_id_default)
-        aluno_id = int(record["aluno_id"])
+        aula_id_raw = record.get("aula_id") or aula_id_default
+        if aula_id_raw in (None, ""):
+            raise ValueError(f"Linha TSV invalida (aula_id em falta) na linha {idx}.")
+        aluno_id_raw = record.get("aluno_id")
+        if aluno_id_raw in (None, ""):
+            raise ValueError(f"Linha TSV invalida (aluno_id em falta) na linha {idx}.")
+
+        aula_id = int(aula_id_raw)
+        aluno_id = int(aluno_id_raw)
         payload = normalize_aulas_alunos_payload(record)
         payload["client_ts"] = datetime.utcnow().isoformat(timespec="seconds")
 
@@ -1175,6 +1206,7 @@ def create_app():
                         portatil_material INTEGER DEFAULT 3,
                         atividade INTEGER DEFAULT 3,
                         falta_disciplinar INTEGER NOT NULL DEFAULT 0,
+                        observacoes TEXT,
                         CONSTRAINT fk_aula FOREIGN KEY(aula_id) REFERENCES calendario_aulas(id),
                         CONSTRAINT fk_aluno FOREIGN KEY(aluno_id) REFERENCES alunos(id),
                         CONSTRAINT uq_aula_aluno UNIQUE(aula_id, aluno_id)
@@ -1393,6 +1425,11 @@ def create_app():
                 text(
                     "ALTER TABLE aulas_alunos ADD COLUMN falta_disciplinar INTEGER NOT NULL DEFAULT 0"
                 )
+            )
+            db.session.commit()
+        if "observacoes" not in colunas_alunos:
+            db.session.execute(
+                text("ALTER TABLE aulas_alunos ADD COLUMN observacoes TEXT")
             )
             db.session.commit()
 
@@ -1905,6 +1942,7 @@ def create_app():
                     "portatil_material": request.form.get(f"portatil_material_{aluno.id}"),
                     "atividade": request.form.get(f"atividade_{aluno.id}"),
                     "falta_disciplinar": request.form.get(f"falta_disciplinar_{aluno.id}"),
+                    "observacoes": request.form.get(f"observacoes_{aluno.id}"),
                 }
             )
             payload["client_ts"] = datetime.utcnow().isoformat(timespec="seconds")

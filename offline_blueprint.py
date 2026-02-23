@@ -250,6 +250,14 @@ def _normalize_payload(item):
             value = min(mx, value)
         return value
 
+    observacoes_raw = item.get("observacoes")
+    observacoes = None
+    if observacoes_raw is not None:
+        observacoes = str(observacoes_raw).replace("\r\n", "\n").replace("\r", "\n").strip()
+        if len(observacoes) > 500:
+            observacoes = observacoes[:500]
+        observacoes = observacoes or None
+
     return {
         "atraso": bool(item.get("atraso")),
         "faltas": _int("faltas", 0, 0, 6),
@@ -260,6 +268,7 @@ def _normalize_payload(item):
         "portatil_material": _int("portatil_material", 3, 1, 5),
         "atividade": _int("atividade", 3, 1, 5),
         "falta_disciplinar": _int("falta_disciplinar", 0, 0, 2),
+        "observacoes": observacoes,
         "updated_at": datetime.utcnow().isoformat(timespec="seconds"),
     }
 
@@ -647,6 +656,7 @@ def aula_presencas(aula_id):
                     "portatil_material": request.form.get(f"portatil_material_{aluno_id}"),
                     "atividade": request.form.get(f"atividade_{aluno_id}"),
                     "falta_disciplinar": request.form.get(f"falta_disciplinar_{aluno_id}"),
+                    "observacoes": request.form.get(f"observacoes_{aluno_id}"),
                 }
             )
             payload_items.append({"aluno_id": aluno_id, "payload": payload})

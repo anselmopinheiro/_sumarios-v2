@@ -2,11 +2,11 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div>
-    <h2>Avaliação de alunos</h2>
+    <h2>Avaliacao de alunos</h2>
     <p class="mb-0 text-muted">
-      Turma {{ turma.nome }} &mdash; {{ aula.data.strftime('%d/%m/%Y') }}
+      Turma {{ turma.nome }} - {{ aula.data.strftime('%d/%m/%Y') }}
       {% if aula.modulo %}
-        &bull; {{ aula.modulo.nome }}
+        | {{ aula.modulo.nome }}
       {% endif %}
     </p>
   </div>
@@ -26,12 +26,16 @@
 <div class="card">
   <div class="card-body">
     <h5 class="card-title">Pontualidade, faltas e desempenho</h5>
-    <p class="text-muted">Pontualidade: selecione quando o aluno chegou com atraso. Falta: número de tempos (0-6). As restantes avaliações variam de 1 a 5 (valor pré-definido 3).</p>
+    <p class="text-muted">Pontualidade: selecione quando o aluno chegou com atraso. Falta: numero de tempos (0-6). As restantes avaliacoes variam de 1 a 5 (valor pre-definido 3).</p>
     <div class="alert alert-info py-2 mb-3">
-      <small class="text-muted">Legenda: FDis = Falta disciplinar; Resp = Responsabilidade; Comp = Comportamento; Part = Participação; Auto = Trabalho autónomo; Mat = Portátil/Material; At = Atividade.</small>
+      <small class="text-muted">Legenda: FDis = Falta disciplinar; Resp = Responsabilidade; Comp = Comportamento; Part = Participacao; Auto = Trabalho autonomo; Mat = Portatil/Material; At = Atividade.</small>
+    </div>
+    <div class="d-flex justify-content-between align-items-center mb-1">
+      <small id="sync-status" class="text-muted">Estado: {% if pending_offline %}offline (pendentes: {{ pending_offline }}){% else %}online{% endif %}</small>
+      <small id="save-status" class="text-muted">Alteracoes guardadas.</small>
     </div>
     <div class="d-flex justify-content-between align-items-center mb-3">
-      <small id="sync-status" class="text-muted">Estado: {% if pending_offline %}offline (pendentes: {{ pending_offline }}){% else %}online{% endif %}</small>
+      <span></span>
       <div class="d-flex gap-2">
         <button type="button" class="btn btn-outline-secondary btn-sm" id="copy-tsv-btn" {% if not alunos %}disabled{% endif %}>Copiar TSV</button>
         <button type="button" class="btn btn-outline-primary btn-sm" id="sync-now-btn" {% if not pending_offline %}disabled{% endif %}>Sincronizar agora</button>
@@ -55,7 +59,7 @@
         <table class="table table-striped table-hover align-middle table-sticky-header">
           <thead class="table-dark">
             <tr>
-              <th>Nº</th>
+              <th>No</th>
               <th>Nome</th>
               <th class="text-center">Atraso</th>
               <th style="width: 110px;">Faltas</th>
@@ -66,12 +70,13 @@
               <th class="text-center">Auto</th>
               <th class="text-center">Mat</th>
               <th class="text-center">At</th>
+              <th style="min-width: 260px;">Observacoes</th>
             </tr>
           </thead>
           <tbody>
             {% for aluno in alunos %}
               {% set avaliacao = avaliacoes.get(aluno.id) %}
-              <tr>
+              <tr class="js-avaliacao-row" data-aluno-id="{{ aluno.id }}">
                 <td style="width: 70px;">{{ aluno.numero or '' }}</td>
                 <td>{{ aluno.nome }}</td>
                 <td class="text-center">
@@ -103,26 +108,35 @@
                     </select>
                   </td>
                 {% endfor %}
+                <td>
+                  <textarea
+                    name="observacoes_{{ aluno.id }}"
+                    class="form-control form-control-sm js-avaliacao-observacoes"
+                    rows="1"
+                    maxlength="500"
+                    placeholder="Nota curta..."
+                    {% if ano_fechado %}disabled{% endif %}
+                  >{{ avaliacao.observacoes if avaliacao and avaliacao.observacoes else '' }}</textarea>
+                </td>
               </tr>
             {% else %}
               <tr>
-                <td colspan="11" class="text-center text-muted">Nenhum aluno registado.</td>
+                <td colspan="12" class="text-center text-muted">Nenhum aluno registado.</td>
               </tr>
             {% endfor %}
           </tbody>
         </table>
       </div>
       <div class="d-flex justify-content-end">
-        <button type="submit" class="btn btn-primary" {% if ano_fechado or not alunos %}disabled{% endif %}>Guardar avaliações</button>
+        <button type="submit" class="btn btn-primary" {% if ano_fechado or not alunos %}disabled{% endif %}>Guardar avaliacoes</button>
       </div>
       <div class="mt-3">
         <label class="form-label" for="tsv-input">Colar TSV para importar</label>
-        <textarea id="tsv-input" class="form-control" rows="5" placeholder="aula_id	aluno_id	atraso	faltas	responsabilidade	comportamento	participacao	trabalho_autonomo	portatil_material	atividade	falta_disciplinar"></textarea>
+        <textarea id="tsv-input" class="form-control" rows="5" placeholder="aula_id	aluno_id	atraso	faltas	responsabilidade	comportamento	participacao	trabalho_autonomo	portatil_material	atividade	falta_disciplinar	observacoes"></textarea>
         <div class="mt-2 d-flex justify-content-end">
           <button type="button" class="btn btn-outline-success btn-sm" id="import-tsv-btn">Importar</button>
         </div>
       </div>
-
     </form>
   </div>
 </div>
@@ -131,10 +145,31 @@
   const atividadeNome = document.getElementById('atividade_nome');
   const form = document.getElementById('avaliacoes-form');
   const statusEl = document.getElementById('sync-status');
+  const saveStatusEl = document.getElementById('save-status');
   const syncBtn = document.getElementById('sync-now-btn');
   const copyBtn = document.getElementById('copy-tsv-btn');
   const importBtn = document.getElementById('import-tsv-btn');
   const tsvInput = document.getElementById('tsv-input');
+  const saveEndpoint = '{{ url_for("aulas_alunos_save", aula_id=aula.id) }}';
+  const formReadOnly = {{ "true" if ano_fechado else "false" }};
+  const SAVE_DEBOUNCE_MS = 700;
+
+  let saveTimer = null;
+  let isSaving = false;
+  let saveQueued = false;
+  const dirtyRows = new Set();
+  const lastSavedSignatures = new Map();
+
+  function setSaveStatus(kind, text) {
+    if (!saveStatusEl) return;
+    saveStatusEl.classList.remove('text-muted', 'text-warning', 'text-primary', 'text-danger', 'text-success');
+    if (kind === 'unsaved') saveStatusEl.classList.add('text-warning');
+    else if (kind === 'saving') saveStatusEl.classList.add('text-primary');
+    else if (kind === 'error') saveStatusEl.classList.add('text-danger');
+    else if (kind === 'saved-offline') saveStatusEl.classList.add('text-success');
+    else saveStatusEl.classList.add('text-muted');
+    saveStatusEl.textContent = text;
+  }
 
   function toggleAtividadeNome() {
     if (!atividadeFlag || !atividadeNome) return;
@@ -142,36 +177,196 @@
     atividadeNome.disabled = !ativo || atividadeFlag.hasAttribute('disabled');
   }
 
+  function autoResizeTextarea(el) {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.max(el.scrollHeight, 30)}px`;
+  }
+
+  function parseAlunoIdFromName(name) {
+    if (!name) return null;
+    const match = /_(\d+)$/.exec(name);
+    if (!match) return null;
+    const id = Number(match[1]);
+    return Number.isFinite(id) ? id : null;
+  }
+
+  function getField(alunoId, prefix) {
+    return form.querySelector(`[name="${prefix}_${alunoId}"]`);
+  }
+
+  function getFieldValue(alunoId, prefix, fallback = '') {
+    return getField(alunoId, prefix)?.value ?? fallback;
+  }
+
+  function normalizeObservacoes(value) {
+    let out = String(value || '');
+    out = out.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+    if (out.length > 500) out = out.slice(0, 500);
+    return out;
+  }
+
+  function collectRowPayload(alunoId) {
+    const atraso = getField(alunoId, 'atraso');
+    return {
+      atraso: atraso ? (atraso.checked ? 1 : 0) : 0,
+      faltas: getFieldValue(alunoId, 'faltas', '0'),
+      responsabilidade: getFieldValue(alunoId, 'responsabilidade', '3'),
+      comportamento: getFieldValue(alunoId, 'comportamento', '3'),
+      participacao: getFieldValue(alunoId, 'participacao', '3'),
+      trabalho_autonomo: getFieldValue(alunoId, 'trabalho_autonomo', '3'),
+      portatil_material: getFieldValue(alunoId, 'portatil_material', '3'),
+      atividade: getFieldValue(alunoId, 'atividade', '3'),
+      falta_disciplinar: getFieldValue(alunoId, 'falta_disciplinar', '0') || '0',
+      observacoes: normalizeObservacoes(getFieldValue(alunoId, 'observacoes', '')),
+    };
+  }
+
+  function rowSignature(payload) {
+    return JSON.stringify(payload || {});
+  }
+
   function collectRows() {
     const rows = [];
-    const atrasoInputs = form.querySelectorAll('input[name^="atraso_"]');
-    for (const input of atrasoInputs) {
-      const alunoId = input.name.split('_')[1];
-      const getVal = (prefix, fallback='') => (form.querySelector(`[name="${prefix}_${alunoId}"]`)?.value ?? fallback);
+    const rowEls = form.querySelectorAll('tr.js-avaliacao-row[data-aluno-id]');
+    for (const rowEl of rowEls) {
+      const alunoId = Number(rowEl.dataset.alunoId);
+      if (!Number.isFinite(alunoId)) continue;
       rows.push({
         aula_id: {{ aula.id }},
         aluno_id: alunoId,
-        atraso: input.checked ? 1 : 0,
-        faltas: getVal('faltas', '0'),
-        responsabilidade: getVal('responsabilidade', '3'),
-        comportamento: getVal('comportamento', '3'),
-        participacao: getVal('participacao', '3'),
-        trabalho_autonomo: getVal('trabalho_autonomo', '3'),
-        portatil_material: getVal('portatil_material', '3'),
-        atividade: getVal('atividade', '3'),
-        falta_disciplinar: getVal('falta_disciplinar', '0') || '0'
+        ...collectRowPayload(alunoId),
       });
     }
     return rows;
   }
 
+  function sanitizeTSVCell(value) {
+    return String(value ?? '')
+      .replace(/\r\n/g, ' ')
+      .replace(/[\n\r\t]/g, ' ')
+      .trim();
+  }
+
   function rowsToTSV(rows) {
-    const headers = ['aula_id','aluno_id','atraso','faltas','responsabilidade','comportamento','participacao','trabalho_autonomo','portatil_material','atividade','falta_disciplinar'];
-    const lines = [headers.join('	')];
+    const headers = ['aula_id','aluno_id','atraso','faltas','responsabilidade','comportamento','participacao','trabalho_autonomo','portatil_material','atividade','falta_disciplinar','observacoes'];
+    const lines = [headers.join('\t')];
     for (const row of rows) {
-      lines.push(headers.map((h) => row[h] ?? '').join('	'));
+      lines.push(headers.map((h) => sanitizeTSVCell(row[h])).join('\t'));
     }
     return lines.join('\n');
+  }
+
+  function markRowDirty(alunoId) {
+    if (!Number.isFinite(alunoId)) return;
+    dirtyRows.add(alunoId);
+    if (!isSaving) {
+      setSaveStatus('unsaved', 'Alteracoes por guardar.');
+    }
+  }
+
+  function scheduleAutosave(immediate = false) {
+    if (formReadOnly) return;
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    if (immediate) {
+      void saveDirtyRows();
+      return;
+    }
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      void saveDirtyRows();
+    }, SAVE_DEBOUNCE_MS);
+  }
+
+  function buildItemsForSave() {
+    const items = [];
+    const signatures = new Map();
+    for (const alunoId of Array.from(dirtyRows)) {
+      const payload = collectRowPayload(alunoId);
+      const signature = rowSignature(payload);
+      if (signature === lastSavedSignatures.get(alunoId)) {
+        dirtyRows.delete(alunoId);
+        continue;
+      }
+      items.push({
+        aluno_id: alunoId,
+        payload,
+        client_ts: new Date().toISOString(),
+      });
+      signatures.set(alunoId, signature);
+    }
+    return { items, signatures };
+  }
+
+  async function saveDirtyRows() {
+    if (formReadOnly) return;
+    if (isSaving) {
+      saveQueued = true;
+      return;
+    }
+
+    const { items, signatures } = buildItemsForSave();
+    if (!items.length) {
+      if (dirtyRows.size === 0) {
+        setSaveStatus('saved', 'Alteracoes guardadas.');
+      }
+      return;
+    }
+
+    isSaving = true;
+    setSaveStatus('saving', 'A guardar...');
+    try {
+      const res = await fetch(saveEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: JSON.stringify({ items }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || 'Falha ao guardar');
+      }
+
+      for (const item of items) {
+        const alunoId = Number(item.aluno_id);
+        const currentSignature = rowSignature(collectRowPayload(alunoId));
+        if (currentSignature === signatures.get(alunoId)) {
+          lastSavedSignatures.set(alunoId, currentSignature);
+          dirtyRows.delete(alunoId);
+        } else {
+          dirtyRows.add(alunoId);
+        }
+      }
+
+      if (data.offline) {
+        setSaveStatus('saved-offline', 'Guardado offline. Sincroniza depois.');
+      } else if (dirtyRows.size === 0) {
+        setSaveStatus('saved', 'Alteracoes guardadas.');
+      } else {
+        setSaveStatus('unsaved', 'Alteracoes por guardar.');
+      }
+      await refreshStatus();
+    } catch (err) {
+      console.error(err);
+      for (const item of items) {
+        dirtyRows.add(Number(item.aluno_id));
+      }
+      setSaveStatus('error', 'Erro ao guardar. Vai tentar de novo.');
+    } finally {
+      isSaving = false;
+      if (saveQueued) {
+        saveQueued = false;
+        void saveDirtyRows();
+      } else if (dirtyRows.size > 0) {
+        scheduleAutosave(false);
+      }
+    }
   }
 
   async function refreshStatus() {
@@ -197,6 +392,53 @@
     toggleAtividadeNome();
   }
 
+  form.querySelectorAll('textarea.js-avaliacao-observacoes').forEach((ta) => {
+    autoResizeTextarea(ta);
+    ta.addEventListener('input', () => {
+      autoResizeTextarea(ta);
+      const alunoId = parseAlunoIdFromName(ta.name);
+      if (!Number.isFinite(alunoId)) return;
+      markRowDirty(alunoId);
+      scheduleAutosave(false);
+    });
+    ta.addEventListener('blur', () => {
+      const alunoId = parseAlunoIdFromName(ta.name);
+      if (!Number.isFinite(alunoId)) return;
+      markRowDirty(alunoId);
+      scheduleAutosave(true);
+    });
+  });
+
+  form.querySelectorAll('input[name], select[name]').forEach((field) => {
+    const alunoId = parseAlunoIdFromName(field.name);
+    if (!Number.isFinite(alunoId)) return;
+    field.addEventListener('change', () => {
+      markRowDirty(alunoId);
+      scheduleAutosave(false);
+    });
+    field.addEventListener('blur', () => {
+      markRowDirty(alunoId);
+      scheduleAutosave(true);
+    });
+  });
+
+  for (const row of collectRows()) {
+    const alunoId = Number(row.aluno_id);
+    lastSavedSignatures.set(alunoId, rowSignature({
+      atraso: row.atraso,
+      faltas: row.faltas,
+      responsabilidade: row.responsabilidade,
+      comportamento: row.comportamento,
+      participacao: row.participacao,
+      trabalho_autonomo: row.trabalho_autonomo,
+      portatil_material: row.portatil_material,
+      atividade: row.atividade,
+      falta_disciplinar: row.falta_disciplinar,
+      observacoes: row.observacoes,
+    }));
+  }
+  setSaveStatus('saved', 'Alteracoes guardadas.');
+
   copyBtn?.addEventListener('click', async () => {
     const tsv = rowsToTSV(collectRows());
     await navigator.clipboard.writeText(tsv);
@@ -207,9 +449,9 @@
     const res = await fetch('{{ url_for("sync_flush") }}', { method: 'POST' });
     const data = await res.json();
     if (data.ok) {
-      alert(`Sincronização concluída. Aplicados: ${data.applied}. Pendentes: ${data.pending}.`);
+      alert(`Sincronizacao concluida. Aplicados: ${data.applied}. Pendentes: ${data.pending}.`);
     } else {
-      alert('Falha na sincronização.');
+      alert('Falha na sincronizacao.');
     }
     refreshStatus();
   });
@@ -227,12 +469,19 @@
       return;
     }
     if (data.offline) {
-      alert('Registo guardado localmente; sincronizará quando houver rede.');
+      alert('Registo guardado localmente; sincronizara quando houver rede.');
     } else {
       alert(`TSV importado: ${data.imported} linhas.`);
       window.location.reload();
     }
     refreshStatus();
+  });
+
+  form.addEventListener('submit', () => {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
   });
 
   refreshStatus();

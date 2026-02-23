@@ -112,6 +112,7 @@ def init_offline_db(instance_path):
               portatil_material INTEGER,
               atividade INTEGER,
               falta_disciplinar INTEGER NOT NULL DEFAULT 0,
+              observacoes TEXT,
               updated_at TEXT NOT NULL,
               PRIMARY KEY (aula_id, aluno_id)
             );
@@ -160,6 +161,11 @@ def init_offline_db(instance_path):
             CREATE INDEX IF NOT EXISTS idx_offline_errors_operation ON offline_errors(operation);
             """
         )
+        colunas_offline_aulas_alunos = {
+            row["name"] for row in conn.execute("PRAGMA table_info(offline_aulas_alunos)").fetchall()
+        }
+        if "observacoes" not in colunas_offline_aulas_alunos:
+            conn.execute("ALTER TABLE offline_aulas_alunos ADD COLUMN observacoes TEXT")
 
 
 def _utc_now_iso():
@@ -476,8 +482,8 @@ def upsert_offline_aulas_alunos(instance_path, aula_id, aluno_payloads):
                 """
                 INSERT INTO offline_aulas_alunos
                 (aula_id, aluno_id, atraso, faltas, responsabilidade, comportamento, participacao,
-                 trabalho_autonomo, portatil_material, atividade, falta_disciplinar, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 trabalho_autonomo, portatil_material, atividade, falta_disciplinar, observacoes, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(aula_id, aluno_id) DO UPDATE SET
                   atraso=excluded.atraso,
                   faltas=excluded.faltas,
@@ -488,6 +494,7 @@ def upsert_offline_aulas_alunos(instance_path, aula_id, aluno_payloads):
                   portatil_material=excluded.portatil_material,
                   atividade=excluded.atividade,
                   falta_disciplinar=excluded.falta_disciplinar,
+                  observacoes=excluded.observacoes,
                   updated_at=excluded.updated_at
                 """,
                 (
@@ -502,6 +509,7 @@ def upsert_offline_aulas_alunos(instance_path, aula_id, aluno_payloads):
                     p.get("portatil_material"),
                     p.get("atividade"),
                     int(p.get("falta_disciplinar") or 0),
+                    p.get("observacoes"),
                     ts,
                 ),
             )

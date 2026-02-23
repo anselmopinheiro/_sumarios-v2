@@ -1107,6 +1107,7 @@ def exportar_backup_ano(ano: AnoLetivo) -> Dict[str, object]:
                             "portatil_material": avaliacao.portatil_material,
                             "atividade": avaliacao.atividade,
                             "falta_disciplinar": avaliacao.falta_disciplinar,
+                            "observacoes": avaliacao.observacoes,
                         }
                         for avaliacao in aula.avaliacoes
                         if avaliacao.aluno_id in aluno_uuid_map
@@ -1416,6 +1417,7 @@ def importar_backup_ano(payload: dict, substituir: bool = False) -> Dict[str, in
                     portatil_material=avaliacao_data.get("portatil_material") or 0,
                     atividade=avaliacao_data.get("atividade") or 0,
                     falta_disciplinar=avaliacao_data.get("falta_disciplinar") or 0,
+                    observacoes=avaliacao_data.get("observacoes"),
                 )
                 db.session.add(avaliacao)
 
