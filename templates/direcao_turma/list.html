@@ -21,7 +21,7 @@
             <th>Turma</th>
             <th>Ano letivo</th>
             <th>Observações</th>
-            <th class="text-end" style="width: 200px;">Ações</th>
+            <th class="text-end" style="width: 1%; white-space: nowrap;">Ações</th>
           </tr>
         </thead>
         <tbody>
@@ -39,31 +39,26 @@
               {% endif %}
             </td>
             <td class="text-muted">{{ dt.observacoes or '—' }}</td>
-            <td class="text-end">
+            <td class="text-end align-middle" style="white-space: nowrap;">
               {% set bloqueado = dt.ano_letivo and dt.ano_letivo.fechado %}
-              <div class="btn-group" role="group">
+              <div class="d-flex flex-wrap flex-md-nowrap gap-2 justify-content-end">
                 <a href="{{ url_for('direcao_turma_alunos', dt_id=dt.id) }}"
-                   class="btn btn-sm btn-outline-secondary">
+                   class="btn btn-outline-secondary btn-sm">
                   Alunos
                 </a>
+             
                 <a href="{{ url_for('direcao_turma_mapa_mensal', dt_id=dt.id) }}"
-                   class="btn btn-sm btn-outline-info">
-                  Mapa mensal justificações
+                   class="btn btn-outline-secondary btn-sm">
+                  Justificações
                 </a>
                 <a href="{{ url_for('direcao_turma_ocorrencias', dt_id=dt.id) }}"
-                   class="btn btn-sm btn-outline-dark">
+                   class="btn btn-outline-secondary btn-sm">
                   Ocorrências
                 </a>
                 <a href="{{ url_for('direcao_turma_edit', dt_id=dt.id) }}"
-                   class="btn btn-sm btn-outline-warning {% if bloqueado %}disabled{% endif %}">
+                   class="btn btn-warning btn-sm {% if bloqueado %}disabled{% endif %}">
                   Editar
                 </a>
-                <form method="post"
-                      action="{{ url_for('direcao_turma_delete', dt_id=dt.id) }}"
-                      class="d-inline"
-                      onsubmit="return confirm('Eliminar Direção de Turma?');">
-                  <button type="submit" class="btn btn-sm btn-outline-danger" {% if bloqueado %}disabled{% endif %}>Eliminar</button>
-                </form>
               </div>
             </td>
           </tr>

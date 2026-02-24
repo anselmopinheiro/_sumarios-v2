@@ -40,4 +40,19 @@
   <a href="{{ url_for('direcao_turma_list') }}" class="btn btn-secondary">Cancelar</a>
 </form>
 
+{% if dt_turma %}
+  <hr class="my-4">
+  <div class="card border-danger">
+    <div class="card-header text-danger fw-semibold">Eliminar</div>
+    <div class="card-body">
+      <p class="mb-3">Esta ação elimina a Direção de Turma. Não é possível reverter.</p>
+      <form method="post"
+            action="{{ url_for('direcao_turma_delete', dt_id=dt_turma.id) }}"
+            onsubmit="return confirm('Pretende eliminar esta Direção de Turma?');">
+        <button type="submit" class="btn btn-danger">Eliminar</button>
+      </form>
+    </div>
+  </div>
+{% endif %}
+
 {% endblock %}

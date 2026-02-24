@@ -3960,8 +3960,10 @@ def create_app():
         dt_turma = DTTurma.query.options(joinedload(DTTurma.ano_letivo)).get_or_404(dt_id)
 
         if dt_turma.ano_letivo and dt_turma.ano_letivo.fechado:
-            flash("Ano letivo fechado: apenas consulta.", "error")
-            return redirect(url_for("direcao_turma_list"))
+            abort(
+                403,
+                description="Ano letivo fechado: não é possível eliminar esta Direção de Turma.",
+            )
 
         db.session.delete(dt_turma)
         db.session.commit()
