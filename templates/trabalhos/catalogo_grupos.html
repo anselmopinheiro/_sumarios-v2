@@ -105,6 +105,10 @@
       ev.preventDefault();
       const nome = (form.querySelector('input[name="nome"]')?.value || '').trim();
       const alunoIds = Array.from(picker.selectedOptions).map((opt)=>Number(opt.value));
+      if(alunoIds.length === 0){
+        toast('Um grupo tem de ter, pelo menos, um aluno.', 'error');
+        return;
+      }
       const resp = await fetch(form.action, {
         method:'POST',
         headers:{'Content-Type':'application/json','Accept':'application/json'},
@@ -143,7 +147,8 @@
 
       (data.membros_repostos || []).forEach(appendAvailableOption);
 
-      if(data.deleted){
+      const groupDeleted = (typeof data.group_deleted !== 'undefined') ? Boolean(data.group_deleted) : Boolean(data.deleted);
+      if(groupDeleted){
         const tr = btn.closest('tr[data-grupo-id]');
         if(tr) tr.remove();
         toast('Grupo eliminado (sem membros)', 'success');

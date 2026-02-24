@@ -4697,6 +4697,12 @@ def create_app():
                     return jsonify({"ok": False, "error": "Nome do grupo é obrigatório."}), 400
                 flash("Nome do grupo é obrigatório.", "error")
                 return redirect(url_for("turma_grupos_catalogo", turma_id=turma.id))
+            if not aluno_ids:
+                msg = "Um grupo tem de ter, pelo menos, um aluno."
+                if wants_json:
+                    return jsonify({"ok": False, "error": msg}), 400
+                flash(msg, "error")
+                return redirect(url_for("turma_grupos_catalogo", turma_id=turma.id))
 
             usados = {
                 m.aluno_id
@@ -4775,10 +4781,25 @@ def create_app():
             gid = grupo.id
             db.session.delete(grupo)
             db.session.commit()
-            return jsonify({"ok": True, "deleted": True, "grupo_id": gid, "membros_repostos": [{"id": aluno_id, "label": f"{numero} {nome_curto}".strip()}]})
+            return jsonify({
+                "ok": True,
+                "deleted": True,
+                "group_deleted": True,
+                "remaining": 0,
+                "grupo_id": gid,
+                "membros_repostos": [{"id": aluno_id, "label": f"{numero} {nome_curto}".strip()}],
+            })
 
         db.session.commit()
-        return jsonify({"ok": True, "deleted": False, "grupo_id": grupo.id, "removed_members_ids": [aluno_id], "membros_repostos": [{"id": aluno_id, "label": f"{numero} {nome_curto}".strip()}]})
+        return jsonify({
+            "ok": True,
+            "deleted": False,
+            "group_deleted": False,
+            "remaining": restantes,
+            "grupo_id": grupo.id,
+            "removed_members_ids": [aluno_id],
+            "membros_repostos": [{"id": aluno_id, "label": f"{numero} {nome_curto}".strip()}],
+        })
 
     @app.route("/turmas/<int:turma_id>/trabalhos", methods=["GET", "POST"])
     def turma_trabalhos(turma_id):
@@ -4884,6 +4905,9 @@ def create_app():
             trabalho.modo = "grupo"
 
         for g in catalogo:
+            membro_ids = [m.aluno_id for m in g.membros if m.aluno_id is not None]
+            if not membro_ids:
+                continue
             nome = g.nome
             exists = TrabalhoGrupo.query.filter_by(trabalho_id=trabalho.id, nome=nome).first()
             if exists:
@@ -4891,8 +4915,8 @@ def create_app():
             ng = TrabalhoGrupo(trabalho_id=trabalho.id, nome=nome)
             db.session.add(ng)
             db.session.flush()
-            for m in g.membros:
-                db.session.add(TrabalhoGrupoMembro(trabalho_grupo_id=ng.id, aluno_id=m.aluno_id))
+            for aluno_id in membro_ids:
+                db.session.add(TrabalhoGrupoMembro(trabalho_grupo_id=ng.id, aluno_id=aluno_id))
 
         db.session.commit()
         flash("Grupos importados para este trabalho (snapshot).", "success")
@@ -5006,6 +5030,12 @@ def create_app():
                 return jsonify({"ok": False, "error": "Nome do grupo é obrigatório."}), 400
             flash("Nome do grupo é obrigatório.", "error")
             return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
+        if not aluno_ids:
+            msg = "Um grupo tem de ter, pelo menos, um aluno."
+            if wants_json:
+                return jsonify({"ok": False, "error": msg}), 400
+            flash(msg, "error")
+            return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
         if trabalho.modo != "grupo":
             if wants_json:
                 return jsonify({"ok": False, "error": "Trabalho está em modo individual."}), 400
@@ -5068,6 +5098,8 @@ def create_app():
             return jsonify({
                 "ok": True,
                 "deleted": True,
+                "group_deleted": True,
+                "remaining": 0,
                 "grupo_id": grupo_id_deleted,
                 "aluno": {
                     "id": aluno_id,
@@ -5079,6 +5111,8 @@ def create_app():
         return jsonify({
             "ok": True,
             "deleted": False,
+            "group_deleted": False,
+            "remaining": restantes,
             "grupo_id": grupo.id,
             "aluno": {
                 "id": aluno_id,
