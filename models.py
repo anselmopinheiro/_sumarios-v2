@@ -474,6 +474,7 @@ class CalendarioAula(db.Model):
     tempos_sem_aula = db.Column(db.Integer, default=0)
 
     observacoes = db.Column(db.Text)
+    observacoes_html = db.Column(db.Text)
     sumario = db.Column(db.Text)
     previsao = db.Column(db.Text)
     atividade = db.Column(db.Boolean, default=False, server_default=db.text("false"), nullable=False)

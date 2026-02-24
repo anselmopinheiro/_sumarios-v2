@@ -24,7 +24,7 @@ from logging.handlers import RotatingFileHandler
 from urllib.parse import urlparse, parse_qsl, urlsplit
 from collections import defaultdict
 from functools import wraps
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 
 from flask import (
     Flask,
@@ -43,6 +43,11 @@ from flask import (
 
 from flask_migrate import Migrate
 from alembic.script import ScriptDirectory
+
+try:
+    import bleach
+except Exception:
+    bleach = None
 
 
 def _load_dotenv_if_available():
@@ -190,6 +195,48 @@ def _strip_html_to_text(html_text):
     texto = re.sub(r"[ \t]+", " ", texto)
     texto = re.sub(r"\n{3,}", "\n\n", texto)
     return texto.rstrip()
+
+
+def _sanitize_observacoes_html(raw_html):
+    allowed_tags = ["p", "br", "b", "strong", "i", "em", "ul", "ol", "li", "a"]
+
+    def _allow_anchor_href(tag, name, value):
+        if tag != "a" or name != "href":
+            return False
+        href = (value or "").strip()
+        if not href:
+            return False
+        parsed = urlparse(href)
+        if parsed.scheme.lower() not in {"http", "https"}:
+            return False
+        return bool(parsed.netloc)
+
+    normalized = (str(raw_html or "")).replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not normalized:
+        return None
+
+    if bleach is not None:
+        cleaned = bleach.clean(
+            normalized,
+            tags=allowed_tags,
+            attributes=_allow_anchor_href,
+            protocols=["http", "https"],
+            strip=True,
+            strip_comments=True,
+        )
+        cleaned = re.sub(r"<a>(.*?)</a>", r"\1", cleaned, flags=re.IGNORECASE | re.DOTALL)
+    else:
+        # Fallback sem dependências externas: mantém o conteúdo textual seguro.
+        texto = _strip_html_to_text(normalized).strip()
+        cleaned = f"<p>{html.escape(texto)}</p>" if texto else ""
+
+    cleaned = cleaned.strip()
+    if not cleaned:
+        return None
+
+    if not _strip_html_to_text(cleaned).strip():
+        return None
+    return cleaned
 
 
 def csv_text(value):
@@ -1155,11 +1202,18 @@ def create_app():
         db.session.commit()
 
     def _ensure_columns():
-        if db.engine.dialect.name != "sqlite":
-            return
-
         insp = inspect(db.engine)
         tabelas = set(insp.get_table_names())
+        if "calendario_aulas" in tabelas:
+            colunas_calendario = {col["name"] for col in insp.get_columns("calendario_aulas")}
+            if "observacoes_html" not in colunas_calendario:
+                db.session.execute(
+                    text("ALTER TABLE calendario_aulas ADD COLUMN observacoes_html TEXT")
+                )
+                db.session.commit()
+
+        if db.engine.dialect.name != "sqlite":
+            return
 
         # Instalações limpas: criar todas as tabelas definidas nos modelos para
         # que a aplicação arranque mesmo sem ter corrido as migrações.
@@ -1418,7 +1472,6 @@ def create_app():
                 text("ALTER TABLE calendario_aulas ADD COLUMN atividade_nome TEXT")
             )
             db.session.commit()
-
         colunas_alunos = {col["name"] for col in insp.get_columns("aulas_alunos")}
         if "falta_disciplinar" not in colunas_alunos:
             db.session.execute(
@@ -5927,16 +5980,10 @@ def create_app():
 
         turmas = turmas_abertas_ativas()
         aulas = listar_aulas_especiais(turma_filtro, tipo_filtro, data_inicio, data_fim)
-        faltas_por_aula = _mapear_alunos_em_falta(aulas)
-        aulas_com_avaliacao = _mapear_aulas_com_avaliacao(aulas)
-        sumarios_anteriores = _mapear_sumarios_anteriores(aulas)
 
         return render_template(
             "turmas/outras_datas.html",
             aulas=aulas,
-            faltas_por_aula=faltas_por_aula,
-            aulas_com_avaliacao=aulas_com_avaliacao,
-            sumarios_anteriores=sumarios_anteriores,
             tipos_aula=TIPOS_AULA,
             tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
             tipo_labels=dict(TIPOS_AULA),
@@ -5994,6 +6041,47 @@ def create_app():
             flash(str(exc), "error")
 
         return redirect(url_for("calendario_outras_datas", **filtros_limpos))
+
+    @app.route("/outras-datas/<int:aula_id>/observacoes", methods=["POST"])
+    def outras_datas_observacoes_save(aula_id):
+        payload = request.get_json(silent=True) or {}
+        if "observacoes_html" not in payload:
+            return jsonify({"ok": False, "error": "Campo observacoes_html em falta."}), 400
+
+        aula = (
+            CalendarioAula.query.options(joinedload(CalendarioAula.turma))
+            .filter_by(id=aula_id, apagado=False)
+            .first_or_404()
+        )
+        ano = aula.turma.ano_letivo if aula.turma else None
+        if ano and ano.fechado:
+            return jsonify(
+                {
+                    "ok": False,
+                    "error": "Ano letivo fechado: não é possível editar observações.",
+                }
+            ), 400
+
+        observacoes_html = _sanitize_observacoes_html(payload.get("observacoes_html"))
+        observacoes_txt = _strip_html_to_text(observacoes_html or "").strip() or None
+
+        aula.observacoes_html = observacoes_html
+        aula.observacoes = observacoes_txt
+        db.session.commit()
+
+        saved_at = (
+            datetime.now(timezone.utc)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
+        return jsonify(
+            {
+                "ok": True,
+                "saved_at": saved_at,
+                "observacoes_html": aula.observacoes_html or "",
+            }
+        )
 
     @app.route("/calendario/outras-datas/mudar-tipo", methods=["POST"])
     def calendario_outras_datas_mudar_tipo():

@@ -69,10 +69,10 @@
         <input type="number" name="numero_aulas" class="form-control" min="1" value="1" required>
       </div>
 
-      <input type="hidden" name="tipo_filtro" value="{{ filtro_tipo or '' }}" />
-      <input type="hidden" name="turma_filtro" value="{{ filtro_turma_id or '' }}" />
-      <input type="hidden" name="data_inicio" value="{{ data_inicio.isoformat() if data_inicio else '' }}" />
-      <input type="hidden" name="data_fim" value="{{ data_fim.isoformat() if data_fim else '' }}" />
+      <input type="hidden" name="tipo_filtro" value="{{ filtro_tipo or '' }}">
+      <input type="hidden" name="turma_filtro" value="{{ filtro_turma_id or '' }}">
+      <input type="hidden" name="data_inicio" value="{{ data_inicio.isoformat() if data_inicio else '' }}">
+      <input type="hidden" name="data_fim" value="{{ data_fim.isoformat() if data_fim else '' }}">
 
       <div class="col-12 d-flex justify-content-end">
         <button type="submit" class="btn btn-success">Adicionar aula extra</button>
@@ -103,20 +103,22 @@
       </div>
       <div class="col-12 col-md-4 col-lg-3">
         <label class="form-label">Tempos sem aula</label>
-        <input type="number"
-               name="tempos_sem_aula"
-               id="tempos-sem-aula-outras"
-               class="form-control"
-               min="0"
-               value="0"
-               placeholder="opcional">
+        <input
+          type="number"
+          name="tempos_sem_aula"
+          id="tempos-sem-aula-outras"
+          class="form-control"
+          min="0"
+          value="0"
+          placeholder="opcional"
+        >
         <div class="form-text">Usado quando o novo tipo for Faltei/Serviço oficial/Outros.</div>
       </div>
 
-      <input type="hidden" name="tipo_filtro" value="{{ filtro_tipo or '' }}" />
-      <input type="hidden" name="turma_filtro" value="{{ filtro_turma_id or '' }}" />
-      <input type="hidden" name="data_inicio" value="{{ data_inicio.isoformat() if data_inicio else '' }}" />
-      <input type="hidden" name="data_fim" value="{{ data_fim.isoformat() if data_fim else '' }}" />
+      <input type="hidden" name="tipo_filtro" value="{{ filtro_tipo or '' }}">
+      <input type="hidden" name="turma_filtro" value="{{ filtro_turma_id or '' }}">
+      <input type="hidden" name="data_inicio" value="{{ data_inicio.isoformat() if data_inicio else '' }}">
+      <input type="hidden" name="data_fim" value="{{ data_fim.isoformat() if data_fim else '' }}">
 
       <div class="col-12 col-md-4 col-lg-3 d-grid">
         <button type="submit" class="btn btn-warning">Alterar tipo</button>
@@ -125,202 +127,87 @@
   </div>
 </div>
 
-{% if aulas %}
-  <div class="d-flex justify-content-between align-items-center mb-2">
-    <h5 class="mb-0">Sumários</h5>
-    <button type="button"
-            class="btn btn-success js-guardar-todos"
-            data-scope="#outras-datas-lista"
-            data-loading-text="A guardar todos..."
-            data-error-text="Falha ao guardar">
-      Guardar todos os sumários/previsões
-    </button>
-  </div>
-  <button type="button"
-          class="btn btn-success js-guardar-todos floating-guardar"
-          data-scope="#outras-datas-lista"
-          data-loading-text="A guardar todos..."
-          data-error-text="Falha ao guardar"
-          aria-label="Guardar todos os sumários e previsões visíveis">
-    Guardar todos os sumários/previsões
-  </button>
+<style>
+  .od-observacoes-editor {
+    min-height: 110px;
+    max-height: 300px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+  }
 
-  <div id="outras-datas-lista">
-  <div class="table-responsive">
+  .od-observacoes-toolbar {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+</style>
+
+{% if aulas %}
+  <div id="outras-datas-lista" class="table-responsive">
     <table class="table table-striped table-bordered align-middle">
-          <thead class="table-dark">
-            <tr>
-              <th>Turma</th>
-              <th>Data</th>
-              <th>Tipo</th>
-              <th style="width: 35%;">Sumário</th>
-              <th style="width: 25%;">Observações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for a in aulas %}
-              {% set sem_aula = a.tipo in tipos_sem_aula %}
-              {% set form_id = "outras-form-" ~ a.id %}
-              {% set alunos_abertos = a.id in aulas_com_avaliacao if aulas_com_avaliacao is defined else False %}
-          <tr>
-            <td class="fw-semibold">
-              <div class="d-flex align-items-center gap-2">
-                {% if a.turma and a.turma.letiva %}
-                  <span class="badge rounded-pill {% if alunos_abertos %}border border-success text-success bg-white{% else %}bg-danger text-light{% endif %}"
-                        title="{% if alunos_abertos %}Janela alunos já aberta{% else %}Janela alunos ainda não aberta{% endif %}">
-                    {% if alunos_abertos %}○{% else %}✖{% endif %}
-                  </span>
-                {% endif %}
-                <span>{{ a.turma.nome if a.turma else '—' }}</span>
-              </div>
-            </td>
-            <td class="text-nowrap">
+      <thead class="table-dark">
+        <tr>
+          <th>Turma e data</th>
+          <th>Tipo</th>
+          <th>Observações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set dias_semana = ["segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado", "domingo"] %}
+        {% for a in aulas %}
+          {% set observacoes_html = a.observacoes_html if a.observacoes_html is not none else '' %}
+          <tr data-aula-id="{{ a.id }}" data-observacoes-endpoint="{{ url_for('outras_datas_observacoes_save', aula_id=a.id) }}">
+            <td style="width: 22%;">
+              <div class="fw-semibold">{{ a.turma.nome if a.turma else '—' }}</div>
               {% if a.data %}
-                {{ a.data.strftime("%d/%m/%Y") }}<br>
-                <small class="text-muted">{{ ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"][a.data.weekday()] }}</small>
+                <div class="small text-muted">
+                  {{ a.data.strftime("%d/%m/%Y") }}
+                  {% if a.data.weekday() >= 0 and a.data.weekday() <= 6 %}
+                    · {{ dias_semana[a.data.weekday()] }}
+                  {% endif %}
+                </div>
+              {% endif %}
+            </td>
+            <td style="width: 18%;">
+              <span class="badge bg-secondary">{{ tipo_labels.get(a.tipo, a.tipo) }}</span>
+              {% if a.tempos_sem_aula %}
+                <div class="small text-muted mt-1">Tempos sem aula: {{ a.tempos_sem_aula }}</div>
               {% endif %}
             </td>
             <td>
-              {% set sem_aula = a.tipo in tipos_sem_aula %}
-              {% set sumario_anterior = sumarios_anteriores.get(a.id) if sumarios_anteriores is defined else None %}
-              <div class="d-flex flex-column gap-1">
-                <span class="badge {% if sem_aula %}bg-danger text-light{% else %}bg-secondary text-light{% endif %}">{{ tipo_labels.get(a.tipo, a.tipo) }}</span>
-                {% if a.tempos_sem_aula is not none %}
-                  <span class="badge bg-light text-dark">Tempos sem aula: {{ a.tempos_sem_aula }}</span>
-                {% endif %}
+              <div class="od-observacoes-toolbar mb-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm js-observacoes-cmd" data-aula-id="{{ a.id }}" data-command="bold">Negrito</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm js-observacoes-cmd" data-aula-id="{{ a.id }}" data-command="italic">Itálico</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm js-observacoes-cmd" data-aula-id="{{ a.id }}" data-command="insertUnorderedList">Lista</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm js-observacoes-cmd" data-aula-id="{{ a.id }}" data-command="createLink">Link</button>
               </div>
-            </td>
-            <td>
-              <div class="d-flex flex-column gap-2">
-                {% if a.atividade %}
-                  <div>
-                    <a class="badge rounded-pill bg-success text-light text-decoration-none" href="{{ url_for('turma_mapa_avaliacao_diaria', turma_id=a.turma.id) }}#mapa-atividades">Atividade</a>
-                  </div>
-                {% endif %}
-                <textarea
-                  name="sumario"
-                  form="{{ form_id }}"
-                  class="form-control form-control-sm js-autoresize"
-                  rows="2"
-                  placeholder="Sumário"
-                >{{ a.sumario or '' }}</textarea>
-                <div class="d-flex align-items-center gap-2 flex-wrap text-muted small">
-                  <button type="button"
-                          class="btn btn-outline-secondary btn-sm py-0 js-copy-sumario"
-                          form="{{ form_id }}">
-                    Copiar sumário
-                  </button>
-                  {% if sumario_anterior %}
-                    <button type="button"
-                            class="btn btn-outline-info btn-sm py-0 js-use-prev-sumario"
-                            data-sumario-anterior="{{ sumario_anterior }}"
-                            form="{{ form_id }}">
-                      Usar sumário anterior
-                    </button>
-                  {% endif %}
-                </div>
-                {% set previsao_id = "previsao-" ~ a.id %}
-                <div class="js-richtext-wrapper d-flex flex-column gap-1">
-                  <div class="richtext-toolbar d-flex flex-wrap align-items-center gap-2">
-                    <span class="small text-muted">Formatação:</span>
-                    <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="bold"><strong>B</strong></button>
-                    <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="italic"><em>I</em></button>
-                    <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="backColor" data-value="#fff3cd"><span class="px-1" style="background: #fff3cd;">Realçar</span></button>
-                  </div>
-                  <div
-                    class="form-control form-control-sm js-richtext-editor richtext-editor"
-                    contenteditable="true"
-                    data-target="#{{ previsao_id }}"
-                    aria-label="Previsão"
-                  >{{ a.previsao|default('')|safe }}</div>
-                  <input type="hidden" name="previsao" id="{{ previsao_id }}" value="{{ a.previsao or '' }}" form="{{ form_id }}" data-turma-id="{{ a.turma_id }}" data-sort-key="{{ a.data.isoformat() if a.data else '' }}-{{ '%06d' % a.id }}">
-                  <div class="form-text">Suporta negrito, itálico e destaque amarelo.</div>
-                </div>
-                <button type="button" class="btn btn-link btn-sm ps-0 js-copy-previsao" form="{{ form_id }}" data-aula-id="{{ a.id }}">Copiar previsão para sumário</button>
-                <button type="button" class="btn btn-link btn-sm ps-0 js-reverter-sumario" data-aula-id="{{ a.id }}">Reverter última alteração</button>
-                <button type="submit" class="btn btn-link btn-sm ps-0" form="previsao-limpar-{{ a.id }}">Limpar</button>
-                <button type="submit" class="btn btn-link btn-sm ps-0" form="previsao-anterior-{{ a.id }}">Copiar anterior</button>
-                <button type="submit" class="btn btn-link btn-sm ps-0" form="previsao-seguinte-{{ a.id }}">Enviar p/ seguinte</button>
-                {% set faltas_alunos = faltas_por_aula.get(a.id) if faltas_por_aula else [] %}
-                {% if faltas_alunos %}
-                  <div class="small text-danger">Em falta: {{ faltas_alunos|join('; ') }}</div>
-                {% endif %}
-                <form method="post" id="previsao-limpar-{{ a.id }}" action="{{ url_for('previsao_limpar', turma_id=a.turma_id, aula_id=a.id) }}" class="d-none">
-                  <input type="hidden" name="periodo_id" value="{{ a.periodo_id }}">
-                </form>
-                <form method="post" id="previsao-anterior-{{ a.id }}" action="{{ url_for('previsao_copiar_anterior', turma_id=a.turma_id, aula_id=a.id) }}" class="d-none">
-                  <input type="hidden" name="periodo_id" value="{{ a.periodo_id }}">
-                </form>
-                <form method="post" id="previsao-seguinte-{{ a.id }}" action="{{ url_for('previsao_enviar_seguinte', turma_id=a.turma_id, aula_id=a.id) }}" class="d-none">
-                  <input type="hidden" name="periodo_id" value="{{ a.periodo_id }}">
-                </form>
+              <div
+                class="form-control od-observacoes-editor js-observacoes-editor"
+                contenteditable="true"
+                data-aula-id="{{ a.id }}"
+                aria-label="Observações da aula {{ a.id }}"
+              >{% if observacoes_html %}{{ observacoes_html|safe }}{% elif a.observacoes %}<p>{{ a.observacoes|e }}</p>{% endif %}</div>
+              <div class="d-flex align-items-center gap-3 mt-2">
+                <button type="button" class="btn btn-primary btn-sm js-observacoes-save" data-aula-id="{{ a.id }}">Guardar</button>
+                <small class="text-muted js-observacoes-status" data-aula-id="{{ a.id }}">Sem alterações</small>
               </div>
-            </td>
-            <td>
-            <form
-                method="post"
-                id="{{ form_id }}"
-                action="{{ url_for('calendario_update_sumario', turma_id=a.turma.id, aula_id=a.id) }}"
-                class="d-flex flex-column gap-2 js-sumario-form"
-              >
-                <input type="hidden" name="view" value="outras_datas" />
-                <input type="hidden" name="tipo_filtro" value="{{ filtro_tipo or '' }}" />
-                <input type="hidden" name="turma_filtro" value="{{ filtro_turma_id or '' }}" />
-                <input type="hidden" name="data_inicio" value="{{ data_inicio.isoformat() if data_inicio else '' }}" />
-                <input type="hidden" name="data_fim" value="{{ data_fim.isoformat() if data_fim else '' }}" />
-                <div class="js-richtext-wrapper d-flex flex-column gap-1">
-                  <div class="richtext-toolbar d-flex flex-wrap align-items-center gap-2">
-                    <span class="small text-muted">Formatação:</span>
-                    <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="bold"><strong>B</strong></button>
-                    <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="italic"><em>I</em></button>
-                    <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="backColor" data-value="#fff3cd"><span class="px-1" style="background: #fff3cd;">Realçar</span></button>
-                  </div>
-                  <div
-                    class="form-control form-control-sm js-richtext-editor richtext-editor"
-                    contenteditable="true"
-                    data-target="#observacoes-{{ a.id }}"
-                    aria-label="Observações"
-                  >{{ a.observacoes|default('')|safe }}</div>
-                  <input type="hidden" name="observacoes" id="observacoes-{{ a.id }}" value="{{ a.observacoes or '' }}">
-                  <div class="form-text">Suporta negrito, itálico e destaque amarelo.</div>
-                </div>
-                <button type="submit" class="btn btn-sm btn-primary align-self-start">Guardar</button>
-              </form>
             </td>
           </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-  </div>
 {% else %}
   <div class="alert alert-info">Não foram encontradas aulas com os tipos selecionados.</div>
 {% endif %}
 
+{% endblock %}
+
+{% block extra_scripts %}
 <script>
-  (() => {
-    const tiposSemAula = {{ tipos_sem_aula|list|tojson }};
-    const selectTipo = document.getElementById('novo-tipo-outras');
-    const temposInput = document.getElementById('tempos-sem-aula-outras');
-
-    function sincronizarTemposBulk() {
-      if (!selectTipo || !temposInput) return;
-      const isSemAula = tiposSemAula.includes(selectTipo.value);
-      if (isSemAula) {
-        temposInput.readOnly = false;
-        temposInput.classList.remove('bg-light', 'text-muted');
-      } else {
-        temposInput.value = 0;
-        temposInput.readOnly = true;
-        temposInput.classList.add('bg-light', 'text-muted');
-      }
-    }
-
-    sincronizarTemposBulk();
-    if (selectTipo) {
-      selectTipo.addEventListener('change', sincronizarTemposBulk);
-    }
-  })();
+  window.OUTRAS_DATAS_CONFIG = {
+    tiposSemAula: {{ tipos_sem_aula|list|tojson }},
+  };
 </script>
-
+<script src="{{ url_for('static', filename='js/outras_datas.js') }}"></script>
 {% endblock %}
