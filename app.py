@@ -115,6 +115,7 @@ from models import (
     DTMotivoDia,
     DTDisciplina,
     DTOcorrencia,
+    DTOcorrenciaAluno,
     Trabalho,
     GrupoTurma,
     GrupoTurmaMembro,
@@ -3222,22 +3223,105 @@ def create_app():
             query = query.filter(DTOcorrencia.alunos.any(DTAluno.id == filtros["aluno_id"]))
         return query.order_by(DTOcorrencia.data.desc(), DTOcorrencia.hora_inicio.desc(), DTOcorrencia.id.desc())
 
-    def _dt_ocorrencia_alunos_linha(ocorrencia):
-        def _ordem_dt_aluno(dt_aluno):
-            aluno = dt_aluno.aluno
-            if not aluno:
-                return (1, 1, 9999, "", dt_aluno.id or 0)
-            nome_ref = ((aluno.nome_curto_exibicao or aluno.nome or "")).strip().casefold()
-            numero = aluno.numero
-            return (
-                0,
-                numero is None,
-                numero if numero is not None else 9999,
-                nome_ref,
-                aluno.id or 0,
+    def _dt_ordem_dt_aluno(dt_aluno):
+        aluno = dt_aluno.aluno
+        if not aluno:
+            return (1, 1, 9999, "", dt_aluno.id or 0)
+        nome_ref = ((aluno.nome_curto_exibicao or aluno.nome or "")).strip().casefold()
+        numero = aluno.numero
+        return (
+            0,
+            numero is None,
+            numero if numero is not None else 9999,
+            nome_ref,
+            aluno.id or 0,
+        )
+
+    def _dt_ocorrencias_agregado(dt_turma, filtros):
+        query = (
+            db.session.query(
+                DTOcorrenciaAluno.dt_aluno_id.label("dt_aluno_id"),
+                DTOcorrencia.dt_disciplina_id.label("dt_disciplina_id"),
+                func.count(DTOcorrenciaAluno.id).label("total"),
+            )
+            .join(DTOcorrencia, DTOcorrencia.id == DTOcorrenciaAluno.dt_ocorrencia_id)
+            .filter(DTOcorrencia.dt_turma_id == dt_turma.id)
+        )
+
+        if filtros.get("data_inicio"):
+            query = query.filter(DTOcorrencia.data >= filtros["data_inicio"])
+        if filtros.get("data_fim"):
+            query = query.filter(DTOcorrencia.data <= filtros["data_fim"])
+        if filtros.get("disciplina_id"):
+            query = query.filter(DTOcorrencia.dt_disciplina_id == filtros["disciplina_id"])
+        if filtros.get("aluno_id"):
+            query = query.filter(DTOcorrenciaAluno.dt_aluno_id == filtros["aluno_id"])
+
+        linhas = (
+            query.group_by(
+                DTOcorrenciaAluno.dt_aluno_id,
+                DTOcorrencia.dt_disciplina_id,
+            )
+            .all()
+        )
+
+        disciplina_ids = sorted(
+            {
+                linha.dt_disciplina_id
+                for linha in linhas
+                if linha.dt_disciplina_id is not None
+            }
+        )
+        disciplinas = []
+        if disciplina_ids:
+            disciplinas = (
+                DTDisciplina.query.filter(DTDisciplina.id.in_(disciplina_ids))
+                .order_by(DTDisciplina.nome.asc())
+                .all()
             )
 
-        alunos = sorted((ocorrencia.alunos or []), key=_ordem_dt_aluno)
+        dt_aluno_ids = sorted(
+            {
+                linha.dt_aluno_id
+                for linha in linhas
+                if linha.dt_aluno_id is not None
+            }
+        )
+        alunos = []
+        if dt_aluno_ids:
+            alunos = (
+                DTAluno.query.options(joinedload(DTAluno.aluno))
+                .join(Aluno, DTAluno.aluno_id == Aluno.id)
+                .filter(
+                    DTAluno.dt_turma_id == dt_turma.id,
+                    DTAluno.id.in_(dt_aluno_ids),
+                )
+                .order_by(
+                    Aluno.numero.is_(None),
+                    Aluno.numero.asc(),
+                    Aluno.nome.asc(),
+                )
+                .all()
+            )
+
+        agregados = {aluno.id: {} for aluno in alunos}
+        totais_aluno = {aluno.id: 0 for aluno in alunos}
+
+        for linha in linhas:
+            total = int(linha.total or 0)
+            agregados.setdefault(linha.dt_aluno_id, {})[linha.dt_disciplina_id] = total
+            totais_aluno[linha.dt_aluno_id] = totais_aluno.get(linha.dt_aluno_id, 0) + total
+
+        return {
+            "disciplinas": disciplinas,
+            "alunos": alunos,
+            "agregados": agregados,
+            "totais_aluno": totais_aluno,
+            "tem_resultados": bool(linhas),
+        }
+
+    def _dt_ocorrencia_alunos_linha(ocorrencia):
+        alunos = sorted((ocorrencia.alunos or []), key=_dt_ordem_dt_aluno)
         resultado = []
         for dt_aluno in alunos:
             aluno = dt_aluno.aluno
@@ -3803,6 +3887,7 @@ def create_app():
         filtros = _dt_ocorrencias_filters(dt_turma)
         qs = _dt_filtros_to_qs(filtros)
         ocorrencias = _dt_ocorrencias_query(dt_turma, filtros).all()
+        agregado = _dt_ocorrencias_agregado(dt_turma, filtros)
         for ocorrencia in ocorrencias:
             ocorrencia.alunos_linha = _dt_ocorrencia_alunos_linha(ocorrencia)
         disciplinas = DTDisciplina.query.filter_by(ativa=True).order_by(DTDisciplina.nome.asc()).all()
@@ -3820,6 +3905,11 @@ def create_app():
             disciplinas=disciplinas,
             alunos=alunos,
             qs=qs,
+            disciplinas_agregadas=agregado["disciplinas"],
+            alunos_agregados=agregado["alunos"],
+            agregados=agregado["agregados"],
+            totais_aluno=agregado["totais_aluno"],
+            agregados_tem_resultados=agregado["tem_resultados"],
         )
 
     @app.route("/direcao-turma/<int:dt_id>/ocorrencias/new", methods=["GET", "POST"])
