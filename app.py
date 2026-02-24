@@ -5979,6 +5979,14 @@ def create_app():
         )
 
         turmas = turmas_abertas_ativas()
+        turmas_letivas = (
+            Turma.query.join(AnoLetivo)
+            .filter(AnoLetivo.ativo == True)  # noqa: E712
+            .filter(AnoLetivo.fechado == False)  # noqa: E712
+            .filter(Turma.letiva.is_(True))
+            .order_by(Turma.nome)
+            .all()
+        )
         aulas = listar_aulas_especiais(turma_filtro, tipo_filtro, data_inicio, data_fim)
 
         return render_template(
@@ -5993,6 +6001,7 @@ def create_app():
             data_inicio=data_inicio,
             data_fim=data_fim,
             turmas=turmas,
+            turmas_letivas=turmas_letivas,
         )
 
     @app.route("/calendario/outras-datas/add", methods=["POST"])
@@ -6016,7 +6025,13 @@ def create_app():
             flash("Seleciona a turma para adicionar a aula extra.", "error")
             return redirect(url_for("calendario_outras_datas", **filtros_limpos))
 
-        turma = Turma.query.get_or_404(turma_id)
+        turma = Turma.query.get(turma_id)
+        if not turma or not turma.letiva:
+            abort(
+                400,
+                description="Turma n\u00e3o letiva. Opera\u00e7\u00e3o n\u00e3o permitida.",
+            )
+
         ano = turma.ano_letivo
         if ano and ano.fechado:
             flash("Ano letivo fechado: não é possível editar o calendário desta turma.", "error")

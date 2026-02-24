@@ -8,6 +8,7 @@
     <label class="form-label">Data</label>
     <input type="date" name="data" class="form-control" value="{{ data_atual.isoformat() }}">
   </div>
+
   <div class="col-12 col-md-4">
     <label class="form-label">Filtrar por turma</label>
     <select name="turma_id" class="form-select">
@@ -17,6 +18,7 @@
       {% endfor %}
     </select>
   </div>
+
   {% if turma and periodos_disponiveis %}
     <div class="col-12 col-md-4">
       <label class="form-label">Período</label>
@@ -30,6 +32,7 @@
       </select>
     </div>
   {% endif %}
+
   <div class="col-12 col-md-4 d-flex gap-2">
     <button type="submit" class="btn btn-primary mt-auto">Atualizar</button>
     {% if turma %}
@@ -38,25 +41,6 @@
   </div>
 </form>
 
-<div class="d-flex flex-wrap gap-2 align-items-end mb-3">
-  <div class="d-flex align-items-center gap-2">
-    <a class="btn btn-outline-primary"
-       href="{{ url_for('turma_calendario_dia', turma_id=turma.id, data=dia_anterior.isoformat(), periodo_id=periodo_atual.id if periodo_atual else None) if turma else url_for('turma_calendario_dia', data=dia_anterior.isoformat()) }}">◀ Dia anterior</a>
-    <a class="btn btn-outline-primary"
-       href="{{ url_for('turma_calendario_dia', turma_id=turma.id, data=dia_seguinte.isoformat(), periodo_id=periodo_atual.id if periodo_atual else None) if turma else url_for('turma_calendario_dia', data=dia_seguinte.isoformat()) }}">Dia seguinte ▶</a>
-  </div>
-  <form method="get" class="d-flex align-items-center gap-2">
-    {% if turma %}
-      <input type="hidden" name="turma_id" value="{{ turma.id }}">
-    {% endif %}
-    {% if periodo_atual %}
-      <input type="hidden" name="periodo_id" value="{{ periodo_atual.id }}">
-    {% endif %}
-    <label class="form-label mb-0">Ir para:</label>
-    <input type="date" name="data" class="form-control" value="{{ data_atual.isoformat() }}">
-    <button type="submit" class="btn btn-primary">Ir</button>
-  </form>
-</div>
 
 <div class="floating-nav" aria-label="Navegação diária fixa">
   <a class="btn btn-outline-primary"
@@ -64,12 +48,28 @@
   <a class="btn btn-outline-primary"
      href="{{ url_for('turma_calendario_dia', turma_id=turma.id, data=dia_seguinte.isoformat(), periodo_id=periodo_atual.id if periodo_atual else None) if turma else url_for('turma_calendario_dia', data=dia_seguinte.isoformat()) }}">Dia seguinte ▶</a>
 </div>
+<div class="row align-items-center mb-3">
 
-<div class="mb-3">
-  <h5 class="mb-0">{{ data_atual.strftime("%d/%m/%Y") }}</h5>
-  <div class="text-muted">{{ ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"][data_atual.weekday()] }}</div>
+  <div class="col-md-2">
+    <h5 class="mb-0">{{ data_atual.strftime("%d/%m/%Y") }}</h5>
+    <div class="text-muted">
+      {{ ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"][data_atual.weekday()] }}
+    </div>
+  </div>
+
+  <div class="col-md-10">
+    <a class="btn btn-outline-primary me-2"
+       href="{{ url_for('turma_calendario_dia', turma_id=turma.id, data=dia_anterior.isoformat(), periodo_id=periodo_atual.id if periodo_atual else None) if turma else url_for('turma_calendario_dia', data=dia_anterior.isoformat()) }}">
+      ◀ Dia anterior
+    </a>
+
+    <a class="btn btn-outline-primary"
+       href="{{ url_for('turma_calendario_dia', turma_id=turma.id, data=dia_seguinte.isoformat(), periodo_id=periodo_atual.id if periodo_atual else None) if turma else url_for('turma_calendario_dia', data=dia_seguinte.isoformat()) }}">
+      Dia seguinte ▶
+    </a>
+  </div>
+
 </div>
-
 {% if aulas %}
   {% set ns = namespace(editaveis=false) %}
   {% for aula in aulas %}
@@ -202,8 +202,8 @@
                     <button type="submit" class="btn btn-outline-secondary btn-sm" form="previsao-seguinte-{{ a.id }}">Enviar p/ seguinte</button>
                     <div class="richtext-toolbar d-flex flex-wrap align-items-center gap-2">
                       <span class="small text-muted">Formatação:</span>
-                      <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="bold"><strong>B</strong></button>
-                      <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="italic"><em>I</em></button>
+                      <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="bold">B</button>
+                      <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="italic">I</button>
                       <button type="button" class="btn btn-outline-secondary btn-sm js-richtext-cmd" data-command="backColor" data-value="#fff3cd"><span class="px-1" style="background: #fff3cd;">Realçar</span></button>
                     </div>
                   </div>
@@ -278,8 +278,6 @@
   <div class="alert alert-info">Não existem aulas para esta data.</div>
 {% endif %}
 
-{% endblock %}
-
 <script>
   (() => {
     const tiposSemAula = {{ tipos_sem_aula|list|tojson }};
@@ -310,3 +308,5 @@
     });
   })();
 </script>
+
+{% endblock %}
