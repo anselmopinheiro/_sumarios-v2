@@ -5786,6 +5786,12 @@ def create_app():
     @app.route("/turmas/<int:turma_id>/trabalhos", methods=["GET", "POST"])
     def turma_trabalhos(turma_id):
         turma = Turma.query.get_or_404(turma_id)
+        turmas_letivas = (
+            Turma.query
+            .filter(Turma.letiva.is_(True))
+            .order_by(Turma.nome.asc())
+            .all()
+        )
         if request.method == "POST":
             titulo = (request.form.get("titulo") or "").strip()
             if not titulo:
@@ -5807,7 +5813,13 @@ def create_app():
             return redirect(url_for("trabalho_detail", turma_id=turma.id, trabalho_id=trabalho.id))
 
         trabalhos = Trabalho.query.filter_by(turma_id=turma.id).order_by(Trabalho.created_at.desc()).all()
-        return render_template("trabalhos/list.html", turma=turma, trabalhos=trabalhos)
+        return render_template(
+            "trabalhos/list.html",
+            turma=turma,
+            turma_atual=turma,
+            turmas_letivas=turmas_letivas,
+            trabalhos=trabalhos,
+        )
 
     @app.route("/turmas/<int:turma_id>/trabalhos/mapa")
     def turma_trabalhos_mapa(turma_id):
