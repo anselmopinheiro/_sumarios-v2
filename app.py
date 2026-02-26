@@ -3130,6 +3130,9 @@ def create_app():
         turmas = turmas_abertas_ativas()
         ano_atual = get_ano_letivo_atual()
         turma_id = request.args.get("turma_id", type=int)
+        search_min_len = 2
+        q = (request.args.get("q") or "").strip()
+        search_results = []
         turma_atual = next((t for t in turmas if t.id == turma_id), None)
         if not turma_atual and turmas:
             turma_atual = turmas[0]
@@ -3180,6 +3183,35 @@ def create_app():
                 dashboard_snapshot_last_run_status = "OK" if int(last_run.get("ok") or 0) == 1 else "ERRO"
         except Exception as exc:
             app.logger.exception("Falha ao carregar resumo offline da dashboard: %s", exc)
+
+        if len(q) >= search_min_len:
+            bind = db.session.get_bind()
+            dialect_name = bind.dialect.name if bind is not None else ""
+            like_pattern = f"%{q}%"
+
+            def _sumario_match(column):
+                if dialect_name == "sqlite":
+                    return column.like(like_pattern)
+                return column.ilike(like_pattern)
+
+            search_predicates = [_sumario_match(CalendarioAula.sumario)]
+            if hasattr(CalendarioAula, "sumarios"):
+                search_predicates.append(_sumario_match(CalendarioAula.sumarios))
+            if hasattr(CalendarioAula, "previsao"):
+                search_predicates.append(_sumario_match(CalendarioAula.previsao))
+
+            search_results = (
+                db.session.query(CalendarioAula)
+                .options(joinedload(CalendarioAula.turma))
+                .join(Turma, Turma.id == CalendarioAula.turma_id)
+                .filter(CalendarioAula.apagado == False)  # noqa: E712
+                .filter(CalendarioAula.sumario.isnot(None))
+                .filter(CalendarioAula.sumario != "")
+                .filter(or_(*search_predicates))
+                .order_by(CalendarioAula.data.desc(), Turma.nome.asc())
+                .limit(200)
+                .all()
+            )
 
         if turma_atual:
             disciplina_atual = turma_atual.disciplinas[0] if getattr(turma_atual, "disciplinas", None) else None
@@ -3301,6 +3333,10 @@ def create_app():
             dashboard_last_error_display=dashboard_last_error_display,
             dashboard_snapshot_last_run_display=dashboard_snapshot_last_run_display,
             dashboard_snapshot_last_run_status=dashboard_snapshot_last_run_status,
+            q=q,
+            search_q=q,
+            search_min_len=search_min_len,
+            search_results=search_results,
         )
 
     @app.route("/backups")

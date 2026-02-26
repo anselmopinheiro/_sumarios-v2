@@ -2,6 +2,62 @@
 {% block content %}
 <h2 class="mb-3">Dashboard</h2>
 
+
+
+<div class="card mb-3">
+  <div class="card-body">
+    <form method="get" action="{{ url_for('dashboard') }}" class="row g-2 align-items-end mb-3">
+      {% if turma_atual %}
+      <input type="hidden" name="turma_id" value="{{ turma_atual.id }}">
+      {% endif %}
+      <div class="col-12 col-md-6">
+        <label class="form-label">Pesquisar sumários</label>
+        <input type="text" name="q" class="form-control" value="{{ q or '' }}" placeholder="Pesquisar em sumários...">
+      </div>
+      <div class="col-12 col-md-2">
+        <button class="btn btn-primary w-100" type="submit">Pesquisar</button>
+      </div>
+    </form>
+
+    {% if q %}
+      {% if q|length < search_min_len %}
+        <div class="alert alert-info mb-0">Introduza pelo menos {{ search_min_len }} caracteres para pesquisar.</div>
+      {% else %}
+        <div class="table-responsive">
+          <table class="table table-striped table-hover align-middle">
+            <thead class="table-light">
+              <tr>
+                <th style="width: 20%;">Turma</th>
+                <th style="width: 15%;">Data</th>
+                <th>Sumário</th>
+                <th style="width: 10%;" class="text-end">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for aula in search_results %}
+                <tr>
+                  <td>{{ aula.turma.nome if aula.turma else '' }}</td>
+                  <td>{{ aula.data.strftime("%d/%m/%Y") if aula.data else '' }}</td>
+                  <td>{{ aula.sumario or '' }}</td>
+                  <td class="text-end">
+                    <a class="btn btn-sm btn-outline-primary"
+                       href="{{ url_for('turma_calendario_dia', turma_id=aula.turma_id, data=aula.data.isoformat(), periodo_id=aula.periodo_id) if aula.periodo_id else url_for('turma_calendario_dia', turma_id=aula.turma_id, data=aula.data.isoformat()) }}">
+                      Abrir
+                    </a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        {% if not search_results %}
+          <div class="alert alert-info mb-0">Sem resultados para "{{ q }}".</div>
+        {% endif %}
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
 <div class="card mb-3 home-search-box">
   <div class="card-body">
     <label for="home-search-q" class="form-label mb-1 fw-semibold">Pesquisa rápida</label>
@@ -9,7 +65,6 @@
     <div class="form-text">Filtra turmas e atalhos desta página em tempo real.</div>
   </div>
 </div>
-
 {% if turma_atual %}
 <style>
   .dashboard-context {
