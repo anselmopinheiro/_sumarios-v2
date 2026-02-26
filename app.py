@@ -623,6 +623,72 @@ def _parse_backup_date_arg(valor, campo):
         raise ValueError(f"Data invalida para '{campo}'. Usa AAAA-MM-DD.") from exc
 
 
+BACKUP_INTERVALOS_VALIDOS = {"ano", "s1", "s2", "custom"}
+
+
+def _resolver_intervalo_export(ano_letivo, intervalo, desde_str, ate_str):
+    intervalo_norm = (intervalo or "custom").strip().lower()
+    if intervalo_norm not in BACKUP_INTERVALOS_VALIDOS:
+        raise ValueError("Intervalo invalido. Usa: ano, s1, s2 ou custom.")
+
+    if intervalo_norm == "ano":
+        if not ano_letivo:
+            raise ValueError("Seleciona um ano letivo para usar o intervalo escolhido.")
+        if not ano_letivo.data_inicio_ano or not ano_letivo.data_fim_ano:
+            raise ValueError("O ano letivo selecionado nao tem datas de inicio/fim do ano configuradas.")
+        return ano_letivo.data_inicio_ano, ano_letivo.data_fim_ano
+
+    if intervalo_norm == "s1":
+        if not ano_letivo:
+            raise ValueError("Seleciona um ano letivo para usar o intervalo escolhido.")
+        if not ano_letivo.data_inicio_ano or not ano_letivo.data_fim_semestre1:
+            raise ValueError("O ano letivo selecionado nao tem as datas necessarias para o 1. semestre.")
+        return ano_letivo.data_inicio_ano, ano_letivo.data_fim_semestre1
+
+    if intervalo_norm == "s2":
+        if not ano_letivo:
+            raise ValueError("Seleciona um ano letivo para usar o intervalo escolhido.")
+        if not ano_letivo.data_inicio_semestre2:
+            raise ValueError("O ano letivo selecionado nao tem data de inicio do 2. semestre.")
+        if not ano_letivo.data_fim_ano:
+            raise ValueError("O ano letivo selecionado nao tem data de fim do ano configurada.")
+        return ano_letivo.data_inicio_semestre2, ano_letivo.data_fim_ano
+
+    desde = _parse_backup_date_arg(desde_str, "desde")
+    ate = _parse_backup_date_arg(ate_str, "ate")
+
+    if ano_letivo:
+        if desde is None:
+            if not ano_letivo.data_inicio_ano:
+                raise ValueError("O ano letivo selecionado nao tem data de inicio do ano configurada.")
+            desde = ano_letivo.data_inicio_ano
+        if ate is None:
+            if not ano_letivo.data_fim_ano:
+                raise ValueError("O ano letivo selecionado nao tem data de fim do ano configurada.")
+            ate = ano_letivo.data_fim_ano
+
+    return desde, ate
+
+
+def _validar_intervalo_dentro_ano_letivo(ano_letivo, desde, ate):
+    if not ano_letivo:
+        return
+
+    inicio = ano_letivo.data_inicio_ano
+    fim = ano_letivo.data_fim_ano
+
+    if inicio and desde and desde < inicio:
+        raise ValueError(
+            f"Intervalo invalido: 'desde' ({desde.isoformat()}) fora do ano letivo "
+            f"({inicio.isoformat()} a {fim.isoformat() if fim else '...'})."
+        )
+    if fim and ate and ate > fim:
+        raise ValueError(
+            f"Intervalo invalido: 'ate' ({ate.isoformat()}) fora do ano letivo "
+            f"({inicio.isoformat() if inicio else '...'} a {fim.isoformat()})."
+        )
+
+
 def _serialize_backup_value(valor):
     if isinstance(valor, datetime):
         return valor.isoformat()
@@ -1198,7 +1264,15 @@ def importar_backup_ndjson_gz(file_storage):
     }
 
 
-def _build_backup_ndjson_response(scope, specs, desde=None, ate=None, turma=None):
+def _build_backup_ndjson_response(
+    scope,
+    specs,
+    desde=None,
+    ate=None,
+    turma=None,
+    intervalo="custom",
+    ano_letivo=None,
+):
     started_at = datetime.now(timezone.utc).isoformat()
     started_perf = time.perf_counter()
     scope_label = "turma" if scope == "turma" else "completo"
@@ -1229,6 +1303,9 @@ def _build_backup_ndjson_response(scope, specs, desde=None, ate=None, turma=None
             "scope": scope_label,
             "turma_id": turma.id if turma else None,
             "turma_nome": turma.nome if turma else None,
+            "ano_letivo_id": ano_letivo.id if ano_letivo else None,
+            "ano_letivo_nome": ano_letivo.nome if ano_letivo else None,
+            "intervalo": (intervalo or "custom"),
             "desde": desde.isoformat() if desde else None,
             "ate": ate.isoformat() if ate else None,
         },
@@ -4854,47 +4931,89 @@ def create_app():
 
         return render_template("turmas/importar.html")
 
-    @app.route("/backup/export/completo")
+    @app.route("/backup/export/completo", methods=["GET", "POST"])
     def backup_export_completo():
+        params = request.values
         try:
-            desde = _parse_backup_date_arg(request.args.get("desde"), "desde")
-            ate = _parse_backup_date_arg(request.args.get("ate"), "ate")
+            ano_letivo_id = params.get("ano_letivo_id", type=int)
+            ano_letivo = AnoLetivo.query.get(ano_letivo_id) if ano_letivo_id else None
+            if ano_letivo_id and not ano_letivo:
+                raise ValueError("Ano letivo invalido para exportacao.")
+
+            intervalo = (params.get("intervalo") or "custom").strip().lower()
+            if intervalo not in BACKUP_INTERVALOS_VALIDOS:
+                raise ValueError("Intervalo invalido. Usa: ano, s1, s2 ou custom.")
+
+            desde, ate = _resolver_intervalo_export(
+                ano_letivo=ano_letivo,
+                intervalo=intervalo,
+                desde_str=params.get("desde"),
+                ate_str=params.get("ate"),
+            )
             if desde and ate and desde > ate:
                 raise ValueError("Intervalo invalido: 'desde' nao pode ser maior do que 'ate'.")
+            _validar_intervalo_dentro_ano_letivo(ano_letivo, desde, ate)
         except ValueError as exc:
             flash(str(exc), "error")
             return redirect(url_for("turmas_list"))
 
         app.logger.info(
-            "Inicio backup NDJSON | scope=completo | desde=%s | ate=%s",
+            "Inicio backup NDJSON | scope=completo | ano_letivo_id=%s | intervalo=%s | desde=%s | ate=%s",
+            ano_letivo.id if ano_letivo else None,
+            intervalo,
             desde.isoformat() if desde else None,
             ate.isoformat() if ate else None,
         )
         specs = _build_backup_ndjson_specs(desde=desde, ate=ate)
-        return _build_backup_ndjson_response("completo", specs, desde=desde, ate=ate)
+        return _build_backup_ndjson_response(
+            "completo",
+            specs,
+            desde=desde,
+            ate=ate,
+            intervalo=intervalo,
+            ano_letivo=ano_letivo,
+        )
 
-    @app.route("/turmas/<int:turma_id>/backup/export")
+    @app.route("/turmas/<int:turma_id>/backup/export", methods=["GET", "POST"])
     def backup_export_turma(turma_id):
         turma = Turma.query.options(joinedload(Turma.ano_letivo)).get_or_404(turma_id)
+        params = request.values
 
         try:
-            desde = _parse_backup_date_arg(request.args.get("desde"), "desde")
-            ate = _parse_backup_date_arg(request.args.get("ate"), "ate")
+            intervalo = (params.get("intervalo") or "custom").strip().lower()
+            if intervalo not in BACKUP_INTERVALOS_VALIDOS:
+                raise ValueError("Intervalo invalido. Usa: ano, s1, s2 ou custom.")
+
+            ano_letivo = turma.ano_letivo
+            desde, ate = _resolver_intervalo_export(
+                ano_letivo=ano_letivo,
+                intervalo=intervalo,
+                desde_str=params.get("desde"),
+                ate_str=params.get("ate"),
+            )
             if desde and ate and desde > ate:
                 raise ValueError("Intervalo invalido: 'desde' nao pode ser maior do que 'ate'.")
+            _validar_intervalo_dentro_ano_letivo(ano_letivo, desde, ate)
         except ValueError as exc:
             flash(str(exc), "error")
             return redirect(url_for("turmas_list"))
 
         app.logger.info(
-            "Inicio backup NDJSON | scope=turma | turma_id=%s | desde=%s | ate=%s",
+            "Inicio backup NDJSON | scope=turma | turma_id=%s | intervalo=%s | desde=%s | ate=%s",
             turma.id,
+            intervalo,
             desde.isoformat() if desde else None,
             ate.isoformat() if ate else None,
         )
         specs = _build_backup_ndjson_specs(turma=turma, desde=desde, ate=ate)
         return _build_backup_ndjson_response(
-            "turma", specs, desde=desde, ate=ate, turma=turma
+            "turma",
+            specs,
+            desde=desde,
+            ate=ate,
+            turma=turma,
+            intervalo=intervalo,
+            ano_letivo=turma.ano_letivo,
         )
 
     @app.route("/backup/ano/export", methods=["POST"])

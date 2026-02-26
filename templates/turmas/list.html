@@ -35,17 +35,54 @@
 <div class="card shadow-sm mb-4">
   <div class="card-header fw-semibold">Backup robusto (NDJSON + GZIP)</div>
   <div class="card-body">
-    <form class="row gy-2 gx-3 align-items-end" method="get" action="{{ url_for('backup_export_completo') }}">
+    <form class="row gy-2 gx-3 align-items-end" method="post" action="{{ url_for('backup_export_completo') }}">
+      {% set anos_ativos_ndjson = anos_letivos|selectattr('ativo')|list %}
+      {% set ano_padrao_ndjson = anos_ativos_ndjson[0] if anos_ativos_ndjson else (anos_letivos[0] if anos_letivos else None) %}
+      <div class="col-12 col-md-4">
+        <label class="form-label" for="backup_ndjson_ano_letivo_id">Ano letivo</label>
+        <select class="form-select" id="backup_ndjson_ano_letivo_id" name="ano_letivo_id">
+          <option value="">(Sem ano letivo - exportacao global)</option>
+          {% for ano in anos_letivos %}
+            <option
+              value="{{ ano.id }}"
+              data-inicio-ano="{{ ano.data_inicio_ano.isoformat() if ano.data_inicio_ano else '' }}"
+              data-fim-ano="{{ ano.data_fim_ano.isoformat() if ano.data_fim_ano else '' }}"
+              data-fim-s1="{{ ano.data_fim_semestre1.isoformat() if ano.data_fim_semestre1 else '' }}"
+              data-inicio-s2="{{ ano.data_inicio_semestre2.isoformat() if ano.data_inicio_semestre2 else '' }}"
+              {% if ano_padrao_ndjson and ano.id == ano_padrao_ndjson.id %}selected{% endif %}
+            >
+              {{ ano.nome }}{% if ano.ativo %} (ativo){% endif %}{% if ano.fechado %} (fechado){% endif %}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
       <div class="col-12 col-md-3">
-        <label class="form-label" for="backup_desde">Desde (opcional)</label>
+        <label class="form-label" for="backup_intervalo">Intervalo</label>
+        <select class="form-select" id="backup_intervalo" name="intervalo">
+          <option value="ano">Todo o ano letivo</option>
+          <option value="s1">1.º semestre</option>
+          <option value="s2">2.º semestre</option>
+          <option value="custom" selected>Personalizado</option>
+        </select>
+      </div>
+
+      <div class="col-12 col-md-2">
+        <label class="form-label" for="backup_desde">Desde</label>
         <input type="date" class="form-control" id="backup_desde" name="desde">
       </div>
-      <div class="col-12 col-md-3">
-        <label class="form-label" for="backup_ate">Ate (opcional)</label>
+
+      <div class="col-12 col-md-2">
+        <label class="form-label" for="backup_ate">Ate</label>
         <input type="date" class="form-control" id="backup_ate" name="ate">
       </div>
-      <div class="col-12 col-md-6 d-flex gap-2">
-        <button type="submit" class="btn btn-outline-primary">Backup completo (.ndjson.gz)</button>
+
+      <div class="col-12 col-md-1 d-flex gap-2">
+        <button type="submit" class="btn btn-outline-primary w-100">Exportar</button>
+      </div>
+
+      <div class="col-12 d-flex gap-2">
+        <span class="text-muted small align-self-center">Formato: .ndjson.gz</span>
         <a href="{{ url_for('turmas_importar') }}" class="btn btn-outline-secondary">Importar backup (.ndjson.gz)</a>
       </div>
       <div class="col-12">
@@ -54,6 +91,56 @@
     </form>
   </div>
 </div>
+
+<script>
+  (() => {
+    const anoSel = document.getElementById("backup_ndjson_ano_letivo_id");
+    const intervaloSel = document.getElementById("backup_intervalo");
+    const desdeInput = document.getElementById("backup_desde");
+    const ateInput = document.getElementById("backup_ate");
+    if (!anoSel || !intervaloSel || !desdeInput || !ateInput) return;
+
+    const dadosAnoSelecionado = () => {
+      const opt = anoSel.options[anoSel.selectedIndex];
+      return {
+        inicioAno: (opt && opt.dataset.inicioAno) || "",
+        fimAno: (opt && opt.dataset.fimAno) || "",
+        fimS1: (opt && opt.dataset.fimS1) || "",
+        inicioS2: (opt && opt.dataset.inicioS2) || "",
+      };
+    };
+
+    const aplicarIntervalo = () => {
+      const intervalo = intervaloSel.value || "custom";
+      const d = dadosAnoSelecionado();
+
+      if (intervalo === "ano") {
+        desdeInput.value = d.inicioAno || "";
+        ateInput.value = d.fimAno || "";
+      } else if (intervalo === "s1") {
+        desdeInput.value = d.inicioAno || "";
+        ateInput.value = d.fimS1 || "";
+      } else if (intervalo === "s2") {
+        desdeInput.value = d.inicioS2 || "";
+        ateInput.value = d.fimAno || "";
+      }
+
+      if (intervalo === "custom") {
+        desdeInput.disabled = false;
+        ateInput.disabled = false;
+        if (!desdeInput.value && d.inicioAno) desdeInput.value = d.inicioAno;
+        if (!ateInput.value && d.fimAno) ateInput.value = d.fimAno;
+      } else {
+        desdeInput.disabled = true;
+        ateInput.disabled = true;
+      }
+    };
+
+    anoSel.addEventListener("change", aplicarIntervalo);
+    intervaloSel.addEventListener("change", aplicarIntervalo);
+    aplicarIntervalo();
+  })();
+</script>
 
 {% set anos_ativos = anos_letivos|selectattr('ativo')|list %}
 {% set ano_destaque = anos_ativos[0] if anos_ativos else (anos_letivos[0] if anos_letivos else None) %}
