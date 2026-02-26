@@ -121,6 +121,8 @@
           {% set sem_aula_total = sem_aula and faltas >= total_previsto %}
           {% set tipo_label = tipo_labels.get(a.tipo, a.tipo) if tipo_labels is defined else a.tipo %}
           {% set form_id = "semana-form-" ~ a.id %}
+          {% set previsao_html = a.previsao|default('', true) %}
+          {% if previsao_html|string|trim|lower == 'none' %}{% set previsao_html = '' %}{% endif %}
           {% set turma_fechada = anos_fechados.get(a.turma_id, False) %}
           {% set sumario_anterior = sumarios_anteriores.get(a.id) if sumarios_anteriores is defined else None %}
           {% set alunos_abertos = a.id in aulas_com_avaliacao if aulas_com_avaliacao is defined else False %}
@@ -157,8 +159,8 @@
             <td>
               {% if turma_fechada %}
                 <div class="mb-1">{{ a.sumario or '' }}</div>
-                {% if a.previsao %}
-                  <div class="text-muted small">Previsão: {{ a.previsao|safe }}</div>
+                {% if previsao_html %}
+                  <div class="text-muted small">Previsão: {{ previsao_html|safe }}</div>
                 {% endif %}
               {% else %}
                 <form method="post"
@@ -208,8 +210,8 @@
                       contenteditable="true"
                       data-target="#{{ previsao_id }}"
                       aria-label="Previsão da aula"
-                    >{{ a.previsao|default('')|safe }}</div>
-                    <input type="hidden" name="previsao" id="{{ previsao_id }}" value="{{ a.previsao or '' }}" data-turma-id="{{ a.turma_id }}" data-sort-key="{{ a.data.isoformat() if a.data else '' }}-{{ '%06d' % a.id }}">
+                    >{{ previsao_html|safe }}</div>
+                    <input type="hidden" name="previsao" id="{{ previsao_id }}" value="{{ previsao_html }}" data-turma-id="{{ a.turma_id }}" data-sort-key="{{ a.data.isoformat() if a.data else '' }}-{{ '%06d' % a.id }}">
                   </div>
                   {% if periodo_atual %}
                     <input type="hidden" name="periodo_id" form="{{ form_id }}" value="{{ periodo_atual.id }}">
@@ -312,3 +314,4 @@
     });
   })();
 </script>
+

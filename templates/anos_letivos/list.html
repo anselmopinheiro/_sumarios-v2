@@ -31,7 +31,7 @@
             <td>
               <div class="fw-semibold">{{ a.nome }}</div>
               {% if a.descricao %}
-                <div class="text-muted small">{{ a.descricao }}</div>
+                <div class="text-muted small">{{ a.descricao or '' }}</div>
               {% endif %}
             </td>
             <td class="small text-muted">

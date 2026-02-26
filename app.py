@@ -1,6 +1,7 @@
 import calendar
 import csv
 import gc
+import gzip
 import html
 import importlib
 import importlib.util
@@ -24,10 +25,11 @@ from logging.handlers import RotatingFileHandler
 from urllib.parse import urlparse, parse_qsl, urlsplit
 from collections import defaultdict
 from functools import wraps
-from datetime import datetime, date, timedelta, timezone
+from datetime import datetime, date, timedelta, timezone, time as dt_time
 
 from flask import (
     Flask,
+    current_app,
     render_template,
     redirect,
     url_for,
@@ -35,6 +37,7 @@ from flask import (
     flash,
     Response,
     jsonify,
+    send_file,
     send_from_directory,
     abort,
     has_app_context,
@@ -66,10 +69,21 @@ def _load_dotenv_if_available():
 
 _load_dotenv_if_available()
 from sqlalchemy import create_engine, func, inspect, or_, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.engine import Engine
 from sqlalchemy import event
 from sqlalchemy.orm import joinedload, sessionmaker
+from sqlalchemy.sql.sqltypes import (
+    Boolean as SABoolean,
+    Date as SADate,
+    DateTime as SADateTime,
+    Float as SAFloat,
+    Integer as SAInteger,
+    Numeric as SANumeric,
+    Time as SATime,
+)
 
 from config import Config
 from offline_blueprint import offline_bp, refresh_snapshot_from_remote, snapshot_remote_to_local
@@ -99,6 +113,7 @@ from models import (
     CalendarioAula,
     Modulo,
     AnoLetivo,
+    Disciplina,
     InterrupcaoLetiva,
     Feriado,
     Horario,
@@ -587,6 +602,719 @@ def _normalizar_nome_curto(nome, nome_curto_raw):
     if not nome_curto:
         nome_curto = _primeiro_nome(nome) or ""
     return nome_curto or None
+
+
+def _normalizar_texto_opcional(valor):
+    if valor is None:
+        return None
+    texto = str(valor).strip()
+    if texto.lower() in {"none", "null"}:
+        return ""
+    return texto
+
+
+def _parse_backup_date_arg(valor, campo):
+    txt = (valor or "").strip()
+    if not txt:
+        return None
+    try:
+        return date.fromisoformat(txt)
+    except ValueError as exc:
+        raise ValueError(f"Data invalida para '{campo}'. Usa AAAA-MM-DD.") from exc
+
+
+def _serialize_backup_value(valor):
+    if isinstance(valor, datetime):
+        return valor.isoformat()
+    if isinstance(valor, (date, dt_time)):
+        return valor.isoformat()
+    if isinstance(valor, uuid.UUID):
+        return str(valor)
+    return valor
+
+
+def _model_row_to_dict(row):
+    return {
+        col.name: _serialize_backup_value(getattr(row, col.name))
+        for col in row.__table__.columns
+    }
+
+
+def _apply_date_range(query, column, desde=None, ate=None):
+    if desde is not None:
+        query = query.filter(column >= desde)
+    if ate is not None:
+        query = query.filter(column <= ate)
+    return query
+
+
+def _iter_query_in_batches(query, model, batch_size=1000):
+    base_query = query.order_by(None)
+    pk_col = getattr(model, "id", None)
+
+    if pk_col is None:
+        for row in base_query.yield_per(batch_size):
+            yield row
+        return
+
+    last_id = None
+    while True:
+        paged_query = base_query
+        if last_id is not None:
+            paged_query = paged_query.filter(pk_col > last_id)
+        rows = paged_query.order_by(pk_col.asc()).limit(batch_size).all()
+        if not rows:
+            break
+        for row in rows:
+            yield row
+        last_id = rows[-1].id
+        if len(rows) < batch_size:
+            break
+
+
+def _build_backup_ndjson_specs(turma=None, desde=None, ate=None):
+    if turma is not None:
+        ano_id = turma.ano_letivo_id
+
+        q_anos = AnoLetivo.query.filter(AnoLetivo.id == ano_id)
+        q_disciplinas = (
+            Disciplina.query.join(TurmaDisciplina, TurmaDisciplina.disciplina_id == Disciplina.id)
+            .filter(TurmaDisciplina.turma_id == turma.id)
+            .distinct()
+        )
+        q_livros = (
+            Livro.query.join(LivroTurma, LivroTurma.livro_id == Livro.id)
+            .filter(LivroTurma.turma_id == turma.id)
+            .distinct()
+        )
+        q_turmas = Turma.query.filter(Turma.id == turma.id)
+        q_livros_turmas = LivroTurma.query.filter(LivroTurma.turma_id == turma.id)
+        q_turmas_disciplinas = TurmaDisciplina.query.filter(TurmaDisciplina.turma_id == turma.id)
+        q_alunos = Aluno.query.filter(Aluno.turma_id == turma.id)
+        q_horarios = Horario.query.filter(Horario.turma_id == turma.id)
+        q_modulos = Modulo.query.filter(Modulo.turma_id == turma.id)
+        q_periodos = Periodo.query.filter(Periodo.turma_id == turma.id)
+
+        q_calendario = CalendarioAula.query.filter(CalendarioAula.turma_id == turma.id)
+        q_calendario = _apply_date_range(q_calendario, CalendarioAula.data, desde, ate)
+
+        q_avaliacoes = (
+            AulaAluno.query.join(CalendarioAula, AulaAluno.aula_id == CalendarioAula.id)
+            .filter(CalendarioAula.turma_id == turma.id)
+        )
+        q_avaliacoes = _apply_date_range(q_avaliacoes, CalendarioAula.data, desde, ate)
+
+        q_historico = (
+            AulaSumarioHistorico.query.join(
+                CalendarioAula,
+                AulaSumarioHistorico.calendario_aula_id == CalendarioAula.id,
+            )
+            .filter(CalendarioAula.turma_id == turma.id)
+        )
+        q_historico = _apply_date_range(q_historico, CalendarioAula.data, desde, ate)
+
+        q_dt_turmas = DTTurma.query.filter(DTTurma.turma_id == turma.id)
+        q_dt_alunos = (
+            DTAluno.query.join(DTTurma, DTAluno.dt_turma_id == DTTurma.id)
+            .filter(DTTurma.turma_id == turma.id)
+        )
+        q_dt_justificacoes = (
+            DTJustificacao.query.join(DTAluno, DTJustificacao.dt_aluno_id == DTAluno.id)
+            .join(DTTurma, DTAluno.dt_turma_id == DTTurma.id)
+            .filter(DTTurma.turma_id == turma.id)
+        )
+        q_dt_justificacoes = _apply_date_range(
+            q_dt_justificacoes, DTJustificacao.data, desde, ate
+        )
+        q_dt_motivos = (
+            DTMotivoDia.query.join(DTTurma, DTMotivoDia.dt_turma_id == DTTurma.id)
+            .filter(DTTurma.turma_id == turma.id)
+        )
+        q_dt_motivos = _apply_date_range(q_dt_motivos, DTMotivoDia.data, desde, ate)
+
+        q_dt_ocorrencias = (
+            DTOcorrencia.query.join(DTTurma, DTOcorrencia.dt_turma_id == DTTurma.id)
+            .filter(DTTurma.turma_id == turma.id)
+        )
+        q_dt_ocorrencias = _apply_date_range(q_dt_ocorrencias, DTOcorrencia.data, desde, ate)
+
+        q_dt_ocorrencia_alunos = (
+            DTOcorrenciaAluno.query.join(
+                DTOcorrencia,
+                DTOcorrenciaAluno.dt_ocorrencia_id == DTOcorrencia.id,
+            )
+            .join(DTTurma, DTOcorrencia.dt_turma_id == DTTurma.id)
+            .filter(DTTurma.turma_id == turma.id)
+        )
+        q_dt_ocorrencia_alunos = _apply_date_range(
+            q_dt_ocorrencia_alunos, DTOcorrencia.data, desde, ate
+        )
+
+        q_dt_disciplinas = (
+            DTDisciplina.query.join(DTOcorrencia, DTOcorrencia.dt_disciplina_id == DTDisciplina.id)
+            .join(DTTurma, DTOcorrencia.dt_turma_id == DTTurma.id)
+            .filter(DTTurma.turma_id == turma.id)
+            .distinct()
+        )
+        q_dt_disciplinas = _apply_date_range(q_dt_disciplinas, DTOcorrencia.data, desde, ate)
+
+        q_trabalhos = Trabalho.query.filter(Trabalho.turma_id == turma.id)
+        q_trabalhos = _apply_date_range(q_trabalhos, Trabalho.data_limite, desde, ate)
+
+        q_grupos_turma = GrupoTurma.query.filter(GrupoTurma.turma_id == turma.id)
+        q_grupo_turma_membros = (
+            GrupoTurmaMembro.query.join(
+                GrupoTurma, GrupoTurmaMembro.grupo_turma_id == GrupoTurma.id
+            )
+            .filter(GrupoTurma.turma_id == turma.id)
+        )
+
+        q_trabalho_grupos = (
+            TrabalhoGrupo.query.join(Trabalho, TrabalhoGrupo.trabalho_id == Trabalho.id)
+            .filter(Trabalho.turma_id == turma.id)
+        )
+        q_trabalho_grupos = _apply_date_range(q_trabalho_grupos, Trabalho.data_limite, desde, ate)
+
+        q_trabalho_grupo_membros = (
+            TrabalhoGrupoMembro.query.join(
+                TrabalhoGrupo,
+                TrabalhoGrupoMembro.trabalho_grupo_id == TrabalhoGrupo.id,
+            )
+            .join(Trabalho, TrabalhoGrupo.trabalho_id == Trabalho.id)
+            .filter(Trabalho.turma_id == turma.id)
+        )
+        q_trabalho_grupo_membros = _apply_date_range(
+            q_trabalho_grupo_membros, Trabalho.data_limite, desde, ate
+        )
+
+        q_entregas = (
+            Entrega.query.join(Trabalho, Entrega.trabalho_id == Trabalho.id)
+            .filter(Trabalho.turma_id == turma.id)
+        )
+        q_entregas = _apply_date_range(q_entregas, Entrega.data_entrega, desde, ate)
+
+        q_parametros = (
+            ParametroDefinicao.query.join(
+                Trabalho, ParametroDefinicao.trabalho_id == Trabalho.id
+            )
+            .filter(Trabalho.turma_id == turma.id)
+        )
+        q_parametros = _apply_date_range(q_parametros, Trabalho.data_limite, desde, ate)
+
+        q_entrega_parametros = (
+            EntregaParametro.query.join(Entrega, EntregaParametro.entrega_id == Entrega.id)
+            .join(Trabalho, Entrega.trabalho_id == Trabalho.id)
+            .filter(Trabalho.turma_id == turma.id)
+        )
+        q_entrega_parametros = _apply_date_range(
+            q_entrega_parametros, Trabalho.data_limite, desde, ate
+        )
+
+        q_feriados = Feriado.query.filter(Feriado.ano_letivo_id == ano_id)
+        q_feriados = _apply_date_range(q_feriados, Feriado.data, desde, ate)
+
+        q_interrupcoes = InterrupcaoLetiva.query.filter(
+            InterrupcaoLetiva.ano_letivo_id == ano_id
+        )
+        if desde is not None:
+            q_interrupcoes = q_interrupcoes.filter(
+                or_(
+                    InterrupcaoLetiva.data_fim.is_(None),
+                    InterrupcaoLetiva.data_fim >= desde,
+                )
+            )
+        if ate is not None:
+            q_interrupcoes = q_interrupcoes.filter(
+                or_(
+                    InterrupcaoLetiva.data_inicio.is_(None),
+                    InterrupcaoLetiva.data_inicio <= ate,
+                )
+            )
+
+    else:
+        q_anos = AnoLetivo.query
+        q_disciplinas = Disciplina.query
+        q_livros = Livro.query
+        q_turmas = Turma.query
+        q_livros_turmas = LivroTurma.query
+        q_turmas_disciplinas = TurmaDisciplina.query
+        q_alunos = Aluno.query
+        q_horarios = Horario.query
+        q_modulos = Modulo.query
+        q_periodos = Periodo.query
+
+        q_calendario = _apply_date_range(CalendarioAula.query, CalendarioAula.data, desde, ate)
+
+        q_avaliacoes = AulaAluno.query
+        if desde is not None or ate is not None:
+            q_avaliacoes = q_avaliacoes.join(
+                CalendarioAula, AulaAluno.aula_id == CalendarioAula.id
+            )
+            q_avaliacoes = _apply_date_range(q_avaliacoes, CalendarioAula.data, desde, ate)
+
+        q_historico = AulaSumarioHistorico.query
+        if desde is not None or ate is not None:
+            q_historico = q_historico.join(
+                CalendarioAula,
+                AulaSumarioHistorico.calendario_aula_id == CalendarioAula.id,
+            )
+            q_historico = _apply_date_range(q_historico, CalendarioAula.data, desde, ate)
+
+        q_dt_turmas = DTTurma.query
+        q_dt_alunos = DTAluno.query
+        q_dt_justificacoes = _apply_date_range(
+            DTJustificacao.query, DTJustificacao.data, desde, ate
+        )
+        q_dt_motivos = _apply_date_range(DTMotivoDia.query, DTMotivoDia.data, desde, ate)
+        q_dt_disciplinas = DTDisciplina.query
+        q_dt_ocorrencias = _apply_date_range(DTOcorrencia.query, DTOcorrencia.data, desde, ate)
+
+        q_dt_ocorrencia_alunos = DTOcorrenciaAluno.query
+        if desde is not None or ate is not None:
+            q_dt_ocorrencia_alunos = q_dt_ocorrencia_alunos.join(
+                DTOcorrencia,
+                DTOcorrenciaAluno.dt_ocorrencia_id == DTOcorrencia.id,
+            )
+            q_dt_ocorrencia_alunos = _apply_date_range(
+                q_dt_ocorrencia_alunos, DTOcorrencia.data, desde, ate
+            )
+
+        q_trabalhos = _apply_date_range(Trabalho.query, Trabalho.data_limite, desde, ate)
+        q_grupos_turma = GrupoTurma.query
+        q_grupo_turma_membros = GrupoTurmaMembro.query
+
+        q_trabalho_grupos = TrabalhoGrupo.query
+        if desde is not None or ate is not None:
+            q_trabalho_grupos = q_trabalho_grupos.join(
+                Trabalho, TrabalhoGrupo.trabalho_id == Trabalho.id
+            )
+            q_trabalho_grupos = _apply_date_range(
+                q_trabalho_grupos, Trabalho.data_limite, desde, ate
+            )
+
+        q_trabalho_grupo_membros = TrabalhoGrupoMembro.query
+        if desde is not None or ate is not None:
+            q_trabalho_grupo_membros = q_trabalho_grupo_membros.join(
+                TrabalhoGrupo,
+                TrabalhoGrupoMembro.trabalho_grupo_id == TrabalhoGrupo.id,
+            ).join(Trabalho, TrabalhoGrupo.trabalho_id == Trabalho.id)
+            q_trabalho_grupo_membros = _apply_date_range(
+                q_trabalho_grupo_membros, Trabalho.data_limite, desde, ate
+            )
+
+        q_entregas = _apply_date_range(Entrega.query, Entrega.data_entrega, desde, ate)
+        q_parametros = ParametroDefinicao.query
+        q_entrega_parametros = EntregaParametro.query
+        q_feriados = _apply_date_range(Feriado.query, Feriado.data, desde, ate)
+
+        q_interrupcoes = InterrupcaoLetiva.query
+        if desde is not None:
+            q_interrupcoes = q_interrupcoes.filter(
+                or_(
+                    InterrupcaoLetiva.data_fim.is_(None),
+                    InterrupcaoLetiva.data_fim >= desde,
+                )
+            )
+        if ate is not None:
+            q_interrupcoes = q_interrupcoes.filter(
+                or_(
+                    InterrupcaoLetiva.data_inicio.is_(None),
+                    InterrupcaoLetiva.data_inicio <= ate,
+                )
+            )
+
+    return [
+        ("anos_letivos", AnoLetivo, q_anos),
+        ("disciplinas", Disciplina, q_disciplinas),
+        ("livros", Livro, q_livros),
+        ("turmas", Turma, q_turmas),
+        ("livros_turmas", LivroTurma, q_livros_turmas),
+        ("turmas_disciplinas", TurmaDisciplina, q_turmas_disciplinas),
+        ("alunos", Aluno, q_alunos),
+        ("horarios", Horario, q_horarios),
+        ("modulos", Modulo, q_modulos),
+        ("periodos", Periodo, q_periodos),
+        ("calendario_aulas", CalendarioAula, q_calendario),
+        ("aulas_alunos", AulaAluno, q_avaliacoes),
+        ("sumario_historico", AulaSumarioHistorico, q_historico),
+        ("dt_turmas", DTTurma, q_dt_turmas),
+        ("dt_alunos", DTAluno, q_dt_alunos),
+        ("dt_justificacoes", DTJustificacao, q_dt_justificacoes),
+        ("dt_motivos_dia", DTMotivoDia, q_dt_motivos),
+        ("dt_disciplinas", DTDisciplina, q_dt_disciplinas),
+        ("dt_ocorrencias", DTOcorrencia, q_dt_ocorrencias),
+        ("dt_ocorrencia_alunos", DTOcorrenciaAluno, q_dt_ocorrencia_alunos),
+        ("trabalhos", Trabalho, q_trabalhos),
+        ("grupos_turma", GrupoTurma, q_grupos_turma),
+        ("grupo_turma_membros", GrupoTurmaMembro, q_grupo_turma_membros),
+        ("trabalho_grupos", TrabalhoGrupo, q_trabalho_grupos),
+        ("trabalho_grupo_membros", TrabalhoGrupoMembro, q_trabalho_grupo_membros),
+        ("entregas", Entrega, q_entregas),
+        ("parametro_definicoes", ParametroDefinicao, q_parametros),
+        ("entrega_parametros", EntregaParametro, q_entrega_parametros),
+        ("feriados", Feriado, q_feriados),
+        ("interrupcoes_letivas", InterrupcaoLetiva, q_interrupcoes),
+    ]
+
+
+BACKUP_NDJSON_TYPE_MODEL = {
+    "anos_letivos": AnoLetivo,
+    "disciplinas": Disciplina,
+    "livros": Livro,
+    "turmas": Turma,
+    "livros_turmas": LivroTurma,
+    "turmas_disciplinas": TurmaDisciplina,
+    "alunos": Aluno,
+    "horarios": Horario,
+    "modulos": Modulo,
+    "periodos": Periodo,
+    "calendario_aulas": CalendarioAula,
+    "aulas_alunos": AulaAluno,
+    "sumario_historico": AulaSumarioHistorico,
+    "dt_turmas": DTTurma,
+    "dt_alunos": DTAluno,
+    "dt_justificacoes": DTJustificacao,
+    "dt_motivos_dia": DTMotivoDia,
+    "dt_disciplinas": DTDisciplina,
+    "dt_ocorrencias": DTOcorrencia,
+    "dt_ocorrencia_alunos": DTOcorrenciaAluno,
+    "trabalhos": Trabalho,
+    "grupos_turma": GrupoTurma,
+    "grupo_turma_membros": GrupoTurmaMembro,
+    "trabalho_grupos": TrabalhoGrupo,
+    "trabalho_grupo_membros": TrabalhoGrupoMembro,
+    "entregas": Entrega,
+    "parametro_definicoes": ParametroDefinicao,
+    "entrega_parametros": EntregaParametro,
+    "feriados": Feriado,
+    "interrupcoes_letivas": InterrupcaoLetiva,
+}
+
+
+def _parse_iso_datetime_value(raw, field_name):
+    txt = (raw or "").strip()
+    if not txt:
+        return None
+    if txt.endswith("Z"):
+        txt = txt[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(txt)
+    except ValueError as exc:
+        raise ValueError(f"Valor invalido para '{field_name}': {raw}") from exc
+
+
+def _parse_iso_date_value(raw, field_name):
+    txt = (raw or "").strip()
+    if not txt:
+        return None
+    try:
+        return date.fromisoformat(txt)
+    except ValueError as exc:
+        raise ValueError(f"Valor invalido para '{field_name}': {raw}") from exc
+
+
+def _parse_iso_time_value(raw, field_name):
+    txt = (raw or "").strip()
+    if not txt:
+        return None
+    try:
+        return dt_time.fromisoformat(txt)
+    except ValueError as exc:
+        raise ValueError(f"Valor invalido para '{field_name}': {raw}") from exc
+
+
+def _coerce_backup_column_value(column, value):
+    if value is None:
+        return None
+
+    if isinstance(column.type, SADateTime):
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            return _parse_iso_datetime_value(value, column.name)
+        raise ValueError(f"Valor invalido para '{column.name}': {value!r}")
+
+    if isinstance(column.type, SADate):
+        if isinstance(value, date):
+            return value
+        if isinstance(value, str):
+            return _parse_iso_date_value(value, column.name)
+        raise ValueError(f"Valor invalido para '{column.name}': {value!r}")
+
+    if isinstance(column.type, SATime):
+        if isinstance(value, dt_time):
+            return value
+        if isinstance(value, str):
+            return _parse_iso_time_value(value, column.name)
+        raise ValueError(f"Valor invalido para '{column.name}': {value!r}")
+
+    if isinstance(column.type, SABoolean):
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            txt = value.strip().lower()
+            if txt in {"1", "true", "t", "yes", "sim"}:
+                return True
+            if txt in {"0", "false", "f", "no", "nao", "não"}:
+                return False
+        if isinstance(value, (int, float)):
+            return bool(value)
+        raise ValueError(f"Valor invalido para '{column.name}': {value!r}")
+
+    if isinstance(column.type, SAInteger):
+        if value == "":
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            return int(value)
+        return int(value)
+
+    if isinstance(column.type, (SAFloat, SANumeric)):
+        if value == "":
+            return None
+        if isinstance(value, (int, float)):
+            return value
+        if isinstance(value, str):
+            return float(value)
+        return float(value)
+
+    return value
+
+
+def _coerce_backup_row(model, payload):
+    if not isinstance(payload, dict):
+        raise ValueError(f"Payload invalido para '{model.__tablename__}'.")
+
+    values = {}
+    for column in model.__table__.columns:
+        if column.name not in payload:
+            continue
+        try:
+            values[column.name] = _coerce_backup_column_value(column, payload[column.name])
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Campo invalido '{column.name}' em '{model.__tablename__}': {exc}"
+            ) from exc
+
+    if model is CalendarioAula and "previsao" in values:
+        previsao = values.get("previsao")
+        if isinstance(previsao, str) and previsao.strip().lower() in {"none", "null"}:
+            values["previsao"] = ""
+
+    if not values:
+        raise ValueError(f"Sem campos validos para '{model.__tablename__}'.")
+    return values
+
+
+def _insert_backup_row(model, values):
+    table = model.__table__
+    bind = db.session.get_bind()
+    dialect_name = bind.dialect.name if bind is not None else ""
+
+    if dialect_name == "postgresql":
+        stmt = pg_insert(table).values(**values).on_conflict_do_nothing()
+    elif dialect_name == "sqlite":
+        stmt = sqlite_insert(table).values(**values).on_conflict_do_nothing()
+    else:
+        stmt = table.insert().values(**values)
+
+    result = db.session.execute(stmt)
+    return max(result.rowcount or 0, 0)
+
+
+def importar_backup_ndjson_gz(file_storage):
+    if file_storage is None:
+        raise ValueError("Ficheiro em falta.")
+
+    filename = (file_storage.filename or "").lower()
+    if filename and not filename.endswith(".ndjson.gz"):
+        raise ValueError("Formato invalido. Usa um ficheiro .ndjson.gz.")
+
+    try:
+        file_storage.stream.seek(0)
+    except (AttributeError, OSError):
+        pass
+
+    started_perf = time.perf_counter()
+    parsed_lines = 0
+    imported_lines = 0
+    imported_by_type = defaultdict(int)
+    inserted_by_type = defaultdict(int)
+
+    try:
+        with gzip.GzipFile(fileobj=file_storage.stream, mode="rb") as gz_handle:
+            for line_number, raw_line in enumerate(gz_handle, start=1):
+                parsed_lines = line_number
+
+                try:
+                    line = raw_line.decode("utf-8").strip()
+                except UnicodeDecodeError as exc:
+                    raise ValueError(f"Linha {line_number}: conteudo nao e UTF-8 valido.") from exc
+
+                if not line:
+                    continue
+
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(f"Linha {line_number}: JSON invalido.") from exc
+
+                if not isinstance(obj, dict):
+                    raise ValueError(f"Linha {line_number}: objeto NDJSON invalido.")
+
+                row_type = obj.get("type")
+                if row_type == "meta":
+                    continue
+
+                model = BACKUP_NDJSON_TYPE_MODEL.get(row_type)
+                if model is None:
+                    raise ValueError(f"Linha {line_number}: tipo desconhecido '{row_type}'.")
+
+                values = _coerce_backup_row(model, obj.get("data"))
+                inserted = _insert_backup_row(model, values)
+
+                imported_lines += 1
+                imported_by_type[row_type] += 1
+                inserted_by_type[row_type] += inserted
+    except OSError as exc:
+        raise ValueError(f"Ficheiro gzip invalido ou corrompido: {exc}") from exc
+
+    elapsed = time.perf_counter() - started_perf
+    current_app.logger.info(
+        "Importacao NDJSON concluida | linhas=%s | importadas=%s | inseridas=%s | duracao_s=%.3f",
+        parsed_lines,
+        imported_lines,
+        sum(inserted_by_type.values()),
+        elapsed,
+    )
+
+    return {
+        "linhas_lidas": parsed_lines,
+        "linhas_importadas": imported_lines,
+        "linhas_inseridas": int(sum(inserted_by_type.values())),
+        "por_tipo_importadas": dict(imported_by_type),
+        "por_tipo_inseridas": dict(inserted_by_type),
+    }
+
+
+def _build_backup_ndjson_response(scope, specs, desde=None, ate=None, turma=None):
+    started_at = datetime.now(timezone.utc).isoformat()
+    started_perf = time.perf_counter()
+    scope_label = "turma" if scope == "turma" else "completo"
+
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M")
+    if turma:
+        filename = f"backup-turma-{_slugify_filename(turma.nome, str(turma.id))}-{timestamp}.ndjson.gz"
+    else:
+        filename = f"backup-completo-{timestamp}.ndjson.gz"
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".ndjson.gz")
+    tmp_path = tmp.name
+    tmp.close()
+
+    counts = defaultdict(int)
+    raw_bytes = 0
+    total_records = 0
+
+    def _to_line(payload):
+        return json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
+
+    meta_payload = {
+        "type": "meta",
+        "data": {
+            "format": "ndjson",
+            "compression": "gzip",
+            "version": 1,
+            "generated_at": started_at,
+            "scope": scope_label,
+            "turma_id": turma.id if turma else None,
+            "turma_nome": turma.nome if turma else None,
+            "desde": desde.isoformat() if desde else None,
+            "ate": ate.isoformat() if ate else None,
+        },
+    }
+
+    try:
+        with gzip.open(tmp_path, "wb", compresslevel=6) as gz_handle:
+            line = _to_line(meta_payload)
+            line_bytes = line.encode("utf-8")
+            gz_handle.write(line_bytes)
+            raw_bytes += len(line_bytes)
+            total_records += 1
+
+            for type_name, model, query in specs:
+                for row in _iter_query_in_batches(query, model, batch_size=1000):
+                    payload = {"type": type_name, "data": _model_row_to_dict(row)}
+                    line = _to_line(payload)
+                    line_bytes = line.encode("utf-8")
+                    gz_handle.write(line_bytes)
+                    counts[type_name] += 1
+                    raw_bytes += len(line_bytes)
+                    total_records += 1
+
+        with open(tmp_path, "rb") as tmp_check:
+            magic = tmp_check.read(2)
+        if magic != b"\x1f\x8b":
+            raise ValueError("Backup gerado sem cabecalho gzip valido.")
+    except Exception:
+        current_app.logger.exception(
+            "Falha durante exportacao de backup NDJSON | scope=%s | turma_id=%s",
+            scope_label,
+            turma.id if turma else None,
+        )
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
+
+    gz_bytes = 0
+    try:
+        gz_bytes = os.path.getsize(tmp_path)
+    except OSError:
+        gz_bytes = 0
+
+    elapsed = time.perf_counter() - started_perf
+    current_app.logger.info(
+        (
+            "Backup NDJSON concluido | scope=%s | turma_id=%s | desde=%s | ate=%s | "
+            "duracao_s=%.3f | registos=%s | turmas=%s | aulas=%s | alunos=%s | "
+            "ocorrencias=%s | trabalhos=%s | bytes_raw=%s | bytes_gzip=%s"
+        ),
+        scope_label,
+        turma.id if turma else None,
+        desde.isoformat() if desde else None,
+        ate.isoformat() if ate else None,
+        elapsed,
+        total_records,
+        counts.get("turmas", 0),
+        counts.get("calendario_aulas", 0),
+        counts.get("alunos", 0),
+        counts.get("dt_ocorrencias", 0),
+        counts.get("trabalhos", 0),
+        raw_bytes,
+        gz_bytes,
+    )
+
+    response = send_file(
+        tmp_path,
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/gzip",
+        max_age=0,
+    )
+    response.headers.pop("Content-Encoding", None)
+    response.headers["Cache-Control"] = "no-store, no-transform"
+    response.headers["X-Accel-Buffering"] = "no"
+
+    @response.call_on_close
+    def _cleanup_tmp_backup():
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+
+    return response
 
 
 def _mapear_alunos_em_falta(aulas):
@@ -2709,7 +3437,7 @@ def create_app():
         if not anterior:
             flash("Não existe aula anterior para copiar.", "error")
             return redirect(request.referrer or url_for("dashboard"))
-        aula.previsao = anterior.previsao or ""
+        aula.previsao = _normalizar_texto_opcional(anterior.previsao) or ""
         db.session.commit()
         flash("Previsão copiada da aula anterior.", "success")
         return redirect(request.referrer or url_for("dashboard"))
@@ -2720,7 +3448,8 @@ def create_app():
     )
     def previsao_enviar_seguinte(turma_id, aula_id):
         aula = _obter_aula_turma(turma_id, aula_id)
-        if not (aula.previsao or "").strip():
+        previsao_origem = _normalizar_texto_opcional(aula.previsao) or ""
+        if not previsao_origem.strip():
             flash("A previsão está vazia.", "error")
             return redirect(request.referrer or url_for("dashboard"))
         query = CalendarioAula.query.filter_by(turma_id=turma_id).filter(
@@ -2732,7 +3461,7 @@ def create_app():
         if not seguinte:
             flash("Não existe aula seguinte para enviar.", "error")
             return redirect(request.referrer or url_for("dashboard"))
-        seguinte.previsao = aula.previsao or ""
+        seguinte.previsao = previsao_origem
         db.session.commit()
         flash("Previsão enviada para a aula seguinte.", "success")
         return redirect(request.referrer or url_for("dashboard"))
@@ -4059,6 +4788,78 @@ def create_app():
         db.session.commit()
         flash("Direção de Turma removida.", "success")
         return redirect(url_for("direcao_turma_list"))
+
+    @app.route("/turmas/importar", methods=["GET", "POST"])
+    def turmas_importar():
+        if request.method == "POST":
+            ficheiro = request.files.get("ficheiro")
+            if not ficheiro or not ficheiro.filename:
+                flash("Seleciona um ficheiro .ndjson.gz.", "error")
+                return redirect(request.url)
+
+            try:
+                resumo = importar_backup_ndjson_gz(ficheiro)
+                db.session.commit()
+            except Exception as exc:
+                db.session.rollback()
+                app.logger.exception("Erro na importacao de backup NDJSON.")
+                flash(f"Erro na importacao: {exc}", "error")
+                return redirect(request.url)
+
+            flash(
+                (
+                    "Importacao concluida com sucesso. "
+                    f"Linhas importadas: {resumo['linhas_importadas']} | "
+                    f"novas insercoes: {resumo['linhas_inseridas']}."
+                ),
+                "success",
+            )
+            return redirect(url_for("turmas_list"))
+
+        return render_template("turmas/importar.html")
+
+    @app.route("/backup/export/completo")
+    def backup_export_completo():
+        try:
+            desde = _parse_backup_date_arg(request.args.get("desde"), "desde")
+            ate = _parse_backup_date_arg(request.args.get("ate"), "ate")
+            if desde and ate and desde > ate:
+                raise ValueError("Intervalo invalido: 'desde' nao pode ser maior do que 'ate'.")
+        except ValueError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("turmas_list"))
+
+        app.logger.info(
+            "Inicio backup NDJSON | scope=completo | desde=%s | ate=%s",
+            desde.isoformat() if desde else None,
+            ate.isoformat() if ate else None,
+        )
+        specs = _build_backup_ndjson_specs(desde=desde, ate=ate)
+        return _build_backup_ndjson_response("completo", specs, desde=desde, ate=ate)
+
+    @app.route("/turmas/<int:turma_id>/backup/export")
+    def backup_export_turma(turma_id):
+        turma = Turma.query.options(joinedload(Turma.ano_letivo)).get_or_404(turma_id)
+
+        try:
+            desde = _parse_backup_date_arg(request.args.get("desde"), "desde")
+            ate = _parse_backup_date_arg(request.args.get("ate"), "ate")
+            if desde and ate and desde > ate:
+                raise ValueError("Intervalo invalido: 'desde' nao pode ser maior do que 'ate'.")
+        except ValueError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("turmas_list"))
+
+        app.logger.info(
+            "Inicio backup NDJSON | scope=turma | turma_id=%s | desde=%s | ate=%s",
+            turma.id,
+            desde.isoformat() if desde else None,
+            ate.isoformat() if ate else None,
+        )
+        specs = _build_backup_ndjson_specs(turma=turma, desde=desde, ate=ate)
+        return _build_backup_ndjson_response(
+            "turma", specs, desde=desde, ate=ate, turma=turma
+        )
 
     @app.route("/backup/ano/export", methods=["POST"])
     def backup_ano_export():
@@ -6381,7 +7182,7 @@ def create_app():
             total_geral = request.form.get("total_geral", type=int)
             sumarios_txt = (request.form.get("sumarios") or "").strip()
             sumario_txt = (request.form.get("sumario") or "").strip()
-            previsao_txt = (request.form.get("previsao") or "").strip()
+            previsao_txt = _normalizar_texto_opcional(request.form.get("previsao")) or ""
             tipo = request.form.get("tipo") or "normal"
             tempos_sem_aula = request.form.get("tempos_sem_aula", type=int)
 
@@ -6529,7 +7330,7 @@ def create_app():
             total_geral = request.form.get("total_geral", type=int)
             sumarios_txt = (request.form.get("sumarios") or "").strip()
             sumario_txt = (request.form.get("sumario") or "").strip()
-            previsao_txt = (request.form.get("previsao") or "").strip()
+            previsao_txt = _normalizar_texto_opcional(request.form.get("previsao")) or ""
             tipo = request.form.get("tipo") or "normal"
             tempos_sem_aula = request.form.get("tempos_sem_aula", type=int)
 
@@ -6916,7 +7717,7 @@ def create_app():
 
             previsao_txt = request.form.get("previsao")
             if previsao_txt is not None:
-                aula.previsao = previsao_txt.strip()
+                aula.previsao = _normalizar_texto_opcional(previsao_txt) or ""
 
             observacoes_txt = request.form.get("observacoes")
             if observacoes_txt is not None:

@@ -125,6 +125,8 @@
         {% set sumario_anterior = sumarios_anteriores.get(a.id) if sumarios_anteriores is defined else None %}
         {% set alunos_abertos = a.id in aulas_com_avaliacao if aulas_com_avaliacao is defined else False %}
         {% set form_id = "sumario-form-" ~ a.id %}
+        {% set previsao_html = a.previsao|default('', true) %}
+        {% if previsao_html|string|trim|lower == 'none' %}{% set previsao_html = '' %}{% endif %}
         <tr>
           <td>
             <div class="fw-semibold">{{ a.turma.nome if a.turma else (turma.nome if turma else '') }}</div>
@@ -142,10 +144,10 @@
                 {% if a.modulo %}{{ a.modulo.nome }}{% else %}Sem módulo{% endif %}
               </span>
               <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
-                Aula {% if sem_aula_total %}—{% else %}{{ a.numero_modulo }}{% endif %}
+                Aula {% if sem_aula_total %}—{% else %}{{ a.numero_modulo or '—' }}{% endif %}
               </span>
               <span class="badge rounded-pill bg-body-secondary text-dark border border-secondary-subtle">
-                Total {% if sem_aula_total %}—{% else %}{{ a.total_geral }}{% endif %}
+                Total {% if sem_aula_total %}—{% else %}{{ a.total_geral or '—' }}{% endif %}
               </span>
               <span class="badge rounded-pill {% if sem_aula %}bg-danger text-light{% else %}bg-body-secondary text-dark border border-secondary-subtle{% endif %}">
                 {{ tipo_label }}
@@ -158,8 +160,8 @@
           <td>
             {% if turma_fechada %}
               <div class="mb-1">{{ a.sumario or '' }}</div>
-              {% if a.previsao %}
-                <div class="text-muted small">Previsão: {{ a.previsao|safe }}</div>
+              {% if previsao_html %}
+                <div class="text-muted small">Previsão: {{ previsao_html|safe }}</div>
               {% endif %}
             {% else %}
               <form method="post"
@@ -212,8 +214,8 @@
                     contenteditable="true"
                     data-target="#{{ previsao_id }}"
                     aria-label="Previsão da aula"
-                  >{{ a.previsao|default('')|safe }}</div>
-                  <input type="hidden" name="previsao" id="{{ previsao_id }}" value="{{ a.previsao or '' }}" data-turma-id="{{ a.turma_id }}" data-sort-key="{{ a.data.isoformat() if a.data else '' }}-{{ '%06d' % a.id }}">
+                  >{{ previsao_html|safe }}</div>
+                  <input type="hidden" name="previsao" id="{{ previsao_id }}" value="{{ previsao_html }}" data-turma-id="{{ a.turma_id }}" data-sort-key="{{ a.data.isoformat() if a.data else '' }}-{{ '%06d' % a.id }}">
                 </div>
               </form>
               <form method="post" id="previsao-limpar-{{ a.id }}" action="{{ url_for('previsao_limpar', turma_id=a.turma_id, aula_id=a.id) }}" class="d-none">
@@ -310,3 +312,4 @@
 </script>
 
 {% endblock %}
+

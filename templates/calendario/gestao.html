@@ -96,7 +96,7 @@
                   <td>{{ i.tipo }}</td>
                   <td>
                     {% if i.data_text %}
-                      {{ i.data_text }}
+                      {{ i.data_text or '' }}
                     {% elif i.data_inicio and i.data_fim %}
                       {{ i.data_inicio.strftime("%d/%m/%Y") }} a {{ i.data_fim.strftime("%d/%m/%Y") }}
                     {% elif i.data_inicio %}
@@ -166,7 +166,7 @@
                 <tr>
                   <td>
                     {% if f.data_text %}
-                      {{ f.data_text }}
+                      {{ f.data_text or '' }}
                     {% elif f.data %}
                       {{ f.data.strftime("%d/%m/%Y") }}
                     {% endif %}

@@ -32,6 +32,29 @@
   </div>
 </div>
 
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-semibold">Backup robusto (NDJSON + GZIP)</div>
+  <div class="card-body">
+    <form class="row gy-2 gx-3 align-items-end" method="get" action="{{ url_for('backup_export_completo') }}">
+      <div class="col-12 col-md-3">
+        <label class="form-label" for="backup_desde">Desde (opcional)</label>
+        <input type="date" class="form-control" id="backup_desde" name="desde">
+      </div>
+      <div class="col-12 col-md-3">
+        <label class="form-label" for="backup_ate">Ate (opcional)</label>
+        <input type="date" class="form-control" id="backup_ate" name="ate">
+      </div>
+      <div class="col-12 col-md-6 d-flex gap-2">
+        <button type="submit" class="btn btn-outline-primary">Backup completo (.ndjson.gz)</button>
+        <a href="{{ url_for('turmas_importar') }}" class="btn btn-outline-secondary">Importar backup (.ndjson.gz)</a>
+      </div>
+      <div class="col-12">
+        <div class="form-text">Exporta em streaming por blocos para reduzir RAM e evitar timeouts em bases grandes.</div>
+      </div>
+    </form>
+  </div>
+</div>
+
 {% set anos_ativos = anos_letivos|selectattr('ativo')|list %}
 {% set ano_destaque = anos_ativos[0] if anos_ativos else (anos_letivos[0] if anos_letivos else None) %}
 {% if ano_destaque %}
@@ -39,7 +62,7 @@
 {% endif %}
 
 <div class="card shadow-sm mb-4">
-  <div class="card-header fw-semibold">Backup anual (JSON)</div>
+  <div class="card-header fw-semibold">Backup anual (JSON legado)</div>
   <div class="card-body">
     <div class="row gy-3">
       <div class="col-12 col-lg-6">
@@ -68,7 +91,7 @@
             <div class="form-text">O ficheiro JSON será gravado nesta pasta.</div>
           </div>
           <div class="col-12">
-            <button type="submit" class="btn btn-outline-primary">Exportar backup</button>
+            <button type="submit" class="btn btn-outline-primary">Exportar backup legado</button>
           </div>
         </form>
       </div>
@@ -141,6 +164,7 @@
                   <a href="{{ url_for('turma_alunos', turma_id=turma.id) }}" class="btn btn-sm btn-outline-secondary">Alunos</a>
                   <a href="{{ url_for('turma_calendario', turma_id=turma.id) }}" class="btn btn-sm btn-outline-info">Calendário</a>
                   <a href="{{ url_for('turma_mapa_avaliacao_diaria', turma_id=turma.id) }}" class="btn btn-sm btn-outline-success">Mapa avaliações</a>
+                  <a href="{{ url_for('backup_export_turma', turma_id=turma.id) }}" class="btn btn-sm btn-outline-dark">Backup desta turma</a>
                   <a href="{{ url_for('turmas_edit', turma_id=turma.id) }}" class="btn btn-sm btn-outline-warning">Editar</a>
                   <form method="post"
                         action="{{ url_for('turmas_clone', turma_id=turma.id) }}"

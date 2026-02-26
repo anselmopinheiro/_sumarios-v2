@@ -85,9 +85,9 @@
             {% for item in alunos_linha %}
               <div>
                 {% if item.dt_aluno_id %}
-                  {{ item.nome_curto }}
+                  {{ item.nome_curto or '—' }}
                 {% else %}
-                  {{ item.nome_curto }}
+                  {{ item.nome_curto or '—' }}
                 {% endif %}
               </div>
             {% endfor %}

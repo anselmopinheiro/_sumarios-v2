@@ -39,7 +39,7 @@
         <h2 class="h6 text-muted">Último backup</h2>
         {% if last_backup %}
           <p class="fw-semibold mb-0">{{ last_backup.timestamp.strftime("%d/%m/%Y %H:%M") }}</p>
-          <p class="text-muted small mb-0">{{ last_backup.hostname }}</p>
+          <p class="text-muted small mb-0">{{ last_backup.hostname or '—' }}</p>
         {% else %}
           <p class="text-muted mb-0">Sem backups registados.</p>
         {% endif %}
@@ -130,7 +130,7 @@
               <tr>
                 <td class="font-monospace small">{{ backup.filename }}</td>
                 <td>{{ backup.timestamp.strftime("%d/%m/%Y %H:%M") }}</td>
-                <td>{{ backup.hostname }}</td>
+                <td>{{ backup.hostname or '—' }}</td>
                 <td class="text-end">{{ backup.size_label or '—' }}</td>
                 <td class="text-end">
                   <a class="btn btn-sm btn-outline-primary" href="{{ url_for('backups_download', filename=backup.filename) }}">
