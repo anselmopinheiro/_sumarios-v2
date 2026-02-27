@@ -1,8 +1,4 @@
 kind,value,file,line
-call,/offline/errors?${params.toString()},templates/offline_dashboard.html,397
-call,/offline/errors/${errorId},templates/offline_dashboard.html,414
-call,/offline/errors/clear,templates/offline_dashboard.html,426
-hardcoded,/offline/errors/clear,templates/offline_dashboard.html,426
 hardcoded,/calendario/semana,templates/base.html,136
 hardcoded,/calendario/dia,templates/base.html,137
 hardcoded,/turmas,templates/base.html,139
@@ -11,7 +7,11 @@ call,/aulas/${aulaId}/sumario/copiar-previsao,templates/base.html,423
 call,/aulas/${aulaId}/sumario/reverter,templates/base.html,651
 call,/offline/status?format=json,templates/base.html,880
 hardcoded,/offline/status?format=json,templates/base.html,880
-hardcoded,/calendario/sumarios-pendentes,templates/turmas/sumarios_pendentes.html,37
+call,/offline/errors?${params.toString()},templates/offline_dashboard.html,397
+call,/offline/errors/${errorId},templates/offline_dashboard.html,414
+call,/offline/errors/clear,templates/offline_dashboard.html,426
+hardcoded,/offline/errors/clear,templates/offline_dashboard.html,426
 call,"{{ url_for(""api_sync_status"") }}",templates/turmas/calendario_aula_alunos.html,374
 call,"{{ url_for(""sync_flush"") }}",templates/turmas/calendario_aula_alunos.html,449
 call,"{{ url_for(""aulas_alunos_import_tsv"", aula_id=aula.id) }}",templates/turmas/calendario_aula_alunos.html,461
+hardcoded,/calendario/sumarios-pendentes,templates/turmas/sumarios_pendentes.html,37

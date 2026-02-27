@@ -105,12 +105,11 @@ rule,methods,endpoint,blueprint,template_ref_count,js_ref_count,python_ref_count
 /turmas/<int:turma_id>/aulas/<int:aula_id>/previsao/enviar-seguinte,POST,previsao_enviar_seguinte,,6,0,0,0,OK_UI,manter
 /turmas/<int:turma_id>/aulas/<int:aula_id>/previsao/limpar,POST,previsao_limpar,,6,0,0,0,OK_UI,manter
 /turmas/<int:turma_id>/backup/export,GET|POST,backup_export_turma,,1,0,0,0,OK_UI,manter
-/turmas/<int:turma_id>/calendario,GET,turma_calendario,,13,0,22,0,OK_UI,manter
+/turmas/<int:turma_id>/calendario,GET,turma_calendario,,13,0,19,0,OK_UI,manter
 /turmas/<int:turma_id>/calendario/<int:aula_id>/alunos,GET|POST,calendario_aula_alunos,,5,0,0,0,OK_UI,manter
 /turmas/<int:turma_id>/calendario/<int:aula_id>/delete,POST,calendario_delete,,1,0,0,0,OK_UI,manter
 /turmas/<int:turma_id>/calendario/<int:aula_id>/edit,GET|POST,calendario_edit,,4,0,0,0,OK_UI,manter
 /turmas/<int:turma_id>/calendario/<int:aula_id>/sumario,POST,calendario_update_sumario,,5,0,0,0,OK_UI,manter
-/turmas/<int:turma_id>/calendario/add,GET|POST,calendario_add,,0,0,0,0,ORPHAN,avaliar_remocao_ou_documentacao
 /turmas/<int:turma_id>/calendario/dia,GET,turma_calendario_dia,,10,0,4,0,OK_UI,manter
 /turmas/<int:turma_id>/calendario/gerar,POST,turma_calendario_gerar,,1,0,0,0,OK_UI,manter
 /turmas/<int:turma_id>/calendario/reset,POST,turma_calendario_reset,,1,0,0,0,OK_UI,manter

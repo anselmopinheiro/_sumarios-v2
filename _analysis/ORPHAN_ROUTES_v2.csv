@@ -1,2 +1,1 @@
 rule,methods,endpoint,blueprint,template_ref_count,js_ref_count,python_ref_count,has_redirect_in,classification,action
-/turmas/<int:turma_id>/calendario/add,GET|POST,calendario_add,,0,0,0,0,ORPHAN,avaliar_remocao_ou_documentacao

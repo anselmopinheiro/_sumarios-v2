@@ -110,7 +110,6 @@ rule,methods,endpoint,blueprint,defaults,arguments
 /turmas/<int:turma_id>/calendario/<int:aula_id>/delete,POST,calendario_delete,,{},aula_id|turma_id
 /turmas/<int:turma_id>/calendario/<int:aula_id>/edit,GET|POST,calendario_edit,,{},aula_id|turma_id
 /turmas/<int:turma_id>/calendario/<int:aula_id>/sumario,POST,calendario_update_sumario,,{},aula_id|turma_id
-/turmas/<int:turma_id>/calendario/add,GET|POST,calendario_add,,{},turma_id
 /turmas/<int:turma_id>/calendario/dia,GET,turma_calendario_dia,,{},turma_id
 /turmas/<int:turma_id>/calendario/gerar,POST,turma_calendario_gerar,,{},turma_id
 /turmas/<int:turma_id>/calendario/reset,POST,turma_calendario_reset,,{},turma_id
