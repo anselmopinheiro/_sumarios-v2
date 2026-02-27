@@ -109,7 +109,7 @@ class Config:
     SUPABASE_CONNECT_TIMEOUT = _get_int(os.environ.get("SUPABASE_CONNECT_TIMEOUT"), 5)
     SUPABASE_STATEMENT_TIMEOUT_MS = _get_int(os.environ.get("SUPABASE_STATEMENT_TIMEOUT_MS"), 15000)
 
-    SQLITE_PATH = _absolute_sqlite_path(os.environ.get("SQLITE_PATH") or "gestor_lectivo.db")
+    SQLITE_PATH = _absolute_sqlite_path(os.environ.get("SQLITE_PATH") or os.path.join("instance", "gestor_lectivo.db"))
     DB_PATH = SQLITE_PATH
     DATABASE_URL = os.environ.get("DATABASE_URL")
 

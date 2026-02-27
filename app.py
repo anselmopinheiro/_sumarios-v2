@@ -89,6 +89,7 @@ from config import Config
 from offline_blueprint import offline_bp, refresh_snapshot_from_remote, snapshot_remote_to_local
 from offline_store import (
     count_offline_errors,
+    get_offline_db_path as resolve_offline_db_path,
     get_last_offline_error,
     get_snapshot_status,
     get_state_datetime,
@@ -1657,11 +1658,13 @@ def _setup_tx_logging(app):
     _setup_tx_logging._registered = True
 
 def _setup_dual_db_engines(app):
-    local_uri = f"sqlite:///{os.path.join(app.instance_path, 'offline.db')}"
+    offline_db_path = resolve_offline_db_path(app.instance_path)
+    local_uri = f"sqlite:///{offline_db_path}"
     remote_uri = app.config.get("SQLALCHEMY_DATABASE_URI")
 
     app.extensions["engine_local"] = create_engine(local_uri, future=True)
     app.extensions["session_local_factory"] = sessionmaker(bind=app.extensions["engine_local"], future=True)
+    app.extensions["offline_db_path"] = offline_db_path
 
     app.extensions["engine_remote"] = None
     app.extensions["session_remote_factory"] = None
@@ -2938,6 +2941,7 @@ def create_app():
     with app.app_context():
         init_offline_db(app.instance_path)
         init_offline_store_db(app.instance_path)
+        app.logger.info("Offline DB path ativo: %s", resolve_offline_db_path(app.instance_path))
         _ensure_columns()
         _ensure_trabalhos_tables()
         try:
