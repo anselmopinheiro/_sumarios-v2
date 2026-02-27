@@ -1,0 +1,5 @@
+endpoint,rule,methods,status
+api_health_db,/api/health/db,GET,multi_rule_same_endpoint
+api_health_db,/health/db,GET,multi_rule_same_endpoint
+turma_calendario_dia,/calendario/dia,GET,multi_rule_same_endpoint
+turma_calendario_dia,/turmas/<int:turma_id>/calendario/dia,GET,multi_rule_same_endpoint

@@ -1,0 +1,8 @@
+kind,value,file,line
+href,/,templates/base.html,133
+href,/calendario/semana,templates/base.html,136
+href,/calendario/dia,templates/base.html,137
+href,/turmas,templates/base.html,139
+href,/admin,templates/base.html,142
+href,/direcao-turma,templates/base.html,143
+href,/calendario/sumarios-pendentes,templates/turmas/sumarios_pendentes.html,37

@@ -1,0 +1,13 @@
+kind,value,file,line
+fetch,/offline/errors/clear,templates/offline_dashboard.html,426
+hardcoded,/offline/errors/clear,templates/offline_dashboard.html,426
+hardcoded,/calendario/semana,templates/base.html,136
+hardcoded,/calendario/dia,templates/base.html,137
+hardcoded,/turmas,templates/base.html,139
+hardcoded,/admin,templates/base.html,142
+fetch,/offline/status?format=json,templates/base.html,880
+hardcoded,/offline/status?format=json,templates/base.html,880
+hardcoded,/calendario/sumarios-pendentes,templates/turmas/sumarios_pendentes.html,37
+fetch,{{ url_for(,templates/turmas/calendario_aula_alunos.html,374
+fetch,{{ url_for(,templates/turmas/calendario_aula_alunos.html,449
+fetch,{{ url_for(,templates/turmas/calendario_aula_alunos.html,461
