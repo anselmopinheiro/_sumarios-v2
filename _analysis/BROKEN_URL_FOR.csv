@@ -1,9 +1,1 @@
 endpoint,file,line,context
-disciplinas_add,templates/disciplinas/gestao.html,7,"<a href=""{{ url_for('disciplinas_add', ano_id=ano.id) }}"">+ Nova Disciplina</a>"
-disciplinas_edit,templates/disciplinas/gestao.html,22,"<a href=""{{ url_for('disciplinas_edit', disc_id=d.id) }}"">Editar</a>"
-disciplinas_delete,templates/disciplinas/gestao.html,24,"action=""{{ url_for('disciplinas_delete', disc_id=d.id) }}"""
-disciplinas_gestao,templates/disciplinas/form.html,24,"<a href=""{{ url_for('disciplinas_gestao', ano_id=ano.id) }}"">Cancelar</a>"
-calendario_dia,templates/admin/calendario_diario.html,5,"<a class=""btn btn-outline-primary btn-sm"" href=""{{ url_for('calendario_dia') }}"">Abrir calendário diário</a>"
-turma_disciplinas,templates/turmas/gestao.html,32,"<a href=""{{ url_for('turma_disciplinas', turma_id=t.id) }}"">Disciplinas</a>"
-turmas_gestao,templates/turmas/disciplinas.html,6,"<a href=""{{ url_for('turmas_gestao', ano_id=ano.id) }}"">Voltar à gestão de turmas</a>"
-disciplinas_gestao,templates/turmas/disciplinas.html,11,"<p><a href=""{{ url_for('disciplinas_gestao', ano_id=ano.id) }}"">Gerir disciplinas</a></p>"

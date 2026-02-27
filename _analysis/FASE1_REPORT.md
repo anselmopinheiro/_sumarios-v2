@@ -13,22 +13,14 @@ Import mode: `from app import create_app`
   - `GET`: 80
   - `DELETE`: 1
 - Por classificação:
-  - `OK_UI`: 119
-  - `ORPHAN`: 13
-  - `INTERNAL`: 5
-  - `OK_API`: 1
+  - `OK_UI`: 118
+  - `INTERNAL`: 15
+  - `ORPHAN`: 3
+  - `OK_API`: 2
 
 ## 2) Top riscos (até 20 por categoria)
 
-- BROKEN url_for: 8
-  - disciplinas_add em templates/disciplinas/gestao.html:7
-  - disciplinas_edit em templates/disciplinas/gestao.html:22
-  - disciplinas_delete em templates/disciplinas/gestao.html:24
-  - disciplinas_gestao em templates/disciplinas/form.html:24
-  - calendario_dia em templates/admin/calendario_diario.html:5
-  - turma_disciplinas em templates/turmas/gestao.html:32
-  - turmas_gestao em templates/turmas/disciplinas.html:6
-  - disciplinas_gestao em templates/turmas/disciplinas.html:11
+- BROKEN url_for: 0
 - Missing templates: 0
 - Redirects inválidos: 0
 - Hardcoded URLs suspeitos (JS/templates): 7 mostrados
@@ -44,18 +36,8 @@ Import mode: `from app import create_app`
 
 | rule | endpoint | view file:line | nota |
 |---|---|---|---|
-| `/admin/anos-letivos` | `admin_anos_letivos` | `app.py:3110` | sem origem detectada por heurística |
-| `/admin/calendario-diario` | `admin_calendario_diario` | `app.py:3122` | sem origem detectada por heurística |
-| `/admin/calendario-semanal` | `admin_calendario_semanal` | `app.py:3116` | sem origem detectada por heurística |
-| `/admin/direcao-turma` | `admin_direcao_turma` | `app.py:3162` | sem origem detectada por heurística |
-| `/admin/disciplinas-dt` | `admin_disciplinas_dt` | `app.py:3168` | sem origem detectada por heurística |
-| `/admin/offline` | `admin_offline` | `app.py:3174` | sem origem detectada por heurística |
-| `/admin/tipos-aula` | `admin_tipos_aula` | `app.py:3187` | sem origem detectada por heurística |
-| `/admin/turmas` | `admin_turmas` | `app.py:3156` | sem origem detectada por heurística |
 | `/aulas/<int:aula_id>/sumario/copiar-previsao` | `sumario_copiar_previsao` | `app.py:3455` | sem origem detectada por heurística |
 | `/aulas/<int:aula_id>/sumario/reverter` | `sumario_reverter` | `app.py:3483` | sem origem detectada por heurística |
-| `/backups` | `backups_list` | `app.py:3423` | sem origem detectada por heurística |
-| `/definicoes/tipos-aula` | `definicoes_tipos_aula` | `app.py:3192` | sem origem detectada por heurística |
 | `/turmas/<int:turma_id>/calendario/add` | `calendario_add` | `app.py:7327` | sem origem detectada por heurística |
 
 ## 4) Ações sugeridas

@@ -1,14 +1,4 @@
 rule,methods,endpoint,blueprint,has_template_ref,has_js_ref,has_redirect_in,is_offline,is_health,is_static,classification,action
-/admin/anos-letivos,GET,admin_anos_letivos,,0,0,0,0,0,0,ORPHAN,avaliar_remocao_ou_documentacao
-/admin/calendario-diario,GET,admin_calendario_diario,,0,0,0,0,0,0,ORPHAN,avaliar_remocao_ou_documentacao
-/admin/calendario-semanal,GET,admin_calendario_semanal,,0,0,0,0,0,0,ORPHAN,avaliar_remocao_ou_documentacao
-/admin/direcao-turma,GET,admin_direcao_turma,,0,0,0,0,0,0,ORPHAN,avaliar_remocao_ou_documentacao
-/admin/disciplinas-dt,GET,admin_disciplinas_dt,,0,0,0,0,0,0,ORPHAN,avaliar_remocao_ou_documentacao
-/admin/offline,GET,admin_offline,,0,0,0,0,0,0,ORPHAN,avaliar_remocao_ou_documentacao
-/admin/tipos-aula,GET,admin_tipos_aula,,0,0,0,0,0,0,ORPHAN,avaliar_remocao_ou_documentacao
-/admin/turmas,GET,admin_turmas,,0,0,0,0,0,0,ORPHAN,avaliar_remocao_ou_documentacao
 /aulas/<int:aula_id>/sumario/copiar-previsao,POST,sumario_copiar_previsao,,0,0,0,0,0,0,ORPHAN,avaliar_remocao_ou_documentacao
 /aulas/<int:aula_id>/sumario/reverter,POST,sumario_reverter,,0,0,0,0,0,0,ORPHAN,avaliar_remocao_ou_documentacao
-/backups,GET,backups_list,,0,0,0,0,0,0,ORPHAN,avaliar_remocao_ou_documentacao
-/definicoes/tipos-aula,GET,definicoes_tipos_aula,,0,0,0,0,0,0,ORPHAN,avaliar_remocao_ou_documentacao
 /turmas/<int:turma_id>/calendario/add,GET|POST,calendario_add,,0,0,0,0,0,0,ORPHAN,avaliar_remocao_ou_documentacao

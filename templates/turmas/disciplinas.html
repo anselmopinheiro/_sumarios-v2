@@ -3,12 +3,12 @@
 <h2>Disciplinas da Turma {{ turma.nome }} – {{ ano.nome }}</h2>
 
 <p>
-  <a href="{{ url_for('turmas_gestao', ano_id=ano.id) }}">Voltar à gestão de turmas</a>
+  <a href="{{ url_for('turmas_list') }}">Voltar à gestão de turmas</a>
 </p>
 
 {% if not todas_disc %}
 <p>Ainda não há disciplinas definidas para este ano letivo.</p>
-<p><a href="{{ url_for('disciplinas_gestao', ano_id=ano.id) }}">Gerir disciplinas</a></p>
+<p><a href="{{ url_for('dt_disciplinas_list') }}">Gerir disciplinas</a></p>
 {% else %}
 <form method="post">
   <p>Selecione as disciplinas que esta turma frequenta:</p>

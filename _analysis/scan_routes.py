@@ -188,7 +188,7 @@ def scan_static_js():
         re.compile(r"axios(?:\.[a-zA-Z]+)?\(\s*['\"]([^'\"]+)['\"]"),
         re.compile(r"\$\.(?:get|post|ajax)\(\s*['\"]([^'\"]+)['\"]"),
     ]
-    hardcoded = re.compile(r"['\"](/(?:api|offline|admin|turmas|calendario|health)[^'\"]*)['\"]")
+    hardcoded = re.compile(r"['\"](/(?:api|offline|admin|turmas|calendario|health|aulas|backups|definicoes)[^'\"]*)['\"]")
 
     targets = list(iter_files(STATIC_DIR, {".js", ".ts"})) + list(iter_files(TEMPLATES_DIR, {".html"}))
     for file in targets:
@@ -316,6 +316,23 @@ def detect_duplicate_endpoints(routes_full):
     return dups
 
 
+
+
+def path_ref_matches_rule(rule, refs_map):
+    if rule in refs_map:
+        return True
+
+    rx = re.sub(r"<[^>]+>", "[^/]+", rule)
+    for ref_path in refs_map.keys():
+        if not isinstance(ref_path, str) or not ref_path.startswith('/'):
+            continue
+
+        normalized = re.sub(r"\$\{[^}]+\}", "1", ref_path)
+        if re.fullmatch(rx, normalized):
+            return True
+    return False
+
+
 def classify_routes(routes_full, endpoint_refs, template_path_refs, js_path_refs, redirects_to_endpoint, broken_url_for, missing_templates, broken_redirects):
     broken_eps = set([r["endpoint"] for r in missing_templates])
     broken_eps |= set()
@@ -328,8 +345,8 @@ def classify_routes(routes_full, endpoint_refs, template_path_refs, js_path_refs
     for r in routes_full:
         ep = r["endpoint"]
         rule = r["rule"]
-        has_template_ref = bool(endpoint_refs.get(ep)) or bool(template_path_refs.get(rule))
-        has_js_ref = bool(js_path_refs.get(rule))
+        has_template_ref = bool(endpoint_refs.get(ep)) or path_ref_matches_rule(rule, template_path_refs)
+        has_js_ref = path_ref_matches_rule(rule, js_path_refs)
         has_redirect_in = bool(redirects_to_endpoint.get(ep))
         is_offline = rule.startswith("/offline")
         is_health = ("/health" in rule) or ("ping" in rule)
@@ -347,7 +364,7 @@ def classify_routes(routes_full, endpoint_refs, template_path_refs, js_path_refs
         elif has_js_ref:
             status = "OK_API"
             action = "manter"
-        elif is_health or is_static or rule.startswith("/api/"):
+        elif is_health or is_static or rule.startswith("/api/") or rule.startswith("/admin") or rule.startswith("/definicoes/") or rule.startswith("/backups"):
             status = "INTERNAL"
             action = "documentar_interno"
         elif is_offline:

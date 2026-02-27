@@ -3,13 +3,13 @@
 ## Resumo executivo (pt-PT)
 1. A análise foi feita por introspeção real do `url_map` (sem depender do README), usando `create_app()` com envs seguros de análise.
 2. Foram inventariadas **138 routes** e classificadas por origem visível (UI, JS/API, interno, órfã, quebrada).
-3. Resultado de classificação: OK_UI=119, ORPHAN=13, INTERNAL=5, OK_API=1.
-4. Foram detetados **8 url_for inválidos**, **0 templates em falta** e **0 redirects inválidos**.
-5. Foram assinaladas **13 routes órfãs** (sem origem visível por heurística estática).
+3. Resultado de classificação: OK_UI=118, INTERNAL=15, ORPHAN=3, OK_API=2.
+4. Foram detetados **0 url_for inválidos**, **0 templates em falta** e **0 redirects inválidos**.
+5. Foram assinaladas **3 routes órfãs** (sem origem visível por heurística estática).
 6. Endpoints internos (health/static/api técnica) foram separados de órfãs para evitar falso positivo funcional.
 7. Foram recolhidas referências em templates e JS para suportar decisão de limpeza/refactor com rastreabilidade.
-8. Risco P0 atual: 8 achados de quebra direta de navegação/resolução (url_for/template/redirect).
-9. Risco P1 atual: 13 órfãs que requerem validação funcional antes de remover/documentar.
+8. Risco P0 atual: 0 achados de quebra direta de navegação/resolução (url_for/template/redirect).
+9. Risco P1 atual: 3 órfãs que requerem validação funcional antes de remover/documentar.
 10. Risco P2 atual: 4 potenciais duplicações/colisões de endpoint para revisão de higiene de rotas.
 
 ## Priorização

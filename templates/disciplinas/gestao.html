@@ -4,7 +4,7 @@
 
 <p>
   <a href="{{ url_for('anos_letivos_list') }}">Voltar aos Anos Letivos</a> |
-  <a href="{{ url_for('disciplinas_add', ano_id=ano.id) }}">+ Nova Disciplina</a>
+  <a href="{{ url_for('dt_disciplinas_new') }}">+ Nova Disciplina</a>
 </p>
 
 {% if disciplinas %}
@@ -19,9 +19,9 @@
     <td>{{ d.nome }}</td>
     <td>{{ d.sigla or "" }}</td>
     <td>
-      <a href="{{ url_for('disciplinas_edit', disc_id=d.id) }}">Editar</a>
+      <a href="{{ url_for('dt_disciplinas_edit', disciplina_id=d.id) }}">Editar</a>
       <form method="post"
-            action="{{ url_for('disciplinas_delete', disc_id=d.id) }}"
+            action="{{ url_for('dt_disciplinas_delete', disciplina_id=d.id) }}"
             style="display:inline"
             onsubmit="return confirm('Apagar esta disciplina?');">
         <button type="submit">Apagar</button>
