@@ -1,11 +1,5 @@
 kind,value,file,line
-url_for,offline.turma_aulas,templates/offline_turmas.html,8
-href,{{ url_for(,templates/offline_turmas.html,8
 href,{{ href }},templates/admin_base.html,49
-url_for,offline.dashboard,templates/offline_history.html,5
-href,{{ url_for(,templates/offline_history.html,5
-url_for,offline.aula_sumario,templates/offline_presencas.html,32
-action,{{ url_for(,templates/offline_presencas.html,32
 url_for,offline.sync_page,templates/offline_dashboard.html,88
 action,{{ url_for(,templates/offline_dashboard.html,88
 url_for,offline.snapshot_now,templates/offline_dashboard.html,96
@@ -18,6 +12,30 @@ url_for,offline.history_page,templates/offline_dashboard.html,217
 href,{{ url_for(,templates/offline_dashboard.html,217
 url_for,offline.settings_page,templates/offline_dashboard.html,218
 href,{{ url_for(,templates/offline_dashboard.html,218
+url_for,offline.dashboard,templates/offline_settings.html,5
+href,{{ url_for(,templates/offline_settings.html,5
+url_for,offline.aula_presencas,templates/offline_aulas.html,11
+href,{{ url_for(,templates/offline_aulas.html,11
+href,https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css,templates/base.html,8
+href,/,templates/base.html,133
+href,/calendario/semana,templates/base.html,136
+href,/calendario/dia,templates/base.html,137
+url_for,calendario_outras_datas,templates/base.html,138
+href,{{ url_for(,templates/base.html,138
+href,/turmas,templates/base.html,139
+href,/admin,templates/base.html,142
+href,/direcao-turma,templates/base.html,143
+url_for,backups_trigger,templates/base.html,145
+action,{{ url_for(,templates/base.html,145
+src,https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js,templates/base.html,176
+url_for,offline.dashboard,templates/offline_status.html,5
+href,{{ url_for(,templates/offline_status.html,5
+url_for,offline.history_page,templates/offline_status.html,18
+href,{{ url_for(,templates/offline_status.html,18
+url_for,offline.settings_page,templates/offline_status.html,19
+href,{{ url_for(,templates/offline_status.html,19
+url_for,offline.aula_sumario,templates/offline_presencas.html,32
+action,{{ url_for(,templates/offline_presencas.html,32
 url_for,dashboard,templates/dashboard.html,9
 action,{{ url_for(,templates/dashboard.html,9
 url_for,turma_calendario_dia,templates/dashboard.html,44
@@ -35,114 +53,78 @@ url_for,dashboard,templates/dashboard.html,304
 href,{{ url_for(,templates/dashboard.html,304
 url_for,turmas_list,templates/dashboard.html,320
 href,{{ url_for(,templates/dashboard.html,320
-url_for,offline.dashboard,templates/offline_status.html,5
-href,{{ url_for(,templates/offline_status.html,5
-url_for,offline.history_page,templates/offline_status.html,18
-href,{{ url_for(,templates/offline_status.html,18
-url_for,offline.settings_page,templates/offline_status.html,19
-href,{{ url_for(,templates/offline_status.html,19
-url_for,offline.aula_presencas,templates/offline_aulas.html,11
-href,{{ url_for(,templates/offline_aulas.html,11
-href,https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css,templates/base.html,8
-href,/,templates/base.html,133
-href,/calendario/semana,templates/base.html,136
-href,/calendario/dia,templates/base.html,137
-url_for,calendario_outras_datas,templates/base.html,138
-href,{{ url_for(,templates/base.html,138
-href,/turmas,templates/base.html,139
-href,/admin,templates/base.html,142
-href,/direcao-turma,templates/base.html,143
-url_for,backups_trigger,templates/base.html,145
-action,{{ url_for(,templates/base.html,145
-src,https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js,templates/base.html,176
-url_for,offline.dashboard,templates/offline_settings.html,5
-href,{{ url_for(,templates/offline_settings.html,5
-url_for,anos_letivos_list,templates/anos_letivos/form.html,8
-href,{{ url_for(,templates/anos_letivos/form.html,8
-url_for,anos_letivos_list,templates/anos_letivos/form.html,44
-href,{{ url_for(,templates/anos_letivos/form.html,44
-url_for,anos_letivos_add,templates/anos_letivos/list.html,9
-href,{{ url_for(,templates/anos_letivos/list.html,9
-url_for,calendario_escolar,templates/anos_letivos/list.html,10
-href,{{ url_for(,templates/anos_letivos/list.html,10
-url_for,anos_letivos_set_ativo,templates/anos_letivos/list.html,64
-action,{{ url_for(,templates/anos_letivos/list.html,64
-url_for,anos_letivos_abrir,templates/anos_letivos/list.html,72
-action,{{ url_for(,templates/anos_letivos/list.html,72
-url_for,anos_letivos_fechar,templates/anos_letivos/list.html,76
-action,{{ url_for(,templates/anos_letivos/list.html,76
-url_for,anos_letivos_edit,templates/anos_letivos/list.html,81
-href,{{ url_for(,templates/anos_letivos/list.html,81
-url_for,anos_letivos_delete,templates/anos_letivos/list.html,82
-action,{{ url_for(,templates/anos_letivos/list.html,82
-url_for,calendario_escolar,templates/anos_letivos/list.html,85
-href,{{ url_for(,templates/anos_letivos/list.html,85
-url_for,calendario_escolar_gestao,templates/anos_letivos/list.html,86
-href,{{ url_for(,templates/anos_letivos/list.html,86
-url_for,calendario_escolar_json,templates/anos_letivos/list.html,87
-href,{{ url_for(,templates/anos_letivos/list.html,87
-url_for,turma_trabalhos,templates/trabalhos/list.html,12
-url_for,turma_calendario,templates/trabalhos/list.html,23
-href,{{ url_for(,templates/trabalhos/list.html,23
-url_for,turma_grupos_catalogo,templates/trabalhos/list.html,24
-href,{{ url_for(,templates/trabalhos/list.html,24
-url_for,turma_trabalhos_mapa,templates/trabalhos/list.html,25
-href,{{ url_for(,templates/trabalhos/list.html,25
-url_for,trabalho_detail,templates/trabalhos/list.html,65
-href,{{ url_for(,templates/trabalhos/list.html,65
-url_for,trabalho_edit,templates/trabalhos/list.html,66
-href,{{ url_for(,templates/trabalhos/list.html,66
-url_for,trabalho_delete,templates/trabalhos/list.html,67
-action,{{ url_for(,templates/trabalhos/list.html,67
-url_for,turma_trabalhos,templates/trabalhos/mapa.html,5
-href,{{ url_for(,templates/trabalhos/mapa.html,5
-url_for,turma_grupos_catalogo,templates/trabalhos/mapa.html,6
-href,{{ url_for(,templates/trabalhos/mapa.html,6
-url_for,trabalho_detail,templates/trabalhos/mapa.html,62
-href,{{ url_for(,templates/trabalhos/mapa.html,62
-url_for,trabalho_detail,templates/trabalhos/edit.html,5
-href,{{ url_for(,templates/trabalhos/edit.html,5
-url_for,turma_trabalhos,templates/trabalhos/edit.html,6
-href,{{ url_for(,templates/trabalhos/edit.html,6
-url_for,trabalho_edit,templates/trabalhos/edit.html,12
-action,{{ url_for(,templates/trabalhos/edit.html,12
-url_for,turma_trabalhos,templates/trabalhos/detail.html,7
-href,{{ url_for(,templates/trabalhos/detail.html,7
-url_for,trabalho_edit,templates/trabalhos/detail.html,8
-href,{{ url_for(,templates/trabalhos/detail.html,8
-url_for,trabalho_importar_grupos_turma,templates/trabalhos/detail.html,10
-action,{{ url_for(,templates/trabalhos/detail.html,10
-url_for,trabalho_add_parametro,templates/trabalhos/detail.html,21
-action,{{ url_for(,templates/trabalhos/detail.html,21
-url_for,trabalho_add_grupo,templates/trabalhos/detail.html,40
-action,{{ url_for(,templates/trabalhos/detail.html,40
-url_for,trabalho_save_entrega,templates/trabalhos/detail.html,203
-url_for,trabalho_remove_membro_grupo,templates/trabalhos/detail.html,293
-url_for,turma_trabalhos,templates/trabalhos/catalogo_grupos.html,4
-href,{{ url_for(,templates/trabalhos/catalogo_grupos.html,4
-url_for,turma_grupos_catalogo,templates/trabalhos/catalogo_grupos.html,39
-action,{{ url_for(,templates/trabalhos/catalogo_grupos.html,39
-url_for,turma_grupo_catalogo_delete,templates/trabalhos/catalogo_grupos.html,67
-action,{{ url_for(,templates/trabalhos/catalogo_grupos.html,67
-url_for,turma_grupo_remove_membro,templates/trabalhos/catalogo_grupos.html,140
-url_for,calendario_escolar_json,templates/calendario/escolar.html,5
-url_for,calendario_escolar_json,templates/calendario/escolar.html,5
-url_for,calendario_escolar_json,templates/calendario/escolar.html,6
-url_for,calendario_escolar_json,templates/calendario/escolar.html,6
-url_for,calendario_escolar_gestao,templates/calendario/escolar.html,7
-url_for,calendario_escolar_gestao,templates/calendario/escolar.html,7
-href,{{ json_url }},templates/calendario/escolar.html,21
-href,{{ json_download_url }},templates/calendario/escolar.html,22
-url_for,calendario_escolar_importar,templates/calendario/escolar.html,23
-href,{{ url_for(,templates/calendario/escolar.html,23
-href,{{ gestao_url }},templates/calendario/escolar.html,30
-url_for,anos_letivos_list,templates/calendario/escolar.html,31
-href,{{ url_for(,templates/calendario/escolar.html,31
-href,{{ gestao_url }},templates/calendario/escolar.html,32
-href,#sec-interrupcoes,templates/calendario/escolar.html,38
-href,#sec-feriados,templates/calendario/escolar.html,39
+url_for,offline.turma_aulas,templates/offline_turmas.html,8
+href,{{ url_for(,templates/offline_turmas.html,8
+url_for,offline.dashboard,templates/offline_history.html,5
+href,{{ url_for(,templates/offline_history.html,5
+url_for,backups_download,templates/backups/list.html,136
+href,{{ url_for(,templates/backups/list.html,136
+url_for,direcao_turma_alunos,templates/direcao_turma/alunos_form.html,9
+href,{{ url_for(,templates/direcao_turma/alunos_form.html,9
+url_for,direcao_turma_alunos,templates/direcao_turma/alunos_form.html,42
+href,{{ url_for(,templates/direcao_turma/alunos_form.html,42
+url_for,dt_disciplinas_new,templates/direcao_turma/disciplinas_list.html,5
+href,{{ url_for(,templates/direcao_turma/disciplinas_list.html,5
+url_for,dt_disciplinas_edit,templates/direcao_turma/disciplinas_list.html,24
+href,{{ url_for(,templates/direcao_turma/disciplinas_list.html,24
+url_for,dt_disciplinas_delete,templates/direcao_turma/disciplinas_list.html,25
+action,{{ url_for(,templates/direcao_turma/disciplinas_list.html,25
+url_for,direcao_turma_list,templates/direcao_turma/form.html,40
+href,{{ url_for(,templates/direcao_turma/form.html,40
+url_for,direcao_turma_delete,templates/direcao_turma/form.html,50
+action,{{ url_for(,templates/direcao_turma/form.html,50
+url_for,direcao_turma_ocorrencias,templates/direcao_turma/ocorrencias_form.html,5
+href,{{ url_for(,templates/direcao_turma/ocorrencias_form.html,5
+url_for,dt_disciplinas_list,templates/direcao_turma/disciplinas_form.html,23
+href,{{ url_for(,templates/direcao_turma/disciplinas_form.html,23
+url_for,direcao_turma_list,templates/direcao_turma/ocorrencias_list.html,9
+href,{{ url_for(,templates/direcao_turma/ocorrencias_list.html,9
+url_for,direcao_turma_ocorrencias_new,templates/direcao_turma/ocorrencias_list.html,10
+href,{{ url_for(,templates/direcao_turma/ocorrencias_list.html,10
+url_for,direcao_turma_ocorrencias_export_csv,templates/direcao_turma/ocorrencias_list.html,43
+href,{{ url_for(,templates/direcao_turma/ocorrencias_list.html,43
+url_for,direcao_turma_ocorrencias_edit,templates/direcao_turma/ocorrencias_list.html,100
+href,{{ url_for(,templates/direcao_turma/ocorrencias_list.html,100
+url_for,direcao_turma_ocorrencias_delete,templates/direcao_turma/ocorrencias_list.html,101
+action,{{ url_for(,templates/direcao_turma/ocorrencias_list.html,101
+url_for,direcao_turma_list,templates/direcao_turma/mapa_mensal.html,42
+href,{{ url_for(,templates/direcao_turma/mapa_mensal.html,42
+url_for,direcao_turma_mapa_mensal,templates/direcao_turma/mapa_mensal.html,43
+href,{{ url_for(,templates/direcao_turma/mapa_mensal.html,43
+url_for,direcao_turma_ocorrencias,templates/direcao_turma/mapa_mensal.html,44
+href,{{ url_for(,templates/direcao_turma/mapa_mensal.html,44
+url_for,direcao_turma_mapa_mensal_atualizar,templates/direcao_turma/mapa_mensal.html,64
+action,{{ url_for(,templates/direcao_turma/mapa_mensal.html,64
+url_for,direcao_turma_add,templates/direcao_turma/list.html,6
+href,{{ url_for(,templates/direcao_turma/list.html,6
+url_for,direcao_turma_alunos,templates/direcao_turma/list.html,45
+href,{{ url_for(,templates/direcao_turma/list.html,45
+url_for,direcao_turma_mapa_mensal,templates/direcao_turma/list.html,50
+href,{{ url_for(,templates/direcao_turma/list.html,50
+url_for,direcao_turma_ocorrencias,templates/direcao_turma/list.html,54
+href,{{ url_for(,templates/direcao_turma/list.html,54
+url_for,direcao_turma_edit,templates/direcao_turma/list.html,58
+href,{{ url_for(,templates/direcao_turma/list.html,58
+url_for,direcao_turma_list,templates/direcao_turma/alunos.html,10
+href,{{ url_for(,templates/direcao_turma/alunos.html,10
+url_for,direcao_turma_mapa_mensal,templates/direcao_turma/alunos.html,11
+href,{{ url_for(,templates/direcao_turma/alunos.html,11
+url_for,direcao_turma_ocorrencias,templates/direcao_turma/alunos.html,12
+href,{{ url_for(,templates/direcao_turma/alunos.html,12
+url_for,direcao_turma_alunos_importar,templates/direcao_turma/alunos.html,18
+action,{{ url_for(,templates/direcao_turma/alunos.html,18
+url_for,direcao_turma_alunos_guardar,templates/direcao_turma/alunos.html,21
+action,{{ url_for(,templates/direcao_turma/alunos.html,21
+url_for,direcao_turma_alunos_guardar,templates/direcao_turma/alunos.html,31
+action,{{ url_for(,templates/direcao_turma/alunos.html,31
+url_for,direcao_turma_alunos_nome_curto,templates/direcao_turma/alunos.html,56
+url_for,direcao_turma_alunos_edit,templates/direcao_turma/alunos.html,63
+href,{{ url_for(,templates/direcao_turma/alunos.html,63
+url_for,direcao_turma_alunos_delete,templates/direcao_turma/alunos.html,69
 url_for,calendario_escolar_gestao,templates/calendario/editar_feriado.html,24
 href,{{ url_for(,templates/calendario/editar_feriado.html,24
+url_for,calendario_escolar_gestao,templates/calendario/editar_interrupcao.html,41
+href,{{ url_for(,templates/calendario/editar_interrupcao.html,41
 url_for,calendario_escolar_importar,templates/calendario/importar_escolar.html,11
 action,{{ url_for(,templates/calendario/importar_escolar.html,11
 url_for,calendario_escolar,templates/calendario/importar_escolar.html,33
@@ -165,12 +147,154 @@ url_for,feriado_delete,templates/calendario/gestao.html,178
 action,{{ url_for(,templates/calendario/gestao.html,178
 url_for,feriados_add_nacionais,templates/calendario/gestao.html,191
 action,{{ url_for(,templates/calendario/gestao.html,191
-url_for,calendario_escolar_gestao,templates/calendario/editar_interrupcao.html,41
-href,{{ url_for(,templates/calendario/editar_interrupcao.html,41
+url_for,calendario_escolar_json,templates/calendario/escolar.html,5
+url_for,calendario_escolar_json,templates/calendario/escolar.html,5
+url_for,calendario_escolar_json,templates/calendario/escolar.html,6
+url_for,calendario_escolar_json,templates/calendario/escolar.html,6
+url_for,calendario_escolar_gestao,templates/calendario/escolar.html,7
+url_for,calendario_escolar_gestao,templates/calendario/escolar.html,7
+href,{{ json_url }},templates/calendario/escolar.html,21
+href,{{ json_download_url }},templates/calendario/escolar.html,22
+url_for,calendario_escolar_importar,templates/calendario/escolar.html,23
+href,{{ url_for(,templates/calendario/escolar.html,23
+href,{{ gestao_url }},templates/calendario/escolar.html,30
+url_for,anos_letivos_list,templates/calendario/escolar.html,31
+href,{{ url_for(,templates/calendario/escolar.html,31
+href,{{ gestao_url }},templates/calendario/escolar.html,32
+href,#sec-interrupcoes,templates/calendario/escolar.html,38
+href,#sec-feriados,templates/calendario/escolar.html,39
+url_for,calendario_semana,templates/admin/calendario_semanal.html,5
+href,{{ url_for(,templates/admin/calendario_semanal.html,5
+url_for,turma_calendario,templates/admin/calendario_semanal.html,13
+href,{{ url_for(,templates/admin/calendario_semanal.html,13
+url_for,turmas_add,templates/admin/turmas.html,5
+href,{{ url_for(,templates/admin/turmas.html,5
+url_for,turmas_edit,templates/admin/turmas.html,17
+href,{{ url_for(,templates/admin/turmas.html,17
+url_for,turma_alunos,templates/admin/turmas.html,18
+href,{{ url_for(,templates/admin/turmas.html,18
+url_for,dt_disciplinas_new,templates/admin/disciplinas_dt.html,5
+href,{{ url_for(,templates/admin/disciplinas_dt.html,5
+url_for,dt_disciplinas_edit,templates/admin/disciplinas_dt.html,12
+href,{{ url_for(,templates/admin/disciplinas_dt.html,12
+url_for,anos_letivos_list,templates/admin/anos_letivos.html,7
+href,{{ url_for(,templates/admin/anos_letivos.html,7
+url_for,anos_letivos_add,templates/admin/anos_letivos.html,8
+href,{{ url_for(,templates/admin/anos_letivos.html,8
+url_for,calendario_escolar,templates/admin/anos_letivos.html,21
+href,{{ url_for(,templates/admin/anos_letivos.html,21
+url_for,calendario_escolar_gestao,templates/admin/anos_letivos.html,22
+href,{{ url_for(,templates/admin/anos_letivos.html,22
+url_for,anos_letivos_edit,templates/admin/anos_letivos.html,23
+href,{{ url_for(,templates/admin/anos_letivos.html,23
+url_for,anos_letivos_set_ativo,templates/admin/anos_letivos.html,25
+action,{{ url_for(,templates/admin/anos_letivos.html,25
+url_for,direcao_turma_add,templates/admin/direcao_turma.html,5
+href,{{ url_for(,templates/admin/direcao_turma.html,5
+url_for,direcao_turma_alunos,templates/admin/direcao_turma.html,17
+href,{{ url_for(,templates/admin/direcao_turma.html,17
+url_for,direcao_turma_mapa_mensal,templates/admin/direcao_turma.html,18
+href,{{ url_for(,templates/admin/direcao_turma.html,18
+url_for,direcao_turma_ocorrencias,templates/admin/direcao_turma.html,19
+href,{{ url_for(,templates/admin/direcao_turma.html,19
+url_for,direcao_turma_edit,templates/admin/direcao_turma.html,20
+href,{{ url_for(,templates/admin/direcao_turma.html,20
+url_for,admin_offline_snapshot,templates/admin/offline.html,5
+action,{{ url_for(,templates/admin/offline.html,5
+url_for,offline.dashboard,templates/admin/offline.html,20
+href,{{ url_for(,templates/admin/offline.html,20
+url_for,offline.status_page,templates/admin/offline.html,21
+href,{{ url_for(,templates/admin/offline.html,21
+url_for,offline.history_page,templates/admin/offline.html,22
+href,{{ url_for(,templates/admin/offline.html,22
+url_for,offline.settings_page,templates/admin/offline.html,23
+href,{{ url_for(,templates/admin/offline.html,23
+url_for,turma_calendario_dia,templates/admin/calendario_diario.html,5
+href,{{ url_for(,templates/admin/calendario_diario.html,5
+href,/calendario/sumarios-pendentes,templates/turmas/sumarios_pendentes.html,37
+url_for,turma_mapa_avaliacao_diaria,templates/turmas/sumarios_pendentes.html,79
+href,{{ url_for(,templates/turmas/sumarios_pendentes.html,79
+url_for,calendario_update_sumario,templates/turmas/sumarios_pendentes.html,102
+action,{{ url_for(,templates/turmas/sumarios_pendentes.html,102
+url_for,previsao_limpar,templates/turmas/sumarios_pendentes.html,165
+action,{{ url_for(,templates/turmas/sumarios_pendentes.html,165
+url_for,previsao_copiar_anterior,templates/turmas/sumarios_pendentes.html,168
+action,{{ url_for(,templates/turmas/sumarios_pendentes.html,168
+url_for,previsao_enviar_seguinte,templates/turmas/sumarios_pendentes.html,171
+action,{{ url_for(,templates/turmas/sumarios_pendentes.html,171
+url_for,calendario_aula_alunos,templates/turmas/sumarios_pendentes.html,207
+href,{{ url_for(,templates/turmas/sumarios_pendentes.html,207
+url_for,turma_trabalhos,templates/turmas/sumarios_pendentes.html,209
+href,{{ url_for(,templates/turmas/sumarios_pendentes.html,209
+url_for,calendario_edit,templates/turmas/sumarios_pendentes.html,212
+href,{{ url_for(,templates/turmas/sumarios_pendentes.html,212
+url_for,turma_calendario,templates/turmas/calendario_semanal.html,36
+href,{{ url_for(,templates/turmas/calendario_semanal.html,36
+url_for,calendario_semana_previsao,templates/turmas/calendario_semanal.html,38
+href,{{ url_for(,templates/turmas/calendario_semanal.html,38
+url_for,calendario_semana,templates/turmas/calendario_semanal.html,52
+href,{{ url_for(,templates/turmas/calendario_semanal.html,52
+url_for,calendario_semana,templates/turmas/calendario_semanal.html,54
+href,{{ url_for(,templates/turmas/calendario_semanal.html,54
+url_for,calendario_semana,templates/turmas/calendario_semanal.html,60
+href,{{ url_for(,templates/turmas/calendario_semanal.html,60
+url_for,calendario_semana,templates/turmas/calendario_semanal.html,62
+href,{{ url_for(,templates/turmas/calendario_semanal.html,62
+url_for,calendario_update_sumario,templates/turmas/calendario_semanal.html,168
+action,{{ url_for(,templates/turmas/calendario_semanal.html,168
+url_for,previsao_limpar,templates/turmas/calendario_semanal.html,222
+action,{{ url_for(,templates/turmas/calendario_semanal.html,222
+url_for,previsao_copiar_anterior,templates/turmas/calendario_semanal.html,225
+action,{{ url_for(,templates/turmas/calendario_semanal.html,225
+url_for,previsao_enviar_seguinte,templates/turmas/calendario_semanal.html,228
+action,{{ url_for(,templates/turmas/calendario_semanal.html,228
+url_for,calendario_aula_alunos,templates/turmas/calendario_semanal.html,263
+href,{{ url_for(,templates/turmas/calendario_semanal.html,263
+url_for,turma_trabalhos,templates/turmas/calendario_semanal.html,265
+href,{{ url_for(,templates/turmas/calendario_semanal.html,265
+url_for,calendario_edit,templates/turmas/calendario_semanal.html,268
+href,{{ url_for(,templates/turmas/calendario_semanal.html,268
+url_for,turma_calendario,templates/turmas/mapa_avaliacao_diaria.html,62
+href,{{ url_for(,templates/turmas/mapa_avaliacao_diaria.html,62
+url_for,turma_mapa_avaliacao_diaria_export,templates/turmas/mapa_avaliacao_diaria.html,64
+href,{{ url_for(,templates/turmas/mapa_avaliacao_diaria.html,64
+url_for,calendario_outras_datas_add,templates/turmas/outras_datas.html,46
+action,{{ url_for(,templates/turmas/outras_datas.html,46
+url_for,calendario_outras_datas_mudar_tipo,templates/turmas/outras_datas.html,83
+action,{{ url_for(,templates/turmas/outras_datas.html,83
+url_for,outras_datas_observacoes_save,templates/turmas/outras_datas.html,154
+url_for,static,templates/turmas/outras_datas.html,206
+src,{{ url_for(,templates/turmas/outras_datas.html,206
+url_for,anos_letivos_list,templates/turmas/gestao.html,6
+href,{{ url_for(,templates/turmas/gestao.html,6
+url_for,turmas_add,templates/turmas/gestao.html,7
+href,{{ url_for(,templates/turmas/gestao.html,7
+url_for,turmas_edit,templates/turmas/gestao.html,22
+href,{{ url_for(,templates/turmas/gestao.html,22
+url_for,turmas_delete,templates/turmas/gestao.html,24
+action,{{ url_for(,templates/turmas/gestao.html,24
+url_for,turma_calendario,templates/turmas/gestao.html,30
+href,{{ url_for(,templates/turmas/gestao.html,30
+url_for,turma_calendario_dia,templates/turmas/calendario_form.html,138
+href,{{ url_for(,templates/turmas/calendario_form.html,138
+url_for,calendario_semana,templates/turmas/calendario_form.html,144
+href,{{ url_for(,templates/turmas/calendario_form.html,144
+url_for,turma_calendario,templates/turmas/calendario_form.html,149
+href,{{ url_for(,templates/turmas/calendario_form.html,149
+url_for,previsao_limpar,templates/turmas/calendario_form.html,158
+action,{{ url_for(,templates/turmas/calendario_form.html,158
+url_for,previsao_copiar_anterior,templates/turmas/calendario_form.html,161
+action,{{ url_for(,templates/turmas/calendario_form.html,161
+url_for,previsao_enviar_seguinte,templates/turmas/calendario_form.html,164
+action,{{ url_for(,templates/turmas/calendario_form.html,164
 url_for,turmas_list,templates/turmas/form.html,195
 href,{{ url_for(,templates/turmas/form.html,195
 url_for,turmas_delete,templates/turmas/form.html,199
 action,{{ url_for(,templates/turmas/form.html,199
+url_for,turmas_list,templates/turmas/disciplinas.html,6
+href,{{ url_for(,templates/turmas/disciplinas.html,6
+url_for,dt_disciplinas_list,templates/turmas/disciplinas.html,11
+href,{{ url_for(,templates/turmas/disciplinas.html,11
 url_for,turmas_add,templates/turmas/list.html,6
 href,{{ url_for(,templates/turmas/list.html,6
 url_for,turmas_export_csv,templates/turmas/list.html,13
@@ -195,6 +319,32 @@ url_for,turmas_edit,templates/turmas/list.html,255
 href,{{ url_for(,templates/turmas/list.html,255
 url_for,turmas_clone,templates/turmas/list.html,257
 action,{{ url_for(,templates/turmas/list.html,257
+url_for,turma_calendario,templates/turmas/calendario_previsao_semanal.html,43
+href,{{ url_for(,templates/turmas/calendario_previsao_semanal.html,43
+url_for,calendario_semana,templates/turmas/calendario_previsao_semanal.html,45
+href,{{ url_for(,templates/turmas/calendario_previsao_semanal.html,45
+url_for,calendario_semana_previsao,templates/turmas/calendario_previsao_semanal.html,55
+href,{{ url_for(,templates/turmas/calendario_previsao_semanal.html,55
+url_for,calendario_semana_previsao,templates/turmas/calendario_previsao_semanal.html,57
+href,{{ url_for(,templates/turmas/calendario_previsao_semanal.html,57
+url_for,calendario_semana_previsao,templates/turmas/calendario_previsao_semanal.html,77
+href,{{ url_for(,templates/turmas/calendario_previsao_semanal.html,77
+url_for,calendario_semana_previsao,templates/turmas/calendario_previsao_semanal.html,79
+href,{{ url_for(,templates/turmas/calendario_previsao_semanal.html,79
+url_for,calendario_update_sumario,templates/turmas/calendario_previsao_semanal.html,135
+action,{{ url_for(,templates/turmas/calendario_previsao_semanal.html,135
+url_for,previsao_limpar,templates/turmas/calendario_previsao_semanal.html,177
+action,{{ url_for(,templates/turmas/calendario_previsao_semanal.html,177
+url_for,previsao_copiar_anterior,templates/turmas/calendario_previsao_semanal.html,180
+action,{{ url_for(,templates/turmas/calendario_previsao_semanal.html,180
+url_for,previsao_enviar_seguinte,templates/turmas/calendario_previsao_semanal.html,183
+action,{{ url_for(,templates/turmas/calendario_previsao_semanal.html,183
+url_for,turma_calendario,templates/turmas/calendario_simplificado.html,48
+href,{{ url_for(,templates/turmas/calendario_simplificado.html,48
+url_for,turma_calendario_dia,templates/turmas/calendario_simplificado.html,51
+href,{{ url_for(,templates/turmas/calendario_simplificado.html,51
+url_for,turma_calendario_dia,templates/turmas/calendario_simplificado.html,76
+href,{{ url_for(,templates/turmas/calendario_simplificado.html,76
 url_for,turma_sumarios_export_csv,templates/turmas/calendario.html,32
 action,{{ url_for(,templates/turmas/calendario.html,32
 url_for,turmas_list,templates/turmas/calendario.html,61
@@ -225,85 +375,8 @@ url_for,calendario_edit,templates/turmas/calendario.html,293
 href,{{ url_for(,templates/turmas/calendario.html,293
 url_for,calendario_delete,templates/turmas/calendario.html,298
 action,{{ url_for(,templates/turmas/calendario.html,298
-url_for,turma_calendario,templates/turmas/calendario_previsao_semanal.html,43
-href,{{ url_for(,templates/turmas/calendario_previsao_semanal.html,43
-url_for,calendario_semana,templates/turmas/calendario_previsao_semanal.html,45
-href,{{ url_for(,templates/turmas/calendario_previsao_semanal.html,45
-url_for,calendario_semana_previsao,templates/turmas/calendario_previsao_semanal.html,55
-href,{{ url_for(,templates/turmas/calendario_previsao_semanal.html,55
-url_for,calendario_semana_previsao,templates/turmas/calendario_previsao_semanal.html,57
-href,{{ url_for(,templates/turmas/calendario_previsao_semanal.html,57
-url_for,calendario_semana_previsao,templates/turmas/calendario_previsao_semanal.html,77
-href,{{ url_for(,templates/turmas/calendario_previsao_semanal.html,77
-url_for,calendario_semana_previsao,templates/turmas/calendario_previsao_semanal.html,79
-href,{{ url_for(,templates/turmas/calendario_previsao_semanal.html,79
-url_for,calendario_update_sumario,templates/turmas/calendario_previsao_semanal.html,135
-action,{{ url_for(,templates/turmas/calendario_previsao_semanal.html,135
-url_for,previsao_limpar,templates/turmas/calendario_previsao_semanal.html,177
-action,{{ url_for(,templates/turmas/calendario_previsao_semanal.html,177
-url_for,previsao_copiar_anterior,templates/turmas/calendario_previsao_semanal.html,180
-action,{{ url_for(,templates/turmas/calendario_previsao_semanal.html,180
-url_for,previsao_enviar_seguinte,templates/turmas/calendario_previsao_semanal.html,183
-action,{{ url_for(,templates/turmas/calendario_previsao_semanal.html,183
-url_for,turma_calendario,templates/turmas/mapa_avaliacao_diaria.html,62
-href,{{ url_for(,templates/turmas/mapa_avaliacao_diaria.html,62
-url_for,turma_mapa_avaliacao_diaria_export,templates/turmas/mapa_avaliacao_diaria.html,64
-href,{{ url_for(,templates/turmas/mapa_avaliacao_diaria.html,64
-url_for,turma_calendario,templates/turmas/calendario_simplificado.html,48
-href,{{ url_for(,templates/turmas/calendario_simplificado.html,48
-url_for,turma_calendario_dia,templates/turmas/calendario_simplificado.html,51
-href,{{ url_for(,templates/turmas/calendario_simplificado.html,51
-url_for,turma_calendario_dia,templates/turmas/calendario_simplificado.html,76
-href,{{ url_for(,templates/turmas/calendario_simplificado.html,76
-url_for,turmas_list,templates/turmas/disciplinas.html,6
-href,{{ url_for(,templates/turmas/disciplinas.html,6
-url_for,dt_disciplinas_list,templates/turmas/disciplinas.html,11
-href,{{ url_for(,templates/turmas/disciplinas.html,11
-url_for,calendario_outras_datas_add,templates/turmas/outras_datas.html,46
-action,{{ url_for(,templates/turmas/outras_datas.html,46
-url_for,calendario_outras_datas_mudar_tipo,templates/turmas/outras_datas.html,83
-action,{{ url_for(,templates/turmas/outras_datas.html,83
-url_for,outras_datas_observacoes_save,templates/turmas/outras_datas.html,154
-url_for,static,templates/turmas/outras_datas.html,206
-src,{{ url_for(,templates/turmas/outras_datas.html,206
-href,/calendario/sumarios-pendentes,templates/turmas/sumarios_pendentes.html,37
-url_for,turma_mapa_avaliacao_diaria,templates/turmas/sumarios_pendentes.html,79
-href,{{ url_for(,templates/turmas/sumarios_pendentes.html,79
-url_for,calendario_update_sumario,templates/turmas/sumarios_pendentes.html,102
-action,{{ url_for(,templates/turmas/sumarios_pendentes.html,102
-url_for,previsao_limpar,templates/turmas/sumarios_pendentes.html,165
-action,{{ url_for(,templates/turmas/sumarios_pendentes.html,165
-url_for,previsao_copiar_anterior,templates/turmas/sumarios_pendentes.html,168
-action,{{ url_for(,templates/turmas/sumarios_pendentes.html,168
-url_for,previsao_enviar_seguinte,templates/turmas/sumarios_pendentes.html,171
-action,{{ url_for(,templates/turmas/sumarios_pendentes.html,171
-url_for,calendario_aula_alunos,templates/turmas/sumarios_pendentes.html,207
-href,{{ url_for(,templates/turmas/sumarios_pendentes.html,207
-url_for,turma_trabalhos,templates/turmas/sumarios_pendentes.html,209
-href,{{ url_for(,templates/turmas/sumarios_pendentes.html,209
-url_for,calendario_edit,templates/turmas/sumarios_pendentes.html,212
-href,{{ url_for(,templates/turmas/sumarios_pendentes.html,212
 url_for,turmas_list,templates/turmas/importar.html,5
 href,{{ url_for(,templates/turmas/importar.html,5
-href,{{ return_url }},templates/turmas/calendario_aula_alunos.html,15
-url_for,turma_calendario,templates/turmas/calendario_aula_alunos.html,17
-href,{{ url_for(,templates/turmas/calendario_aula_alunos.html,17
-url_for,aulas_alunos_save,templates/turmas/calendario_aula_alunos.html,153
-url_for,api_sync_status,templates/turmas/calendario_aula_alunos.html,374
-url_for,sync_flush,templates/turmas/calendario_aula_alunos.html,449
-url_for,aulas_alunos_import_tsv,templates/turmas/calendario_aula_alunos.html,461
-url_for,turma_calendario_dia,templates/turmas/calendario_form.html,138
-href,{{ url_for(,templates/turmas/calendario_form.html,138
-url_for,calendario_semana,templates/turmas/calendario_form.html,144
-href,{{ url_for(,templates/turmas/calendario_form.html,144
-url_for,turma_calendario,templates/turmas/calendario_form.html,149
-href,{{ url_for(,templates/turmas/calendario_form.html,149
-url_for,previsao_limpar,templates/turmas/calendario_form.html,158
-action,{{ url_for(,templates/turmas/calendario_form.html,158
-url_for,previsao_copiar_anterior,templates/turmas/calendario_form.html,161
-action,{{ url_for(,templates/turmas/calendario_form.html,161
-url_for,previsao_enviar_seguinte,templates/turmas/calendario_form.html,164
-action,{{ url_for(,templates/turmas/calendario_form.html,164
 url_for,turma_calendario,templates/turmas/calendario_diario.html,39
 href,{{ url_for(,templates/turmas/calendario_diario.html,39
 url_for,turma_calendario_dia,templates/turmas/calendario_diario.html,47
@@ -344,42 +417,57 @@ url_for,turma_alunos_update,templates/turmas/alunos.html,117
 action,{{ url_for(,templates/turmas/alunos.html,117
 url_for,turma_alunos_delete,templates/turmas/alunos.html,143
 action,{{ url_for(,templates/turmas/alunos.html,143
-url_for,turma_calendario,templates/turmas/calendario_semanal.html,36
-href,{{ url_for(,templates/turmas/calendario_semanal.html,36
-url_for,calendario_semana_previsao,templates/turmas/calendario_semanal.html,38
-href,{{ url_for(,templates/turmas/calendario_semanal.html,38
-url_for,calendario_semana,templates/turmas/calendario_semanal.html,52
-href,{{ url_for(,templates/turmas/calendario_semanal.html,52
-url_for,calendario_semana,templates/turmas/calendario_semanal.html,54
-href,{{ url_for(,templates/turmas/calendario_semanal.html,54
-url_for,calendario_semana,templates/turmas/calendario_semanal.html,60
-href,{{ url_for(,templates/turmas/calendario_semanal.html,60
-url_for,calendario_semana,templates/turmas/calendario_semanal.html,62
-href,{{ url_for(,templates/turmas/calendario_semanal.html,62
-url_for,calendario_update_sumario,templates/turmas/calendario_semanal.html,168
-action,{{ url_for(,templates/turmas/calendario_semanal.html,168
-url_for,previsao_limpar,templates/turmas/calendario_semanal.html,222
-action,{{ url_for(,templates/turmas/calendario_semanal.html,222
-url_for,previsao_copiar_anterior,templates/turmas/calendario_semanal.html,225
-action,{{ url_for(,templates/turmas/calendario_semanal.html,225
-url_for,previsao_enviar_seguinte,templates/turmas/calendario_semanal.html,228
-action,{{ url_for(,templates/turmas/calendario_semanal.html,228
-url_for,calendario_aula_alunos,templates/turmas/calendario_semanal.html,263
-href,{{ url_for(,templates/turmas/calendario_semanal.html,263
-url_for,turma_trabalhos,templates/turmas/calendario_semanal.html,265
-href,{{ url_for(,templates/turmas/calendario_semanal.html,265
-url_for,calendario_edit,templates/turmas/calendario_semanal.html,268
-href,{{ url_for(,templates/turmas/calendario_semanal.html,268
-url_for,anos_letivos_list,templates/turmas/gestao.html,6
-href,{{ url_for(,templates/turmas/gestao.html,6
-url_for,turmas_add,templates/turmas/gestao.html,7
-href,{{ url_for(,templates/turmas/gestao.html,7
-url_for,turmas_edit,templates/turmas/gestao.html,22
-href,{{ url_for(,templates/turmas/gestao.html,22
-url_for,turmas_delete,templates/turmas/gestao.html,24
-action,{{ url_for(,templates/turmas/gestao.html,24
-url_for,turma_calendario,templates/turmas/gestao.html,30
-href,{{ url_for(,templates/turmas/gestao.html,30
+href,{{ return_url }},templates/turmas/calendario_aula_alunos.html,15
+url_for,turma_calendario,templates/turmas/calendario_aula_alunos.html,17
+href,{{ url_for(,templates/turmas/calendario_aula_alunos.html,17
+url_for,aulas_alunos_save,templates/turmas/calendario_aula_alunos.html,153
+url_for,api_sync_status,templates/turmas/calendario_aula_alunos.html,374
+url_for,sync_flush,templates/turmas/calendario_aula_alunos.html,449
+url_for,aulas_alunos_import_tsv,templates/turmas/calendario_aula_alunos.html,461
+url_for,anos_letivos_list,templates/anos_letivos/form.html,8
+href,{{ url_for(,templates/anos_letivos/form.html,8
+url_for,anos_letivos_list,templates/anos_letivos/form.html,44
+href,{{ url_for(,templates/anos_letivos/form.html,44
+url_for,anos_letivos_add,templates/anos_letivos/list.html,9
+href,{{ url_for(,templates/anos_letivos/list.html,9
+url_for,calendario_escolar,templates/anos_letivos/list.html,10
+href,{{ url_for(,templates/anos_letivos/list.html,10
+url_for,anos_letivos_set_ativo,templates/anos_letivos/list.html,64
+action,{{ url_for(,templates/anos_letivos/list.html,64
+url_for,anos_letivos_abrir,templates/anos_letivos/list.html,72
+action,{{ url_for(,templates/anos_letivos/list.html,72
+url_for,anos_letivos_fechar,templates/anos_letivos/list.html,76
+action,{{ url_for(,templates/anos_letivos/list.html,76
+url_for,anos_letivos_edit,templates/anos_letivos/list.html,81
+href,{{ url_for(,templates/anos_letivos/list.html,81
+url_for,anos_letivos_delete,templates/anos_letivos/list.html,82
+action,{{ url_for(,templates/anos_letivos/list.html,82
+url_for,calendario_escolar,templates/anos_letivos/list.html,85
+href,{{ url_for(,templates/anos_letivos/list.html,85
+url_for,calendario_escolar_gestao,templates/anos_letivos/list.html,86
+href,{{ url_for(,templates/anos_letivos/list.html,86
+url_for,calendario_escolar_json,templates/anos_letivos/list.html,87
+href,{{ url_for(,templates/anos_letivos/list.html,87
+url_for,anos_letivos_list,templates/disciplinas/gestao.html,6
+href,{{ url_for(,templates/disciplinas/gestao.html,6
+url_for,dt_disciplinas_new,templates/disciplinas/gestao.html,7
+href,{{ url_for(,templates/disciplinas/gestao.html,7
+url_for,dt_disciplinas_edit,templates/disciplinas/gestao.html,22
+href,{{ url_for(,templates/disciplinas/gestao.html,22
+url_for,dt_disciplinas_delete,templates/disciplinas/gestao.html,24
+action,{{ url_for(,templates/disciplinas/gestao.html,24
+url_for,dt_disciplinas_list,templates/disciplinas/form.html,24
+href,{{ url_for(,templates/disciplinas/form.html,24
+url_for,turma_trabalhos_mapa,templates/dashboard/_card_indicadores.html,24
+href,{{ url_for(,templates/dashboard/_card_indicadores.html,24
+url_for,turma_trabalhos,templates/dashboard/_card_trabalhos.html,23
+href,{{ url_for(,templates/dashboard/_card_trabalhos.html,23
+url_for,calendario_aula_alunos,templates/dashboard/_card_aula.html,10
+href,{{ url_for(,templates/dashboard/_card_aula.html,10
+url_for,turma_calendario,templates/dashboard/_card_aula.html,14
+href,{{ url_for(,templates/dashboard/_card_aula.html,14
+url_for,turma_calendario,templates/dashboard/_card_aula.html,17
+href,{{ url_for(,templates/dashboard/_card_aula.html,17
 url_for,livros_list,templates/livros/form.html,6
 href,{{ url_for(,templates/livros/form.html,6
 url_for,livros_list,templates/livros/form.html,18
@@ -400,135 +488,47 @@ url_for,livros_gerar,templates/livros/detail.html,39
 action,{{ url_for(,templates/livros/detail.html,39
 url_for,livros_list,templates/livros/detail.html,51
 href,{{ url_for(,templates/livros/detail.html,51
-url_for,direcao_turma_list,templates/direcao_turma/form.html,40
-href,{{ url_for(,templates/direcao_turma/form.html,40
-url_for,direcao_turma_delete,templates/direcao_turma/form.html,50
-action,{{ url_for(,templates/direcao_turma/form.html,50
-url_for,direcao_turma_list,templates/direcao_turma/ocorrencias_list.html,9
-href,{{ url_for(,templates/direcao_turma/ocorrencias_list.html,9
-url_for,direcao_turma_ocorrencias_new,templates/direcao_turma/ocorrencias_list.html,10
-href,{{ url_for(,templates/direcao_turma/ocorrencias_list.html,10
-url_for,direcao_turma_ocorrencias_export_csv,templates/direcao_turma/ocorrencias_list.html,43
-href,{{ url_for(,templates/direcao_turma/ocorrencias_list.html,43
-url_for,direcao_turma_ocorrencias_edit,templates/direcao_turma/ocorrencias_list.html,100
-href,{{ url_for(,templates/direcao_turma/ocorrencias_list.html,100
-url_for,direcao_turma_ocorrencias_delete,templates/direcao_turma/ocorrencias_list.html,101
-action,{{ url_for(,templates/direcao_turma/ocorrencias_list.html,101
-url_for,dt_disciplinas_list,templates/direcao_turma/disciplinas_form.html,23
-href,{{ url_for(,templates/direcao_turma/disciplinas_form.html,23
-url_for,direcao_turma_add,templates/direcao_turma/list.html,6
-href,{{ url_for(,templates/direcao_turma/list.html,6
-url_for,direcao_turma_alunos,templates/direcao_turma/list.html,45
-href,{{ url_for(,templates/direcao_turma/list.html,45
-url_for,direcao_turma_mapa_mensal,templates/direcao_turma/list.html,50
-href,{{ url_for(,templates/direcao_turma/list.html,50
-url_for,direcao_turma_ocorrencias,templates/direcao_turma/list.html,54
-href,{{ url_for(,templates/direcao_turma/list.html,54
-url_for,direcao_turma_edit,templates/direcao_turma/list.html,58
-href,{{ url_for(,templates/direcao_turma/list.html,58
-url_for,direcao_turma_ocorrencias,templates/direcao_turma/ocorrencias_form.html,5
-href,{{ url_for(,templates/direcao_turma/ocorrencias_form.html,5
-url_for,direcao_turma_alunos,templates/direcao_turma/alunos_form.html,9
-href,{{ url_for(,templates/direcao_turma/alunos_form.html,9
-url_for,direcao_turma_alunos,templates/direcao_turma/alunos_form.html,42
-href,{{ url_for(,templates/direcao_turma/alunos_form.html,42
-url_for,dt_disciplinas_new,templates/direcao_turma/disciplinas_list.html,5
-href,{{ url_for(,templates/direcao_turma/disciplinas_list.html,5
-url_for,dt_disciplinas_edit,templates/direcao_turma/disciplinas_list.html,24
-href,{{ url_for(,templates/direcao_turma/disciplinas_list.html,24
-url_for,dt_disciplinas_delete,templates/direcao_turma/disciplinas_list.html,25
-action,{{ url_for(,templates/direcao_turma/disciplinas_list.html,25
-url_for,direcao_turma_list,templates/direcao_turma/mapa_mensal.html,42
-href,{{ url_for(,templates/direcao_turma/mapa_mensal.html,42
-url_for,direcao_turma_mapa_mensal,templates/direcao_turma/mapa_mensal.html,43
-href,{{ url_for(,templates/direcao_turma/mapa_mensal.html,43
-url_for,direcao_turma_ocorrencias,templates/direcao_turma/mapa_mensal.html,44
-href,{{ url_for(,templates/direcao_turma/mapa_mensal.html,44
-url_for,direcao_turma_mapa_mensal_atualizar,templates/direcao_turma/mapa_mensal.html,64
-action,{{ url_for(,templates/direcao_turma/mapa_mensal.html,64
-url_for,direcao_turma_list,templates/direcao_turma/alunos.html,10
-href,{{ url_for(,templates/direcao_turma/alunos.html,10
-url_for,direcao_turma_mapa_mensal,templates/direcao_turma/alunos.html,11
-href,{{ url_for(,templates/direcao_turma/alunos.html,11
-url_for,direcao_turma_ocorrencias,templates/direcao_turma/alunos.html,12
-href,{{ url_for(,templates/direcao_turma/alunos.html,12
-url_for,direcao_turma_alunos_importar,templates/direcao_turma/alunos.html,18
-action,{{ url_for(,templates/direcao_turma/alunos.html,18
-url_for,direcao_turma_alunos_guardar,templates/direcao_turma/alunos.html,21
-action,{{ url_for(,templates/direcao_turma/alunos.html,21
-url_for,direcao_turma_alunos_guardar,templates/direcao_turma/alunos.html,31
-action,{{ url_for(,templates/direcao_turma/alunos.html,31
-url_for,direcao_turma_alunos_nome_curto,templates/direcao_turma/alunos.html,56
-url_for,direcao_turma_alunos_edit,templates/direcao_turma/alunos.html,63
-href,{{ url_for(,templates/direcao_turma/alunos.html,63
-url_for,direcao_turma_alunos_delete,templates/direcao_turma/alunos.html,69
-url_for,dt_disciplinas_list,templates/disciplinas/form.html,24
-href,{{ url_for(,templates/disciplinas/form.html,24
-url_for,anos_letivos_list,templates/disciplinas/gestao.html,6
-href,{{ url_for(,templates/disciplinas/gestao.html,6
-url_for,dt_disciplinas_new,templates/disciplinas/gestao.html,7
-href,{{ url_for(,templates/disciplinas/gestao.html,7
-url_for,dt_disciplinas_edit,templates/disciplinas/gestao.html,22
-href,{{ url_for(,templates/disciplinas/gestao.html,22
-url_for,dt_disciplinas_delete,templates/disciplinas/gestao.html,24
-action,{{ url_for(,templates/disciplinas/gestao.html,24
-url_for,admin_offline_snapshot,templates/admin/offline.html,5
-action,{{ url_for(,templates/admin/offline.html,5
-url_for,offline.dashboard,templates/admin/offline.html,20
-href,{{ url_for(,templates/admin/offline.html,20
-url_for,offline.status_page,templates/admin/offline.html,21
-href,{{ url_for(,templates/admin/offline.html,21
-url_for,offline.history_page,templates/admin/offline.html,22
-href,{{ url_for(,templates/admin/offline.html,22
-url_for,offline.settings_page,templates/admin/offline.html,23
-href,{{ url_for(,templates/admin/offline.html,23
-url_for,direcao_turma_add,templates/admin/direcao_turma.html,5
-href,{{ url_for(,templates/admin/direcao_turma.html,5
-url_for,direcao_turma_alunos,templates/admin/direcao_turma.html,17
-href,{{ url_for(,templates/admin/direcao_turma.html,17
-url_for,direcao_turma_mapa_mensal,templates/admin/direcao_turma.html,18
-href,{{ url_for(,templates/admin/direcao_turma.html,18
-url_for,direcao_turma_ocorrencias,templates/admin/direcao_turma.html,19
-href,{{ url_for(,templates/admin/direcao_turma.html,19
-url_for,direcao_turma_edit,templates/admin/direcao_turma.html,20
-href,{{ url_for(,templates/admin/direcao_turma.html,20
-url_for,anos_letivos_list,templates/admin/anos_letivos.html,7
-href,{{ url_for(,templates/admin/anos_letivos.html,7
-url_for,anos_letivos_add,templates/admin/anos_letivos.html,8
-href,{{ url_for(,templates/admin/anos_letivos.html,8
-url_for,calendario_escolar,templates/admin/anos_letivos.html,21
-href,{{ url_for(,templates/admin/anos_letivos.html,21
-url_for,calendario_escolar_gestao,templates/admin/anos_letivos.html,22
-href,{{ url_for(,templates/admin/anos_letivos.html,22
-url_for,anos_letivos_edit,templates/admin/anos_letivos.html,23
-href,{{ url_for(,templates/admin/anos_letivos.html,23
-url_for,anos_letivos_set_ativo,templates/admin/anos_letivos.html,25
-action,{{ url_for(,templates/admin/anos_letivos.html,25
-url_for,turmas_add,templates/admin/turmas.html,5
-href,{{ url_for(,templates/admin/turmas.html,5
-url_for,turmas_edit,templates/admin/turmas.html,17
-href,{{ url_for(,templates/admin/turmas.html,17
-url_for,turma_alunos,templates/admin/turmas.html,18
-href,{{ url_for(,templates/admin/turmas.html,18
-url_for,dt_disciplinas_new,templates/admin/disciplinas_dt.html,5
-href,{{ url_for(,templates/admin/disciplinas_dt.html,5
-url_for,dt_disciplinas_edit,templates/admin/disciplinas_dt.html,12
-href,{{ url_for(,templates/admin/disciplinas_dt.html,12
-url_for,turma_calendario_dia,templates/admin/calendario_diario.html,5
-href,{{ url_for(,templates/admin/calendario_diario.html,5
-url_for,calendario_semana,templates/admin/calendario_semanal.html,5
-href,{{ url_for(,templates/admin/calendario_semanal.html,5
-url_for,turma_calendario,templates/admin/calendario_semanal.html,13
-href,{{ url_for(,templates/admin/calendario_semanal.html,13
-url_for,backups_download,templates/backups/list.html,136
-href,{{ url_for(,templates/backups/list.html,136
-url_for,turma_trabalhos_mapa,templates/dashboard/_card_indicadores.html,24
-href,{{ url_for(,templates/dashboard/_card_indicadores.html,24
-url_for,turma_trabalhos,templates/dashboard/_card_trabalhos.html,23
-href,{{ url_for(,templates/dashboard/_card_trabalhos.html,23
-url_for,calendario_aula_alunos,templates/dashboard/_card_aula.html,10
-href,{{ url_for(,templates/dashboard/_card_aula.html,10
-url_for,turma_calendario,templates/dashboard/_card_aula.html,14
-href,{{ url_for(,templates/dashboard/_card_aula.html,14
-url_for,turma_calendario,templates/dashboard/_card_aula.html,17
-href,{{ url_for(,templates/dashboard/_card_aula.html,17
+url_for,turma_trabalhos,templates/trabalhos/mapa.html,5
+href,{{ url_for(,templates/trabalhos/mapa.html,5
+url_for,turma_grupos_catalogo,templates/trabalhos/mapa.html,6
+href,{{ url_for(,templates/trabalhos/mapa.html,6
+url_for,trabalho_detail,templates/trabalhos/mapa.html,62
+href,{{ url_for(,templates/trabalhos/mapa.html,62
+url_for,trabalho_detail,templates/trabalhos/edit.html,5
+href,{{ url_for(,templates/trabalhos/edit.html,5
+url_for,turma_trabalhos,templates/trabalhos/edit.html,6
+href,{{ url_for(,templates/trabalhos/edit.html,6
+url_for,trabalho_edit,templates/trabalhos/edit.html,12
+action,{{ url_for(,templates/trabalhos/edit.html,12
+url_for,turma_trabalhos,templates/trabalhos/list.html,12
+url_for,turma_calendario,templates/trabalhos/list.html,23
+href,{{ url_for(,templates/trabalhos/list.html,23
+url_for,turma_grupos_catalogo,templates/trabalhos/list.html,24
+href,{{ url_for(,templates/trabalhos/list.html,24
+url_for,turma_trabalhos_mapa,templates/trabalhos/list.html,25
+href,{{ url_for(,templates/trabalhos/list.html,25
+url_for,trabalho_detail,templates/trabalhos/list.html,65
+href,{{ url_for(,templates/trabalhos/list.html,65
+url_for,trabalho_edit,templates/trabalhos/list.html,66
+href,{{ url_for(,templates/trabalhos/list.html,66
+url_for,trabalho_delete,templates/trabalhos/list.html,67
+action,{{ url_for(,templates/trabalhos/list.html,67
+url_for,turma_trabalhos,templates/trabalhos/catalogo_grupos.html,4
+href,{{ url_for(,templates/trabalhos/catalogo_grupos.html,4
+url_for,turma_grupos_catalogo,templates/trabalhos/catalogo_grupos.html,39
+action,{{ url_for(,templates/trabalhos/catalogo_grupos.html,39
+url_for,turma_grupo_catalogo_delete,templates/trabalhos/catalogo_grupos.html,67
+action,{{ url_for(,templates/trabalhos/catalogo_grupos.html,67
+url_for,turma_grupo_remove_membro,templates/trabalhos/catalogo_grupos.html,140
+url_for,turma_trabalhos,templates/trabalhos/detail.html,7
+href,{{ url_for(,templates/trabalhos/detail.html,7
+url_for,trabalho_edit,templates/trabalhos/detail.html,8
+href,{{ url_for(,templates/trabalhos/detail.html,8
+url_for,trabalho_importar_grupos_turma,templates/trabalhos/detail.html,10
+action,{{ url_for(,templates/trabalhos/detail.html,10
+url_for,trabalho_add_parametro,templates/trabalhos/detail.html,21
+action,{{ url_for(,templates/trabalhos/detail.html,21
+url_for,trabalho_add_grupo,templates/trabalhos/detail.html,40
+action,{{ url_for(,templates/trabalhos/detail.html,40
+url_for,trabalho_save_entrega,templates/trabalhos/detail.html,203
+url_for,trabalho_remove_membro_grupo,templates/trabalhos/detail.html,293
