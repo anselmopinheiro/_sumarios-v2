@@ -1,0 +1,3 @@
+# DEAD TABLES CANDIDATES (LEGACY_SUSPECT)
+
+Nenhuma tabela classificada como LEGACY_SUSPECT.
