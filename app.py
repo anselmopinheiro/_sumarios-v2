@@ -1731,6 +1731,15 @@ def create_app():
     Migrate(app, db)
     app.register_blueprint(offline_bp)
 
+    @app.get("/health")
+    def healthcheck():
+        return jsonify(
+            {
+                "status": "ok",
+                "supabase_url": app.config.get("SUPABASE_URL") or os.environ.get("SUPABASE_URL"),
+            }
+        )
+
     @app.before_request
     def _set_connectivity_state():
         g.is_online = _is_remote_online(app, use_cache=True)
