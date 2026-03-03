@@ -1687,7 +1687,15 @@ def _remote_healthcheck(app, use_cache=True):
 
     started = time.perf_counter()
     if (app.config.get("APP_DB_MODE") or "sqlite").lower() != "postgres":
-        cache.update({"ts": now, "ok": False, "error": "APP_DB_MODE não está em postgres.", "latency_ms": None})
+        cache.update(
+            {
+                "ts": now,
+                "ok": True,
+                "error": "",
+                "latency_ms": None,
+                "local_mode": True,
+            }
+        )
         return dict(cache)
 
     try:
