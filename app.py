@@ -2871,6 +2871,9 @@ def create_app():
         result["ok"] = True
         return result
 
+    def _skip_db_bootstrap():
+        return (os.environ.get("SKIP_DB_BOOTSTRAP", "0").strip().lower() in {"1", "true", "yes", "on"})
+
     def _start_dev_snapshot_scheduler():
         if os.environ.get("DEV_LOCAL_SCHEDULER", "0") != "1":
             return
@@ -2930,30 +2933,33 @@ def create_app():
         app.extensions["offline_scheduler"] = scheduler
         app.logger.info("Scheduler local de snapshot ativo: %ss", interval)
 
-    with app.app_context():
-        init_offline_db(app.instance_path)
-        init_offline_store_db(app.instance_path)
-        app.logger.info("Offline DB path ativo: %s", resolve_offline_db_path(app.instance_path))
-        _ensure_columns()
-        _ensure_trabalhos_tables()
-        try:
-            _log_db_mode()
-        except Exception:
-            app.logger.warning("Não foi possível emitir informação do backend de BD.")
-        if _sqlite_backups_enabled():
-            if app.config.get("BACKUP_ON_STARTUP", True) and _should_run_startup_jobs():
-                app.logger.info("Backups SQLite ativos")
-                _backup_database(reason="startup")
-            elif not _should_run_startup_jobs():
-                app.logger.info("Arranque secundário/CLI detetado: tarefas de startup desativadas.")
-        else:
-            app.logger.info("Backups SQLite desativados (modo postgres)")
+    if _skip_db_bootstrap():
+        app.logger.info("SKIP_DB_BOOTSTRAP=1 ativo: bootstrap de BD ignorado para este processo.")
+    else:
+        with app.app_context():
+            init_offline_db(app.instance_path)
+            init_offline_store_db(app.instance_path)
+            app.logger.info("Offline DB path ativo: %s", resolve_offline_db_path(app.instance_path))
+            _ensure_columns()
+            _ensure_trabalhos_tables()
+            try:
+                _log_db_mode()
+            except Exception:
+                app.logger.warning("Não foi possível emitir informação do backend de BD.")
+            if _sqlite_backups_enabled():
+                if app.config.get("BACKUP_ON_STARTUP", True) and _should_run_startup_jobs():
+                    app.logger.info("Backups SQLite ativos")
+                    _backup_database(reason="startup")
+                elif not _should_run_startup_jobs():
+                    app.logger.info("Arranque secundário/CLI detetado: tarefas de startup desativadas.")
+            else:
+                app.logger.info("Backups SQLite desativados (modo postgres)")
 
-        flush_result = try_flush_outbox(limit=200)
-        if flush_result.get("applied"):
-            app.logger.info("Outbox sincronizada no arranque: %s item(ns).", flush_result["applied"])
+            flush_result = try_flush_outbox(limit=200)
+            if flush_result.get("applied"):
+                app.logger.info("Outbox sincronizada no arranque: %s item(ns).", flush_result["applied"])
 
-    _start_dev_snapshot_scheduler()
+        _start_dev_snapshot_scheduler()
 
     def _agendar_backup_change():
         if not _sqlite_backups_enabled():
