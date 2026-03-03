@@ -579,7 +579,7 @@ class Trabalho(db.Model):
     turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), nullable=False, index=True)
     titulo = db.Column(db.String(255), nullable=False)
     descricao = db.Column(db.Text)
-    modo = db.Column(db.String(20), nullable=False, default="individual", server_default="individual")
+    modo = db.Column(db.String(20), nullable=False, default="individual")
     data_limite = db.Column(db.Date)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, server_default=db.text("now()"))
 
@@ -645,7 +645,7 @@ class ParametroDefinicao(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     trabalho_id = db.Column(db.Integer, db.ForeignKey("trabalhos.id"), nullable=False, index=True)
     nome = db.Column(db.String(120), nullable=False)
-    tipo = db.Column(db.String(20), nullable=False, default="numerico", server_default="numerico")
+    tipo = db.Column(db.String(20), nullable=False, default="numerico")
     ordem = db.Column(db.Integer, nullable=False, default=0, server_default="0")
 
     trabalho = db.relationship("Trabalho", backref=db.backref("parametros", cascade="all, delete-orphan"))
