@@ -211,14 +211,16 @@
       <div>
         <h3 class="h5 mb-1">Estado da ligacao</h3>
         <p class="text-muted mb-0">
-          {% if is_offline %}
+          {% if db_mode == 'sqlite' %}
+            Base de dados local SQLite (sem dependencia de Supabase).
+          {% elif is_offline %}
             Sem rede para a BD remota. A trabalhar com snapshot local.
           {% else %}
-            Ligacao remota disponivel.
+            Ligacao remota Supabase disponivel.
           {% endif %}
         </p>
       </div>
-      <span class="status-ligacao {{ 'status-offline' if is_offline else 'status-online' }}">{{ 'OFFLINE' if is_offline else 'ONLINE' }}</span>
+      <span class="status-ligacao {{ 'status-offline' if is_offline else 'status-online' }}">{{ connection_status_label }}</span>
     </div>
 
     <div class="row g-2 mb-2">
@@ -287,7 +289,7 @@
       </div>
     </div>
     <div class="d-flex align-items-center gap-2">
-      <span class="status-ligacao {{ 'status-offline' if is_offline else 'status-online' }}">{{ 'OFFLINE' if is_offline else 'ONLINE' }}</span>
+      <span class="status-ligacao {{ 'status-offline' if is_offline else 'status-online' }}">{{ connection_status_label }}</span>
       <form method="get" action="{{ url_for('dashboard') }}">
         <select class="form-select form-select-sm" name="turma_id" onchange="this.form.submit()">
           {% for t in turmas %}

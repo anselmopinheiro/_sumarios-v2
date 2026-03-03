@@ -1712,6 +1712,14 @@ def _remote_healthcheck(app, use_cache=True):
 def _is_remote_online(app, use_cache=True):
     return bool(_remote_healthcheck(app, use_cache=use_cache).get("ok"))
 
+
+def _has_remote_backend(app):
+    return (
+        (app.config.get("APP_DB_MODE") or "sqlite").lower() == "postgres"
+        and ("engine_remote" in app.extensions)
+        and (app.extensions.get("engine_remote") is not None)
+    )
+
 def create_app():
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_object(Config)
@@ -1742,8 +1750,17 @@ def create_app():
 
     @app.before_request
     def _set_connectivity_state():
+        g.db_mode = (app.config.get("APP_DB_MODE") or "sqlite").lower()
+        g.has_remote = _has_remote_backend(app)
+        if not g.has_remote:
+            g.is_online = True
+            g.is_offline = False
+            g.connection_status_label = "SQLite (local)"
+            return
+
         g.is_online = _is_remote_online(app, use_cache=True)
         g.is_offline = not g.is_online
+        g.connection_status_label = "Online (Supabase)" if g.is_online else "Offline (sem Supabase)"
         if request.path == "/" and g.is_offline:
             return redirect(url_for("offline.dashboard"))
 
@@ -1943,11 +1960,23 @@ def create_app():
 
     @app.context_processor
     def inject_footer_info():
-        health = _remote_healthcheck(app, use_cache=True)
+        has_remote = _has_remote_backend(app)
+        if has_remote:
+            health = _remote_healthcheck(app, use_cache=True)
+            is_offline = not bool(health.get("ok"))
+            connection_status_label = "Online (Supabase)" if not is_offline else "Offline (sem Supabase)"
+        else:
+            health = {"ok": True, "error": "", "latency_ms": None, "local_mode": True}
+            is_offline = False
+            connection_status_label = "SQLite (local)"
+
         return {
             "app_version_timestamp": app.config.get("APP_VERSION_TIMESTAMP"),
             "last_save_timestamp": _formatar_data_hora(_load_last_save()),
-            "is_offline": not bool(health.get("ok")),
+            "is_offline": is_offline,
+            "db_mode": (app.config.get("APP_DB_MODE") or "sqlite").lower(),
+            "has_remote": has_remote,
+            "connection_status_label": connection_status_label,
             "remote_health": health,
         }
 
