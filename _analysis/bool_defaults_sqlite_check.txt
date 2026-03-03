@@ -1,0 +1,14 @@
+SQLite boolean defaults check
+DB: _baseline_v1.db
+PRAGMA foreign_keys=ON
+
+anos_letivos.ativo: value=0 | where ativo=0 -> 1 | where ativo=1 -> 0
+anos_letivos.fechado: value=0 | where fechado=0 -> 1 | where fechado=1 -> 0
+dt_disciplinas.ativa: value=1 | where ativa=0 -> 0 | where ativa=1 -> 1
+turmas.letiva: value=1 | where letiva=0 -> 0 | where letiva=1 -> 1
+calendario_aulas.apagado: value=0 | where apagado=0 -> 1 | where apagado=1 -> 0
+calendario_aulas.atividade: value=0 | where atividade=0 -> 1 | where atividade=1 -> 0
+entregas.entregue: value=0 | where entregue=0 -> 1 | where entregue=1 -> 0
+aulas_alunos.atraso: value=0 | where atraso=0 -> 1 | where atraso=1 -> 0
+
+table_count_excluding_alembic_version=34
