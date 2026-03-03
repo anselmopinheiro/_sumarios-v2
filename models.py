@@ -42,10 +42,10 @@ class AnoLetivo(db.Model):
     descricao = db.Column(db.String(255))
 
     # Ano letivo actualmente em uso (“Corrente”)
-    ativo = db.Column(db.Boolean, nullable=False, default=False, server_default=db.text("false"))
+    ativo = db.Column(db.Boolean, nullable=False, default=False)
 
     # Anos passados que ficam só para consulta/exportação
-    fechado = db.Column(db.Boolean, nullable=False, default=False, server_default=db.text("false"))
+    fechado = db.Column(db.Boolean, nullable=False, default=False)
 
     # Relações opcionais, se as tiveres:
     # turmas = db.relationship("Turma", back_populates="ano_letivo")
@@ -89,7 +89,7 @@ class Turma(db.Model):
     tempo_quarta = db.Column(db.Integer, nullable=True)
     tempo_quinta = db.Column(db.Integer, nullable=True)
     tempo_sexta = db.Column(db.Integer, nullable=True)
-    letiva = db.Column(db.Boolean, nullable=False, default=True, server_default=db.text("true"))
+    letiva = db.Column(db.Boolean, nullable=False, default=True)
     # relação many-to-many com disciplina
     turmas_disciplinas = db.relationship(
         "TurmaDisciplina",
@@ -285,7 +285,7 @@ class DTDisciplina(db.Model):
     nome = db.Column(db.String(120), nullable=False, unique=True)
     nome_curto = db.Column(db.String(40))
     professor_nome = db.Column(db.String(120))
-    ativa = db.Column(db.Boolean, nullable=False, default=True, server_default=db.text("true"))
+    ativa = db.Column(db.Boolean, nullable=False, default=True)
 
 
 class DTOcorrenciaAluno(db.Model):
@@ -468,7 +468,7 @@ class CalendarioAula(db.Model):
     # normal / greve / servico_oficial / extra
     tipo = db.Column(db.String(50), default="normal", nullable=False)
 
-    apagado = db.Column(db.Boolean, default=False, nullable=False, server_default=db.text("false"))
+    apagado = db.Column(db.Boolean, default=False, nullable=False)
 
     # Número de tempos que não contam para a numeração (aplicável em faltas, serviço oficial, etc.)
     tempos_sem_aula = db.Column(db.Integer, default=0)
@@ -477,7 +477,7 @@ class CalendarioAula(db.Model):
     observacoes_html = db.Column(db.Text)
     sumario = db.Column(db.Text)
     previsao = db.Column(db.Text)
-    atividade = db.Column(db.Boolean, default=False, server_default=db.text("false"), nullable=False)
+    atividade = db.Column(db.Boolean, default=False, nullable=False)
     atividade_nome = db.Column(db.Text)
 
     turma = db.relationship("Turma", backref="calendario_aulas")
@@ -520,7 +520,7 @@ class AulaAluno(db.Model):
     aluno_id = db.Column(db.Integer, db.ForeignKey("alunos.id"), nullable=False)
 
     # True = atraso; False = pontual
-    atraso = db.Column(db.Boolean, default=False, nullable=False, server_default=db.text("false"))
+    atraso = db.Column(db.Boolean, default=False, nullable=False)
     # Número de tempos em falta (0 = presente)
     faltas = db.Column(db.Integer, default=0, nullable=False)
 
@@ -622,7 +622,7 @@ class Entrega(db.Model):
     trabalho_id = db.Column(db.Integer, db.ForeignKey("trabalhos.id"), nullable=False, index=True)
     trabalho_grupo_id = db.Column(db.Integer, db.ForeignKey("trabalho_grupos.id"), nullable=False, index=True)
 
-    entregue = db.Column(db.Boolean, nullable=False, default=False, server_default=db.text("false"))
+    entregue = db.Column(db.Boolean, nullable=False, default=False)
     data_entrega = db.Column(db.Date)
     consecucao = db.Column(db.Integer)
     qualidade = db.Column(db.Integer)
