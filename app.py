@@ -51,23 +51,6 @@ try:
     import bleach
 except Exception:
     bleach = None
-
-
-def _load_dotenv_if_available():
-    project_env_path = os.path.join(os.path.dirname(__file__), ".env")
-    is_development = os.environ.get("FLASK_ENV", "development") == "development"
-    if not is_development or not os.path.exists(project_env_path):
-        return
-
-    dotenv_spec = importlib.util.find_spec("dotenv")
-    if dotenv_spec is None:
-        return
-
-    dotenv_module = importlib.import_module("dotenv")
-    dotenv_module.load_dotenv(project_env_path)
-
-
-_load_dotenv_if_available()
 from sqlalchemy import create_engine, func, inspect, or_, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert

@@ -1,6 +1,32 @@
+import importlib
 import importlib.util
 import os
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+
+def _load_env_by_flask_env():
+    """Load .env.<environment> automatically based on FLASK_ENV (or APP_ENV)."""
+    dotenv_spec = importlib.util.find_spec("dotenv")
+    if dotenv_spec is None:
+        return
+
+    env_name = (os.environ.get("FLASK_ENV") or os.environ.get("APP_ENV") or "development").strip().lower()
+    env_file = f".env.{env_name}"
+    project_root = os.path.abspath(os.path.dirname(__file__))
+    env_path = os.path.join(project_root, env_file)
+
+    if not os.path.exists(env_path):
+        fallback = os.path.join(project_root, ".env")
+        if os.path.exists(fallback):
+            env_path = fallback
+        else:
+            return
+
+    dotenv_module = importlib.import_module("dotenv")
+    dotenv_module.load_dotenv(env_path, override=False)
+
+
+_load_env_by_flask_env()
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 instance_dir = os.path.join(basedir, "instance")
@@ -99,6 +125,11 @@ def normalize_database_url(url: str) -> str:
 
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev")
+    FLASK_ENV = (os.environ.get("FLASK_ENV") or "development").strip().lower()
+
+    SUPABASE_URL = os.environ.get("SUPABASE_URL")
+    SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")
+    SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 
     APP_DB_MODE = (os.environ.get("APP_DB_MODE", "sqlite") or "sqlite").strip().lower()
     if APP_DB_MODE not in {"sqlite", "postgres"}:
