@@ -2871,7 +2871,7 @@ def create_app():
         result["ok"] = True
         return result
 
-    def _skip_db_bootstrap():
+    def should_skip_db_bootstrap():
         return (os.environ.get("SKIP_DB_BOOTSTRAP", "0").strip().lower() in {"1", "true", "yes", "on"})
 
     def _start_dev_snapshot_scheduler():
@@ -2933,7 +2933,7 @@ def create_app():
         app.extensions["offline_scheduler"] = scheduler
         app.logger.info("Scheduler local de snapshot ativo: %ss", interval)
 
-    if _skip_db_bootstrap():
+    if should_skip_db_bootstrap():
         app.logger.info("SKIP_DB_BOOTSTRAP=1 ativo: bootstrap de BD ignorado para este processo.")
     else:
         with app.app_context():

@@ -75,3 +75,26 @@ ou equivalente (ex.: `Base.metadata`, ou helper que devolve metadata do `db`).
 - Se `flask db migrate` ou `upgrade` executar queries inesperadas no startup da app:
   - confirmar `SKIP_DB_BOOTSTRAP=1` no ambiente do comando;
   - confirmar no log da app a mensagem de bootstrap ignorado.
+
+## 10) Comandos Windows (PowerShell)
+
+```powershell
+$env:DATABASE_URL="postgresql+psycopg://USER:PASSWORD@HOST:5432/postgres"
+$env:FLASK_ENV="development"
+$env:APP_DB_MODE="postgres"
+$env:SKIP_DB_BOOTSTRAP="1"
+
+flask --app app db migrate -m "0001_initial"
+flask --app app db upgrade
+
+Remove-Item Env:SKIP_DB_BOOTSTRAP
+```
+
+## 11) Verificação rápida da tabela `turmas`
+
+```sql
+select table_schema, table_name
+from information_schema.tables
+where table_schema = 'public'
+  and table_name = 'turmas';
+```
