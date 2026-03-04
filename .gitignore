@@ -17,3 +17,5 @@ gestor_lectivo.db
 *.a
 .env
 logs/
+.env.development
+.env.production

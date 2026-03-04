@@ -51,23 +51,6 @@ try:
     import bleach
 except Exception:
     bleach = None
-
-
-def _load_dotenv_if_available():
-    project_env_path = os.path.join(os.path.dirname(__file__), ".env")
-    is_development = os.environ.get("FLASK_ENV", "development") == "development"
-    if not is_development or not os.path.exists(project_env_path):
-        return
-
-    dotenv_spec = importlib.util.find_spec("dotenv")
-    if dotenv_spec is None:
-        return
-
-    dotenv_module = importlib.import_module("dotenv")
-    dotenv_module.load_dotenv(project_env_path)
-
-
-_load_dotenv_if_available()
 from sqlalchemy import create_engine, func, inspect, or_, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -1704,7 +1687,15 @@ def _remote_healthcheck(app, use_cache=True):
 
     started = time.perf_counter()
     if (app.config.get("APP_DB_MODE") or "sqlite").lower() != "postgres":
-        cache.update({"ts": now, "ok": False, "error": "APP_DB_MODE não está em postgres.", "latency_ms": None})
+        cache.update(
+            {
+                "ts": now,
+                "ok": True,
+                "error": "",
+                "latency_ms": None,
+                "local_mode": True,
+            }
+        )
         return dict(cache)
 
     try:
@@ -1729,6 +1720,14 @@ def _remote_healthcheck(app, use_cache=True):
 def _is_remote_online(app, use_cache=True):
     return bool(_remote_healthcheck(app, use_cache=use_cache).get("ok"))
 
+
+def _has_remote_backend(app):
+    return (
+        (app.config.get("APP_DB_MODE") or "sqlite").lower() == "postgres"
+        and ("engine_remote" in app.extensions)
+        and (app.extensions.get("engine_remote") is not None)
+    )
+
 def create_app():
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_object(Config)
@@ -1748,10 +1747,28 @@ def create_app():
     Migrate(app, db)
     app.register_blueprint(offline_bp)
 
+    @app.get("/health")
+    def healthcheck():
+        return jsonify(
+            {
+                "status": "ok",
+                "supabase_url": app.config.get("SUPABASE_URL") or os.environ.get("SUPABASE_URL"),
+            }
+        )
+
     @app.before_request
     def _set_connectivity_state():
+        g.db_mode = (app.config.get("APP_DB_MODE") or "sqlite").lower()
+        g.has_remote = _has_remote_backend(app)
+        if not g.has_remote:
+            g.is_online = True
+            g.is_offline = False
+            g.connection_status_label = "SQLite (local)"
+            return
+
         g.is_online = _is_remote_online(app, use_cache=True)
         g.is_offline = not g.is_online
+        g.connection_status_label = "Online (Supabase)" if g.is_online else "Offline (sem Supabase)"
         if request.path == "/" and g.is_offline:
             return redirect(url_for("offline.dashboard"))
 
@@ -1951,11 +1968,23 @@ def create_app():
 
     @app.context_processor
     def inject_footer_info():
-        health = _remote_healthcheck(app, use_cache=True)
+        has_remote = _has_remote_backend(app)
+        if has_remote:
+            health = _remote_healthcheck(app, use_cache=True)
+            is_offline = not bool(health.get("ok"))
+            connection_status_label = "Online (Supabase)" if not is_offline else "Offline (sem Supabase)"
+        else:
+            health = {"ok": True, "error": "", "latency_ms": None, "local_mode": True}
+            is_offline = False
+            connection_status_label = "SQLite (local)"
+
         return {
             "app_version_timestamp": app.config.get("APP_VERSION_TIMESTAMP"),
             "last_save_timestamp": _formatar_data_hora(_load_last_save()),
-            "is_offline": not bool(health.get("ok")),
+            "is_offline": is_offline,
+            "db_mode": (app.config.get("APP_DB_MODE") or "sqlite").lower(),
+            "has_remote": has_remote,
+            "connection_status_label": connection_status_label,
             "remote_health": health,
         }
 
@@ -2879,6 +2908,9 @@ def create_app():
         result["ok"] = True
         return result
 
+    def should_skip_db_bootstrap():
+        return (os.environ.get("SKIP_DB_BOOTSTRAP", "0").strip().lower() in {"1", "true", "yes", "on"})
+
     def _start_dev_snapshot_scheduler():
         if os.environ.get("DEV_LOCAL_SCHEDULER", "0") != "1":
             return
@@ -2938,30 +2970,33 @@ def create_app():
         app.extensions["offline_scheduler"] = scheduler
         app.logger.info("Scheduler local de snapshot ativo: %ss", interval)
 
-    with app.app_context():
-        init_offline_db(app.instance_path)
-        init_offline_store_db(app.instance_path)
-        app.logger.info("Offline DB path ativo: %s", resolve_offline_db_path(app.instance_path))
-        _ensure_columns()
-        _ensure_trabalhos_tables()
-        try:
-            _log_db_mode()
-        except Exception:
-            app.logger.warning("Não foi possível emitir informação do backend de BD.")
-        if _sqlite_backups_enabled():
-            if app.config.get("BACKUP_ON_STARTUP", True) and _should_run_startup_jobs():
-                app.logger.info("Backups SQLite ativos")
-                _backup_database(reason="startup")
-            elif not _should_run_startup_jobs():
-                app.logger.info("Arranque secundário/CLI detetado: tarefas de startup desativadas.")
-        else:
-            app.logger.info("Backups SQLite desativados (modo postgres)")
+    if should_skip_db_bootstrap():
+        app.logger.info("SKIP_DB_BOOTSTRAP=1 ativo: bootstrap de BD ignorado para este processo.")
+    else:
+        with app.app_context():
+            init_offline_db(app.instance_path)
+            init_offline_store_db(app.instance_path)
+            app.logger.info("Offline DB path ativo: %s", resolve_offline_db_path(app.instance_path))
+            _ensure_columns()
+            _ensure_trabalhos_tables()
+            try:
+                _log_db_mode()
+            except Exception:
+                app.logger.warning("Não foi possível emitir informação do backend de BD.")
+            if _sqlite_backups_enabled():
+                if app.config.get("BACKUP_ON_STARTUP", True) and _should_run_startup_jobs():
+                    app.logger.info("Backups SQLite ativos")
+                    _backup_database(reason="startup")
+                elif not _should_run_startup_jobs():
+                    app.logger.info("Arranque secundário/CLI detetado: tarefas de startup desativadas.")
+            else:
+                app.logger.info("Backups SQLite desativados (modo postgres)")
 
-        flush_result = try_flush_outbox(limit=200)
-        if flush_result.get("applied"):
-            app.logger.info("Outbox sincronizada no arranque: %s item(ns).", flush_result["applied"])
+            flush_result = try_flush_outbox(limit=200)
+            if flush_result.get("applied"):
+                app.logger.info("Outbox sincronizada no arranque: %s item(ns).", flush_result["applied"])
 
-    _start_dev_snapshot_scheduler()
+        _start_dev_snapshot_scheduler()
 
     def _agendar_backup_change():
         if not _sqlite_backups_enabled():
