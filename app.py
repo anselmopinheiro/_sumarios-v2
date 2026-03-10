@@ -1651,6 +1651,8 @@ def _setup_dual_db_engines(app):
 
     app.extensions["engine_remote"] = None
     app.extensions["session_remote_factory"] = None
+    app.extensions["remote_available"] = False
+    app.extensions["startup_offline"] = False
 
     if (app.config.get("APP_DB_MODE") or "sqlite").lower() == "postgres" and remote_uri:
         try:
@@ -1665,10 +1667,16 @@ def _setup_dual_db_engines(app):
                 },
             )
             app.extensions["session_remote_factory"] = sessionmaker(bind=app.extensions["engine_remote"], future=True)
+            with app.extensions["engine_remote"].connect() as conn:
+                conn.execute(text("SELECT 1"))
+            app.extensions["remote_available"] = True
         except Exception as exc:
+            app.extensions["remote_available"] = False
+            app.extensions["startup_offline"] = True
             target = _safe_db_target_from_uri(remote_uri)
-            app.logger.exception(
-                "Não foi possível preparar engine remota (host=%s port=%s db=%s): %s",
+            app.logger.warning(
+                "Remote DB unavailable at startup; entering offline mode "
+                "(host=%s port=%s db=%s): %s",
                 target["host"],
                 target["port"],
                 target["db"],
@@ -1698,6 +1706,17 @@ def _remote_healthcheck(app, use_cache=True):
         )
         return dict(cache)
 
+    if not _has_remote_backend(app):
+        cache.update(
+            {
+                "ts": now,
+                "ok": False,
+                "error": "Remote engine not configured",
+                "latency_ms": None,
+            }
+        )
+        return dict(cache)
+
     try:
         db.session.execute(text("SELECT 1"))
         latency = int((time.perf_counter() - started) * 1000)
@@ -1706,6 +1725,7 @@ def _remote_healthcheck(app, use_cache=True):
         db.session.rollback()
         latency = int((time.perf_counter() - started) * 1000)
         cache.update({"ts": now, "ok": False, "error": str(exc), "latency_ms": latency})
+        app.extensions["remote_available"] = False
         target = _safe_db_target_from_uri(app.config.get("SQLALCHEMY_DATABASE_URI") or "")
         app.logger.exception(
             "Healthcheck remoto falhou (host=%s port=%s db=%s): %s",
@@ -1759,17 +1779,35 @@ def create_app():
     @app.before_request
     def _set_connectivity_state():
         g.db_mode = (app.config.get("APP_DB_MODE") or "sqlite").lower()
-        g.has_remote = _has_remote_backend(app)
-        if not g.has_remote:
+
+        if g.db_mode == "sqlite":
+            app.extensions["remote_available"] = False
+            app.extensions["startup_offline"] = False
+            g.has_remote = False
             g.is_online = True
             g.is_offline = False
             g.connection_status_label = "SQLite (local)"
             return
 
-        g.is_online = _is_remote_online(app, use_cache=True)
-        g.is_offline = not g.is_online
-        g.connection_status_label = "Online (Supabase)" if g.is_online else "Offline (sem Supabase)"
-        if request.path == "/" and g.is_offline:
+        g.has_remote = _has_remote_backend(app)
+        if not g.has_remote:
+            app.extensions["remote_available"] = False
+            app.extensions["startup_offline"] = True
+            g.is_online = False
+            g.is_offline = True
+            g.connection_status_label = "Offline (sem Supabase)"
+        else:
+            g.is_online = _is_remote_online(app, use_cache=True)
+            app.extensions["remote_available"] = bool(g.is_online)
+            app.extensions["startup_offline"] = not g.is_online
+            g.is_offline = not g.is_online
+            g.connection_status_label = "Online (Supabase)" if g.is_online else "Offline (sem Supabase)"
+
+        if g.is_offline and not (
+            request.path.startswith("/offline")
+            or request.path.startswith("/static/")
+            or request.path == "/health"
+        ):
             return redirect(url_for("offline.dashboard"))
 
     @app.cli.group("offline")
@@ -2977,8 +3015,13 @@ def create_app():
             init_offline_db(app.instance_path)
             init_offline_store_db(app.instance_path)
             app.logger.info("Offline DB path ativo: %s", resolve_offline_db_path(app.instance_path))
-            _ensure_columns()
-            _ensure_trabalhos_tables()
+            is_pg_mode = (app.config.get("APP_DB_MODE") or "sqlite").lower() == "postgres"
+            startup_offline = bool(app.extensions.get("startup_offline"))
+            if is_pg_mode and startup_offline:
+                app.logger.warning("Bootstrap remoto ignorado: startup em modo offline degradado.")
+            else:
+                _ensure_columns()
+                _ensure_trabalhos_tables()
             try:
                 _log_db_mode()
             except Exception:
