@@ -112,6 +112,7 @@ from models import (
     DTAluno,
     DTJustificacao,
     DTMotivoDia,
+    DTJustificacaoTexto,
     DTDisciplina,
     DTOcorrencia,
     DTOcorrenciaAluno,
@@ -2087,6 +2088,12 @@ def create_app():
                     text("ALTER TABLE calendario_aulas ADD COLUMN observacoes_html TEXT")
                 )
                 db.session.commit()
+
+        if "dt_justificacao_textos" not in tabelas:
+            db.metadata.create_all(bind=db.engine, tables=[DTJustificacaoTexto.__table__], checkfirst=True)
+            db.session.commit()
+            insp = inspect(db.engine)
+            tabelas = set(insp.get_table_names())
 
         if db.engine.dialect.name != "sqlite":
             return
@@ -4362,6 +4369,62 @@ def create_app():
             dt_abertas=dt_abertas,
             dt_fechadas=dt_fechadas,
         )
+
+    @app.route("/direcao-turma/justificacoes-texto")
+    def direcao_turma_justificacoes_texto_list():
+        textos = DTJustificacaoTexto.query.order_by(DTJustificacaoTexto.titulo.asc(), DTJustificacaoTexto.id.asc()).all()
+        return render_template("direcao_turma/justificacoes_texto_list.html", textos=textos)
+
+    @app.route("/direcao-turma/justificacoes-texto/add", methods=["GET", "POST"])
+    def direcao_turma_justificacoes_texto_add():
+        if request.method == "POST":
+            titulo = (request.form.get("titulo") or "").strip()
+            texto = (request.form.get("texto") or "").strip()
+            if not titulo or not texto:
+                flash("Preenche título e texto.", "error")
+                return redirect(url_for("direcao_turma_justificacoes_texto_add"))
+
+            novo = DTJustificacaoTexto(titulo=titulo[:120], texto=texto)
+            db.session.add(novo)
+            db.session.commit()
+            flash("Texto de justificação criado.", "success")
+            return redirect(url_for("direcao_turma_justificacoes_texto_list"))
+
+        return render_template(
+            "direcao_turma/justificacoes_texto_form.html",
+            titulo_pagina="Novo texto de justificação",
+            item=None,
+        )
+
+    @app.route("/direcao-turma/justificacoes-texto/<int:item_id>/edit", methods=["GET", "POST"])
+    def direcao_turma_justificacoes_texto_edit(item_id):
+        item = DTJustificacaoTexto.query.get_or_404(item_id)
+        if request.method == "POST":
+            titulo = (request.form.get("titulo") or "").strip()
+            texto = (request.form.get("texto") or "").strip()
+            if not titulo or not texto:
+                flash("Preenche título e texto.", "error")
+                return redirect(url_for("direcao_turma_justificacoes_texto_edit", item_id=item.id))
+
+            item.titulo = titulo[:120]
+            item.texto = texto
+            db.session.commit()
+            flash("Texto de justificação atualizado.", "success")
+            return redirect(url_for("direcao_turma_justificacoes_texto_list"))
+
+        return render_template(
+            "direcao_turma/justificacoes_texto_form.html",
+            titulo_pagina="Editar texto de justificação",
+            item=item,
+        )
+
+    @app.route("/direcao-turma/justificacoes-texto/<int:item_id>/delete", methods=["POST"])
+    def direcao_turma_justificacoes_texto_delete(item_id):
+        item = DTJustificacaoTexto.query.get_or_404(item_id)
+        db.session.delete(item)
+        db.session.commit()
+        flash("Texto de justificação removido.", "success")
+        return redirect(url_for("direcao_turma_justificacoes_texto_list"))
 
     @app.route("/direcao-turma/add", methods=["GET", "POST"])
     def direcao_turma_add():

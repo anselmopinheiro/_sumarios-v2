@@ -278,6 +278,17 @@ class DTMotivoDia(db.Model):
     )
 
 
+
+
+class DTJustificacaoTexto(db.Model):
+    __tablename__ = "dt_justificacao_textos"
+
+    id = db.Column(db.Integer, primary_key=True)
+    titulo = db.Column(db.String(120), nullable=False)
+    texto = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, server_default=db.text("now()"))
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=db.text("now()"))
+
 class DTDisciplina(db.Model):
     __tablename__ = "dt_disciplinas"
 
