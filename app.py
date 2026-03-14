@@ -113,6 +113,18 @@ from models import (
     DTJustificacao,
     DTMotivoDia,
     DTJustificacaoTexto,
+    AlunoContextoDT,
+    EncarregadoEducacao,
+    EEAluno,
+    DTCargoAluno,
+    DTCargoEE,
+    TipoContacto,
+    MotivoContacto,
+    Contacto,
+    ContactoTipo,
+    ContactoAluno,
+    ContactoAlunoMotivo,
+    ContactoLink,
     DTDisciplina,
     DTOcorrencia,
     DTOcorrenciaAluno,
@@ -4269,6 +4281,116 @@ def create_app():
             )
         return resultado
 
+    DT_ALUNO_CARGOS_VALIDOS = {"delegado", "subdelegado"}
+    DT_EE_CARGOS_VALIDOS = {"representante_ee", "suplente_representante_ee"}
+
+    def _parse_iso_date(value):
+        value = (value or "").strip()
+        if not value:
+            return None
+        return datetime.strptime(value, "%Y-%m-%d").date()
+
+    def _parse_iso_datetime(value):
+        value = (value or "").strip()
+        if not value:
+            return None
+        if len(value) == 10:
+            return datetime.strptime(value, "%Y-%m-%d")
+        return datetime.fromisoformat(value)
+
+    def _ensure_single_active_ee_for_aluno(aluno_id, exclude_id=None):
+        q = EEAluno.query.filter(EEAluno.aluno_id == aluno_id, EEAluno.data_fim.is_(None))
+        if exclude_id is not None:
+            q = q.filter(EEAluno.id != exclude_id)
+        return q.first() is None
+
+    def _ensure_single_active_dt_cargo_aluno(dt_turma_id, cargo, exclude_id=None):
+        q = DTCargoAluno.query.filter(
+            DTCargoAluno.dt_turma_id == dt_turma_id,
+            DTCargoAluno.cargo == cargo,
+            DTCargoAluno.data_fim.is_(None),
+        )
+        if exclude_id is not None:
+            q = q.filter(DTCargoAluno.id != exclude_id)
+        return q.first() is None
+
+    def _ensure_single_active_dt_cargo_ee(dt_turma_id, cargo, exclude_id=None):
+        q = DTCargoEE.query.filter(
+            DTCargoEE.dt_turma_id == dt_turma_id,
+            DTCargoEE.cargo == cargo,
+            DTCargoEE.data_fim.is_(None),
+        )
+        if exclude_id is not None:
+            q = q.filter(DTCargoEE.id != exclude_id)
+        return q.first() is None
+
+    def _active_ee_rel_for_aluno(aluno_id):
+        return (
+            EEAluno.query.filter(EEAluno.aluno_id == aluno_id, EEAluno.data_fim.is_(None))
+            .order_by(EEAluno.data_inicio.desc(), EEAluno.id.desc())
+            .first()
+        )
+
+    def _create_contactos_em_lote(dt_turma_id, aluno_ids, base_payload, per_aluno_payload):
+        grupos = defaultdict(list)
+        for aluno_id in aluno_ids:
+            rel = _active_ee_rel_for_aluno(aluno_id)
+            if not rel:
+                continue
+            grupos[rel.ee_id].append((aluno_id, rel.id))
+
+        created_ids = []
+        tipo_ids = base_payload.get("tipo_contacto_ids") or []
+
+        for ee_id, alunos_group in grupos.items():
+            contacto = Contacto(
+                ee_id=ee_id,
+                dt_turma_id=dt_turma_id,
+                data_hora=base_payload.get("data_hora") or datetime.utcnow(),
+                iniciado_por=base_payload.get("iniciado_por") or "professor",
+                resumo=base_payload.get("resumo"),
+                observacoes_gerais=base_payload.get("observacoes_gerais"),
+                estado_contacto=base_payload.get("estado_contacto") or "realizado",
+                estado_reuniao=base_payload.get("estado_reuniao") or "nao_agendada",
+                data_reuniao=base_payload.get("data_reuniao"),
+                requer_followup=bool(base_payload.get("requer_followup")),
+                data_followup=base_payload.get("data_followup"),
+                confidencial=bool(base_payload.get("confidencial")),
+                created_by=base_payload.get("created_by"),
+            )
+            db.session.add(contacto)
+            db.session.flush()
+            created_ids.append(contacto.id)
+
+            for tipo_id in tipo_ids:
+                db.session.add(ContactoTipo(contacto_id=contacto.id, tipo_contacto_id=tipo_id))
+
+            for aluno_id, rel_id in alunos_group:
+                dados_aluno = per_aluno_payload.get(str(aluno_id), {})
+                ca = ContactoAluno(
+                    contacto_id=contacto.id,
+                    aluno_id=aluno_id,
+                    ee_aluno_id_snapshot=rel_id,
+                    observacoes=dados_aluno.get("observacoes"),
+                    resultado_individual=dados_aluno.get("resultado_individual"),
+                )
+                db.session.add(ca)
+                db.session.flush()
+                for motivo_item in dados_aluno.get("motivos", []):
+                    motivo_id = motivo_item.get("motivo_contacto_id")
+                    if not motivo_id:
+                        continue
+                    db.session.add(
+                        ContactoAlunoMotivo(
+                            contacto_aluno_id=ca.id,
+                            motivo_contacto_id=motivo_id,
+                            detalhe=motivo_item.get("detalhe"),
+                        )
+                    )
+
+        db.session.commit()
+        return created_ids
+
     @app.route("/dt-disciplinas")
     def dt_disciplinas_list():
         termo = (request.args.get("q") or "").strip()
@@ -4425,6 +4547,252 @@ def create_app():
         db.session.commit()
         flash("Texto de justificação removido.", "success")
         return redirect(url_for("direcao_turma_justificacoes_texto_list"))
+
+    @app.route("/direcao-turma/alunos/<int:aluno_id>/contexto", methods=["GET", "POST"])
+    def direcao_turma_aluno_contexto(aluno_id):
+        aluno = Aluno.query.get_or_404(aluno_id)
+        contexto = AlunoContextoDT.query.filter_by(aluno_id=aluno.id).first()
+        if request.method == "POST":
+            if not contexto:
+                contexto = AlunoContextoDT(aluno_id=aluno.id)
+                db.session.add(contexto)
+            contexto.dt_observacoes = request.form.get("dt_observacoes") or None
+            contexto.ee_observacoes = request.form.get("ee_observacoes") or None
+            contexto.alerta_dt = request.form.get("alerta_dt") or None
+            contexto.resumo_sinalizacao = request.form.get("resumo_sinalizacao") or None
+            db.session.commit()
+            return jsonify({"ok": True, "contexto_id": contexto.id})
+        return jsonify({
+            "aluno_id": aluno.id,
+            "contexto": {
+                "id": contexto.id if contexto else None,
+                "dt_observacoes": contexto.dt_observacoes if contexto else None,
+                "ee_observacoes": contexto.ee_observacoes if contexto else None,
+                "alerta_dt": contexto.alerta_dt if contexto else None,
+                "resumo_sinalizacao": contexto.resumo_sinalizacao if contexto else None,
+            },
+        })
+
+    @app.route("/direcao-turma/ee", methods=["POST"])
+    def direcao_turma_ee_create():
+        nome = (request.form.get("nome") or "").strip()
+        if not nome:
+            return jsonify({"ok": False, "error": "Nome é obrigatório."}), 400
+        ee = EncarregadoEducacao(
+            nome=nome,
+            telefone=(request.form.get("telefone") or "").strip() or None,
+            email=(request.form.get("email") or "").strip() or None,
+            observacoes=request.form.get("observacoes") or None,
+            nome_alternativo=(request.form.get("nome_alternativo") or "").strip() or None,
+            telefone_alternativo=(request.form.get("telefone_alternativo") or "").strip() or None,
+            email_alternativo=(request.form.get("email_alternativo") or "").strip() or None,
+        )
+        db.session.add(ee)
+        db.session.commit()
+        return jsonify({"ok": True, "id": ee.id})
+
+    @app.route("/direcao-turma/ee-alunos", methods=["POST"])
+    def direcao_turma_ee_aluno_create():
+        ee_id = request.form.get("ee_id", type=int)
+        aluno_id = request.form.get("aluno_id", type=int)
+        data_inicio = _parse_iso_date(request.form.get("data_inicio"))
+        if not (ee_id and aluno_id and data_inicio):
+            return jsonify({"ok": False, "error": "ee_id, aluno_id e data_inicio são obrigatórios."}), 400
+        if not _ensure_single_active_ee_for_aluno(aluno_id):
+            return jsonify({"ok": False, "error": "Já existe relação EE ativa para este aluno."}), 409
+        rel = EEAluno(
+            ee_id=ee_id,
+            aluno_id=aluno_id,
+            parentesco=(request.form.get("parentesco") or "").strip() or None,
+            observacoes=request.form.get("observacoes") or None,
+            data_inicio=data_inicio,
+            data_fim=_parse_iso_date(request.form.get("data_fim")),
+        )
+        db.session.add(rel)
+        db.session.commit()
+        return jsonify({"ok": True, "id": rel.id})
+
+    @app.route("/direcao-turma/cargos/aluno", methods=["POST"])
+    def direcao_turma_cargo_aluno_create():
+        dt_turma_id = request.form.get("dt_turma_id", type=int)
+        aluno_id = request.form.get("aluno_id", type=int)
+        cargo = (request.form.get("cargo") or "").strip()
+        data_inicio = _parse_iso_date(request.form.get("data_inicio"))
+        if cargo not in DT_ALUNO_CARGOS_VALIDOS:
+            return jsonify({"ok": False, "error": "Cargo inválido."}), 400
+        if not _ensure_single_active_dt_cargo_aluno(dt_turma_id, cargo):
+            return jsonify({"ok": False, "error": f"Já existe {cargo} ativo nesta DT."}), 409
+        item = DTCargoAluno(
+            dt_turma_id=dt_turma_id,
+            aluno_id=aluno_id,
+            cargo=cargo,
+            data_inicio=data_inicio,
+            data_fim=_parse_iso_date(request.form.get("data_fim")),
+            motivo_fim=request.form.get("motivo_fim") or None,
+        )
+        db.session.add(item)
+        db.session.commit()
+        return jsonify({"ok": True, "id": item.id})
+
+    @app.route("/direcao-turma/cargos/ee", methods=["POST"])
+    def direcao_turma_cargo_ee_create():
+        dt_turma_id = request.form.get("dt_turma_id", type=int)
+        ee_id = request.form.get("ee_id", type=int)
+        cargo = (request.form.get("cargo") or "").strip()
+        data_inicio = _parse_iso_date(request.form.get("data_inicio"))
+        if cargo not in DT_EE_CARGOS_VALIDOS:
+            return jsonify({"ok": False, "error": "Cargo inválido."}), 400
+        if not _ensure_single_active_dt_cargo_ee(dt_turma_id, cargo):
+            return jsonify({"ok": False, "error": f"Já existe {cargo} ativo nesta DT."}), 409
+        item = DTCargoEE(
+            dt_turma_id=dt_turma_id,
+            ee_id=ee_id,
+            cargo=cargo,
+            data_inicio=data_inicio,
+            data_fim=_parse_iso_date(request.form.get("data_fim")),
+            motivo_fim=request.form.get("motivo_fim") or None,
+        )
+        db.session.add(item)
+        db.session.commit()
+        return jsonify({"ok": True, "id": item.id})
+
+    @app.route("/direcao-turma/contactos/lote", methods=["POST"])
+    def direcao_turma_contactos_lote_create():
+        payload = request.get_json(silent=True) or {}
+        dt_turma_id = payload.get("dt_turma_id")
+        aluno_ids = payload.get("aluno_ids") or []
+        if not dt_turma_id or not aluno_ids:
+            return jsonify({"ok": False, "error": "dt_turma_id e aluno_ids são obrigatórios."}), 400
+
+        base_payload = {
+            "data_hora": _parse_iso_datetime(payload.get("data_hora")) if payload.get("data_hora") else datetime.utcnow(),
+            "iniciado_por": payload.get("iniciado_por") or "professor",
+            "resumo": payload.get("resumo"),
+            "observacoes_gerais": payload.get("observacoes_gerais"),
+            "estado_contacto": payload.get("estado_contacto") or "realizado",
+            "estado_reuniao": payload.get("estado_reuniao") or "nao_agendada",
+            "data_reuniao": _parse_iso_datetime(payload.get("data_reuniao")) if payload.get("data_reuniao") else None,
+            "requer_followup": bool(payload.get("requer_followup")),
+            "data_followup": _parse_iso_date(payload.get("data_followup")) if payload.get("data_followup") else None,
+            "confidencial": bool(payload.get("confidencial")),
+            "created_by": payload.get("created_by"),
+            "tipo_contacto_ids": payload.get("tipo_contacto_ids") or [],
+        }
+        created_ids = _create_contactos_em_lote(
+            dt_turma_id=dt_turma_id,
+            aluno_ids=aluno_ids,
+            base_payload=base_payload,
+            per_aluno_payload=payload.get("por_aluno") or {},
+        )
+        return jsonify({"ok": True, "created_contactos": created_ids})
+
+    @app.route("/direcao-turma/export/ee.csv")
+    def direcao_turma_export_ee_csv():
+        dt_turma_id = request.args.get("dt_turma_id", type=int)
+        apenas_ativos = (request.args.get("ativos") or "1") == "1"
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow([
+            "aluno_numero", "aluno_nome", "ee_nome", "parentesco", "telefone", "email",
+            "nome_alternativo", "telefone_alternativo", "email_alternativo", "observacoes", "data_inicio", "data_fim",
+        ])
+        query = (
+            EEAluno.query
+            .join(Aluno, EEAluno.aluno_id == Aluno.id)
+            .join(EncarregadoEducacao, EEAluno.ee_id == EncarregadoEducacao.id)
+        )
+        if dt_turma_id:
+            dt_turma = DTTurma.query.get(dt_turma_id)
+            if dt_turma:
+                query = query.filter(Aluno.turma_id == dt_turma.turma_id)
+        if apenas_ativos:
+            query = query.filter(EEAluno.data_fim.is_(None))
+        for rel in query.order_by(Aluno.numero.asc(), Aluno.nome.asc()).all():
+            writer.writerow([
+                rel.aluno.numero,
+                rel.aluno.nome,
+                rel.ee.nome,
+                rel.parentesco or "",
+                rel.ee.telefone or "",
+                rel.ee.email or "",
+                rel.ee.nome_alternativo or "",
+                rel.ee.telefone_alternativo or "",
+                rel.ee.email_alternativo or "",
+                rel.observacoes or "",
+                rel.data_inicio.isoformat() if rel.data_inicio else "",
+                rel.data_fim.isoformat() if rel.data_fim else "",
+            ])
+        filename = f"ee_export_{dt_turma_id or 'all'}.csv"
+        return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": f"attachment; filename={filename}"})
+
+    @app.route("/direcao-turma/export/contactos.csv")
+    def direcao_turma_export_contactos_csv():
+        periodo = (request.args.get("periodo") or "anual").strip().lower()
+        dt_turma_id = request.args.get("dt_turma_id", type=int)
+        ee_id = request.args.get("ee_id", type=int)
+        aluno_id = request.args.get("aluno_id", type=int)
+        tipo_contacto_id = request.args.get("tipo_contacto_id", type=int)
+        motivo_contacto_id = request.args.get("motivo_contacto_id", type=int)
+
+        hoje = date.today()
+        inicio = date(hoje.year, 1, 1)
+        fim = date(hoje.year, 12, 31)
+        if periodo == "semestre1":
+            fim = date(hoje.year, 6, 30)
+        elif periodo == "semestre2":
+            inicio = date(hoje.year, 7, 1)
+        elif periodo == "mes":
+            inicio = date(hoje.year, hoje.month, 1)
+            fim = date(hoje.year, hoje.month, calendar.monthrange(hoje.year, hoje.month)[1])
+        elif periodo == "intervalo":
+            inicio = _parse_iso_date(request.args.get("data_inicio")) or inicio
+            fim = _parse_iso_date(request.args.get("data_fim")) or fim
+
+        query = Contacto.query.join(EncarregadoEducacao, Contacto.ee_id == EncarregadoEducacao.id)
+        query = query.filter(func.date(Contacto.data_hora) >= inicio, func.date(Contacto.data_hora) <= fim)
+        if dt_turma_id:
+            query = query.filter(Contacto.dt_turma_id == dt_turma_id)
+        if ee_id:
+            query = query.filter(Contacto.ee_id == ee_id)
+        if tipo_contacto_id:
+            query = query.join(ContactoTipo, ContactoTipo.contacto_id == Contacto.id).filter(ContactoTipo.tipo_contacto_id == tipo_contacto_id)
+        if aluno_id:
+            query = query.join(ContactoAluno, ContactoAluno.contacto_id == Contacto.id).filter(ContactoAluno.aluno_id == aluno_id)
+        if motivo_contacto_id:
+            query = query.join(ContactoAluno, ContactoAluno.contacto_id == Contacto.id).join(ContactoAlunoMotivo, ContactoAlunoMotivo.contacto_aluno_id == ContactoAluno.id).filter(ContactoAlunoMotivo.motivo_contacto_id == motivo_contacto_id)
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow([
+            "data", "hora", "ee", "aluno_ou_alunos", "turma", "iniciado_por", "tipos_contacto", "motivos", "resumo",
+            "observacoes_gerais", "estado_contacto", "estado_reuniao", "data_reuniao", "requer_followup", "data_followup", "confidencial", "links_externos",
+        ])
+        for c in query.order_by(Contacto.data_hora.desc()).all():
+            alunos = [ca.aluno.nome for ca in ContactoAluno.query.join(Aluno).filter(ContactoAluno.contacto_id == c.id).all()]
+            tipos = [t.nome for t in TipoContacto.query.join(ContactoTipo, ContactoTipo.tipo_contacto_id == TipoContacto.id).filter(ContactoTipo.contacto_id == c.id).all()]
+            motivos = [m.nome for m in MotivoContacto.query.join(ContactoAlunoMotivo, ContactoAlunoMotivo.motivo_contacto_id == MotivoContacto.id).join(ContactoAluno, ContactoAluno.id == ContactoAlunoMotivo.contacto_aluno_id).filter(ContactoAluno.contacto_id == c.id).distinct().all()]
+            links = [l.url for l in ContactoLink.query.filter_by(contacto_id=c.id).all()]
+            dt_turma = DTTurma.query.get(c.dt_turma_id)
+            writer.writerow([
+                c.data_hora.date().isoformat() if c.data_hora else "",
+                c.data_hora.time().isoformat(timespec="minutes") if c.data_hora else "",
+                c.ee.nome if c.ee else "",
+                " | ".join(alunos),
+                dt_turma.turma.nome if dt_turma and dt_turma.turma else "",
+                c.iniciado_por,
+                " | ".join(tipos),
+                " | ".join(motivos),
+                c.resumo or "",
+                c.observacoes_gerais or "",
+                c.estado_contacto,
+                c.estado_reuniao,
+                c.data_reuniao.isoformat() if c.data_reuniao else "",
+                "1" if c.requer_followup else "0",
+                c.data_followup.isoformat() if c.data_followup else "",
+                "1" if c.confidencial else "0",
+                " | ".join(links),
+            ])
+        return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=contactos_export.csv"})
 
     @app.route("/direcao-turma/add", methods=["GET", "POST"])
     def direcao_turma_add():

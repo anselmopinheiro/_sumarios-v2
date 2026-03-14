@@ -26,13 +26,13 @@
       <tr>
         <td class="fw-semibold">{{ item.titulo }}</td>
         <td>
-          <pre class="mb-0" style="white-space: pre-wrap; font-family: inherit;">{{ item.texto }}</pre>
+          <pre id="texto-{{ item.id }}" class="mb-0" style="white-space: pre-wrap; font-family: inherit;">{{ item.texto }}</pre>
         </td>
         <td class="text-end" style="white-space: nowrap;">
           <button
             type="button"
             class="btn btn-outline-success btn-sm js-copy-text"
-            data-texto="{{ item.texto|e }}">
+            data-target="texto-{{ item.id }}">
             Copiar
           </button>
           <a href="{{ url_for('direcao_turma_justificacoes_texto_edit', item_id=item.id) }}" class="btn btn-outline-warning btn-sm">Editar</a>
@@ -53,7 +53,8 @@
   document.querySelectorAll('.js-copy-text').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const original = btn.textContent;
-      const texto = btn.dataset.texto || '';
+      const targetId = btn.dataset.target;
+      const texto = targetId ? (document.getElementById(targetId)?.textContent || '') : '';
       try {
         await navigator.clipboard.writeText(texto);
         btn.textContent = 'Copiado!';
