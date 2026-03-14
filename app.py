@@ -4822,21 +4822,52 @@ def create_app():
     @app.route("/direcao-turma/<int:dt_id>/ee")
     def direcao_turma_ee_list(dt_id):
         dt_turma = DTTurma.query.options(joinedload(DTTurma.turma), joinedload(DTTurma.ano_letivo)).get_or_404(dt_id)
+        filtro = (request.args.get("filtro") or "todos").strip().lower()
+        if filtro not in {"todos", "sem_associacao", "ativos", "historico"}:
+            filtro = "todos"
+
+        ees = EncarregadoEducacao.query.order_by(EncarregadoEducacao.nome.asc()).all()
         rels = (
             EEAluno.query
             .join(Aluno, EEAluno.aluno_id == Aluno.id)
-            .join(EncarregadoEducacao, EEAluno.ee_id == EncarregadoEducacao.id)
             .filter(Aluno.turma_id == dt_turma.turma_id)
-            .order_by(EncarregadoEducacao.nome.asc(), EEAluno.data_inicio.desc())
+            .order_by(EEAluno.data_inicio.desc())
             .all()
         )
-        ee_map = {}
+
+        rels_por_ee = {}
         for rel in rels:
-            bucket = ee_map.setdefault(rel.ee_id, {"ee": rel.ee, "ativos": [], "historico": []})
-            bucket["historico"].append(rel)
-            if rel.data_fim is None:
-                bucket["ativos"].append(rel)
-        return render_template("direcao_turma/ee_list.html", dt_turma=dt_turma, ee_items=list(ee_map.values()))
+            rels_por_ee.setdefault(rel.ee_id, []).append(rel)
+
+        ee_items = []
+        for ee in ees:
+            historico = rels_por_ee.get(ee.id, [])
+            ativos = [item for item in historico if item.data_fim is None]
+            if not historico:
+                estado = "sem_associacao"
+            elif ativos:
+                estado = "ativos"
+            else:
+                estado = "historico"
+
+            if filtro != "todos" and estado != filtro:
+                continue
+
+            ee_items.append(
+                {
+                    "ee": ee,
+                    "ativos": ativos,
+                    "historico": historico,
+                    "estado": estado,
+                }
+            )
+
+        return render_template(
+            "direcao_turma/ee_list.html",
+            dt_turma=dt_turma,
+            ee_items=ee_items,
+            filtro=filtro,
+        )
 
     @app.route("/direcao-turma/<int:dt_id>/ee/novo", methods=["GET", "POST"])
     def direcao_turma_ee_new(dt_id):

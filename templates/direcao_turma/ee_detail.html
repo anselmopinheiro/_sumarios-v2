@@ -37,6 +37,10 @@
   </div>
 </div>
 
+{% if not rels %}
+<div class="alert alert-secondary">Este EE ainda não tem alunos associados nesta DT. Use a ação rápida <strong>Associar aluno</strong>.</div>
+{% endif %}
+
 <div class="card shadow-sm mb-3">
   <div class="card-header">Relações EE↔Aluno (histórico)</div>
   <div class="table-responsive">
