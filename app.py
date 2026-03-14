@@ -4862,9 +4862,62 @@ def create_app():
             db.session.add(ee)
             db.session.commit()
             flash("EE criado.", "success")
+            submit_action = (request.form.get("submit_action") or "save").strip()
+            if submit_action == "save_new":
+                return redirect(url_for("direcao_turma_ee_new", dt_id=dt_id))
+            if submit_action == "save_back":
+                return redirect(url_for("direcao_turma_alunos", dt_id=dt_id))
             return redirect(url_for("direcao_turma_ee_detail", dt_id=dt_id, ee_id=ee.id))
 
-        return render_template("direcao_turma/ee_form.html", dt_turma=dt_turma, bloqueado=bloqueado)
+        return render_template("direcao_turma/ee_form.html", dt_turma=dt_turma, bloqueado=bloqueado, ee=None, is_edit=False)
+
+    @app.route("/direcao-turma/<int:dt_id>/ee/<int:ee_id>/edit", methods=["GET", "POST"])
+    def direcao_turma_ee_edit(dt_id, ee_id):
+        dt_turma = DTTurma.query.options(joinedload(DTTurma.turma), joinedload(DTTurma.ano_letivo)).get_or_404(dt_id)
+        ee = EncarregadoEducacao.query.get_or_404(ee_id)
+        bloqueado = bool(dt_turma.ano_letivo and dt_turma.ano_letivo.fechado)
+        if request.method == "POST":
+            if bloqueado:
+                flash("Ano letivo fechado: apenas consulta.", "error")
+                return redirect(url_for("direcao_turma_ee_detail", dt_id=dt_id, ee_id=ee_id))
+            nome = (request.form.get("nome") or "").strip()
+            if not nome:
+                flash("Nome é obrigatório.", "error")
+                return redirect(url_for("direcao_turma_ee_edit", dt_id=dt_id, ee_id=ee_id))
+            ee.nome = nome
+            ee.telefone = (request.form.get("telefone") or "").strip() or None
+            ee.email = (request.form.get("email") or "").strip() or None
+            ee.observacoes = request.form.get("observacoes") or None
+            ee.nome_alternativo = (request.form.get("nome_alternativo") or "").strip() or None
+            ee.telefone_alternativo = (request.form.get("telefone_alternativo") or "").strip() or None
+            ee.email_alternativo = (request.form.get("email_alternativo") or "").strip() or None
+            db.session.commit()
+            flash("EE atualizado.", "success")
+            return redirect(url_for("direcao_turma_ee_detail", dt_id=dt_id, ee_id=ee_id))
+        return render_template("direcao_turma/ee_form.html", dt_turma=dt_turma, bloqueado=bloqueado, ee=ee, is_edit=True)
+
+    @app.route("/direcao-turma/<int:dt_id>/ee/<int:ee_id>/associar", methods=["POST"])
+    def direcao_turma_ee_associar_aluno(dt_id, ee_id):
+        dt_turma = DTTurma.query.options(joinedload(DTTurma.ano_letivo)).get_or_404(dt_id)
+        if dt_turma.ano_letivo and dt_turma.ano_letivo.fechado:
+            flash("Ano letivo fechado: apenas consulta.", "error")
+            return redirect(url_for("direcao_turma_ee_detail", dt_id=dt_id, ee_id=ee_id))
+        aluno_id = request.form.get("aluno_id", type=int)
+        if not aluno_id:
+            flash("Seleciona um aluno.", "error")
+            return redirect(url_for("direcao_turma_ee_detail", dt_id=dt_id, ee_id=ee_id))
+        aluno = Aluno.query.get(aluno_id)
+        if not aluno or aluno.turma_id != dt_turma.turma_id:
+            flash("Aluno inválido para esta DT.", "error")
+            return redirect(url_for("direcao_turma_ee_detail", dt_id=dt_id, ee_id=ee_id))
+        inicio = _parse_iso_date(request.form.get("data_inicio")) or date.today()
+        atual = _active_ee_rel_for_aluno(aluno_id)
+        if atual:
+            atual.data_fim = inicio - timedelta(days=1)
+        db.session.add(EEAluno(ee_id=ee_id, aluno_id=aluno_id, parentesco=(request.form.get("parentesco") or "").strip() or None, observacoes=request.form.get("observacoes") or None, data_inicio=inicio))
+        db.session.commit()
+        flash("Aluno associado ao EE.", "success")
+        return redirect(url_for("direcao_turma_ee_detail", dt_id=dt_id, ee_id=ee_id))
 
     @app.route("/direcao-turma/<int:dt_id>/ee/<int:ee_id>")
     def direcao_turma_ee_detail(dt_id, ee_id):
@@ -4883,7 +4936,40 @@ def create_app():
             .limit(30)
             .all()
         )
-        return render_template("direcao_turma/ee_detail.html", dt_turma=dt_turma, ee=ee, rels=rels, contactos=contactos)
+        contacto_ids = [c.id for c in contactos]
+        tipos_por_contacto = {}
+        alunos_por_contacto = {}
+        if contacto_ids:
+            tipo_rows = (
+                db.session.query(ContactoTipo.contacto_id, TipoContacto.nome)
+                .join(TipoContacto, TipoContacto.id == ContactoTipo.tipo_contacto_id)
+                .filter(ContactoTipo.contacto_id.in_(contacto_ids))
+                .all()
+            )
+            for cid, nome_tipo in tipo_rows:
+                tipos_por_contacto.setdefault(cid, []).append(nome_tipo)
+
+            aluno_rows = (
+                db.session.query(ContactoAluno.contacto_id, Aluno.numero, Aluno.nome)
+                .join(Aluno, Aluno.id == ContactoAluno.aluno_id)
+                .filter(ContactoAluno.contacto_id.in_(contacto_ids))
+                .all()
+            )
+            for cid, num, nome_aluno in aluno_rows:
+                label = f"{num} - {nome_aluno}" if num is not None else nome_aluno
+                alunos_por_contacto.setdefault(cid, []).append(label)
+
+        alunos_dt = Aluno.query.filter_by(turma_id=dt_turma.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
+        return render_template(
+            "direcao_turma/ee_detail.html",
+            dt_turma=dt_turma,
+            ee=ee,
+            rels=rels,
+            contactos=contactos,
+            tipos_por_contacto=tipos_por_contacto,
+            alunos_por_contacto=alunos_por_contacto,
+            alunos_dt=alunos_dt,
+        )
 
     @app.route("/direcao-turma/<int:dt_id>/alunos/<int:dt_aluno_id>/contexto", methods=["GET", "POST"])
     def direcao_turma_aluno_contexto_page(dt_id, dt_aluno_id):

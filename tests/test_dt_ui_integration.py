@@ -56,15 +56,15 @@ def test_dt_ui_routes_and_forms_are_navigable():
             "c.post(f'/direcao-turma/{dt.id}/alunos/importar');"
             "r_alunos=c.get(f'/direcao-turma/{dt.id}/alunos');"
             "r_ee_list=c.get(f'/direcao-turma/{dt.id}/ee');"
-            "r_ee_new=c.post(f'/direcao-turma/{dt.id}/ee/novo',data={'nome':'EE UI','email':'ui@example.com'},follow_redirects=False);"
+            "r_ee_new=c.post(f'/direcao-turma/{dt.id}/ee/novo',data={'nome':'EE UI','email':'ui@example.com','submit_action':'save'},follow_redirects=False);r_ee_new_save_new=c.post(f'/direcao-turma/{dt.id}/ee/novo',data={'nome':'EE UI 2','email':'ui2@example.com','submit_action':'save_new'},follow_redirects=False);r_ee_new_save_back=c.post(f'/direcao-turma/{dt.id}/ee/novo',data={'nome':'EE UI 3','email':'ui3@example.com','submit_action':'save_back'},follow_redirects=False);"
             "r_ee_assign=c.post(f'/direcao-turma/{dt.id}/alunos/1/ee',data={'ee_id':1,'data_inicio':'2026-09-01','parentesco':'mae'},follow_redirects=False);"
             "r_ctx=c.post(f'/direcao-turma/{dt.id}/alunos/1/contexto',data={'dt_observacoes':'ok'},follow_redirects=False);"
-            "r_hist=c.get(f'/direcao-turma/{dt.id}/alunos/1/ee/historico');"
+            "r_hist=c.get(f'/direcao-turma/{dt.id}/alunos/1/ee/historico');r_ee_detail=c.get(f'/direcao-turma/{dt.id}/ee/1');"
             "r_contacto_form=c.get(f'/direcao-turma/{dt.id}/contactos/novo-lote');"
             "r_contactos=c.get(f'/direcao-turma/{dt.id}/contactos');"
             "r_cargos_a=c.get(f'/direcao-turma/{dt.id}/cargos/alunos');"
             "r_cargos_ee=c.get(f'/direcao-turma/{dt.id}/cargos/ee');"
-            "print(json.dumps({'alunos':r_alunos.status_code,'has_links':('Contexto DT' in r_alunos.get_data(as_text=True) and 'Histórico EE' in r_alunos.get_data(as_text=True)),'ee_list':r_ee_list.status_code,'ee_new':r_ee_new.status_code,'ee_assign':r_ee_assign.status_code,'ctx_post':r_ctx.status_code,'hist':r_hist.status_code,'contacto_form':r_contacto_form.status_code,'contactos':r_contactos.status_code,'cargos_a':r_cargos_a.status_code,'cargos_ee':r_cargos_ee.status_code}))"
+            "print(json.dumps({'alunos':r_alunos.status_code,'has_links':('Contexto DT' in r_alunos.get_data(as_text=True) and 'Histórico EE' in r_alunos.get_data(as_text=True)),'ee_list':r_ee_list.status_code,'ee_new':r_ee_new.status_code,'ee_new_save_new':r_ee_new_save_new.status_code,'ee_new_save_back':r_ee_new_save_back.status_code,'ee_assign':r_ee_assign.status_code,'ctx_post':r_ctx.status_code,'hist':r_hist.status_code,'ee_detail':r_ee_detail.status_code,'ee_detail_has_actions':('Editar EE' in r_ee_detail.get_data(as_text=True) and 'Associar aluno' in r_ee_detail.get_data(as_text=True)),'contacto_form':r_contacto_form.status_code,'contactos':r_contactos.status_code,'cargos_a':r_cargos_a.status_code,'cargos_ee':r_cargos_ee.status_code}))"
         ),
     )
 
@@ -72,9 +72,13 @@ def test_dt_ui_routes_and_forms_are_navigable():
     assert result["has_links"]
     assert result["ee_list"] == 200
     assert result["ee_new"] in {301, 302, 303}
+    assert result["ee_new_save_new"] in {301, 302, 303}
+    assert result["ee_new_save_back"] in {301, 302, 303}
     assert result["ee_assign"] in {301, 302, 303}
     assert result["ctx_post"] in {301, 302, 303}
     assert result["hist"] == 200
+    assert result["ee_detail"] == 200
+    assert result["ee_detail_has_actions"]
     assert result["contacto_form"] == 200
     assert result["contactos"] == 200
     assert result["cargos_a"] == 200
