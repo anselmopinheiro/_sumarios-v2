@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h2>EE — Direção de Turma</h2>
+    <div class="text-muted">{{ dt_turma.turma.nome if dt_turma.turma else 'Turma' }} — {{ dt_turma.ano_letivo.nome if dt_turma.ano_letivo else 'Ano letivo' }}</div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('direcao_turma_alunos', dt_id=dt_turma.id) }}" class="btn btn-secondary">Voltar</a>
+    <a href="{{ url_for('direcao_turma_ee_new', dt_id=dt_turma.id) }}" class="btn btn-primary">+ Novo EE</a>
+    <a href="{{ url_for('direcao_turma_export_ee_csv') }}?dt_turma_id={{ dt_turma.id }}&ativos=0" class="btn btn-outline-success">Exportar CSV EE</a>
+  </div>
+</div>
+<div class="table-responsive">
+  <table class="table table-striped align-middle">
+    <thead class="table-light"><tr><th>EE</th><th>Ativos</th><th>Histórico</th><th></th></tr></thead>
+    <tbody>
+      {% for item in ee_items %}
+      <tr>
+        <td class="fw-semibold">{{ item.ee.nome }}</td>
+        <td>{{ item.ativos|length }}</td>
+        <td>{{ item.historico|length }}</td>
+        <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('direcao_turma_ee_detail', dt_id=dt_turma.id, ee_id=item.ee.id) }}">Detalhe</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2>EE: {{ ee.nome }}</h2>
+  <a href="{{ url_for('direcao_turma_ee_list', dt_id=dt_turma.id) }}" class="btn btn-secondary">Voltar</a>
+</div>
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="card shadow-sm"><div class="card-header">Relações EE↔Aluno</div><div class="card-body">
+      <ul class="mb-0">
+      {% for rel in rels %}
+        <li>{{ rel.aluno.nome if rel.aluno else '—' }} — {{ rel.parentesco or '—' }} ({{ rel.data_inicio }}{% if rel.data_fim %} → {{ rel.data_fim }}{% else %} ativo{% endif %})</li>
+      {% else %}<li>Sem relações nesta DT.</li>{% endfor %}
+      </ul>
+    </div></div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card shadow-sm"><div class="card-header">Últimos contactos</div><div class="card-body">
+      <ul class="mb-0">
+      {% for c in contactos %}
+        <li>{{ c.data_hora.strftime('%Y-%m-%d %H:%M') if c.data_hora else '—' }} — {{ c.estado_contacto }} — {{ c.resumo or 'Sem resumo' }}</li>
+      {% else %}<li>Sem contactos.</li>{% endfor %}
+      </ul>
+    </div></div>
+  </div>
+</div>
+{% endblock %}

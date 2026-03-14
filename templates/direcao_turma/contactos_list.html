@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div><h2>Contactos DT</h2><div class="text-muted">{{ dt_turma.turma.nome if dt_turma.turma else 'Turma' }} — {{ dt_turma.ano_letivo.nome if dt_turma.ano_letivo else 'Ano letivo' }}</div></div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('direcao_turma_alunos', dt_id=dt_turma.id) }}" class="btn btn-secondary">Voltar</a>
+    <a href="{{ url_for('direcao_turma_contactos_lote_form', dt_id=dt_turma.id) }}" class="btn btn-primary">+ Novo contacto em lote</a>
+    <a href="{{ url_for('direcao_turma_export_contactos_csv') }}?dt_turma_id={{ dt_turma.id }}&periodo={{ filtro.periodo }}&data_inicio={{ filtro.data_inicio }}&data_fim={{ filtro.data_fim }}" class="btn btn-outline-success">Exportar CSV contactos</a>
+  </div>
+</div>
+<form method="get" class="card card-body shadow-sm mb-3">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-2"><label class="form-label">Período</label><select name="periodo" class="form-select">{% for k,l in [('anual','Anual'),('semestre1','Semestre 1'),('semestre2','Semestre 2'),('mes','Mês'),('intervalo','Intervalo')] %}<option value="{{ k }}" {% if filtro.periodo==k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+    <div class="col-md-2"><label class="form-label">Data início</label><input type="date" name="data_inicio" class="form-control" value="{{ request.args.get('data_inicio','') }}"></div>
+    <div class="col-md-2"><label class="form-label">Data fim</label><input type="date" name="data_fim" class="form-control" value="{{ request.args.get('data_fim','') }}"></div>
+    <div class="col-md-2"><label class="form-label">Aluno</label><select name="aluno_id" class="form-select"><option value="">Todos</option>{% for dta in dt_alunos %}<option value="{{ dta.aluno_id }}" {% if filtro.aluno_id==dta.aluno_id %}selected{% endif %}>{{ dta.aluno.nome if dta.aluno else '—' }}</option>{% endfor %}</select></div>
+    <div class="col-md-2"><label class="form-label">EE</label><select name="ee_id" class="form-select"><option value="">Todos</option>{% for ee in ees %}<option value="{{ ee.id }}" {% if filtro.ee_id==ee.id %}selected{% endif %}>{{ ee.nome }}</option>{% endfor %}</select></div>
+    <div class="col-md-2"><button class="btn btn-outline-primary w-100">Filtrar</button></div>
+  </div>
+</form>
+<table class="table table-striped align-middle">
+  <thead class="table-light"><tr><th>Data/hora</th><th>EE</th><th>Resumo</th><th>Estado</th><th>Reunião</th><th>Alunos</th></tr></thead>
+  <tbody>{% for c in contactos %}<tr><td>{{ c.data_hora.strftime('%Y-%m-%d %H:%M') if c.data_hora else '—' }}</td><td>{{ c.ee.nome if c.ee else '—' }}</td><td>{{ c.resumo or '—' }}</td><td>{{ c.estado_contacto }}</td><td>{{ c.estado_reuniao }}</td><td>{% for ca in c.alunos %}<span class="badge text-bg-light">{{ ca.aluno.nome if ca.aluno else '—' }}</span>{% endfor %}</td></tr>{% else %}<tr><td colspan="6" class="text-muted">Sem contactos.</td></tr>{% endfor %}</tbody>
+</table>
+{% endblock %}

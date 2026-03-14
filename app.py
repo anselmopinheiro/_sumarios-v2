@@ -4391,6 +4391,31 @@ def create_app():
         db.session.commit()
         return created_ids
 
+    def _dt_period_range(dt_turma, periodo, data_inicio_raw=None, data_fim_raw=None):
+        periodo = (periodo or "anual").strip().lower()
+        hoje = date.today()
+        inicio = date(hoje.year, 1, 1)
+        fim = date(hoje.year, 12, 31)
+
+        ano = dt_turma.ano_letivo if dt_turma else None
+        if ano and ano.data_inicio_ano and ano.data_fim_ano:
+            inicio = ano.data_inicio_ano
+            fim = ano.data_fim_ano
+
+        if periodo == "semestre1" and ano and ano.data_fim_semestre1:
+            fim = ano.data_fim_semestre1
+        elif periodo == "semestre2" and ano and ano.data_inicio_semestre2 and ano.data_fim_ano:
+            inicio = ano.data_inicio_semestre2
+            fim = ano.data_fim_ano
+        elif periodo == "mes":
+            inicio = date(hoje.year, hoje.month, 1)
+            fim = date(hoje.year, hoje.month, calendar.monthrange(hoje.year, hoje.month)[1])
+        elif periodo == "intervalo":
+            inicio = _parse_iso_date(data_inicio_raw) or inicio
+            fim = _parse_iso_date(data_fim_raw) or fim
+
+        return inicio, fim
+
     @app.route("/dt-disciplinas")
     def dt_disciplinas_list():
         termo = (request.args.get("q") or "").strip()
@@ -4794,6 +4819,301 @@ def create_app():
             ])
         return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=contactos_export.csv"})
 
+    @app.route("/direcao-turma/<int:dt_id>/ee")
+    def direcao_turma_ee_list(dt_id):
+        dt_turma = DTTurma.query.options(joinedload(DTTurma.turma), joinedload(DTTurma.ano_letivo)).get_or_404(dt_id)
+        rels = (
+            EEAluno.query
+            .join(Aluno, EEAluno.aluno_id == Aluno.id)
+            .join(EncarregadoEducacao, EEAluno.ee_id == EncarregadoEducacao.id)
+            .filter(Aluno.turma_id == dt_turma.turma_id)
+            .order_by(EncarregadoEducacao.nome.asc(), EEAluno.data_inicio.desc())
+            .all()
+        )
+        ee_map = {}
+        for rel in rels:
+            bucket = ee_map.setdefault(rel.ee_id, {"ee": rel.ee, "ativos": [], "historico": []})
+            bucket["historico"].append(rel)
+            if rel.data_fim is None:
+                bucket["ativos"].append(rel)
+        return render_template("direcao_turma/ee_list.html", dt_turma=dt_turma, ee_items=list(ee_map.values()))
+
+    @app.route("/direcao-turma/<int:dt_id>/ee/novo", methods=["GET", "POST"])
+    def direcao_turma_ee_new(dt_id):
+        dt_turma = DTTurma.query.options(joinedload(DTTurma.ano_letivo), joinedload(DTTurma.turma)).get_or_404(dt_id)
+        bloqueado = bool(dt_turma.ano_letivo and dt_turma.ano_letivo.fechado)
+        if request.method == "POST":
+            if bloqueado:
+                flash("Ano letivo fechado: apenas consulta.", "error")
+                return redirect(url_for("direcao_turma_ee_list", dt_id=dt_id))
+            nome = (request.form.get("nome") or "").strip()
+            if not nome:
+                flash("Nome é obrigatório.", "error")
+                return redirect(url_for("direcao_turma_ee_new", dt_id=dt_id))
+            ee = EncarregadoEducacao(
+                nome=nome,
+                telefone=(request.form.get("telefone") or "").strip() or None,
+                email=(request.form.get("email") or "").strip() or None,
+                observacoes=request.form.get("observacoes") or None,
+                nome_alternativo=(request.form.get("nome_alternativo") or "").strip() or None,
+                telefone_alternativo=(request.form.get("telefone_alternativo") or "").strip() or None,
+                email_alternativo=(request.form.get("email_alternativo") or "").strip() or None,
+            )
+            db.session.add(ee)
+            db.session.commit()
+            flash("EE criado.", "success")
+            return redirect(url_for("direcao_turma_ee_detail", dt_id=dt_id, ee_id=ee.id))
+
+        return render_template("direcao_turma/ee_form.html", dt_turma=dt_turma, bloqueado=bloqueado)
+
+    @app.route("/direcao-turma/<int:dt_id>/ee/<int:ee_id>")
+    def direcao_turma_ee_detail(dt_id, ee_id):
+        dt_turma = DTTurma.query.options(joinedload(DTTurma.turma), joinedload(DTTurma.ano_letivo)).get_or_404(dt_id)
+        ee = EncarregadoEducacao.query.get_or_404(ee_id)
+        rels = (
+            EEAluno.query
+            .join(Aluno, EEAluno.aluno_id == Aluno.id)
+            .filter(EEAluno.ee_id == ee.id, Aluno.turma_id == dt_turma.turma_id)
+            .order_by(EEAluno.data_inicio.desc())
+            .all()
+        )
+        contactos = (
+            Contacto.query.filter_by(dt_turma_id=dt_turma.id, ee_id=ee.id)
+            .order_by(Contacto.data_hora.desc())
+            .limit(30)
+            .all()
+        )
+        return render_template("direcao_turma/ee_detail.html", dt_turma=dt_turma, ee=ee, rels=rels, contactos=contactos)
+
+    @app.route("/direcao-turma/<int:dt_id>/alunos/<int:dt_aluno_id>/contexto", methods=["GET", "POST"])
+    def direcao_turma_aluno_contexto_page(dt_id, dt_aluno_id):
+        dt_turma = DTTurma.query.options(joinedload(DTTurma.ano_letivo), joinedload(DTTurma.turma)).get_or_404(dt_id)
+        dt_aluno = DTAluno.query.options(joinedload(DTAluno.aluno)).filter_by(id=dt_aluno_id, dt_turma_id=dt_turma.id).first_or_404()
+        contexto = AlunoContextoDT.query.filter_by(aluno_id=dt_aluno.aluno_id).first()
+        bloqueado = bool(dt_turma.ano_letivo and dt_turma.ano_letivo.fechado)
+        if request.method == "POST":
+            if bloqueado:
+                flash("Ano letivo fechado: apenas consulta.", "error")
+                return redirect(url_for("direcao_turma_aluno_contexto_page", dt_id=dt_id, dt_aluno_id=dt_aluno_id))
+            if not contexto:
+                contexto = AlunoContextoDT(aluno_id=dt_aluno.aluno_id)
+                db.session.add(contexto)
+            contexto.dt_observacoes = request.form.get("dt_observacoes") or None
+            contexto.ee_observacoes = request.form.get("ee_observacoes") or None
+            contexto.alerta_dt = request.form.get("alerta_dt") or None
+            contexto.resumo_sinalizacao = request.form.get("resumo_sinalizacao") or None
+            db.session.commit()
+            flash("Contexto DT atualizado.", "success")
+            return redirect(url_for("direcao_turma_alunos", dt_id=dt_id))
+        return render_template("direcao_turma/aluno_contexto_form.html", dt_turma=dt_turma, dt_aluno=dt_aluno, contexto=contexto, bloqueado=bloqueado)
+
+    @app.route("/direcao-turma/<int:dt_id>/alunos/<int:dt_aluno_id>/ee", methods=["GET", "POST"])
+    def direcao_turma_aluno_ee_edit(dt_id, dt_aluno_id):
+        dt_turma = DTTurma.query.options(joinedload(DTTurma.ano_letivo), joinedload(DTTurma.turma)).get_or_404(dt_id)
+        dt_aluno = DTAluno.query.options(joinedload(DTAluno.aluno)).filter_by(id=dt_aluno_id, dt_turma_id=dt_turma.id).first_or_404()
+        bloqueado = bool(dt_turma.ano_letivo and dt_turma.ano_letivo.fechado)
+        atual = _active_ee_rel_for_aluno(dt_aluno.aluno_id)
+        ees = EncarregadoEducacao.query.order_by(EncarregadoEducacao.nome.asc()).all()
+        if request.method == "POST":
+            if bloqueado:
+                flash("Ano letivo fechado: apenas consulta.", "error")
+                return redirect(url_for("direcao_turma_aluno_ee_edit", dt_id=dt_id, dt_aluno_id=dt_aluno_id))
+            ee_id = request.form.get("ee_id", type=int)
+            data_inicio = _parse_iso_date(request.form.get("data_inicio")) or date.today()
+            parentesco = (request.form.get("parentesco") or "").strip() or None
+            observacoes = request.form.get("observacoes") or None
+            if not ee_id:
+                flash("Seleciona um EE.", "error")
+                return redirect(url_for("direcao_turma_aluno_ee_edit", dt_id=dt_id, dt_aluno_id=dt_aluno_id))
+            if atual:
+                atual.data_fim = data_inicio - timedelta(days=1)
+            nova = EEAluno(
+                ee_id=ee_id,
+                aluno_id=dt_aluno.aluno_id,
+                data_inicio=data_inicio,
+                parentesco=parentesco,
+                observacoes=observacoes,
+            )
+            db.session.add(nova)
+            db.session.commit()
+            flash("Relação EE do aluno atualizada.", "success")
+            return redirect(url_for("direcao_turma_alunos", dt_id=dt_id))
+        return render_template("direcao_turma/aluno_ee_form.html", dt_turma=dt_turma, dt_aluno=dt_aluno, atual=atual, ees=ees, bloqueado=bloqueado)
+
+    @app.route("/direcao-turma/<int:dt_id>/alunos/<int:dt_aluno_id>/ee/historico")
+    def direcao_turma_aluno_ee_historico(dt_id, dt_aluno_id):
+        dt_turma = DTTurma.query.options(joinedload(DTTurma.turma), joinedload(DTTurma.ano_letivo)).get_or_404(dt_id)
+        dt_aluno = DTAluno.query.options(joinedload(DTAluno.aluno)).filter_by(id=dt_aluno_id, dt_turma_id=dt_turma.id).first_or_404()
+        rels = (
+            EEAluno.query.join(EncarregadoEducacao, EEAluno.ee_id == EncarregadoEducacao.id)
+            .filter(EEAluno.aluno_id == dt_aluno.aluno_id)
+            .order_by(EEAluno.data_inicio.desc())
+            .all()
+        )
+        return render_template("direcao_turma/aluno_ee_historico.html", dt_turma=dt_turma, dt_aluno=dt_aluno, rels=rels)
+
+    @app.route("/direcao-turma/<int:dt_id>/contactos")
+    def direcao_turma_contactos_list(dt_id):
+        dt_turma = DTTurma.query.options(joinedload(DTTurma.turma), joinedload(DTTurma.ano_letivo)).get_or_404(dt_id)
+        periodo = (request.args.get("periodo") or "anual").strip().lower()
+        inicio, fim = _dt_period_range(dt_turma, periodo, request.args.get("data_inicio"), request.args.get("data_fim"))
+        ee_id = request.args.get("ee_id", type=int)
+        aluno_id = request.args.get("aluno_id", type=int)
+        tipo_contacto_id = request.args.get("tipo_contacto_id", type=int)
+        motivo_contacto_id = request.args.get("motivo_contacto_id", type=int)
+
+        query = Contacto.query.filter(Contacto.dt_turma_id == dt_turma.id)
+        query = query.filter(func.date(Contacto.data_hora) >= inicio, func.date(Contacto.data_hora) <= fim)
+        if ee_id:
+            query = query.filter(Contacto.ee_id == ee_id)
+        if tipo_contacto_id:
+            query = query.join(ContactoTipo, ContactoTipo.contacto_id == Contacto.id).filter(ContactoTipo.tipo_contacto_id == tipo_contacto_id)
+        if aluno_id:
+            query = query.join(ContactoAluno, ContactoAluno.contacto_id == Contacto.id).filter(ContactoAluno.aluno_id == aluno_id)
+        if motivo_contacto_id:
+            query = query.join(ContactoAluno, ContactoAluno.contacto_id == Contacto.id).join(ContactoAlunoMotivo, ContactoAlunoMotivo.contacto_aluno_id == ContactoAluno.id).filter(ContactoAlunoMotivo.motivo_contacto_id == motivo_contacto_id)
+
+        contactos = query.order_by(Contacto.data_hora.desc()).all()
+        ees = EncarregadoEducacao.query.order_by(EncarregadoEducacao.nome.asc()).all()
+        tipos = TipoContacto.query.order_by(TipoContacto.ordem.asc(), TipoContacto.nome.asc()).all()
+        motivos = MotivoContacto.query.order_by(MotivoContacto.ordem.asc(), MotivoContacto.nome.asc()).all()
+        dt_alunos = DTAluno.query.options(joinedload(DTAluno.aluno)).filter_by(dt_turma_id=dt_turma.id).all()
+
+        return render_template(
+            "direcao_turma/contactos_list.html",
+            dt_turma=dt_turma,
+            contactos=contactos,
+            ees=ees,
+            tipos=tipos,
+            motivos=motivos,
+            dt_alunos=dt_alunos,
+            filtro={"periodo": periodo, "data_inicio": inicio.isoformat(), "data_fim": fim.isoformat(), "ee_id": ee_id, "aluno_id": aluno_id, "tipo_contacto_id": tipo_contacto_id, "motivo_contacto_id": motivo_contacto_id},
+        )
+
+    @app.route("/direcao-turma/<int:dt_id>/contactos/novo-lote", methods=["GET", "POST"])
+    def direcao_turma_contactos_lote_form(dt_id):
+        dt_turma = DTTurma.query.options(joinedload(DTTurma.turma), joinedload(DTTurma.ano_letivo)).get_or_404(dt_id)
+        bloqueado = bool(dt_turma.ano_letivo and dt_turma.ano_letivo.fechado)
+        dt_alunos = DTAluno.query.options(joinedload(DTAluno.aluno)).filter_by(dt_turma_id=dt_turma.id).all()
+        tipos = TipoContacto.query.order_by(TipoContacto.ordem.asc(), TipoContacto.nome.asc()).all()
+        motivos = MotivoContacto.query.order_by(MotivoContacto.ordem.asc(), MotivoContacto.nome.asc()).all()
+
+        if request.method == "POST":
+            if bloqueado:
+                flash("Ano letivo fechado: apenas consulta.", "error")
+                return redirect(url_for("direcao_turma_contactos_lote_form", dt_id=dt_id))
+            aluno_ids = [int(x) for x in request.form.getlist("aluno_ids") if str(x).strip().isdigit()]
+            if not aluno_ids:
+                flash("Seleciona pelo menos um aluno.", "error")
+                return redirect(url_for("direcao_turma_contactos_lote_form", dt_id=dt_id))
+
+            tipo_ids = [int(x) for x in request.form.getlist("tipo_contacto_ids") if str(x).strip().isdigit()]
+            per_aluno = {}
+            for aluno_id in aluno_ids:
+                motivo_id = request.form.get(f"motivo_{aluno_id}", type=int)
+                detalhe = request.form.get(f"motivo_detalhe_{aluno_id}") or None
+                obs = request.form.get(f"obs_{aluno_id}") or None
+                resultado = request.form.get(f"resultado_{aluno_id}") or None
+                motivos_payload = []
+                if motivo_id:
+                    motivos_payload.append({"motivo_contacto_id": motivo_id, "detalhe": detalhe})
+                per_aluno[str(aluno_id)] = {"observacoes": obs, "resultado_individual": resultado, "motivos": motivos_payload}
+
+            base_payload = {
+                "data_hora": _parse_iso_datetime(request.form.get("data_hora")) if request.form.get("data_hora") else datetime.utcnow(),
+                "iniciado_por": (request.form.get("iniciado_por") or "professor").strip(),
+                "resumo": request.form.get("resumo") or None,
+                "observacoes_gerais": request.form.get("observacoes_gerais") or None,
+                "estado_contacto": (request.form.get("estado_contacto") or "realizado").strip(),
+                "estado_reuniao": (request.form.get("estado_reuniao") or "nao_agendada").strip(),
+                "data_reuniao": _parse_iso_datetime(request.form.get("data_reuniao")) if request.form.get("data_reuniao") else None,
+                "requer_followup": bool(request.form.get("requer_followup")),
+                "data_followup": _parse_iso_date(request.form.get("data_followup")) if request.form.get("data_followup") else None,
+                "confidencial": bool(request.form.get("confidencial")),
+                "created_by": (request.form.get("created_by") or "").strip() or None,
+                "tipo_contacto_ids": tipo_ids,
+            }
+            created_ids = _create_contactos_em_lote(dt_turma.id, aluno_ids, base_payload, per_aluno)
+
+            links_titulo = request.form.get("links_titulo") or ""
+            links_url = request.form.get("links_url") or ""
+            links_tipo = request.form.get("links_tipo") or ""
+            links_obs = request.form.get("links_obs") or ""
+            if links_url.strip() and created_ids:
+                for contacto_id in created_ids:
+                    db.session.add(
+                        ContactoLink(
+                            contacto_id=contacto_id,
+                            titulo=links_titulo.strip() or "Link externo",
+                            url=links_url.strip(),
+                            tipo=links_tipo.strip() or None,
+                            observacoes=links_obs.strip() or None,
+                        )
+                    )
+                db.session.commit()
+
+            flash(f"{len(created_ids)} contacto(s) criado(s).", "success")
+            return redirect(url_for("direcao_turma_contactos_list", dt_id=dt_id))
+
+        return render_template("direcao_turma/contactos_lote_form.html", dt_turma=dt_turma, dt_alunos=dt_alunos, tipos=tipos, motivos=motivos, bloqueado=bloqueado)
+
+    @app.route("/direcao-turma/<int:dt_id>/cargos/alunos", methods=["GET", "POST"])
+    def direcao_turma_cargos_alunos_page(dt_id):
+        dt_turma = DTTurma.query.options(joinedload(DTTurma.turma), joinedload(DTTurma.ano_letivo)).get_or_404(dt_id)
+        bloqueado = bool(dt_turma.ano_letivo and dt_turma.ano_letivo.fechado)
+        if request.method == "POST":
+            if bloqueado:
+                flash("Ano letivo fechado: apenas consulta.", "error")
+                return redirect(url_for("direcao_turma_cargos_alunos_page", dt_id=dt_id))
+            aluno_id = request.form.get("aluno_id", type=int)
+            cargo = (request.form.get("cargo") or "").strip()
+            data_inicio = _parse_iso_date(request.form.get("data_inicio")) or date.today()
+            if cargo not in DT_ALUNO_CARGOS_VALIDOS:
+                flash("Cargo inválido.", "error")
+            elif not _ensure_single_active_dt_cargo_aluno(dt_turma.id, cargo):
+                flash(f"Já existe {cargo} ativo.", "error")
+            else:
+                db.session.add(DTCargoAluno(dt_turma_id=dt_turma.id, aluno_id=aluno_id, cargo=cargo, data_inicio=data_inicio, data_fim=_parse_iso_date(request.form.get("data_fim")), motivo_fim=request.form.get("motivo_fim") or None))
+                db.session.commit()
+                flash("Cargo de aluno registado.", "success")
+            return redirect(url_for("direcao_turma_cargos_alunos_page", dt_id=dt_id))
+
+        cargos = DTCargoAluno.query.options(joinedload(DTCargoAluno.aluno)).filter_by(dt_turma_id=dt_turma.id).order_by(DTCargoAluno.data_inicio.desc()).all()
+        alunos = DTAluno.query.options(joinedload(DTAluno.aluno)).filter_by(dt_turma_id=dt_turma.id).all()
+        return render_template("direcao_turma/cargos_alunos.html", dt_turma=dt_turma, cargos=cargos, alunos=alunos, bloqueado=bloqueado)
+
+    @app.route("/direcao-turma/<int:dt_id>/cargos/ee", methods=["GET", "POST"])
+    def direcao_turma_cargos_ee_page(dt_id):
+        dt_turma = DTTurma.query.options(joinedload(DTTurma.turma), joinedload(DTTurma.ano_letivo)).get_or_404(dt_id)
+        bloqueado = bool(dt_turma.ano_letivo and dt_turma.ano_letivo.fechado)
+        if request.method == "POST":
+            if bloqueado:
+                flash("Ano letivo fechado: apenas consulta.", "error")
+                return redirect(url_for("direcao_turma_cargos_ee_page", dt_id=dt_id))
+            ee_id = request.form.get("ee_id", type=int)
+            cargo = (request.form.get("cargo") or "").strip()
+            data_inicio = _parse_iso_date(request.form.get("data_inicio")) or date.today()
+            if cargo not in DT_EE_CARGOS_VALIDOS:
+                flash("Cargo inválido.", "error")
+            elif not _ensure_single_active_dt_cargo_ee(dt_turma.id, cargo):
+                flash(f"Já existe {cargo} ativo.", "error")
+            else:
+                db.session.add(DTCargoEE(dt_turma_id=dt_turma.id, ee_id=ee_id, cargo=cargo, data_inicio=data_inicio, data_fim=_parse_iso_date(request.form.get("data_fim")), motivo_fim=request.form.get("motivo_fim") or None))
+                db.session.commit()
+                flash("Cargo de EE registado.", "success")
+            return redirect(url_for("direcao_turma_cargos_ee_page", dt_id=dt_id))
+
+        cargos = DTCargoEE.query.options(joinedload(DTCargoEE.ee)).filter_by(dt_turma_id=dt_turma.id).order_by(DTCargoEE.data_inicio.desc()).all()
+        ees = (
+            EncarregadoEducacao.query.join(EEAluno, EEAluno.ee_id == EncarregadoEducacao.id)
+            .join(Aluno, Aluno.id == EEAluno.aluno_id)
+            .filter(Aluno.turma_id == dt_turma.turma_id)
+            .distinct()
+            .order_by(EncarregadoEducacao.nome.asc())
+            .all()
+        )
+        return render_template("direcao_turma/cargos_ee.html", dt_turma=dt_turma, cargos=cargos, ees=ees, bloqueado=bloqueado)
+
     @app.route("/direcao-turma/add", methods=["GET", "POST"])
     def direcao_turma_add():
         anos_letivos = AnoLetivo.query.order_by(AnoLetivo.data_inicio_ano.desc()).all()
@@ -5069,12 +5389,30 @@ def create_app():
             )
         )
         bloqueado = bool(dt_turma.ano_letivo and dt_turma.ano_letivo.fechado)
+        aluno_ids = [item.aluno_id for item in dt_alunos if item.aluno_id]
+        rels_ativas = (
+            EEAluno.query.filter(EEAluno.aluno_id.in_(aluno_ids), EEAluno.data_fim.is_(None)).all()
+            if aluno_ids else []
+        )
+        ee_atual_por_aluno = {rel.aluno_id: rel for rel in rels_ativas}
+        contactos_totais = {}
+        if aluno_ids:
+            rows = (
+                db.session.query(ContactoAluno.aluno_id, func.count(ContactoAluno.id))
+                .join(Contacto, Contacto.id == ContactoAluno.contacto_id)
+                .filter(Contacto.dt_turma_id == dt_turma.id, ContactoAluno.aluno_id.in_(aluno_ids))
+                .group_by(ContactoAluno.aluno_id)
+                .all()
+            )
+            contactos_totais = {aluno_id: total for aluno_id, total in rows}
 
         return render_template(
             "direcao_turma/alunos.html",
             dt_turma=dt_turma,
             alunos=dt_alunos,
             bloqueado=bloqueado,
+            ee_atual_por_aluno=ee_atual_por_aluno,
+            contactos_totais=contactos_totais,
         )
 
     @app.route("/direcao-turma/<int:dt_id>/alunos/importar", methods=["POST"])

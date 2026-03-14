@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2>Contexto DT — {{ dt_aluno.aluno.nome if dt_aluno.aluno else 'Aluno' }}</h2>
+  <a href="{{ url_for('direcao_turma_alunos', dt_id=dt_turma.id) }}" class="btn btn-secondary">Voltar</a>
+</div>
+<form method="post" class="card card-body shadow-sm">
+  <div class="row g-3">
+    <div class="col-12"><label class="form-label">Observações DT</label><textarea class="form-control" name="dt_observacoes" rows="3">{{ contexto.dt_observacoes if contexto else '' }}</textarea></div>
+    <div class="col-12"><label class="form-label">Observações EE</label><textarea class="form-control" name="ee_observacoes" rows="3">{{ contexto.ee_observacoes if contexto else '' }}</textarea></div>
+    <div class="col-md-6"><label class="form-label">Alerta DT</label><textarea class="form-control" name="alerta_dt" rows="2">{{ contexto.alerta_dt if contexto else '' }}</textarea></div>
+    <div class="col-md-6"><label class="form-label">Resumo sinalização</label><textarea class="form-control" name="resumo_sinalizacao" rows="2">{{ contexto.resumo_sinalizacao if contexto else '' }}</textarea></div>
+  </div>
+  <div class="mt-3"><button class="btn btn-primary" {% if bloqueado %}disabled{% endif %}>Guardar</button></div>
+</form>
+{% endblock %}

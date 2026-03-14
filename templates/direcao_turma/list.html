@@ -49,7 +49,12 @@
                    class="btn btn-outline-secondary btn-sm">
                   Alunos
                 </a>
-             
+                <a href="{{ url_for('direcao_turma_ee_list', dt_id=dt.id) }}" class="btn btn-outline-secondary btn-sm">EE</a>
+                <a href="{{ url_for('direcao_turma_contactos_list', dt_id=dt.id) }}" class="btn btn-outline-secondary btn-sm">Contactos</a>
+                <a href="{{ url_for('direcao_turma_cargos_alunos_page', dt_id=dt.id) }}" class="btn btn-outline-secondary btn-sm">Cargos</a>
+                <a href="{{ url_for('direcao_turma_export_ee_csv') }}?dt_turma_id={{ dt.id }}&ativos=0" class="btn btn-outline-success btn-sm">CSV EE</a>
+                <a href="{{ url_for('direcao_turma_export_contactos_csv') }}?dt_turma_id={{ dt.id }}&periodo=anual" class="btn btn-outline-success btn-sm">CSV contactos</a>
+
                 <a href="{{ url_for('direcao_turma_mapa_mensal', dt_id=dt.id) }}"
                    class="btn btn-outline-secondary btn-sm">
                   Justificações

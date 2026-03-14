@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3"><h2>Cargos de alunos</h2><a href="{{ url_for('direcao_turma_alunos', dt_id=dt_turma.id) }}" class="btn btn-secondary">Voltar</a></div>
+<form method="post" class="card card-body shadow-sm mb-3">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-4"><label class="form-label">Aluno</label><select name="aluno_id" class="form-select" required>{% for dta in alunos %}<option value="{{ dta.aluno_id }}">{{ dta.aluno.nome if dta.aluno else '—' }}</option>{% endfor %}</select></div>
+    <div class="col-md-2"><label class="form-label">Cargo</label><select name="cargo" class="form-select"><option value="delegado">delegado</option><option value="subdelegado">subdelegado</option></select></div>
+    <div class="col-md-2"><label class="form-label">Data início</label><input type="date" name="data_inicio" class="form-control" required></div>
+    <div class="col-md-2"><label class="form-label">Data fim</label><input type="date" name="data_fim" class="form-control"></div>
+    <div class="col-md-2"><label class="form-label">Motivo fim</label><input name="motivo_fim" class="form-control"></div>
+  </div>
+  <div class="mt-2"><button class="btn btn-primary" {% if bloqueado %}disabled{% endif %}>Registar cargo</button></div>
+</form>
+<table class="table table-striped"><thead class="table-light"><tr><th>Aluno</th><th>Cargo</th><th>Início</th><th>Fim</th><th>Motivo</th></tr></thead><tbody>{% for c in cargos %}<tr><td>{{ c.aluno.nome if c.aluno else '—' }}</td><td>{{ c.cargo }}</td><td>{{ c.data_inicio }}</td><td>{{ c.data_fim or 'Ativo' }}</td><td>{{ c.motivo_fim or '—' }}</td></tr>{% else %}<tr><td colspan="5" class="text-muted">Sem cargos.</td></tr>{% endfor %}</tbody></table>
+{% endblock %}
