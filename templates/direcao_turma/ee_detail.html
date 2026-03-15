@@ -29,8 +29,9 @@
   <div class="card-body">
     <form method="post" action="{{ url_for('direcao_turma_ee_associar_aluno', dt_id=dt_turma.id, ee_id=ee.id) }}" class="row g-2 align-items-end">
       <div class="col-md-5"><label class="form-label">Aluno</label><select name="aluno_id" class="form-select" required>{% for a in alunos_dt %}<option value="{{ a.id }}">{{ '%02d'|format(a.numero) if a.numero is not none else '—' }} — {{ a.nome }}</option>{% endfor %}</select></div>
-      <div class="col-md-2"><label class="form-label">Parentesco</label><input name="parentesco" class="form-control"></div>
-      <div class="col-md-2"><label class="form-label">Data início</label><input name="data_inicio" type="date" class="form-control" required></div>
+      <div class="col-md-2"><label class="form-label">Parentesco</label><select name="parentesco" id="parentesco_select_detail" class="form-select"><option value="">—</option><option value="Pai">Pai</option><option value="Mãe">Mãe</option><option value="Avô">Avô</option><option value="Avó">Avó</option><option value="Outro">Outro</option></select></div>
+      <div class="col-md-3" id="parentesco_outro_wrap_detail" style="display:none;"><label class="form-label">Outro (detalhe)</label><input name="parentesco_outro" class="form-control"></div>
+      <div class="col-md-2"><label class="form-label">Data início</label><input name="data_inicio" type="date" class="form-control" value="{{ default_associar_inicio.isoformat() if default_associar_inicio else '' }}" required></div>
       <div class="col-md-3"><label class="form-label">Observações</label><input name="observacoes" class="form-control"></div>
       <div class="col-12"><button class="btn btn-primary btn-sm">Associar aluno</button></div>
     </form>
@@ -86,4 +87,15 @@
     </table>
   </div>
 </div>
+<script>
+(function(){
+  const select = document.getElementById('parentesco_select_detail');
+  const wrap = document.getElementById('parentesco_outro_wrap_detail');
+  if (!select || !wrap) return;
+  const update = () => { wrap.style.display = select.value === 'Outro' ? '' : 'none'; };
+  select.addEventListener('change', update);
+  update();
+})();
+</script>
 {% endblock %}
+

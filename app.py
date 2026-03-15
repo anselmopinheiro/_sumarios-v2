@@ -4941,11 +4941,22 @@ def create_app():
         if not aluno or aluno.turma_id != dt_turma.turma_id:
             flash("Aluno inválido para esta DT.", "error")
             return redirect(url_for("direcao_turma_ee_detail", dt_id=dt_id, ee_id=ee_id))
-        inicio = _parse_iso_date(request.form.get("data_inicio")) or date.today()
+        default_inicio = dt_turma.ano_letivo.data_inicio_ano if (dt_turma.ano_letivo and dt_turma.ano_letivo.data_inicio_ano) else date(date.today().year, 9, 1)
+        inicio = _parse_iso_date(request.form.get("data_inicio")) or default_inicio
+        parentesco_base = (request.form.get("parentesco") or "").strip()
+        parentesco_outro = (request.form.get("parentesco_outro") or "").strip()
+        parentesco = parentesco_base
+        if parentesco_base == "Outro" and parentesco_outro:
+            parentesco = f"Outro: {parentesco_outro}"
+        elif not parentesco_base:
+            parentesco = None
         atual = _active_ee_rel_for_aluno(aluno_id)
+        if atual and atual.data_inicio and inicio <= atual.data_inicio:
+            flash("A nova data de início deve ser posterior à relação ativa atual.", "error")
+            return redirect(url_for("direcao_turma_ee_detail", dt_id=dt_id, ee_id=ee_id))
         if atual:
             atual.data_fim = inicio - timedelta(days=1)
-        db.session.add(EEAluno(ee_id=ee_id, aluno_id=aluno_id, parentesco=(request.form.get("parentesco") or "").strip() or None, observacoes=request.form.get("observacoes") or None, data_inicio=inicio))
+        db.session.add(EEAluno(ee_id=ee_id, aluno_id=aluno_id, parentesco=parentesco, observacoes=request.form.get("observacoes") or None, data_inicio=inicio))
         db.session.commit()
         flash("Aluno associado ao EE.", "success")
         return redirect(url_for("direcao_turma_ee_detail", dt_id=dt_id, ee_id=ee_id))
@@ -4991,6 +5002,17 @@ def create_app():
                 alunos_por_contacto.setdefault(cid, []).append(label)
 
         alunos_dt = Aluno.query.filter_by(turma_id=dt_turma.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
+        default_associar_inicio = None
+        if dt_turma.ano_letivo and dt_turma.ano_letivo.data_inicio_ano:
+            default_associar_inicio = dt_turma.ano_letivo.data_inicio_ano
+        elif dt_turma.ano_letivo and dt_turma.ano_letivo.nome and "/" in dt_turma.ano_letivo.nome:
+            try:
+                default_associar_inicio = date(int(str(dt_turma.ano_letivo.nome).split("/")[0]), 9, 1)
+            except Exception:
+                default_associar_inicio = date(date.today().year, 9, 1)
+        else:
+            default_associar_inicio = date(date.today().year, 9, 1)
+
         return render_template(
             "direcao_turma/ee_detail.html",
             dt_turma=dt_turma,
@@ -5000,6 +5022,7 @@ def create_app():
             tipos_por_contacto=tipos_por_contacto,
             alunos_por_contacto=alunos_por_contacto,
             alunos_dt=alunos_dt,
+            default_associar_inicio=default_associar_inicio,
         )
 
     @app.route("/direcao-turma/<int:dt_id>/alunos/<int:dt_aluno_id>/contexto", methods=["GET", "POST"])
@@ -5030,17 +5053,45 @@ def create_app():
         dt_aluno = DTAluno.query.options(joinedload(DTAluno.aluno)).filter_by(id=dt_aluno_id, dt_turma_id=dt_turma.id).first_or_404()
         bloqueado = bool(dt_turma.ano_letivo and dt_turma.ano_letivo.fechado)
         atual = _active_ee_rel_for_aluno(dt_aluno.aluno_id)
+        historico = (
+            EEAluno.query.options(joinedload(EEAluno.ee))
+            .filter(EEAluno.aluno_id == dt_aluno.aluno_id)
+            .order_by(EEAluno.data_inicio.desc())
+            .all()
+        )
         ees = EncarregadoEducacao.query.order_by(EncarregadoEducacao.nome.asc()).all()
+
+        default_inicio = None
+        if dt_turma.ano_letivo and dt_turma.ano_letivo.data_inicio_ano:
+            default_inicio = dt_turma.ano_letivo.data_inicio_ano
+        elif dt_turma.ano_letivo and dt_turma.ano_letivo.nome and "/" in dt_turma.ano_letivo.nome:
+            try:
+                ano_ini = int(str(dt_turma.ano_letivo.nome).split("/")[0])
+                default_inicio = date(ano_ini, 9, 1)
+            except Exception:
+                default_inicio = date(date.today().year, 9, 1)
+        else:
+            default_inicio = date(date.today().year, 9, 1)
+
         if request.method == "POST":
             if bloqueado:
                 flash("Ano letivo fechado: apenas consulta.", "error")
                 return redirect(url_for("direcao_turma_aluno_ee_edit", dt_id=dt_id, dt_aluno_id=dt_aluno_id))
             ee_id = request.form.get("ee_id", type=int)
-            data_inicio = _parse_iso_date(request.form.get("data_inicio")) or date.today()
-            parentesco = (request.form.get("parentesco") or "").strip() or None
+            data_inicio = _parse_iso_date(request.form.get("data_inicio")) or default_inicio
+            parentesco_base = (request.form.get("parentesco") or "").strip()
+            parentesco_outro = (request.form.get("parentesco_outro") or "").strip()
+            parentesco = parentesco_base
+            if parentesco_base == "Outro" and parentesco_outro:
+                parentesco = f"Outro: {parentesco_outro}"
+            elif not parentesco_base:
+                parentesco = None
             observacoes = request.form.get("observacoes") or None
             if not ee_id:
                 flash("Seleciona um EE.", "error")
+                return redirect(url_for("direcao_turma_aluno_ee_edit", dt_id=dt_id, dt_aluno_id=dt_aluno_id))
+            if atual and atual.data_inicio and data_inicio <= atual.data_inicio:
+                flash("A nova data de início deve ser posterior à relação ativa atual.", "error")
                 return redirect(url_for("direcao_turma_aluno_ee_edit", dt_id=dt_id, dt_aluno_id=dt_aluno_id))
             if atual:
                 atual.data_fim = data_inicio - timedelta(days=1)
@@ -5054,8 +5105,17 @@ def create_app():
             db.session.add(nova)
             db.session.commit()
             flash("Relação EE do aluno atualizada.", "success")
-            return redirect(url_for("direcao_turma_alunos", dt_id=dt_id))
-        return render_template("direcao_turma/aluno_ee_form.html", dt_turma=dt_turma, dt_aluno=dt_aluno, atual=atual, ees=ees, bloqueado=bloqueado)
+            return redirect(url_for("direcao_turma_alunos_edit", dt_id=dt_id, dt_aluno_id=dt_aluno_id))
+        return render_template(
+            "direcao_turma/aluno_ee_form.html",
+            dt_turma=dt_turma,
+            dt_aluno=dt_aluno,
+            atual=atual,
+            historico=historico,
+            ees=ees,
+            bloqueado=bloqueado,
+            default_data_inicio=default_inicio,
+        )
 
     @app.route("/direcao-turma/<int:dt_id>/alunos/<int:dt_aluno_id>/ee/historico")
     def direcao_turma_aluno_ee_historico(dt_id, dt_aluno_id):
@@ -5660,6 +5720,22 @@ def create_app():
             flash("Aluno não encontrado nesta Direção de Turma.", "error")
             return redirect(url_for("direcao_turma_alunos", dt_id=dt_id))
 
+        contexto = AlunoContextoDT.query.filter_by(aluno_id=dt_aluno.aluno_id).first()
+        ee_atual = _active_ee_rel_for_aluno(dt_aluno.aluno_id)
+        ee_historico = (
+            EEAluno.query.options(joinedload(EEAluno.ee))
+            .filter(EEAluno.aluno_id == dt_aluno.aluno_id)
+            .order_by(EEAluno.data_inicio.desc())
+            .all()
+        )
+        contactos = (
+            Contacto.query.join(ContactoAluno, ContactoAluno.contacto_id == Contacto.id)
+            .filter(Contacto.dt_turma_id == dt_turma.id, ContactoAluno.aluno_id == dt_aluno.aluno_id)
+            .order_by(Contacto.data_hora.desc())
+            .limit(20)
+            .all()
+        )
+
         if request.method == "POST":
             aluno = dt_aluno.aluno
             aluno.numero = _clamp_int(request.form.get("numero"), default=None, min_val=1)
@@ -5671,6 +5747,21 @@ def create_app():
             )
             aluno.nee = request.form.get("nee") or None
             aluno.observacoes = request.form.get("observacoes") or None
+            aluno.data_nascimento = _parse_iso_date(request.form.get("data_nascimento")) if request.form.get("data_nascimento") else None
+            aluno.tipo_identificacao = (request.form.get("tipo_identificacao") or "").strip() or None
+            aluno.numero_identificacao = (request.form.get("numero_identificacao") or "").strip() or None
+            aluno.email = (request.form.get("email") or "").strip() or None
+            aluno.telefone = (request.form.get("telefone") or "").strip() or None
+            aluno.numero_utente_sns = (request.form.get("numero_utente_sns") or "").strip() or None
+            aluno.numero_processo = (request.form.get("numero_processo") or "").strip() or None
+
+            if not contexto:
+                contexto = AlunoContextoDT(aluno_id=dt_aluno.aluno_id)
+                db.session.add(contexto)
+            contexto.dt_observacoes = request.form.get("dt_observacoes") or None
+            contexto.ee_observacoes = request.form.get("ee_observacoes") or None
+            contexto.alerta_dt = request.form.get("alerta_dt") or None
+            contexto.resumo_sinalizacao = request.form.get("resumo_sinalizacao") or None
 
             if not aluno.nome:
                 flash("O nome do aluno é obrigatório.", "error")
@@ -5680,12 +5771,16 @@ def create_app():
 
             db.session.commit()
             flash("Aluno atualizado.", "success")
-            return redirect(url_for("direcao_turma_alunos", dt_id=dt_id))
+            return redirect(url_for("direcao_turma_alunos_edit", dt_id=dt_id, dt_aluno_id=dt_aluno_id))
 
         return render_template(
             "direcao_turma/alunos_form.html",
             dt_turma=dt_turma,
             dt_aluno=dt_aluno,
+            contexto=contexto,
+            ee_atual=ee_atual,
+            ee_historico=ee_historico,
+            contactos=contactos,
         )
 
     @app.route("/direcao-turma/<int:dt_id>/ocorrencias")
