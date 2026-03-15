@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h2>EE: {{ ee.nome }}</h2>
+    <div class="text-muted">{{ dt_turma.turma.nome if dt_turma.turma else 'Turma' }} — {{ dt_turma.ano_letivo.nome if dt_turma.ano_letivo else 'Ano letivo' }}</div>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="{{ url_for('direcao_turma_ee_edit', dt_id=dt_turma.id, ee_id=ee.id) }}" class="btn btn-warning">Editar EE</a>
+    <a href="{{ url_for('direcao_turma_contactos_lote_form', dt_id=dt_turma.id) }}" class="btn btn-outline-primary">Novo contacto</a>
+    <a href="{{ url_for('direcao_turma_ee_new', dt_id=dt_turma.id) }}" class="btn btn-outline-primary">Novo EE</a>
+    <a href="{{ url_for('direcao_turma_alunos', dt_id=dt_turma.id) }}" class="btn btn-secondary">Voltar à DT</a>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-3">
+  <div class="card-header">Dados principais</div>
+  <div class="card-body">
+    <div><strong>Nome:</strong> {{ ee.nome }}</div>
+    <div><strong>Telefone:</strong> {{ ee.telefone or '—' }}</div>
+    <div><strong>Email:</strong> {{ ee.email or '—' }}</div>
+    <div><strong>Alternativo:</strong> {{ ee.nome_alternativo or '—' }} / {{ ee.telefone_alternativo or '—' }} / {{ ee.email_alternativo or '—' }}</div>
+    <div><strong>Observações:</strong> {{ ee.observacoes or '—' }}</div>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-3">
+  <div class="card-header">Associar aluno (rápido)</div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('direcao_turma_ee_associar_aluno', dt_id=dt_turma.id, ee_id=ee.id) }}" class="row g-2 align-items-end">
+      <div class="col-md-5"><label class="form-label">Aluno</label><select name="aluno_id" class="form-select" required>{% for a in alunos_dt %}<option value="{{ a.id }}">{{ '%02d'|format(a.numero) if a.numero is not none else '—' }} — {{ a.nome }}</option>{% endfor %}</select></div>
+      <div class="col-md-2"><label class="form-label">Parentesco</label><select name="parentesco" id="parentesco_select_detail" class="form-select"><option value="">—</option><option value="Pai">Pai</option><option value="Mãe">Mãe</option><option value="Avô">Avô</option><option value="Avó">Avó</option><option value="Outro">Outro</option></select></div>
+      <div class="col-md-3" id="parentesco_outro_wrap_detail" style="display:none;"><label class="form-label">Outro (detalhe)</label><input name="parentesco_outro" class="form-control"></div>
+      <div class="col-md-2"><label class="form-label">Data início</label><input name="data_inicio" type="date" class="form-control" value="{{ default_associar_inicio.isoformat() if default_associar_inicio else '' }}" required></div>
+      <div class="col-md-3"><label class="form-label">Observações</label><input name="observacoes" class="form-control"></div>
+      <div class="col-12"><button class="btn btn-primary btn-sm">Associar aluno</button></div>
+    </form>
+  </div>
+</div>
+
+{% if not rels %}
+<div class="alert alert-secondary">Este EE ainda não tem alunos associados nesta DT. Use a ação rápida <strong>Associar aluno</strong>.</div>
+{% endif %}
+
+<div class="card shadow-sm mb-3">
+  <div class="card-header">Relações EE↔Aluno (histórico)</div>
+  <div class="table-responsive">
+    <table class="table table-striped align-middle mb-0">
+      <thead class="table-light"><tr><th>Aluno</th><th>Número</th><th>Parentesco</th><th>Início</th><th>Fim</th><th>Estado</th><th>Ações</th></tr></thead>
+      <tbody>
+      {% for rel in rels %}
+        <tr>
+          <td>{{ rel.aluno.nome if rel.aluno else '—' }}</td>
+          <td>{{ '%02d'|format(rel.aluno.numero) if rel.aluno and rel.aluno.numero is not none else '—' }}</td>
+          <td>{{ rel.parentesco or '—' }}</td>
+          <td>{{ rel.data_inicio }}</td>
+          <td>{{ rel.data_fim or '—' }}</td>
+          <td>{% if rel.data_fim %}<span class="badge text-bg-secondary">Histórico</span>{% else %}<span class="badge text-bg-success">Ativa</span>{% endif %}</td>
+          <td class="text-nowrap">
+            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('direcao_turma_ee_aluno_edit', rel_id=rel.id, dt_id=dt_turma.id) }}">Editar</a>
+            {% if not rel.data_fim %}
+            <form method="post" action="{{ url_for('direcao_turma_ee_aluno_edit', rel_id=rel.id, dt_id=dt_turma.id) }}" class="d-inline">
+              <input type="hidden" name="action" value="terminar">
+              <button class="btn btn-sm btn-outline-warning">Terminar</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7" class="text-muted">Sem relações nesta DT.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-header">Contactos com este EE</div>
+  <div class="table-responsive">
+    <table class="table table-striped align-middle mb-0">
+      <thead class="table-light"><tr><th>Data/hora</th><th>Tipo(s)</th><th>Resumo</th><th>Estado contacto</th><th>Estado reunião</th><th>Alunos envolvidos</th></tr></thead>
+      <tbody>
+      {% for c in contactos %}
+        <tr>
+          <td>{{ c.data_hora.strftime('%Y-%m-%d %H:%M') if c.data_hora else '—' }}</td>
+          <td>{{ ' | '.join(tipos_por_contacto.get(c.id, [])) or '—' }}</td>
+          <td>{{ c.resumo or '—' }}</td>
+          <td>{{ c.estado_contacto }}</td>
+          <td>{{ c.estado_reuniao }}</td>
+          <td>{{ ' | '.join(alunos_por_contacto.get(c.id, [])) or '—' }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="text-muted">Sem contactos.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<script>
+(function(){
+  const select = document.getElementById('parentesco_select_detail');
+  const wrap = document.getElementById('parentesco_outro_wrap_detail');
+  if (!select || !wrap) return;
+  const update = () => { wrap.style.display = select.value === 'Outro' ? '' : 'none'; };
+  select.addEventListener('change', update);
+  update();
+})();
+</script>
+{% endblock %}
+

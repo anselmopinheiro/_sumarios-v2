@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2>Histórico EE — {{ dt_aluno.aluno.nome if dt_aluno.aluno else 'Aluno' }}</h2>
+  <a href="{{ url_for('direcao_turma_alunos', dt_id=dt_turma.id) }}" class="btn btn-secondary">Voltar</a>
+</div>
+<table class="table table-striped">
+  <thead class="table-light"><tr><th>EE</th><th>Parentesco</th><th>Início</th><th>Fim</th><th>Observações</th><th>Ações</th></tr></thead>
+  <tbody>{% for rel in rels %}<tr><td>{{ rel.ee.nome if rel.ee else '—' }}</td><td>{{ rel.parentesco or '—' }}</td><td>{{ rel.data_inicio }}</td><td>{{ rel.data_fim or 'Ativo' }}</td><td>{{ rel.observacoes or '—' }}</td><td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('direcao_turma_ee_aluno_edit', rel_id=rel.id, dt_id=dt_turma.id) }}">Editar</a></td></tr>{% else %}<tr><td colspan="6" class="text-muted">Sem histórico.</td></tr>{% endfor %}</tbody>
+</table>
+{% endblock %}

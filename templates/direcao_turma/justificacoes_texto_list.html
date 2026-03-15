@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h2>Textos de justificação</h2>
+    <p class="text-muted mb-0">Textos globais para justificar faltas (não associados a turma).</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('direcao_turma_list') }}" class="btn btn-secondary">Voltar</a>
+    <a href="{{ url_for('direcao_turma_justificacoes_texto_add') }}" class="btn btn-primary">+ Novo texto</a>
+  </div>
+</div>
+
+{% if textos %}
+<div class="table-responsive">
+  <table class="table table-striped align-middle">
+    <thead class="table-light">
+      <tr>
+        <th style="width: 240px;">Título</th>
+        <th>Texto</th>
+        <th class="text-end" style="width: 1%; white-space: nowrap;">Ações</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for item in textos %}
+      <tr>
+        <td class="fw-semibold">{{ item.titulo }}</td>
+        <td>
+          <pre id="texto-{{ item.id }}" class="mb-0" style="white-space: pre-wrap; font-family: inherit;">{{ item.texto }}</pre>
+        </td>
+        <td class="text-end" style="white-space: nowrap;">
+          <button
+            type="button"
+            class="btn btn-outline-success btn-sm js-copy-text"
+            data-target="texto-{{ item.id }}">
+            Copiar
+          </button>
+          <a href="{{ url_for('direcao_turma_justificacoes_texto_edit', item_id=item.id) }}" class="btn btn-outline-warning btn-sm">Editar</a>
+          <form method="post" action="{{ url_for('direcao_turma_justificacoes_texto_delete', item_id=item.id) }}" class="d-inline" onsubmit="return confirm('Eliminar este texto?');">
+            <button type="submit" class="btn btn-outline-danger btn-sm">Eliminar</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+  <div class="alert alert-secondary">Sem textos de justificação registados.</div>
+{% endif %}
+
+<script>
+  document.querySelectorAll('.js-copy-text').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const original = btn.textContent;
+      const targetId = btn.dataset.target;
+      const texto = targetId ? (document.getElementById(targetId)?.textContent || '') : '';
+      try {
+        await navigator.clipboard.writeText(texto);
+        btn.textContent = 'Copiado!';
+        btn.classList.remove('btn-outline-success');
+        btn.classList.add('btn-success');
+      } catch (e) {
+        window.prompt('Copiar texto:', texto);
+      }
+      setTimeout(() => {
+        btn.textContent = original;
+        btn.classList.remove('btn-success');
+        btn.classList.add('btn-outline-success');
+      }, 1200);
+    });
+  });
+</script>
+{% endblock %}

@@ -182,6 +182,14 @@ class Aluno(db.Model):
     nee = db.Column(db.Text)
     observacoes = db.Column(db.Text)
 
+    data_nascimento = db.Column(db.Date)
+    tipo_identificacao = db.Column(db.String(30))
+    numero_identificacao = db.Column(db.String(80))
+    email = db.Column(db.String(255))
+    telefone = db.Column(db.String(40))
+    numero_utente_sns = db.Column(db.String(40))
+    numero_processo = db.Column(db.String(50))
+
     @property
     def nome_curto_exibicao(self):
         raw = (self.nome_curto or "").strip()
@@ -276,6 +284,188 @@ class DTMotivoDia(db.Model):
     __table_args__ = (
         db.UniqueConstraint("dt_turma_id", "data", name="uq_dt_motivo_dia"),
     )
+
+
+
+
+class DTJustificacaoTexto(db.Model):
+    __tablename__ = "dt_justificacao_textos"
+
+    id = db.Column(db.Integer, primary_key=True)
+    titulo = db.Column(db.String(120), nullable=False)
+    texto = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, server_default=db.text("now()"))
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=db.text("now()"))
+
+class AlunoContextoDT(db.Model):
+    __tablename__ = "aluno_contexto_dt"
+
+    id = db.Column(db.Integer, primary_key=True)
+    aluno_id = db.Column(db.Integer, db.ForeignKey("alunos.id"), nullable=False, unique=True)
+    dt_observacoes = db.Column(db.Text)
+    ee_observacoes = db.Column(db.Text)
+    alerta_dt = db.Column(db.Text)
+    resumo_sinalizacao = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    aluno = db.relationship("Aluno", backref=db.backref("contexto_dt", uselist=False, cascade="all, delete-orphan"))
+
+
+class EncarregadoEducacao(db.Model):
+    __tablename__ = "ee"
+
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(255), nullable=False)
+    telefone = db.Column(db.String(40))
+    email = db.Column(db.String(255))
+    observacoes = db.Column(db.Text)
+    nome_alternativo = db.Column(db.String(255))
+    telefone_alternativo = db.Column(db.String(40))
+    email_alternativo = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class EEAluno(db.Model):
+    __tablename__ = "ee_alunos"
+
+    id = db.Column(db.Integer, primary_key=True)
+    ee_id = db.Column(db.Integer, db.ForeignKey("ee.id"), nullable=False, index=True)
+    aluno_id = db.Column(db.Integer, db.ForeignKey("alunos.id"), nullable=False, index=True)
+    parentesco = db.Column(db.String(80))
+    observacoes = db.Column(db.Text)
+    data_inicio = db.Column(db.Date, nullable=False)
+    data_fim = db.Column(db.Date)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    ee = db.relationship("EncarregadoEducacao", backref=db.backref("alunos_relacoes", cascade="all, delete-orphan"))
+    aluno = db.relationship("Aluno", backref=db.backref("ee_relacoes", cascade="all, delete-orphan"))
+
+
+class DTCargoAluno(db.Model):
+    __tablename__ = "dt_cargos_alunos"
+
+    id = db.Column(db.Integer, primary_key=True)
+    dt_turma_id = db.Column(db.Integer, db.ForeignKey("dt_turmas.id"), nullable=False, index=True)
+    aluno_id = db.Column(db.Integer, db.ForeignKey("alunos.id"), nullable=False, index=True)
+    cargo = db.Column(db.String(40), nullable=False)
+    data_inicio = db.Column(db.Date, nullable=False)
+    data_fim = db.Column(db.Date)
+    motivo_fim = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    dt_turma = db.relationship("DTTurma", backref="cargos_alunos")
+    aluno = db.relationship("Aluno", backref="cargos_dt")
+
+
+class DTCargoEE(db.Model):
+    __tablename__ = "dt_cargos_ee"
+
+    id = db.Column(db.Integer, primary_key=True)
+    dt_turma_id = db.Column(db.Integer, db.ForeignKey("dt_turmas.id"), nullable=False, index=True)
+    ee_id = db.Column(db.Integer, db.ForeignKey("ee.id"), nullable=False, index=True)
+    cargo = db.Column(db.String(60), nullable=False)
+    data_inicio = db.Column(db.Date, nullable=False)
+    data_fim = db.Column(db.Date)
+    motivo_fim = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    dt_turma = db.relationship("DTTurma", backref="cargos_ee")
+    ee = db.relationship("EncarregadoEducacao", backref="cargos_dt")
+
+
+class TipoContacto(db.Model):
+    __tablename__ = "tipo_contacto"
+
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(100), nullable=False, unique=True)
+    ordem = db.Column(db.Integer, nullable=False, default=0)
+
+
+class MotivoContacto(db.Model):
+    __tablename__ = "motivo_contacto"
+
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(120), nullable=False, unique=True)
+    ordem = db.Column(db.Integer, nullable=False, default=0)
+
+
+class Contacto(db.Model):
+    __tablename__ = "contactos"
+
+    id = db.Column(db.Integer, primary_key=True)
+    ee_id = db.Column(db.Integer, db.ForeignKey("ee.id"), nullable=False, index=True)
+    dt_turma_id = db.Column(db.Integer, db.ForeignKey("dt_turmas.id"), nullable=False, index=True)
+    data_hora = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    iniciado_por = db.Column(db.String(20), nullable=False, default="professor")
+    resumo = db.Column(db.Text)
+    observacoes_gerais = db.Column(db.Text)
+    estado_contacto = db.Column(db.String(40), nullable=False, default="realizado")
+    estado_reuniao = db.Column(db.String(40), nullable=False, default="nao_agendada")
+    data_reuniao = db.Column(db.DateTime)
+    requer_followup = db.Column(db.Boolean, nullable=False, default=False)
+    data_followup = db.Column(db.Date)
+    confidencial = db.Column(db.Boolean, nullable=False, default=False)
+    created_by = db.Column(db.String(120))
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    ee = db.relationship("EncarregadoEducacao", backref="contactos")
+    dt_turma = db.relationship("DTTurma", backref="contactos")
+
+
+class ContactoTipo(db.Model):
+    __tablename__ = "contacto_tipos"
+
+    id = db.Column(db.Integer, primary_key=True)
+    contacto_id = db.Column(db.Integer, db.ForeignKey("contactos.id"), nullable=False, index=True)
+    tipo_contacto_id = db.Column(db.Integer, db.ForeignKey("tipo_contacto.id"), nullable=False, index=True)
+
+
+class ContactoAluno(db.Model):
+    __tablename__ = "contacto_alunos"
+
+    id = db.Column(db.Integer, primary_key=True)
+    contacto_id = db.Column(db.Integer, db.ForeignKey("contactos.id"), nullable=False, index=True)
+    aluno_id = db.Column(db.Integer, db.ForeignKey("alunos.id"), nullable=False, index=True)
+    ee_aluno_id_snapshot = db.Column(db.Integer, db.ForeignKey("ee_alunos.id"))
+    observacoes = db.Column(db.Text)
+    resultado_individual = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    contacto = db.relationship("Contacto", backref=db.backref("alunos", cascade="all, delete-orphan"))
+    aluno = db.relationship("Aluno")
+    ee_aluno_snapshot = db.relationship("EEAluno")
+
+
+class ContactoAlunoMotivo(db.Model):
+    __tablename__ = "contacto_aluno_motivos"
+
+    id = db.Column(db.Integer, primary_key=True)
+    contacto_aluno_id = db.Column(db.Integer, db.ForeignKey("contacto_alunos.id"), nullable=False, index=True)
+    motivo_contacto_id = db.Column(db.Integer, db.ForeignKey("motivo_contacto.id"), nullable=False, index=True)
+    detalhe = db.Column(db.Text)
+
+    contacto_aluno = db.relationship("ContactoAluno", backref=db.backref("motivos", cascade="all, delete-orphan"))
+    motivo = db.relationship("MotivoContacto")
+
+
+class ContactoLink(db.Model):
+    __tablename__ = "contacto_links"
+
+    id = db.Column(db.Integer, primary_key=True)
+    contacto_id = db.Column(db.Integer, db.ForeignKey("contactos.id"), nullable=False, index=True)
+    titulo = db.Column(db.String(255), nullable=False)
+    url = db.Column(db.String(1000), nullable=False)
+    tipo = db.Column(db.String(80))
+    observacoes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    contacto = db.relationship("Contacto", backref=db.backref("links", cascade="all, delete-orphan"))
 
 
 class DTDisciplina(db.Model):

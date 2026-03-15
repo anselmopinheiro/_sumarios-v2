@@ -3,37 +3,73 @@
 
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div>
-    <h2>Editar aluno (DT)</h2>
+    <h2>Ficha do aluno (DT)</h2>
     <div class="text-muted">{{ dt_turma.turma.nome if dt_turma.turma else 'Turma' }} — {{ dt_turma.ano_letivo.nome if dt_turma.ano_letivo else 'Ano letivo' }}</div>
   </div>
   <a href="{{ url_for('direcao_turma_alunos', dt_id=dt_turma.id) }}" class="btn btn-secondary">Voltar</a>
 </div>
 
 <form method="post">
-  <div class="row g-3">
-    <div class="col-md-3">
-      <label class="form-label">N.º</label>
-      <input type="number" class="form-control" name="numero" min="1" value="{{ dt_aluno.aluno.numero if dt_aluno.aluno and dt_aluno.aluno.numero is not none else '' }}">
+  <div class="card shadow-sm mb-3">
+    <div class="card-header">Dados do aluno</div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-2"><label class="form-label">N.º</label><input type="number" class="form-control" name="numero" min="1" value="{{ dt_aluno.aluno.numero if dt_aluno.aluno and dt_aluno.aluno.numero is not none else '' }}"></div>
+        <div class="col-md-3"><label class="form-label">Processo</label><input type="text" class="form-control" name="processo" value="{{ (dt_aluno.aluno.processo if dt_aluno.aluno else '') or '' }}"></div>
+        <div class="col-md-3"><label class="form-label">N.º processo</label><input type="text" class="form-control" name="numero_processo" value="{{ (dt_aluno.aluno.numero_processo if dt_aluno.aluno else '') or '' }}"></div>
+        <div class="col-md-4"><label class="form-label">Data nascimento</label><input type="date" class="form-control" name="data_nascimento" value="{{ dt_aluno.aluno.data_nascimento.isoformat() if dt_aluno.aluno and dt_aluno.aluno.data_nascimento else '' }}"></div>
+
+        <div class="col-12"><label class="form-label">Nome completo</label><input type="text" class="form-control" name="nome" value="{{ (dt_aluno.aluno.nome if dt_aluno.aluno else '') or '' }}" required></div>
+        <div class="col-md-6"><label class="form-label">Nome curto</label><input type="text" class="form-control" name="nome_curto" value="{{ (dt_aluno.aluno.nome_curto if dt_aluno.aluno else '') or '' }}"></div>
+        <div class="col-md-6"><label class="form-label">Tipo identificação</label><select name="tipo_identificacao" class="form-select">
+          <option value="">—</option><option value="cc" {% if dt_aluno.aluno and dt_aluno.aluno.tipo_identificacao=='cc' %}selected{% endif %}>cc</option><option value="bi" {% if dt_aluno.aluno and dt_aluno.aluno.tipo_identificacao=='bi' %}selected{% endif %}>bi</option><option value="passaporte" {% if dt_aluno.aluno and dt_aluno.aluno.tipo_identificacao=='passaporte' %}selected{% endif %}>passaporte</option><option value="titulo_residencia" {% if dt_aluno.aluno and dt_aluno.aluno.tipo_identificacao=='titulo_residencia' %}selected{% endif %}>titulo_residencia</option><option value="outro" {% if dt_aluno.aluno and dt_aluno.aluno.tipo_identificacao=='outro' %}selected{% endif %}>outro</option>
+        </select></div>
+
+        <div class="col-md-4"><label class="form-label">N.º identificação</label><input type="text" class="form-control" name="numero_identificacao" value="{{ (dt_aluno.aluno.numero_identificacao if dt_aluno.aluno else '') or '' }}"></div>
+        <div class="col-md-4"><label class="form-label">Email</label><input type="email" class="form-control" name="email" value="{{ (dt_aluno.aluno.email if dt_aluno.aluno else '') or '' }}"></div>
+        <div class="col-md-4"><label class="form-label">Telefone</label><input type="text" class="form-control" name="telefone" value="{{ (dt_aluno.aluno.telefone if dt_aluno.aluno else '') or '' }}"></div>
+        <div class="col-md-4"><label class="form-label">N.º utente SNS</label><input type="text" class="form-control" name="numero_utente_sns" value="{{ (dt_aluno.aluno.numero_utente_sns if dt_aluno.aluno else '') or '' }}"></div>
+
+        <div class="col-12"><label class="form-label">NEE</label><textarea class="form-control" name="nee" rows="2">{{ (dt_aluno.aluno.nee if dt_aluno.aluno else '') or '' }}</textarea></div>
+        <div class="col-12"><label class="form-label">Observações</label><textarea class="form-control" name="observacoes" rows="3">{{ (dt_aluno.aluno.observacoes if dt_aluno.aluno else '') or '' }}</textarea></div>
+      </div>
     </div>
-    <div class="col-md-4">
-      <label class="form-label">Processo</label>
-      <input type="text" class="form-control" name="processo" value="{{ dt_aluno.aluno.processo if dt_aluno.aluno else '' }}">
+  </div>
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span>EE atual</span>
+      <a href="{{ url_for('direcao_turma_aluno_ee_edit', dt_id=dt_turma.id, dt_aluno_id=dt_aluno.id) }}" class="btn btn-sm btn-outline-primary">Associar/substituir EE</a>
     </div>
-    <div class="col-12">
-      <label class="form-label">Nome completo</label>
-      <input type="text" class="form-control" name="nome" value="{{ dt_aluno.aluno.nome if dt_aluno.aluno else '' }}" required>
+    <div class="card-body">
+      {% if ee_atual %}
+        <p class="mb-1"><strong>{{ ee_atual.ee.nome if ee_atual.ee else '—' }}</strong> — {{ ee_atual.parentesco or '—' }}</p>
+        <small class="text-muted">Ativo desde {{ ee_atual.data_inicio }}</small>
+      {% else %}
+        <p class="text-muted mb-0">Sem EE ativo.</p>
+      {% endif %}
+      <hr>
+      <div><strong>Histórico EE</strong></div>
+      <ul class="mb-0">{% for rel in ee_historico %}<li>{{ rel.ee.nome if rel.ee else '—' }} — {{ rel.parentesco or '—' }} ({{ rel.data_inicio }}{% if rel.data_fim %} → {{ rel.data_fim }}{% else %}, ativo{% endif %}) <a class="btn btn-sm btn-outline-primary" href="{{ url_for('direcao_turma_ee_aluno_edit', rel_id=rel.id, dt_id=dt_turma.id) }}">Editar</a></li>{% else %}<li class="text-muted">Sem histórico.</li>{% endfor %}</ul>
     </div>
-    <div class="col-12">
-      <label class="form-label">Nome curto</label>
-      <input type="text" class="form-control" name="nome_curto" value="{{ dt_aluno.aluno.nome_curto if dt_aluno.aluno else '' }}">
+  </div>
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-header">Contexto DT</div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-12"><label class="form-label">Observações da DT</label><textarea name="dt_observacoes" class="form-control" rows="2">{{ (contexto.dt_observacoes if contexto else '') or '' }}</textarea></div>
+        <div class="col-12"><label class="form-label">Observações sobre o EE</label><textarea name="ee_observacoes" class="form-control" rows="2">{{ (contexto.ee_observacoes if contexto else '') or '' }}</textarea></div>
+        <div class="col-md-6"><label class="form-label">Alerta DT</label><textarea name="alerta_dt" class="form-control" rows="2">{{ (contexto.alerta_dt if contexto else '') or '' }}</textarea></div>
+        <div class="col-md-6"><label class="form-label">Resumo da sinalização</label><textarea name="resumo_sinalizacao" class="form-control" rows="2">{{ (contexto.resumo_sinalizacao if contexto else '') or '' }}</textarea></div>
+      </div>
     </div>
-    <div class="col-12">
-      <label class="form-label">NEE</label>
-      <textarea class="form-control" name="nee" rows="2">{{ dt_aluno.aluno.nee if dt_aluno.aluno else '' }}</textarea>
-    </div>
-    <div class="col-12">
-      <label class="form-label">Observações</label>
-      <textarea class="form-control" name="observacoes" rows="3">{{ dt_aluno.aluno.observacoes if dt_aluno.aluno else '' }}</textarea>
+  </div>
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-header">Contactos com EE</div>
+    <div class="card-body">
+      <ul class="mb-0">{% for c in contactos %}<li>{{ c.data_hora.strftime('%Y-%m-%d %H:%M') if c.data_hora else '—' }} — {{ c.estado_contacto }} — {{ c.resumo or 'Sem resumo' }}</li>{% else %}<li class="text-muted">Sem contactos.</li>{% endfor %}</ul>
     </div>
   </div>
 

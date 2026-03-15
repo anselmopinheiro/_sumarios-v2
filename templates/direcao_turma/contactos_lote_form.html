@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2>Novo contacto em lote</h2>
+  <a href="{{ url_for('direcao_turma_contactos_list', dt_id=dt_turma.id) }}" class="btn btn-secondary">Voltar</a>
+</div>
+<form method="post" class="card card-body shadow-sm">
+  <div class="row g-3">
+    <div class="col-md-3"><label class="form-label">Data/hora</label><input type="datetime-local" name="data_hora" class="form-control"></div>
+    <div class="col-md-2"><label class="form-label">Iniciado por</label><select name="iniciado_por" class="form-select"><option value="professor">Professor</option><option value="ee">EE</option></select></div>
+    <div class="col-md-3"><label class="form-label">Estado contacto</label><select name="estado_contacto" class="form-select">{% for v in ['realizado','tentativa_sem_sucesso','sem_resposta','devolvido','cancelado'] %}<option value="{{ v }}">{{ v }}</option>{% endfor %}</select></div>
+    <div class="col-md-2"><label class="form-label">Estado reunião</label><select name="estado_reuniao" class="form-select">{% for v in ['nao_agendada','agendada','realizada','cancelada'] %}<option value="{{ v }}">{{ v }}</option>{% endfor %}</select></div>
+    <div class="col-md-2"><label class="form-label">Data reunião</label><input type="datetime-local" name="data_reuniao" class="form-control"></div>
+    <div class="col-12"><label class="form-label">Resumo</label><input name="resumo" class="form-control"></div>
+    <div class="col-12"><label class="form-label">Observações gerais</label><textarea name="observacoes_gerais" class="form-control" rows="2"></textarea></div>
+    <div class="col-md-4"><label class="form-label">Tipos de contacto</label><select name="tipo_contacto_ids" class="form-select" multiple size="4">{% for t in tipos %}<option value="{{ t.id }}">{{ t.nome }}</option>{% endfor %}</select></div>
+    <div class="col-md-8"><label class="form-label">Alunos (agrupamento por EE é automático)</label><div class="border rounded p-2" style="max-height: 220px; overflow:auto;">{% for dta in dt_alunos %}<div class="form-check"><input class="form-check-input js-aluno" type="checkbox" id="al{{ dta.aluno_id }}" name="aluno_ids" value="{{ dta.aluno_id }}"><label class="form-check-label" for="al{{ dta.aluno_id }}">{{ dta.aluno.nome if dta.aluno else '—' }}</label></div>{% endfor %}</div></div>
+  </div>
+  <hr>
+  <h5>Detalhe por aluno</h5>
+  <div class="table-responsive"><table class="table table-sm"><thead><tr><th>Aluno</th><th>Motivo</th><th>Detalhe motivo</th><th>Resultado</th><th>Observações</th></tr></thead><tbody>
+  {% for dta in dt_alunos %}
+    <tr>
+      <td>{{ dta.aluno.nome if dta.aluno else '—' }}</td>
+      <td><select class="form-select form-select-sm" name="motivo_{{ dta.aluno_id }}"><option value="">—</option>{% for m in motivos %}<option value="{{ m.id }}">{{ m.nome }}</option>{% endfor %}</select></td>
+      <td><input class="form-control form-control-sm" name="motivo_detalhe_{{ dta.aluno_id }}"></td>
+      <td><input class="form-control form-control-sm" name="resultado_{{ dta.aluno_id }}"></td>
+      <td><input class="form-control form-control-sm" name="obs_{{ dta.aluno_id }}"></td>
+    </tr>
+  {% endfor %}
+  </tbody></table></div>
+  <h5>Link externo (opcional)</h5>
+  <div class="row g-2"><div class="col-md-3"><input name="links_titulo" class="form-control" placeholder="Título"></div><div class="col-md-5"><input name="links_url" class="form-control" placeholder="https://..."></div><div class="col-md-2"><input name="links_tipo" class="form-control" placeholder="Tipo"></div><div class="col-md-2"><input name="links_obs" class="form-control" placeholder="Obs"></div></div>
+  <div class="mt-3"><button class="btn btn-primary" {% if bloqueado %}disabled{% endif %}>Criar contactos</button></div>
+</form>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2>{{ titulo_pagina }}</h2>
+  <a href="{{ url_for('direcao_turma_justificacoes_texto_list') }}" class="btn btn-secondary">Voltar</a>
+</div>
+
+<form method="post" class="card shadow-sm">
+  <div class="card-body">
+    <div class="mb-3">
+      <label for="titulo" class="form-label">Título</label>
+      <input id="titulo" name="titulo" class="form-control" maxlength="120" required value="{{ item.titulo if item else '' }}">
+    </div>
+    <div class="mb-3">
+      <label for="texto" class="form-label">Texto da justificação</label>
+      <textarea id="texto" name="texto" rows="8" class="form-control" required>{{ item.texto if item else '' }}</textarea>
+    </div>
+  </div>
+  <div class="card-footer d-flex justify-content-end gap-2">
+    <a href="{{ url_for('direcao_turma_justificacoes_texto_list') }}" class="btn btn-outline-secondary">Cancelar</a>
+    <button type="submit" class="btn btn-primary">Guardar</button>
+  </div>
+</form>
+{% endblock %}

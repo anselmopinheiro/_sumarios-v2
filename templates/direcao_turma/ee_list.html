@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h2>EE — Direção de Turma</h2>
+    <div class="text-muted">{{ dt_turma.turma.nome if dt_turma.turma else 'Turma' }} — {{ dt_turma.ano_letivo.nome if dt_turma.ano_letivo else 'Ano letivo' }}</div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('direcao_turma_alunos', dt_id=dt_turma.id) }}" class="btn btn-secondary">Voltar</a>
+    <a href="{{ url_for('direcao_turma_ee_new', dt_id=dt_turma.id) }}" class="btn btn-primary">+ Novo EE</a>
+    <a href="{{ url_for('direcao_turma_export_ee_csv') }}?dt_turma_id={{ dt_turma.id }}&ativos=0" class="btn btn-outline-success">Exportar CSV EE</a>
+  </div>
+</div>
+
+<form method="get" class="card card-body shadow-sm mb-3">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-4">
+      <label class="form-label">Filtro</label>
+      <select name="filtro" class="form-select">
+        <option value="todos" {% if filtro=='todos' %}selected{% endif %}>Todos</option>
+        <option value="sem_associacao" {% if filtro=='sem_associacao' %}selected{% endif %}>Sem aluno associado</option>
+        <option value="ativos" {% if filtro=='ativos' %}selected{% endif %}>Com associação ativa</option>
+        <option value="historico" {% if filtro=='historico' %}selected{% endif %}>Apenas histórico</option>
+      </select>
+    </div>
+    <div class="col-md-2"><button class="btn btn-outline-primary w-100">Aplicar</button></div>
+  </div>
+</form>
+
+<div class="table-responsive">
+  <table class="table table-striped align-middle">
+    <thead class="table-light"><tr><th>EE</th><th>Estado</th><th>Ativos</th><th>Histórico</th><th></th></tr></thead>
+    <tbody>
+      {% for item in ee_items %}
+      <tr>
+        <td class="fw-semibold">{{ item.ee.nome }}</td>
+        <td>
+          {% if item.estado == 'sem_associacao' %}
+            <span class="badge text-bg-secondary">Sem aluno associado</span>
+          {% elif item.estado == 'ativos' %}
+            <span class="badge text-bg-success">Associado ativamente</span>
+          {% else %}
+            <span class="badge text-bg-warning">Apenas histórico</span>
+          {% endif %}
+        </td>
+        <td>{{ item.ativos|length }}</td>
+        <td>{{ item.historico|length }}</td>
+        <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('direcao_turma_ee_detail', dt_id=dt_turma.id, ee_id=item.ee.id) }}">Detalhe</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="text-muted">Sem EE para o filtro selecionado.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
