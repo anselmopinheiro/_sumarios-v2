@@ -15,23 +15,23 @@
     <div class="card-body">
       <div class="row g-3">
         <div class="col-md-2"><label class="form-label">N.º</label><input type="number" class="form-control" name="numero" min="1" value="{{ dt_aluno.aluno.numero if dt_aluno.aluno and dt_aluno.aluno.numero is not none else '' }}"></div>
-        <div class="col-md-3"><label class="form-label">Processo</label><input type="text" class="form-control" name="processo" value="{{ dt_aluno.aluno.processo if dt_aluno.aluno else '' }}"></div>
-        <div class="col-md-3"><label class="form-label">N.º processo (novo)</label><input type="text" class="form-control" name="numero_processo" value="{{ dt_aluno.aluno.numero_processo if dt_aluno.aluno else '' }}"></div>
+        <div class="col-md-3"><label class="form-label">Processo</label><input type="text" class="form-control" name="processo" value="{{ (dt_aluno.aluno.processo if dt_aluno.aluno else '') or '' }}"></div>
+        <div class="col-md-3"><label class="form-label">N.º processo</label><input type="text" class="form-control" name="numero_processo" value="{{ (dt_aluno.aluno.numero_processo if dt_aluno.aluno else '') or '' }}"></div>
         <div class="col-md-4"><label class="form-label">Data nascimento</label><input type="date" class="form-control" name="data_nascimento" value="{{ dt_aluno.aluno.data_nascimento.isoformat() if dt_aluno.aluno and dt_aluno.aluno.data_nascimento else '' }}"></div>
 
-        <div class="col-12"><label class="form-label">Nome completo</label><input type="text" class="form-control" name="nome" value="{{ dt_aluno.aluno.nome if dt_aluno.aluno else '' }}" required></div>
-        <div class="col-md-6"><label class="form-label">Nome curto</label><input type="text" class="form-control" name="nome_curto" value="{{ dt_aluno.aluno.nome_curto if dt_aluno.aluno else '' }}"></div>
+        <div class="col-12"><label class="form-label">Nome completo</label><input type="text" class="form-control" name="nome" value="{{ (dt_aluno.aluno.nome if dt_aluno.aluno else '') or '' }}" required></div>
+        <div class="col-md-6"><label class="form-label">Nome curto</label><input type="text" class="form-control" name="nome_curto" value="{{ (dt_aluno.aluno.nome_curto if dt_aluno.aluno else '') or '' }}"></div>
         <div class="col-md-6"><label class="form-label">Tipo identificação</label><select name="tipo_identificacao" class="form-select">
           <option value="">—</option><option value="cc" {% if dt_aluno.aluno and dt_aluno.aluno.tipo_identificacao=='cc' %}selected{% endif %}>cc</option><option value="bi" {% if dt_aluno.aluno and dt_aluno.aluno.tipo_identificacao=='bi' %}selected{% endif %}>bi</option><option value="passaporte" {% if dt_aluno.aluno and dt_aluno.aluno.tipo_identificacao=='passaporte' %}selected{% endif %}>passaporte</option><option value="titulo_residencia" {% if dt_aluno.aluno and dt_aluno.aluno.tipo_identificacao=='titulo_residencia' %}selected{% endif %}>titulo_residencia</option><option value="outro" {% if dt_aluno.aluno and dt_aluno.aluno.tipo_identificacao=='outro' %}selected{% endif %}>outro</option>
         </select></div>
 
-        <div class="col-md-4"><label class="form-label">N.º identificação</label><input type="text" class="form-control" name="numero_identificacao" value="{{ dt_aluno.aluno.numero_identificacao if dt_aluno.aluno else '' }}"></div>
-        <div class="col-md-4"><label class="form-label">Email</label><input type="email" class="form-control" name="email" value="{{ dt_aluno.aluno.email if dt_aluno.aluno else '' }}"></div>
-        <div class="col-md-4"><label class="form-label">Telefone</label><input type="text" class="form-control" name="telefone" value="{{ dt_aluno.aluno.telefone if dt_aluno.aluno else '' }}"></div>
-        <div class="col-md-4"><label class="form-label">N.º utente SNS</label><input type="text" class="form-control" name="numero_utente_sns" value="{{ dt_aluno.aluno.numero_utente_sns if dt_aluno.aluno else '' }}"></div>
+        <div class="col-md-4"><label class="form-label">N.º identificação</label><input type="text" class="form-control" name="numero_identificacao" value="{{ (dt_aluno.aluno.numero_identificacao if dt_aluno.aluno else '') or '' }}"></div>
+        <div class="col-md-4"><label class="form-label">Email</label><input type="email" class="form-control" name="email" value="{{ (dt_aluno.aluno.email if dt_aluno.aluno else '') or '' }}"></div>
+        <div class="col-md-4"><label class="form-label">Telefone</label><input type="text" class="form-control" name="telefone" value="{{ (dt_aluno.aluno.telefone if dt_aluno.aluno else '') or '' }}"></div>
+        <div class="col-md-4"><label class="form-label">N.º utente SNS</label><input type="text" class="form-control" name="numero_utente_sns" value="{{ (dt_aluno.aluno.numero_utente_sns if dt_aluno.aluno else '') or '' }}"></div>
 
-        <div class="col-12"><label class="form-label">NEE</label><textarea class="form-control" name="nee" rows="2">{{ dt_aluno.aluno.nee if dt_aluno.aluno else '' }}</textarea></div>
-        <div class="col-12"><label class="form-label">Observações</label><textarea class="form-control" name="observacoes" rows="3">{{ dt_aluno.aluno.observacoes if dt_aluno.aluno else '' }}</textarea></div>
+        <div class="col-12"><label class="form-label">NEE</label><textarea class="form-control" name="nee" rows="2">{{ (dt_aluno.aluno.nee if dt_aluno.aluno else '') or '' }}</textarea></div>
+        <div class="col-12"><label class="form-label">Observações</label><textarea class="form-control" name="observacoes" rows="3">{{ (dt_aluno.aluno.observacoes if dt_aluno.aluno else '') or '' }}</textarea></div>
       </div>
     </div>
   </div>
@@ -58,10 +58,10 @@
     <div class="card-header">Contexto DT</div>
     <div class="card-body">
       <div class="row g-3">
-        <div class="col-12"><label class="form-label">dt_observacoes</label><textarea name="dt_observacoes" class="form-control" rows="2">{{ contexto.dt_observacoes if contexto else '' }}</textarea></div>
-        <div class="col-12"><label class="form-label">ee_observacoes</label><textarea name="ee_observacoes" class="form-control" rows="2">{{ contexto.ee_observacoes if contexto else '' }}</textarea></div>
-        <div class="col-md-6"><label class="form-label">alerta_dt</label><textarea name="alerta_dt" class="form-control" rows="2">{{ contexto.alerta_dt if contexto else '' }}</textarea></div>
-        <div class="col-md-6"><label class="form-label">resumo_sinalizacao</label><textarea name="resumo_sinalizacao" class="form-control" rows="2">{{ contexto.resumo_sinalizacao if contexto else '' }}</textarea></div>
+        <div class="col-12"><label class="form-label">Observações da DT</label><textarea name="dt_observacoes" class="form-control" rows="2">{{ (contexto.dt_observacoes if contexto else '') or '' }}</textarea></div>
+        <div class="col-12"><label class="form-label">Observações sobre o EE</label><textarea name="ee_observacoes" class="form-control" rows="2">{{ (contexto.ee_observacoes if contexto else '') or '' }}</textarea></div>
+        <div class="col-md-6"><label class="form-label">Alerta DT</label><textarea name="alerta_dt" class="form-control" rows="2">{{ (contexto.alerta_dt if contexto else '') or '' }}</textarea></div>
+        <div class="col-md-6"><label class="form-label">Resumo da sinalização</label><textarea name="resumo_sinalizacao" class="form-control" rows="2">{{ (contexto.resumo_sinalizacao if contexto else '') or '' }}</textarea></div>
       </div>
     </div>
   </div>
