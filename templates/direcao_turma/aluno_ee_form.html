@@ -5,9 +5,17 @@
   <a href="{{ url_for('direcao_turma_alunos_edit', dt_id=dt_turma.id, dt_aluno_id=dt_aluno.id) }}" class="btn btn-secondary">Voltar à ficha</a>
 </div>
 {% if atual %}
-<div class="alert alert-info">EE atual: <strong>{{ atual.ee.nome if atual.ee else '—' }}</strong> (desde {{ atual.data_inicio }})</div>
+<div class="alert alert-info">EE atual: <strong>{{ atual.ee.nome if atual.ee else '—' }}</strong> (desde {{ atual.data_inicio }}). Para trocar EE, termina a associação atual na data correta e cria a nova associação.</div>
 {% else %}
 <div class="alert alert-secondary">Sem EE ativo.</div>
+{% endif %}
+{% if atual %}
+<form method="post" action="{{ url_for('direcao_turma_ee_aluno_edit', rel_id=atual.id, dt_id=dt_turma.id) }}" class="mb-3 d-flex gap-2 align-items-end">
+  <input type="hidden" name="action" value="terminar">
+  <div><label class="form-label">Terminar em</label><input type="date" name="data_fim" class="form-control"></div>
+  <div><label class="form-label">Motivo (opcional)</label><input type="text" name="observacoes_termino" class="form-control"></div>
+  <div><button class="btn btn-outline-warning">Terminar associação atual</button></div>
+</form>
 {% endif %}
 <form method="post" class="card card-body shadow-sm">
   <div class="row g-3">
@@ -34,8 +42,8 @@
   <div class="card-header">Histórico EE</div>
   <div class="table-responsive">
     <table class="table table-striped mb-0">
-      <thead class="table-light"><tr><th>EE</th><th>Parentesco</th><th>Início</th><th>Fim</th></tr></thead>
-      <tbody>{% for rel in historico %}<tr><td>{{ rel.ee.nome if rel.ee else '—' }}</td><td>{{ rel.parentesco or '—' }}</td><td>{{ rel.data_inicio }}</td><td>{{ rel.data_fim or 'Ativo' }}</td></tr>{% else %}<tr><td colspan="4" class="text-muted">Sem histórico.</td></tr>{% endfor %}</tbody>
+      <thead class="table-light"><tr><th>EE</th><th>Parentesco</th><th>Início</th><th>Fim</th><th>Ações</th></tr></thead>
+      <tbody>{% for rel in historico %}<tr><td>{{ rel.ee.nome if rel.ee else '—' }}</td><td>{{ rel.parentesco or '—' }}</td><td>{{ rel.data_inicio }}</td><td>{{ rel.data_fim or 'Ativo' }}</td><td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('direcao_turma_ee_aluno_edit', rel_id=rel.id, dt_id=dt_turma.id) }}">Editar</a></td></tr>{% else %}<tr><td colspan="5" class="text-muted">Sem histórico.</td></tr>{% endfor %}</tbody>
     </table>
   </div>
 </div>

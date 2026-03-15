@@ -4961,6 +4961,85 @@ def create_app():
         flash("Aluno associado ao EE.", "success")
         return redirect(url_for("direcao_turma_ee_detail", dt_id=dt_id, ee_id=ee_id))
 
+    @app.route("/direcao-turma/ee-alunos/<int:rel_id>/edit", methods=["GET", "POST"])
+    def direcao_turma_ee_aluno_edit(rel_id):
+        rel = EEAluno.query.options(joinedload(EEAluno.ee), joinedload(EEAluno.aluno)).get_or_404(rel_id)
+        dt_id = request.args.get("dt_id", type=int) or request.form.get("dt_id", type=int)
+        dt_turma = DTTurma.query.get(dt_id) if dt_id else None
+        if not dt_turma and rel.aluno:
+            dt_turma = (
+                DTTurma.query.options(joinedload(DTTurma.ano_letivo), joinedload(DTTurma.turma))
+                .filter(DTTurma.turma_id == rel.aluno.turma_id)
+                .order_by(DTTurma.id.desc())
+                .first()
+            )
+        ees = EncarregadoEducacao.query.order_by(EncarregadoEducacao.nome.asc()).all()
+        alunos = Aluno.query.order_by(Aluno.nome.asc()).all()
+
+        if request.method == "POST":
+            action = (request.form.get("action") or "save").strip().lower()
+            if action == "terminar":
+                fim = _parse_iso_date(request.form.get("data_fim")) or date.today()
+                if rel.data_inicio and fim < rel.data_inicio:
+                    flash("Data de fim inválida: anterior à data de início.", "error")
+                    return redirect(url_for("direcao_turma_ee_aluno_edit", rel_id=rel.id, dt_id=dt_turma.id if dt_turma else None))
+                rel.data_fim = fim
+                obs_term = (request.form.get("observacoes_termino") or "").strip()
+                if obs_term:
+                    rel.observacoes = ((rel.observacoes or "").strip() + "\n" if rel.observacoes else "") + f"Termino: {obs_term}"
+                db.session.commit()
+                flash("Associação terminada.", "success")
+                return redirect(url_for("direcao_turma_ee_aluno_edit", rel_id=rel.id, dt_id=dt_turma.id if dt_turma else None))
+
+            if action == "reabrir":
+                if not _ensure_single_active_ee_for_aluno(rel.aluno_id, exclude_id=rel.id):
+                    flash("Não é possível reabrir: já existe associação ativa para este aluno.", "error")
+                    return redirect(url_for("direcao_turma_ee_aluno_edit", rel_id=rel.id, dt_id=dt_turma.id if dt_turma else None))
+                rel.data_fim = None
+                db.session.commit()
+                flash("Associação reaberta.", "success")
+                return redirect(url_for("direcao_turma_ee_aluno_edit", rel_id=rel.id, dt_id=dt_turma.id if dt_turma else None))
+
+            ee_id = request.form.get("ee_id", type=int)
+            aluno_id = request.form.get("aluno_id", type=int)
+            data_inicio = _parse_iso_date(request.form.get("data_inicio"))
+            data_fim = _parse_iso_date(request.form.get("data_fim")) if request.form.get("data_fim") else None
+            parentesco_base = (request.form.get("parentesco") or "").strip()
+            parentesco_outro = (request.form.get("parentesco_outro") or "").strip()
+            parentesco = parentesco_base
+            if parentesco_base == "Outro" and parentesco_outro:
+                parentesco = f"Outro: {parentesco_outro}"
+            elif not parentesco_base:
+                parentesco = None
+
+            if not ee_id or not aluno_id or not data_inicio:
+                flash("EE, aluno e data de início são obrigatórios.", "error")
+                return redirect(url_for("direcao_turma_ee_aluno_edit", rel_id=rel.id, dt_id=dt_turma.id if dt_turma else None))
+            if data_fim and data_fim < data_inicio:
+                flash("Data de fim inválida: anterior à data de início.", "error")
+                return redirect(url_for("direcao_turma_ee_aluno_edit", rel_id=rel.id, dt_id=dt_turma.id if dt_turma else None))
+            if data_fim is None and not _ensure_single_active_ee_for_aluno(aluno_id, exclude_id=rel.id):
+                flash("Já existe associação ativa para este aluno.", "error")
+                return redirect(url_for("direcao_turma_ee_aluno_edit", rel_id=rel.id, dt_id=dt_turma.id if dt_turma else None))
+
+            rel.ee_id = ee_id
+            rel.aluno_id = aluno_id
+            rel.parentesco = parentesco
+            rel.observacoes = request.form.get("observacoes") or None
+            rel.data_inicio = data_inicio
+            rel.data_fim = data_fim
+            db.session.commit()
+            flash("Associação EE↔aluno atualizada.", "success")
+            return redirect(url_for("direcao_turma_ee_aluno_edit", rel_id=rel.id, dt_id=dt_turma.id if dt_turma else None))
+
+        return render_template(
+            "direcao_turma/ee_aluno_edit.html",
+            rel=rel,
+            dt_turma=dt_turma,
+            ees=ees,
+            alunos=alunos,
+        )
+
     @app.route("/direcao-turma/<int:dt_id>/ee/<int:ee_id>")
     def direcao_turma_ee_detail(dt_id, ee_id):
         dt_turma = DTTurma.query.options(joinedload(DTTurma.turma), joinedload(DTTurma.ano_letivo)).get_or_404(dt_id)

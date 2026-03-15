@@ -50,7 +50,7 @@
       {% endif %}
       <hr>
       <div><strong>Histórico EE</strong></div>
-      <ul class="mb-0">{% for rel in ee_historico %}<li>{{ rel.ee.nome if rel.ee else '—' }} — {{ rel.parentesco or '—' }} ({{ rel.data_inicio }}{% if rel.data_fim %} → {{ rel.data_fim }}{% else %}, ativo{% endif %})</li>{% else %}<li class="text-muted">Sem histórico.</li>{% endfor %}</ul>
+      <ul class="mb-0">{% for rel in ee_historico %}<li>{{ rel.ee.nome if rel.ee else '—' }} — {{ rel.parentesco or '—' }} ({{ rel.data_inicio }}{% if rel.data_fim %} → {{ rel.data_fim }}{% else %}, ativo{% endif %}) <a class="btn btn-sm btn-outline-primary" href="{{ url_for('direcao_turma_ee_aluno_edit', rel_id=rel.id, dt_id=dt_turma.id) }}">Editar</a></li>{% else %}<li class="text-muted">Sem histórico.</li>{% endfor %}</ul>
     </div>
   </div>
 
