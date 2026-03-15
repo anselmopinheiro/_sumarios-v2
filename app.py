@@ -4522,10 +4522,43 @@ def create_app():
             dt for dt in dt_turmas if dt.ano_letivo and dt.ano_letivo.fechado
         ]
 
+        dt_ids = [dt.id for dt in dt_turmas]
+        cargos_resumo = {
+            dt_id: {
+                "delegado": "—",
+                "subdelegado": "—",
+                "representante_ee": "—",
+                "suplente_representante_ee": "—",
+            }
+            for dt_id in dt_ids
+        }
+
+        if dt_ids:
+            cargos_alunos_ativos = (
+                DTCargoAluno.query.options(joinedload(DTCargoAluno.aluno))
+                .filter(DTCargoAluno.dt_turma_id.in_(dt_ids), DTCargoAluno.data_fim.is_(None))
+                .order_by(DTCargoAluno.id.desc())
+                .all()
+            )
+            for cargo in cargos_alunos_ativos:
+                if cargo.cargo in {"delegado", "subdelegado"}:
+                    cargos_resumo[cargo.dt_turma_id][cargo.cargo] = cargo.aluno.nome if cargo.aluno else "—"
+
+            cargos_ee_ativos = (
+                DTCargoEE.query.options(joinedload(DTCargoEE.ee))
+                .filter(DTCargoEE.dt_turma_id.in_(dt_ids), DTCargoEE.data_fim.is_(None))
+                .order_by(DTCargoEE.id.desc())
+                .all()
+            )
+            for cargo in cargos_ee_ativos:
+                if cargo.cargo in {"representante_ee", "suplente_representante_ee"}:
+                    cargos_resumo[cargo.dt_turma_id][cargo.cargo] = cargo.ee.nome if cargo.ee else "—"
+
         return render_template(
             "direcao_turma/list.html",
             dt_abertas=dt_abertas,
             dt_fechadas=dt_fechadas,
+            cargos_resumo=cargos_resumo,
         )
 
     @app.route("/direcao-turma/justificacoes-texto")

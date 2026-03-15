@@ -68,6 +68,18 @@
               </div>
             </td>
           </tr>
+          <tr>
+            <td colspan="4" class="small text-muted">
+              {% set resumo = cargos_resumo.get(dt.id, {}) %}
+              Delegado: <strong>{{ resumo.get('delegado', '—') }}</strong>
+              <span class="mx-2">|</span>
+              Subdelegado: <strong>{{ resumo.get('subdelegado', '—') }}</strong>
+              <span class="mx-2">|</span>
+              Representante EE: <strong>{{ resumo.get('representante_ee', '—') }}</strong>
+              <span class="mx-2">|</span>
+              Suplente EE: <strong>{{ resumo.get('suplente_representante_ee', '—') }}</strong>
+            </td>
+          </tr>
         {% endfor %}
         </tbody>
       </table>
