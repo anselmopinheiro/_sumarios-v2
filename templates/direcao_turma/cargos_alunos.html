@@ -5,7 +5,7 @@
   <div class="row g-2 align-items-end">
     <div class="col-md-4"><label class="form-label">Aluno</label><select name="aluno_id" class="form-select" required>{% for dta in alunos %}<option value="{{ dta.aluno_id }}">{{ dta.aluno.nome if dta.aluno else '—' }}</option>{% endfor %}</select></div>
     <div class="col-md-2"><label class="form-label">Cargo</label><select name="cargo" class="form-select"><option value="delegado">delegado</option><option value="subdelegado">subdelegado</option></select></div>
-    <div class="col-md-2"><label class="form-label">Data início</label><input type="date" name="data_inicio" class="form-control" required></div>
+    <div class="col-md-2"><label class="form-label">Data início</label><input type="date" name="data_inicio" class="form-control" value="{{ default_data_inicio.isoformat() if default_data_inicio else "" }}" required></div>
     <div class="col-md-2"><label class="form-label">Data fim</label><input type="date" name="data_fim" class="form-control"></div>
     <div class="col-md-2"><label class="form-label">Motivo fim</label><input name="motivo_fim" class="form-control"></div>
   </div>

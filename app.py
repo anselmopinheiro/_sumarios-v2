@@ -4391,6 +4391,17 @@ def create_app():
         db.session.commit()
         return created_ids
 
+    def _dt_default_start_date(dt_turma):
+        if dt_turma and dt_turma.ano_letivo and dt_turma.ano_letivo.data_inicio_ano:
+            return dt_turma.ano_letivo.data_inicio_ano
+        if dt_turma and dt_turma.ano_letivo and dt_turma.ano_letivo.nome and "/" in str(dt_turma.ano_letivo.nome):
+            try:
+                ano_ini = int(str(dt_turma.ano_letivo.nome).split("/")[0])
+                return date(ano_ini, 9, 1)
+            except Exception:
+                pass
+        return date(date.today().year, 9, 1)
+
     def _dt_period_range(dt_turma, periodo, data_inicio_raw=None, data_fim_raw=None):
         periodo = (periodo or "anual").strip().lower()
         hoje = date.today()
@@ -5323,7 +5334,7 @@ def create_app():
                 return redirect(url_for("direcao_turma_cargos_alunos_page", dt_id=dt_id))
             aluno_id = request.form.get("aluno_id", type=int)
             cargo = (request.form.get("cargo") or "").strip()
-            data_inicio = _parse_iso_date(request.form.get("data_inicio")) or date.today()
+            data_inicio = _parse_iso_date(request.form.get("data_inicio")) or _dt_default_start_date(dt_turma)
             if cargo not in DT_ALUNO_CARGOS_VALIDOS:
                 flash("Cargo inválido.", "error")
             elif not _ensure_single_active_dt_cargo_aluno(dt_turma.id, cargo):
@@ -5336,7 +5347,7 @@ def create_app():
 
         cargos = DTCargoAluno.query.options(joinedload(DTCargoAluno.aluno)).filter_by(dt_turma_id=dt_turma.id).order_by(DTCargoAluno.data_inicio.desc()).all()
         alunos = DTAluno.query.options(joinedload(DTAluno.aluno)).filter_by(dt_turma_id=dt_turma.id).all()
-        return render_template("direcao_turma/cargos_alunos.html", dt_turma=dt_turma, cargos=cargos, alunos=alunos, bloqueado=bloqueado)
+        return render_template("direcao_turma/cargos_alunos.html", dt_turma=dt_turma, cargos=cargos, alunos=alunos, bloqueado=bloqueado, default_data_inicio=_dt_default_start_date(dt_turma))
 
     @app.route("/direcao-turma/<int:dt_id>/cargos/ee", methods=["GET", "POST"])
     def direcao_turma_cargos_ee_page(dt_id):
@@ -5348,7 +5359,7 @@ def create_app():
                 return redirect(url_for("direcao_turma_cargos_ee_page", dt_id=dt_id))
             ee_id = request.form.get("ee_id", type=int)
             cargo = (request.form.get("cargo") or "").strip()
-            data_inicio = _parse_iso_date(request.form.get("data_inicio")) or date.today()
+            data_inicio = _parse_iso_date(request.form.get("data_inicio")) or _dt_default_start_date(dt_turma)
             if cargo not in DT_EE_CARGOS_VALIDOS:
                 flash("Cargo inválido.", "error")
             elif not _ensure_single_active_dt_cargo_ee(dt_turma.id, cargo):
@@ -5368,7 +5379,7 @@ def create_app():
             .order_by(EncarregadoEducacao.nome.asc())
             .all()
         )
-        return render_template("direcao_turma/cargos_ee.html", dt_turma=dt_turma, cargos=cargos, ees=ees, bloqueado=bloqueado)
+        return render_template("direcao_turma/cargos_ee.html", dt_turma=dt_turma, cargos=cargos, ees=ees, bloqueado=bloqueado, default_data_inicio=_dt_default_start_date(dt_turma))
 
     @app.route("/direcao-turma/add", methods=["GET", "POST"])
     def direcao_turma_add():
