@@ -144,11 +144,11 @@ def ev2_domains_collection():
 def ev2_domain_duplicate():
     data = _payload()
     domain_id = _as_int(data.get("domain_id"))
-    new_name = (data.get("new_name") or data.get("nome") or "").strip()
+    new_designation = (data.get("new_designation") or data.get("new_name") or data.get("nome") or "").strip()
 
-    if not domain_id or not new_name:
+    if not domain_id or not new_designation:
         return _error(
-            "Campos obrigatórios: domain_id, new_name",
+            "Campos obrigatórios: domain_id, new_designation",
             400,
             "ev2_config.ev2_domains_collection",
         )
@@ -157,10 +157,10 @@ def ev2_domain_duplicate():
     if not source:
         return _error("Domínio origem não encontrado.", 404, "ev2_config.ev2_domains_collection")
 
-    if EV2Domain.query.filter(EV2Domain.nome == new_name).first():
-        return _error("Já existe domínio com esse nome.", 409, "ev2_config.ev2_domains_collection")
+    if EV2Domain.query.filter(EV2Domain.nome == new_designation).first():
+        return _error("Já existe domínio com essa designação.", 400, "ev2_config.ev2_domains_collection")
 
-    clone = EV2Domain(nome=new_name, descricao=source.descricao, ativo=source.ativo)
+    clone = EV2Domain(nome=new_designation, descricao=source.descricao, ativo=source.ativo)
     db.session.add(clone)
     db.session.flush()
 
@@ -187,6 +187,7 @@ def ev2_domain_duplicate():
     db.session.commit()
 
     payload = {
+        "domain_id": clone.id,
         "domain": _domain_to_dict(clone),
         "rubricas": created_rubrics,
         "warnings": warnings,
@@ -256,7 +257,7 @@ def ev2_domain_item(domain_id: int):
     if has_rubrics:
         return _error(
             "Não é possível eliminar domínio com rubricas associadas.",
-            409,
+            400,
             "ev2_config.ev2_domains_collection",
         )
 

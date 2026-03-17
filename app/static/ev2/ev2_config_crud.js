@@ -7,20 +7,49 @@
     });
   });
 
-  document.querySelectorAll('.js-duplicate-domain').forEach(function(form){
-    form.addEventListener('submit', function(e){
-      var input = form.querySelector('input[name="new_name"]');
-      var currentNameCell = form.closest('tr')?.querySelector('td:nth-child(2)');
-      var suggestion = currentNameCell ? (currentNameCell.textContent.trim() + ' (cópia)') : '';
-      var newName = window.prompt('Novo nome do domínio duplicado:', suggestion);
-      if (!newName) {
-        e.preventDefault();
+  async function parseResponse(response) {
+    const text = await response.text();
+    try { return JSON.parse(text); } catch { return { error: text || 'Erro inesperado' }; }
+  }
+
+  document.querySelectorAll('.js-domain-duplicate').forEach(function(btn){
+    btn.addEventListener('click', async function(){
+      const row = btn.closest('tr');
+      const currentName = row?.querySelector('.js-domain-name')?.textContent?.trim() || '';
+      const suggestion = currentName ? `${currentName} (cópia)` : '';
+      const newDesignation = window.prompt('Novo nome/designação do domínio duplicado:', suggestion);
+      if (!newDesignation || !newDesignation.trim()) return;
+
+      const response = await fetch('/ev2/config/domains/duplicate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({
+          domain_id: Number(btn.dataset.domainId),
+          new_designation: newDesignation.trim(),
+        }),
+      });
+      const data = await parseResponse(response);
+      if (!response.ok) {
+        window.alert(data.error || 'Falha ao duplicar domínio.');
         return;
       }
-      input.value = newName.trim();
-      if (!input.value) {
-        e.preventDefault();
+      window.location.reload();
+    });
+  });
+
+  document.querySelectorAll('.js-domain-delete').forEach(function(btn){
+    btn.addEventListener('click', async function(){
+      if (!window.confirm('Tem a certeza que pretende eliminar domínio?')) return;
+      const response = await fetch(`/ev2/config/domains/${btn.dataset.domainId}`, {
+        method: 'DELETE',
+        headers: { 'Accept': 'application/json' },
+      });
+      const data = await parseResponse(response);
+      if (!response.ok) {
+        window.alert(data.error || 'Falha ao eliminar domínio.');
+        return;
       }
+      window.location.reload();
     });
   });
 
@@ -28,9 +57,7 @@
     form.addEventListener('submit', function(e){
       var source = form.querySelector('select[name="source_domain_id"]')?.value;
       var target = form.querySelector('select[name="target_domain_id"]')?.value;
-      if (!source || !target) {
-        return;
-      }
+      if (!source || !target) return;
       if (source === target) {
         e.preventDefault();
         window.alert('Origem e destino devem ser diferentes.');

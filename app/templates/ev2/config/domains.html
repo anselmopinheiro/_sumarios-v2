@@ -30,21 +30,14 @@
       {% for d in domains %}
       <tr>
         <td>{{ d.id }}</td>
-        <td>{{ d.nome }}</td>
+        <td class="js-domain-name">{{ d.nome }}</td>
         <td>{{ d.descricao or '' }}</td>
         <td>{{ 'Sim' if d.ativo else 'Não' }}</td>
         <td>{{ d.rubricas|length }}</td>
         <td>
           <a href="/ev2/config/domains?edit={{ d.id }}">Editar</a>
-          <form method="post" action="/ev2/config/domains/{{ d.id }}" class="js-delete" style="display:inline">
-            <input type="hidden" name="_method" value="DELETE">
-            <button type="submit">Eliminar</button>
-          </form>
-          <form method="post" action="/ev2/config/domains/duplicate" class="js-duplicate-domain" style="display:inline">
-            <input type="hidden" name="domain_id" value="{{ d.id }}">
-            <input type="hidden" name="new_name" value="">
-            <button type="submit">Duplicar domínio</button>
-          </form>
+          <button type="button" class="js-domain-delete" data-domain-id="{{ d.id }}">Eliminar domínio</button>
+          <button type="button" class="js-domain-duplicate" data-domain-id="{{ d.id }}">Duplicar domínio</button>
         </td>
       </tr>
       {% endfor %}
