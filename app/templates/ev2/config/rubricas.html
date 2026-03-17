@@ -9,6 +9,26 @@
   <h1>EV2 · Rubricas</h1>
   <p><a href="/ev2/config/domains">Gerir domínios</a></p>
 
+  <h3>Import from domain</h3>
+  <form method="post" action="/ev2/config/rubricas/import" class="js-import-rubricas">
+    <label>Domínio origem *</label>
+    <select name="source_domain_id" required>
+      <option value="">— selecionar —</option>
+      {% for d in domains %}
+      <option value="{{ d.id }}">{{ d.nome }}</option>
+      {% endfor %}
+    </select>
+
+    <label>Domínio destino *</label>
+    <select name="target_domain_id" required>
+      <option value="">— selecionar —</option>
+      {% for d in domains %}
+      <option value="{{ d.id }}" {% if selected_domain_id and selected_domain_id == d.id %}selected{% endif %}>{{ d.nome }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit">Importar rubricas</button>
+  </form>
+
   <h3>{{ 'Editar rubrica' if edit_rubrica else 'Nova rubrica' }}</h3>
   <form method="post" action="{{ '/ev2/config/rubricas/' ~ edit_rubrica.id if edit_rubrica else '/ev2/config/rubricas' }}">
     {% if edit_rubrica %}<input type="hidden" name="_method" value="PUT">{% endif %}
@@ -17,7 +37,7 @@
     <select name="domain_id" required>
       <option value="">— selecionar —</option>
       {% for d in domains %}
-      <option value="{{ d.id }}" {% if edit_rubrica and edit_rubrica.domain_id == d.id %}selected{% endif %}>{{ d.nome }}</option>
+      <option value="{{ d.id }}" {% if edit_rubrica and edit_rubrica.domain_id == d.id %}selected{% elif (not edit_rubrica) and selected_domain_id and selected_domain_id == d.id %}selected{% endif %}>{{ d.nome }}</option>
       {% endfor %}
     </select>
 

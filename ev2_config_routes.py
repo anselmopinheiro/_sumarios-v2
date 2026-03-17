@@ -21,7 +21,10 @@ def _wants_json() -> bool:
     if request.is_json:
         return True
     best = request.accept_mimetypes.best_match(["application/json", "text/html"])
-    return bool(best == "application/json" and request.accept_mimetypes[best] > request.accept_mimetypes["text/html"])
+    return bool(
+        best == "application/json"
+        and request.accept_mimetypes[best] > request.accept_mimetypes["text/html"]
+    )
 
 
 def _payload() -> dict:
@@ -76,6 +79,33 @@ def _rubric_to_dict(rubric: EV2Rubric) -> dict:
     }
 
 
+def _unique_rubric_code(target_domain_id: int, candidate: str, exclude_id: int | None = None) -> str:
+    base = (candidate or "").strip() or "RUB"
+    base = base[:80]
+
+    def exists(code: str) -> bool:
+        q = EV2Rubric.query.filter(
+            EV2Rubric.domain_id == target_domain_id,
+            EV2Rubric.codigo == code,
+        )
+        if exclude_id is not None:
+            q = q.filter(EV2Rubric.id != exclude_id)
+        return q.first() is not None
+
+    if not exists(base):
+        return base
+
+    idx = 2
+    while idx < 1000:
+        suffix = f"-{idx}"
+        clipped = base[: max(1, 80 - len(suffix))]
+        code = f"{clipped}{suffix}"
+        if not exists(code):
+            return code
+        idx += 1
+    return f"{base[:76]}-dup"
+
+
 @ev2_config_bp.route("/domains", methods=["GET", "POST"])
 def ev2_domains_collection():
     if request.method == "GET":
@@ -94,11 +124,7 @@ def ev2_domains_collection():
     ativo = _to_bool(data.get("ativo"), default=True)
 
     if not nome:
-        msg = "Campo obrigatório: nome"
-        if _wants_json():
-            return jsonify({"error": msg}), 400
-        flash(msg, "error")
-        return redirect(url_for("ev2_config.ev2_domains_collection"))
+        return _error("Campo obrigatório: nome", 400, "ev2_config.ev2_domains_collection")
 
     entity = EV2Domain(nome=nome, descricao=descricao, ativo=ativo)
     db.session.add(entity)
@@ -106,15 +132,74 @@ def ev2_domains_collection():
         db.session.commit()
     except IntegrityError:
         db.session.rollback()
-        msg = "Já existe um domínio com esse nome."
-        if _wants_json():
-            return jsonify({"error": msg}), 409
-        flash(msg, "error")
-        return redirect(url_for("ev2_config.ev2_domains_collection"))
+        return _error("Já existe um domínio com esse nome.", 409, "ev2_config.ev2_domains_collection")
 
     if _wants_json():
         return jsonify(_domain_to_dict(entity)), 201
     flash("Domínio criado com sucesso.", "success")
+    return redirect(url_for("ev2_config.ev2_domains_collection"))
+
+
+@ev2_config_bp.post("/domains/duplicate")
+def ev2_domain_duplicate():
+    data = _payload()
+    domain_id = _as_int(data.get("domain_id"))
+    new_name = (data.get("new_name") or data.get("nome") or "").strip()
+
+    if not domain_id or not new_name:
+        return _error(
+            "Campos obrigatórios: domain_id, new_name",
+            400,
+            "ev2_config.ev2_domains_collection",
+        )
+
+    source = EV2Domain.query.get(domain_id)
+    if not source:
+        return _error("Domínio origem não encontrado.", 404, "ev2_config.ev2_domains_collection")
+
+    if EV2Domain.query.filter(EV2Domain.nome == new_name).first():
+        return _error("Já existe domínio com esse nome.", 409, "ev2_config.ev2_domains_collection")
+
+    clone = EV2Domain(nome=new_name, descricao=source.descricao, ativo=source.ativo)
+    db.session.add(clone)
+    db.session.flush()
+
+    created_rubrics = []
+    warnings = []
+    source_rubrics = EV2Rubric.query.filter_by(domain_id=source.id).order_by(EV2Rubric.codigo.asc()).all()
+    for rubrica in source_rubrics:
+        final_code = _unique_rubric_code(clone.id, rubrica.codigo)
+        if final_code != rubrica.codigo:
+            warnings.append(
+                f"Código '{rubrica.codigo}' ajustado para '{final_code}' no novo domínio."
+            )
+        new_rubrica = EV2Rubric(
+            domain_id=clone.id,
+            codigo=final_code,
+            nome=rubrica.nome,
+            descricao=rubrica.descricao,
+            ativo=rubrica.ativo,
+        )
+        db.session.add(new_rubrica)
+        db.session.flush()
+        created_rubrics.append(_rubric_to_dict(new_rubrica))
+
+    db.session.commit()
+
+    payload = {
+        "domain": _domain_to_dict(clone),
+        "rubricas": created_rubrics,
+        "warnings": warnings,
+    }
+    if _wants_json():
+        return jsonify(payload), 201
+
+    flash(
+        f"Domínio duplicado com sucesso ({len(created_rubrics)} rubricas copiadas).",
+        "success",
+    )
+    if warnings:
+        flash("; ".join(warnings), "warning")
     return redirect(url_for("ev2_config.ev2_domains_collection"))
 
 
@@ -135,7 +220,11 @@ def ev2_domain_item(domain_id: int):
     if method == "GET":
         if _wants_json():
             return jsonify(_domain_to_dict(domain))
-        return render_template("ev2/config/domains.html", domains=EV2Domain.query.order_by(EV2Domain.nome.asc()).all(), edit_domain=domain)
+        return render_template(
+            "ev2/config/domains.html",
+            domains=EV2Domain.query.order_by(EV2Domain.nome.asc()).all(),
+            edit_domain=domain,
+        )
 
     if method == "PUT":
         data = _payload()
@@ -146,7 +235,10 @@ def ev2_domain_item(domain_id: int):
         if not nome:
             return _error("Campo obrigatório: nome", 400, "ev2_config.ev2_domains_collection")
 
-        duplicate = EV2Domain.query.filter(EV2Domain.nome == nome, EV2Domain.id != domain.id).first()
+        duplicate = EV2Domain.query.filter(
+            EV2Domain.nome == nome,
+            EV2Domain.id != domain.id,
+        ).first()
         if duplicate:
             return _error("Já existe um domínio com esse nome.", 409, "ev2_config.ev2_domains_collection")
 
@@ -162,8 +254,11 @@ def ev2_domain_item(domain_id: int):
 
     has_rubrics = EV2Rubric.query.filter_by(domain_id=domain.id).count() > 0
     if has_rubrics:
-        msg = "Não é possível eliminar domínio com rubricas associadas."
-        return _error(msg, 409, "ev2_config.ev2_domains_collection")
+        return _error(
+            "Não é possível eliminar domínio com rubricas associadas.",
+            409,
+            "ev2_config.ev2_domains_collection",
+        )
 
     db.session.delete(domain)
     db.session.commit()
@@ -182,6 +277,7 @@ def ev2_rubricas_collection():
         edit_id = request.args.get("edit", type=int)
         if edit_id:
             edit_rubrica = EV2Rubric.query.get(edit_id)
+        selected_domain_id = request.args.get("domain_id", type=int)
         if _wants_json():
             return jsonify([_rubric_to_dict(item) for item in rubricas])
         return render_template(
@@ -189,6 +285,7 @@ def ev2_rubricas_collection():
             rubricas=rubricas,
             domains=domains,
             edit_rubrica=edit_rubrica,
+            selected_domain_id=selected_domain_id,
         )
 
     data = _payload()
@@ -199,7 +296,11 @@ def ev2_rubricas_collection():
     ativo = _to_bool(data.get("ativo"), default=True)
 
     if not domain_id or not codigo or not nome:
-        return _error("Campos obrigatórios: domain_id, codigo, nome", 400, "ev2_config.ev2_rubricas_collection")
+        return _error(
+            "Campos obrigatórios: domain_id, codigo, nome",
+            400,
+            "ev2_config.ev2_rubricas_collection",
+        )
 
     domain = EV2Domain.query.get(domain_id)
     if not domain:
@@ -207,7 +308,11 @@ def ev2_rubricas_collection():
 
     duplicate = EV2Rubric.query.filter_by(domain_id=domain_id, codigo=codigo).first()
     if duplicate:
-        return _error("Já existe rubrica com esse código neste domínio.", 409, "ev2_config.ev2_rubricas_collection")
+        return _error(
+            "Já existe rubrica com esse código neste domínio.",
+            409,
+            "ev2_config.ev2_rubricas_collection",
+        )
 
     rubrica = EV2Rubric(
         domain_id=domain_id,
@@ -223,6 +328,70 @@ def ev2_rubricas_collection():
         return jsonify(_rubric_to_dict(rubrica)), 201
     flash("Rubrica criada com sucesso.", "success")
     return redirect(url_for("ev2_config.ev2_rubricas_collection"))
+
+
+@ev2_config_bp.post("/rubricas/import")
+def ev2_rubricas_import():
+    data = _payload()
+    source_domain_id = _as_int(data.get("source_domain_id"))
+    target_domain_id = _as_int(data.get("target_domain_id"))
+
+    if not source_domain_id or not target_domain_id:
+        return _error(
+            "Campos obrigatórios: source_domain_id, target_domain_id",
+            400,
+            "ev2_config.ev2_rubricas_collection",
+        )
+
+    if source_domain_id == target_domain_id:
+        return _error(
+            "Domínio origem e destino devem ser diferentes.",
+            400,
+            "ev2_config.ev2_rubricas_collection",
+        )
+
+    source = EV2Domain.query.get(source_domain_id)
+    target = EV2Domain.query.get(target_domain_id)
+    if not source or not target:
+        return _error("Domínio origem/destino não encontrado.", 404, "ev2_config.ev2_rubricas_collection")
+
+    warnings = []
+    created = []
+    source_rubrics = EV2Rubric.query.filter_by(domain_id=source.id).order_by(EV2Rubric.codigo.asc()).all()
+
+    for rubrica in source_rubrics:
+        final_code = _unique_rubric_code(target.id, rubrica.codigo)
+        if final_code != rubrica.codigo:
+            warnings.append(
+                f"Código '{rubrica.codigo}' já existia no domínio de destino; usado '{final_code}'."
+            )
+
+        new_rubrica = EV2Rubric(
+            domain_id=target.id,
+            codigo=final_code,
+            nome=rubrica.nome,
+            descricao=rubrica.descricao,
+            ativo=rubrica.ativo,
+        )
+        db.session.add(new_rubrica)
+        db.session.flush()
+        created.append(_rubric_to_dict(new_rubrica))
+
+    db.session.commit()
+
+    payload = {
+        "source_domain_id": source.id,
+        "target_domain_id": target.id,
+        "rubricas": created,
+        "warnings": warnings,
+    }
+    if _wants_json():
+        return jsonify(payload), 201
+
+    flash(f"Foram importadas {len(created)} rubricas para '{target.nome}'.", "success")
+    if warnings:
+        flash("; ".join(warnings), "warning")
+    return redirect(url_for("ev2_config.ev2_rubricas_collection", domain_id=target.id))
 
 
 @ev2_config_bp.route("/rubricas/<int:rubrica_id>", methods=["GET", "PUT", "DELETE", "POST"])
@@ -247,6 +416,7 @@ def ev2_rubrica_item(rubrica_id: int):
             rubricas=EV2Rubric.query.order_by(EV2Rubric.domain_id.asc(), EV2Rubric.codigo.asc()).all(),
             domains=EV2Domain.query.order_by(EV2Domain.nome.asc()).all(),
             edit_rubrica=rubrica,
+            selected_domain_id=rubrica.domain_id,
         )
 
     if method == "PUT":
@@ -258,19 +428,23 @@ def ev2_rubrica_item(rubrica_id: int):
         ativo = _to_bool(data.get("ativo"), default=True)
 
         if not domain_id or not codigo or not nome:
-            return _error("Campos obrigatórios: domain_id, codigo, nome", 400, "ev2_config.ev2_rubricas_collection")
+            return _error(
+                "Campos obrigatórios: domain_id, codigo, nome",
+                400,
+                "ev2_config.ev2_rubricas_collection",
+            )
 
         domain = EV2Domain.query.get(domain_id)
         if not domain:
             return _error("Domínio não encontrado", 404, "ev2_config.ev2_rubricas_collection")
 
-        duplicate = EV2Rubric.query.filter(
-            EV2Rubric.domain_id == domain_id,
-            EV2Rubric.codigo == codigo,
-            EV2Rubric.id != rubrica.id,
-        ).first()
-        if duplicate:
-            return _error("Já existe rubrica com esse código neste domínio.", 409, "ev2_config.ev2_rubricas_collection")
+        unique_code = _unique_rubric_code(domain_id, codigo, exclude_id=rubrica.id)
+        if unique_code != codigo:
+            return _error(
+                "Já existe rubrica com esse código neste domínio.",
+                409,
+                "ev2_config.ev2_rubricas_collection",
+            )
 
         rubrica.domain_id = domain_id
         rubrica.codigo = codigo

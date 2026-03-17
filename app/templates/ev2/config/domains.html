@@ -40,6 +40,11 @@
             <input type="hidden" name="_method" value="DELETE">
             <button type="submit">Eliminar</button>
           </form>
+          <form method="post" action="/ev2/config/domains/duplicate" class="js-duplicate-domain" style="display:inline">
+            <input type="hidden" name="domain_id" value="{{ d.id }}">
+            <input type="hidden" name="new_name" value="">
+            <button type="submit">Duplicar domínio</button>
+          </form>
         </td>
       </tr>
       {% endfor %}
