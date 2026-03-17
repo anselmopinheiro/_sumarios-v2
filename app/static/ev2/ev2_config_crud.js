@@ -84,6 +84,53 @@
     setRubricaFormMode(false);
   }
 
+  function domainNameMap() {
+    const map = {};
+    document.querySelectorAll('#js-rubrica-domain option[value]').forEach((opt) => {
+      if (opt.value) map[String(opt.value)] = opt.textContent || '—';
+    });
+    return map;
+  }
+
+  function renderRubricasTable(items) {
+    const tbody = document.querySelector('#js-rubricas-table tbody');
+    if (!tbody) return;
+    const dmap = domainNameMap();
+    tbody.innerHTML = '';
+    items.forEach((r) => {
+      const tr = document.createElement('tr');
+      tr.dataset.rubricaId = r.id;
+      tr.dataset.domainId = r.domain_id;
+      tr.dataset.codigo = r.codigo || '';
+      tr.dataset.nome = r.nome || '';
+      tr.dataset.descricao = r.descricao || '';
+      tr.dataset.ativo = r.ativo ? '1' : '0';
+      tr.innerHTML = `
+        <td>${r.id}</td>
+        <td>${dmap[String(r.domain_id)] || r.domain_nome || '—'}</td>
+        <td>${r.codigo || ''}</td>
+        <td>${r.nome || ''}</td>
+        <td>${r.descricao || ''}</td>
+        <td>${r.ativo ? 'Sim' : 'Não'}</td>
+        <td>
+          <button type="button" class="js-rubrica-edit">Editar</button>
+          <button type="button" class="js-rubrica-delete">Eliminar</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  async function refreshRubricasTable() {
+    const response = await fetch('/ev2/config/rubricas?format=json', { headers: { 'Accept': 'application/json' } });
+    const data = await parseResponse(response);
+    if (!response.ok || !Array.isArray(data)) {
+      showMessage('js-rubrica-msg', (data && data.error) || 'Falha ao atualizar lista de rubricas.', true);
+      return;
+    }
+    renderRubricasTable(data);
+  }
+
   ready(function(){
     document.addEventListener('click', async function(event){
       const handledDomain = await handleDomainButtons(event);
@@ -119,16 +166,13 @@
           return;
         }
         showMessage('js-rubrica-msg', 'Rubrica eliminada com sucesso.', false);
-        window.location.reload();
+        await refreshRubricasTable();
+        resetRubricaForm();
       }
     });
 
     const rubricaCancel = document.getElementById('js-rubrica-cancel');
-    if (rubricaCancel) {
-      rubricaCancel.addEventListener('click', function(){
-        resetRubricaForm();
-      });
-    }
+    if (rubricaCancel) rubricaCancel.addEventListener('click', resetRubricaForm);
 
     const rubricaForm = document.getElementById('js-rubrica-form');
     if (rubricaForm) {
@@ -156,7 +200,8 @@
           return;
         }
         showMessage('js-rubrica-msg', rubricaId ? 'Rubrica atualizada.' : 'Rubrica criada.', false);
-        window.location.reload();
+        await refreshRubricasTable();
+        resetRubricaForm();
       });
     }
 
@@ -185,7 +230,8 @@
         }
         const warnings = data.warnings?.length ? ` Avisos: ${data.warnings.join(' | ')}` : '';
         showMessage('js-rubrica-msg', `Rubricas importadas com sucesso.${warnings}`, false);
-        window.location.reload();
+        await refreshRubricasTable();
+        resetRubricaForm();
       });
     }
   });
