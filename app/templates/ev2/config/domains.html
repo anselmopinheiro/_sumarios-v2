@@ -1,0 +1,50 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>EV2 · Domínios</title>
+  <link rel="stylesheet" href="/static/ev2/ev2.css">
+</head>
+<body>
+  <h1>EV2 · Domínios</h1>
+  <p><a href="/ev2/config/rubricas">Gerir rubricas</a></p>
+
+  <h3>{{ 'Editar domínio' if edit_domain else 'Novo domínio' }}</h3>
+  <form method="post" action="{{ '/ev2/config/domains/' ~ edit_domain.id if edit_domain else '/ev2/config/domains' }}">
+    {% if edit_domain %}<input type="hidden" name="_method" value="PUT">{% endif %}
+    <label>Nome *</label>
+    <input name="nome" required value="{{ edit_domain.nome if edit_domain else '' }}">
+    <label>Descrição</label>
+    <textarea name="descricao">{{ edit_domain.descricao if edit_domain and edit_domain.descricao else '' }}</textarea>
+    <label><input type="checkbox" name="ativo" value="1" {% if not edit_domain or edit_domain.ativo %}checked{% endif %}> Ativo</label>
+    <button type="submit">{{ 'Guardar alterações' if edit_domain else 'Criar domínio' }}</button>
+    {% if edit_domain %}<a href="/ev2/config/domains">Cancelar</a>{% endif %}
+  </form>
+
+  <h3>Lista</h3>
+  <table border="1" cellpadding="6" cellspacing="0">
+    <thead>
+      <tr><th>ID</th><th>Nome</th><th>Descrição</th><th>Ativo</th><th>Rubricas</th><th>Ações</th></tr>
+    </thead>
+    <tbody>
+      {% for d in domains %}
+      <tr>
+        <td>{{ d.id }}</td>
+        <td>{{ d.nome }}</td>
+        <td>{{ d.descricao or '' }}</td>
+        <td>{{ 'Sim' if d.ativo else 'Não' }}</td>
+        <td>{{ d.rubricas|length }}</td>
+        <td>
+          <a href="/ev2/config/domains?edit={{ d.id }}">Editar</a>
+          <form method="post" action="/ev2/config/domains/{{ d.id }}" class="js-delete" style="display:inline">
+            <input type="hidden" name="_method" value="DELETE">
+            <button type="submit">Eliminar</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <script src="/static/ev2/ev2_config_crud.js"></script>
+</body>
+</html>

@@ -71,6 +71,7 @@ from sqlalchemy.sql.sqltypes import (
 from config import Config
 from offline_blueprint import offline_bp, refresh_snapshot_from_remote, snapshot_remote_to_local
 from ev2_routes import ev2_bp
+from ev2_config_routes import ev2_config_bp
 from offline_store import (
     count_offline_errors,
     get_offline_db_path as resolve_offline_db_path,
@@ -1782,6 +1783,7 @@ def create_app():
     Migrate(app, db)
     app.register_blueprint(offline_bp)
     app.register_blueprint(ev2_bp)
+    app.register_blueprint(ev2_config_bp)
 
     @app.get("/health")
     def healthcheck():
