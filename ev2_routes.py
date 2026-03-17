@@ -201,6 +201,11 @@ def ev2_event_submit_assessments(event_id: int):
     return jsonify({"status": "ok", "route": "event_submit_assessments", "event_id": event_id})
 
 
+@ev2_bp.get("/ui/dashboard")
+def ev2_ui_dashboard():
+    return render_template("ev2/ev2_dashboard.html")
+
+
 # minimal placeholder UI routes
 @ev2_bp.get("/ui/alunos")
 def ev2_ui_alunos():
