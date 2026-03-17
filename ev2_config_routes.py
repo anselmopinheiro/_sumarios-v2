@@ -3,7 +3,7 @@ from __future__ import annotations
 from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 from sqlalchemy.exc import IntegrityError
 
-from models import EV2Domain, EV2Rubric, db
+from models import EV2Assessment, EV2Domain, EV2Rubric, db
 
 
 ev2_config_bp = Blueprint(
@@ -76,6 +76,7 @@ def _rubric_to_dict(rubric: EV2Rubric) -> dict:
         "nome": rubric.nome,
         "descricao": rubric.descricao,
         "ativo": bool(rubric.ativo),
+        "in_use_count": EV2Assessment.query.filter_by(rubric_id=rubric.id).count(),
     }
 
 
@@ -458,6 +459,14 @@ def ev2_rubrica_item(rubrica_id: int):
             return jsonify(_rubric_to_dict(rubrica))
         flash("Rubrica atualizada com sucesso.", "success")
         return redirect(url_for("ev2_config.ev2_rubricas_collection"))
+
+    in_use = EV2Assessment.query.filter_by(rubric_id=rubrica.id).count()
+    if in_use > 0:
+        return _error(
+            "Não é possível eliminar rubrica em uso em eventos/avaliações.",
+            400,
+            "ev2_config.ev2_rubricas_collection",
+        )
 
     db.session.delete(rubrica)
     db.session.commit()
