@@ -3344,7 +3344,7 @@ def create_app():
         dominios = (
             EV2Domain.query.options(joinedload(EV2Domain.rubricas))
             .filter_by(ativo=True)
-            .order_by(EV2Domain.nome.asc())
+            .order_by(EV2Domain.letra.asc(), EV2Domain.nome.asc())
             .all()
         )
         dominios_view = []

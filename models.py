@@ -788,6 +788,7 @@ class EV2Domain(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(120), nullable=False, unique=True)
+    letra = db.Column(db.String(5), nullable=True)
     descricao = db.Column(db.Text)
     ativo = db.Column(db.Boolean, nullable=False, default=True, server_default=db.text("true"))
 
