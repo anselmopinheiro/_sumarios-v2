@@ -23,17 +23,25 @@
             {% for rubrica in dominio.rubricas %}
               <th>
                 <div>{{ rubrica.nome }}</div>
-                <label class="small fw-normal">
-                  <input
-                    type="checkbox"
-                    name="auto_rubrica_{{ rubrica.id }}"
-                    value="1"
+                <div class="d-flex flex-column gap-1 mt-1">
+                  <button
+                    type="button"
+                    class="btn btn-outline-primary btn-sm"
+                    onclick="aplicarValorAutomatico({{ rubrica.id }}, {{ aula.id }})"
                     data-rubrica-id="{{ rubrica.id }}"
                     data-valor-basico="{{ rubrica.pontuacao_padrao_basico if rubrica.pontuacao_padrao_basico is not none else 3 }}"
                     data-valor-secundario="{{ rubrica.pontuacao_padrao_secundario if rubrica.pontuacao_padrao_secundario is not none else 12 }}"
                   >
-                  aplicar pontuação automática
-                </label>
+                    Aplicar automático
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-outline-secondary btn-sm"
+                    onclick="confirmarLimpar({{ rubrica.id }}, {{ aula.id }})"
+                  >
+                    Limpar
+                  </button>
+                </div>
               </th>
             {% endfor %}
           {% endfor %}
@@ -123,31 +131,44 @@
     return resp.json();
   }
 
-  table.querySelectorAll('input[type="checkbox"][data-rubrica-id]').forEach((checkbox) => {
-    checkbox.addEventListener("change", async () => {
-      if (!checkbox.checked) return;
-      const rubricaId = checkbox.dataset.rubricaId;
-      const valor = ciclo === "secundario"
-        ? (checkbox.dataset.valorSecundario || "12")
-        : (checkbox.dataset.valorBasico || "3");
-      try {
-        const data = await postUpdate({
-          "aluno_ids[]": alunoIds,
-          rubrica_id: rubricaId,
-          valor,
-        });
-
-        table.querySelectorAll(`input[data-rubrica-id="${rubricaId}"][type="number"]`)
-          .forEach((inp) => { inp.value = valor; });
-
-        Object.entries(data.medias_por_aluno || {}).forEach(([alunoId, medias]) => {
-          renderMedias(alunoId, medias);
-        });
-      } catch (err) {
-        console.error(err);
-      }
+  async function updateRubricaForAlunos(rubricaId, valor, updateInputValue = true) {
+    const data = await postUpdate({
+      "aluno_ids[]": alunoIds,
+      rubrica_id: rubricaId,
+      valor,
     });
-  });
+    if (updateInputValue) {
+      table.querySelectorAll(`input[data-rubrica-id="${rubricaId}"][type="number"]`)
+        .forEach((inp) => { inp.value = valor; });
+    }
+    Object.entries(data.medias_por_aluno || {}).forEach(([alunoId, medias]) => {
+      renderMedias(alunoId, medias);
+    });
+  }
+
+  window.aplicarValorAutomatico = async function aplicarValorAutomatico(rubricaId) {
+    if (!window.confirm("Deseja aplicar o valor automático a todos os alunos desta rubrica?")) return;
+    const button = table.querySelector(`button[data-rubrica-id="${rubricaId}"]`);
+    const valor = ciclo === "secundario"
+      ? (button?.dataset.valorSecundario || "12")
+      : (button?.dataset.valorBasico || "3");
+    try {
+      await updateRubricaForAlunos(rubricaId, valor, true);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  window.confirmarLimpar = async function confirmarLimpar(rubricaId) {
+    if (!window.confirm("Deseja limpar todos os valores desta rubrica?")) return;
+    try {
+      await updateRubricaForAlunos(rubricaId, "0", false);
+      table.querySelectorAll(`input[data-rubrica-id="${rubricaId}"][type="number"]`)
+        .forEach((inp) => { inp.value = ""; });
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   table.querySelectorAll('input[type="number"][data-rubrica-id][data-aluno-id]').forEach((input) => {
     input.addEventListener("change", async () => {
