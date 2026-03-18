@@ -140,6 +140,7 @@ from models import (
     Entrega,
     EntregaParametro,
     ParametroDefinicao,
+    EV2Domain,
     EV2Rubric,
 )
 
@@ -3312,22 +3313,49 @@ def create_app():
     # DASHBOARD
     # ----------------------------------------
     def calcular_media_por_dominio(avaliacao):
-        acumulado = defaultdict(list)
+        dominios = {}
         for item in (avaliacao.itens or []):
-            dominio_nome = (getattr(getattr(item, "rubrica", None), "dominio", None) and item.rubrica.dominio.nome) or "Sem domínio"
-            if item.pontuacao is not None:
-                acumulado[dominio_nome].append(float(item.pontuacao))
+            rubrica = getattr(item, "rubrica", None)
+            dominio = getattr(rubrica, "dominio", None)
+            if not dominio or item.pontuacao is None:
+                continue
+            letra = (getattr(dominio, "letra", None) or getattr(dominio, "nome", None) or "Sem domínio").strip()
+            if letra not in dominios:
+                dominios[letra] = []
+            dominios[letra].append(float(item.pontuacao))
 
-        medias = {}
-        for dominio, valores in acumulado.items():
-            medias[dominio] = round(sum(valores) / len(valores), 2) if valores else 0.0
+        medias = {letra: round(sum(vals) / len(vals), 1) for letra, vals in dominios.items() if vals}
         return medias
 
     @app.route('/aula/<int:aula_id>/avaliar', methods=['GET', 'POST'])
     def aula_avaliar(aula_id):
         aula = CalendarioAula.query.get_or_404(aula_id)
         alunos = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
-        rubricas = EV2Rubric.query.filter_by(ativo=True).order_by(EV2Rubric.domain_id.asc(), EV2Rubric.codigo.asc()).all()
+        dominios = (
+            EV2Domain.query.options(joinedload(EV2Domain.rubricas))
+            .filter_by(ativo=True)
+            .order_by(EV2Domain.nome.asc())
+            .all()
+        )
+        dominios_view = []
+        for idx, dominio in enumerate(dominios):
+            letra = getattr(dominio, "letra", None)
+            if not letra:
+                letra = chr(ord("A") + idx)
+            rubricas_dominio = sorted(
+                [r for r in (dominio.rubricas or []) if getattr(r, "ativo", True)],
+                key=lambda r: ((r.codigo or ""), (r.nome or "")),
+            )
+            dominios_view.append(
+                {
+                    "id": dominio.id,
+                    "nome": dominio.nome,
+                    "letra": letra,
+                    "rubricas": rubricas_dominio,
+                }
+            )
+
+        rubricas = [rubrica for dominio in dominios_view for rubrica in dominio["rubricas"]]
 
         if request.method == 'POST':
             for aluno in alunos:
@@ -3337,17 +3365,24 @@ def create_app():
                     db.session.add(avaliacao)
                     db.session.flush()
 
+                auto3_marcado = request.form.get(f"auto_{aluno.id}") == "3"
+                auto10_marcado = request.form.get(f"auto10_{aluno.id}") == "10"
+
                 pontuacoes = []
                 for rubrica in rubricas:
-                    campo = f'pontuacao_{aluno.id}_{rubrica.id}'
-                    raw_val = request.form.get(campo)
-                    if raw_val in (None, ''):
-                        continue
-                    try:
-                        valor = float(raw_val)
-                    except ValueError:
-                        continue
-
+                    if auto10_marcado:
+                        valor = 10.0
+                    elif auto3_marcado:
+                        valor = 3.0
+                    else:
+                        campo = f"pontuacao-{aluno.id}-{rubrica.id}"
+                        raw_val = request.form.get(campo)
+                        if raw_val in (None, ""):
+                            continue
+                        try:
+                            valor = float(raw_val)
+                        except (TypeError, ValueError):
+                            continue
                     item = AvaliacaoItem.query.filter_by(avaliacao_id=avaliacao.id, rubrica_id=rubrica.id).first()
                     if not item:
                         item = AvaliacaoItem(avaliacao_id=avaliacao.id, rubrica_id=rubrica.id)
@@ -3355,28 +3390,44 @@ def create_app():
                     item.pontuacao = valor
                     pontuacoes.append(valor)
 
-                avaliacao.resultado = round(sum(pontuacoes) / len(pontuacoes), 2) if pontuacoes else None
+                avaliacao.resultado = round(sum(pontuacoes) / len(pontuacoes), 1) if pontuacoes else None
 
             db.session.commit()
             flash('Avaliações guardadas com sucesso.', 'success')
-            return redirect(url_for('calendario_semana'))
+            return redirect(url_for('aula_avaliar', aula_id=aula.id))
 
         avaliacao_map = {
             av.aluno_id: av
-            for av in Avaliacao.query.filter_by(aula_id=aula.id).options(joinedload(Avaliacao.itens)).all()
+            for av in (
+                Avaliacao.query.filter_by(aula_id=aula.id)
+                .options(
+                    joinedload(Avaliacao.itens)
+                    .joinedload(AvaliacaoItem.rubrica)
+                    .joinedload(EV2Rubric.dominio)
+                )
+                .all()
+            )
         }
 
-        medias_por_aluno = {
-            aluno_id: calcular_media_por_dominio(av)
-            for aluno_id, av in avaliacao_map.items()
-        }
+        avaliacoes = {}
+        medias_por_aluno = {}
+        for aluno in alunos:
+            av = avaliacao_map.get(aluno.id)
+            avaliacoes[aluno.id] = {}
+            if not av:
+                medias_por_aluno[aluno.id] = {}
+                continue
+            for item in av.itens or []:
+                if item.pontuacao is not None:
+                    avaliacoes[aluno.id][item.rubrica_id] = item.pontuacao
+            medias_por_aluno[aluno.id] = calcular_media_por_dominio(av)
 
         return render_template(
             'aula_avaliar.html',
             aula=aula,
             alunos=alunos,
-            rubricas=rubricas,
-            avaliacao_map=avaliacao_map,
+            dominios=dominios_view,
+            avaliacoes=avaliacoes,
             medias_por_aluno=medias_por_aluno,
         )
 

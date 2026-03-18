@@ -10,35 +10,54 @@
     <table class="table table-bordered table-sm align-middle">
       <thead class="table-light">
         <tr>
-          <th>Aluno</th>
-          {% for rubrica in rubricas %}
-            <th>{{ rubrica.codigo }}<br><small>{{ rubrica.nome }}</small></th>
+          <th rowspan="2">Aluno</th>
+          {% for dominio in dominios %}
+            <th colspan="{{ dominio.rubricas|length }}">{{ dominio.letra }}</th>
           {% endfor %}
-          <th>Médias por domínio</th>
+          <th rowspan="2">Médias por domínio</th>
+        </tr>
+        <tr>
+          {% for dominio in dominios %}
+            {% for rubrica in dominio.rubricas %}
+              <th>{{ rubrica.nome }}</th>
+            {% endfor %}
+          {% endfor %}
         </tr>
       </thead>
       <tbody>
         {% for aluno in alunos %}
-          {% set av = avaliacao_map.get(aluno.id) %}
           <tr>
-            <td>{{ aluno.numero or '-' }} - {{ aluno.nome }}</td>
-            {% for rubrica in rubricas %}
-              {% set item = (av.itens | selectattr('rubrica_id', 'equalto', rubrica.id) | list | first) if av else None %}
-              <td>
-                <input
-                  type="number"
-                  step="0.01"
-                  class="form-control form-control-sm"
-                  name="pontuacao_{{ aluno.id }}_{{ rubrica.id }}"
-                  value="{{ item.pontuacao if item and item.pontuacao is not none else '' }}"
-                >
-              </td>
+            <td>
+              {{ aluno.numero or '-' }} - {{ aluno.nome }}
+              <div class="mt-1 d-flex gap-2 flex-wrap">
+                <label class="form-check-label">
+                  <input type="checkbox" class="form-check-input" name="auto_{{ aluno.id }}" value="3">
+                  atribuir 3
+                </label>
+                <label class="form-check-label">
+                  <input type="checkbox" class="form-check-input" name="auto10_{{ aluno.id }}" value="10">
+                  atribuir 10
+                </label>
+              </div>
+            </td>
+            {% for dominio in dominios %}
+              {% for rubrica in dominio.rubricas %}
+                <td>
+                  <input
+                    type="number"
+                    step="0.5"
+                    class="form-control form-control-sm"
+                    name="pontuacao-{{ aluno.id }}-{{ rubrica.id }}"
+                    value="{{ avaliacoes.get(aluno.id, {}).get(rubrica.id, '') }}"
+                  >
+                </td>
+              {% endfor %}
             {% endfor %}
             <td>
               {% set medias = medias_por_aluno.get(aluno.id, {}) %}
               {% if medias %}
-                {% for dominio, media in medias.items() %}
-                  <div><strong>{{ dominio }}:</strong> {{ media }}</div>
+                {% for letra, media in medias.items() %}
+                  <div><strong>{{ letra }}:</strong> {{ media }}</div>
                 {% endfor %}
               {% else %}
                 <span class="text-muted">—</span>
