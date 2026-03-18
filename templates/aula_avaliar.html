@@ -77,7 +77,7 @@
                 {% set medias = medias_por_aluno.get(aluno.id, {}) %}
                 {% if medias %}
                   {% for letra, media in medias.items() %}
-                    <div><strong>{{ letra }}:</strong> {{ media }}</div>
+                    <div><strong>{{ letra }}:</strong> {{ media if media is not none else '-' }}</div>
                   {% endfor %}
                 {% else %}
                   <span class="text-muted">—</span>
@@ -114,7 +114,7 @@
       return;
     }
     cell.innerHTML = entries
-      .map(([letra, media]) => `<div><strong>${letra}:</strong> ${media}</div>`)
+      .map(([letra, media]) => `<div><strong>${letra}:</strong> ${media == null ? "-" : media}</div>`)
       .join("");
   }
 
@@ -168,7 +168,7 @@
   window.confirmarLimpar = async function confirmarLimpar(rubricaId) {
     if (!window.confirm("Deseja limpar todos os valores desta rubrica?")) return;
     try {
-      await updateRubricaForAlunos(rubricaId, "0", false);
+      await updateRubricaForAlunos(rubricaId, "", false);
       table.querySelectorAll(`input[data-rubrica-id="${rubricaId}"][type="number"]`)
         .forEach((inp) => { inp.value = ""; });
     } catch (err) {
@@ -178,7 +178,7 @@
 
   table.querySelectorAll('input[type="number"][data-rubrica-id][data-aluno-id]').forEach((input) => {
     input.addEventListener("change", async () => {
-      const valor = input.value === "" ? "0" : input.value;
+      const valor = input.value === "" ? "" : input.value;
       try {
         const data = await postUpdate({
           "aluno_ids[]": [input.dataset.alunoId],

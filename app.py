@@ -3313,21 +3313,33 @@ def create_app():
     # DASHBOARD
     # ----------------------------------------
     def calcular_media_por_dominio(avaliacao):
-        aluno = getattr(avaliacao, "aluno", None)
-        if getattr(aluno, "faltou", False):
-            return {}
+        """
+        Calcula a média de cada domínio por aluno.
+        - Ignora rubricas não avaliadas (None)
+        - Ignora alunos ausentes
+        Retorna dict {letra_dominio: média}
+        """
         dominios = {}
         for item in (avaliacao.itens or []):
+            # Ignora alunos faltosos
+            if getattr(getattr(getattr(item, "avaliacao", None), "aluno", None), "faltou", False):
+                continue
+            # Ignora rubricas sem pontuação
+            if item.pontuacao is None:
+                continue
             rubrica = getattr(item, "rubrica", None)
             dominio = getattr(rubrica, "dominio", None)
-            if not dominio or item.pontuacao is None:
+            if not dominio:
                 continue
             letra = (getattr(dominio, "letra", None) or getattr(dominio, "nome", None) or "Sem domínio").strip()
-            if letra not in dominios:
-                dominios[letra] = []
-            dominios[letra].append(float(item.pontuacao))
+            dominios.setdefault(letra, []).append(float(item.pontuacao))
 
-        medias = {letra: round(sum(vals) / len(vals), 1) for letra, vals in dominios.items() if vals}
+        medias = {}
+        for letra, vals in dominios.items():
+            if vals:
+                medias[letra] = round(sum(vals) / len(vals), 1)
+            else:
+                medias[letra] = None
         return medias
 
     def _detetar_ciclo_aula(aula):
@@ -3384,11 +3396,13 @@ def create_app():
 
         if request.method == 'POST':
             rubrica_id = request.form.get("rubrica_id", type=int)
-            valor_raw = request.form.get("valor", "0")
-            try:
-                valor = float(valor_raw)
-            except (TypeError, ValueError):
-                valor = 0.0
+            valor_raw = request.form.get("valor")
+            valor = None
+            if valor_raw not in (None, ""):
+                try:
+                    valor = float(valor_raw)
+                except (TypeError, ValueError):
+                    valor = None
 
             if not rubrica_id:
                 return jsonify({"status": "error", "message": "rubrica_id é obrigatório"}), 400
