@@ -3545,31 +3545,32 @@ def create_app():
         aula = CalendarioAula.query.get_or_404(aula_id)
         alunos = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
         total_tempos = int(getattr(aula, "total_tempos", 0) or 0)
-
-        meta_prefix = "__faltas_meta__:"
         registos_db = {r.aluno_id: r for r in AulaAluno.query.filter_by(aula_id=aula.id).all()}
         registros = {}
         for aluno in alunos:
             r = registos_db.get(aluno.id)
-            atraso = False
+            atraso = False  # True = atrasado; False = pontual
             faltas_tempos = []
-            fdis = bool(getattr(r, "falta_disciplinar", 0)) if r else False
+            fdis = False
             obs = ""
             if r:
+                meta = {}
                 raw_obs = (r.observacoes or "").strip()
-                if raw_obs.startswith(meta_prefix):
+                if raw_obs:
                     try:
-                        meta = json.loads(raw_obs[len(meta_prefix):])
+                        parsed = json.loads(raw_obs)
+                        if isinstance(parsed, dict):
+                            meta = parsed
                     except (TypeError, ValueError, json.JSONDecodeError):
                         meta = {}
-                    atraso = bool(meta.get("atraso", False))
-                    faltas_tempos = [int(t) for t in (meta.get("faltas_tempos") or []) if str(t).isdigit()]
-                    obs = str(meta.get("obs") or "")
-                else:
-                    atraso = bool(r.atraso)
-                    faltas_count = int(r.faltas or 0)
-                    faltas_tempos = list(range(1, min(max(faltas_count, 0), total_tempos) + 1))
-                    obs = raw_obs if fdis else ""
+                atraso = bool(meta.get("atraso", r.atraso))
+                faltas_default = list(range(1, min(max(int(r.faltas or 0), 0), total_tempos) + 1))
+                faltas_tempos = [
+                    int(t) for t in (meta.get("faltas", faltas_default) or [])
+                    if str(t).isdigit()
+                ]
+                fdis = bool(meta.get("fdis", bool(getattr(r, "falta_disciplinar", 0))))
+                obs = str(meta.get("obs", raw_obs if not meta else ""))
 
             registros[aluno.id] = {
                 "atraso": atraso,
@@ -3600,10 +3601,11 @@ def create_app():
                 registo.atraso = atraso
                 registo.faltas = len(faltas_tempos)
                 registo.falta_disciplinar = 1 if fdis else 0
-                registo.observacoes = meta_prefix + json.dumps(
+                registo.observacoes = json.dumps(
                     {
                         "atraso": atraso,
-                        "faltas_tempos": faltas_tempos,
+                        "faltas": faltas_tempos,
+                        "fdis": fdis,
                         "obs": obs if fdis else "",
                     },
                     ensure_ascii=False,
