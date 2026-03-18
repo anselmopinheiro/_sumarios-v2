@@ -16,7 +16,9 @@
               {{ dominio.letra }} – {{ dominio.nome }}{% if dominio.codigo %} ({{ dominio.codigo }}){% endif %}
             </th>
           {% endfor %}
-          <th rowspan="2">Médias por domínio</th>
+          {% for dominio in dominios %}
+            <th data-media-dominio="{{ dominio.letra }}">{{ dominio.letra }}</th>
+          {% endfor %}
         </tr>
         <tr>
           {% for dominio in dominios %}
@@ -70,20 +72,18 @@
                 </td>
               {% endfor %}
             {% endfor %}
-            <td class="media-cell" data-aluno-id="{{ aluno.id }}">
-              {% if faltou %}
-                <span class="text-muted">Faltou</span>
-              {% else %}
-                {% set medias = medias_por_aluno.get(aluno.id, {}) %}
-                {% if medias %}
-                  {% for letra, media in medias.items() %}
-                    <div><strong>{{ letra }}:</strong> {{ media if media is not none else '-' }}</div>
-                  {% endfor %}
+            {% set medias = medias_por_aluno.get(aluno.id, {}) %}
+            {% for dominio in dominios %}
+              <td class="media-cell text-center" data-aluno-id="{{ aluno.id }}" data-dominio-letra="{{ dominio.letra }}">
+                {% if faltou %}
+                  <span class="text-muted">-</span>
+                {% elif medias.get(dominio.letra) is not none %}
+                  {{ medias.get(dominio.letra) }}
                 {% else %}
-                  <span class="text-muted">—</span>
+                  <span class="text-muted">-</span>
                 {% endif %}
-              {% endif %}
-            </td>
+              </td>
+            {% endfor %}
           </tr>
         {% endfor %}
       </tbody>
@@ -101,21 +101,23 @@
   if (!form || !table) return;
 
   const ciclo = table.dataset.cicloAula || "basico";
+  const domainLetters = Array.from(table.querySelectorAll("th[data-media-dominio]"))
+    .map((th) => th.dataset.mediaDominio)
+    .filter(Boolean);
   const alunoIds = Array.from(table.querySelectorAll('tr[data-aluno-id][data-presente="1"]'))
     .map((tr) => tr.dataset.alunoId)
     .filter(Boolean);
 
   function renderMedias(alunoId, medias) {
-    const cell = table.querySelector(`.media-cell[data-aluno-id="${alunoId}"]`);
-    if (!cell) return;
-    const entries = Object.entries(medias || {});
-    if (!entries.length) {
-      cell.innerHTML = '<span class="text-muted">—</span>';
-      return;
-    }
-    cell.innerHTML = entries
-      .map(([letra, media]) => `<div><strong>${letra}:</strong> ${media == null ? "-" : media}</div>`)
-      .join("");
+    const mediaMap = medias || {};
+    domainLetters.forEach((letra) => {
+      const cell = table.querySelector(
+        `.media-cell[data-aluno-id="${alunoId}"][data-dominio-letra="${letra}"]`
+      );
+      if (!cell) return;
+      const value = mediaMap[letra];
+      cell.innerHTML = value == null ? '<span class="text-muted">-</span>' : `${value}`;
+    });
   }
 
   async function postUpdate(payload) {

@@ -3331,7 +3331,9 @@ def create_app():
             dominio = getattr(rubrica, "dominio", None)
             if not dominio:
                 continue
-            letra = (getattr(dominio, "letra", None) or getattr(dominio, "nome", None) or "Sem domínio").strip()
+            letra = (getattr(dominio, "letra", None) or "").strip()
+            if not letra:
+                continue
             dominios.setdefault(letra, []).append(float(item.pontuacao))
 
         medias = {}
