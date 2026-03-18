@@ -3545,10 +3545,6 @@ def create_app():
         aula = CalendarioAula.query.get_or_404(aula_id)
         alunos = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
         total_tempos = int(getattr(aula, "total_tempos", 0) or 0)
-        if total_tempos <= 0:
-            total_tempos = int(getattr(getattr(aula, "turma", None), "tempos_por_bloco", 0) or 0)
-        if total_tempos <= 0:
-            total_tempos = 6
 
         meta_prefix = "__faltas_meta__:"
         registos_db = {r.aluno_id: r for r in AulaAluno.query.filter_by(aula_id=aula.id).all()}
