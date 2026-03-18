@@ -12,8 +12,8 @@
         <tr>
           <th>No</th>
           <th>Nome</th>
-          <th>Atraso (min)</th>
-          <th>Faltas (tempos)</th>
+          <th>Atraso</th>
+          <th>Faltas</th>
           <th>FDis</th>
           <th>Observações</th>
         </tr>
@@ -25,7 +25,13 @@
             <td>{{ aluno.numero or loop.index }}</td>
             <td>{{ aluno.nome }}</td>
             <td>
-              <input type="number" min="0" class="form-control form-control-sm" name="atraso-{{ aluno.id }}" value="{{ reg.get('atraso', 0) }}">
+              <input
+                type="checkbox"
+                class="form-check-input"
+                name="atraso-{{ aluno.id }}"
+                value="1"
+                {% if reg.get('atraso') %}checked{% endif %}
+              >
             </td>
             <td>
               <div class="d-flex flex-wrap gap-2">

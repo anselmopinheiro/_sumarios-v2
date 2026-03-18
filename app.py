@@ -3555,7 +3555,7 @@ def create_app():
         registros = {}
         for aluno in alunos:
             r = registos_db.get(aluno.id)
-            atraso_min = 0
+            atraso = False
             faltas_tempos = []
             fdis = bool(getattr(r, "falta_disciplinar", 0)) if r else False
             obs = ""
@@ -3566,17 +3566,17 @@ def create_app():
                         meta = json.loads(raw_obs[len(meta_prefix):])
                     except (TypeError, ValueError, json.JSONDecodeError):
                         meta = {}
-                    atraso_min = int(meta.get("atraso_min") or 0)
+                    atraso = bool(meta.get("atraso", False))
                     faltas_tempos = [int(t) for t in (meta.get("faltas_tempos") or []) if str(t).isdigit()]
                     obs = str(meta.get("obs") or "")
                 else:
-                    atraso_min = 5 if bool(r.atraso) else 0
+                    atraso = bool(r.atraso)
                     faltas_count = int(r.faltas or 0)
                     faltas_tempos = list(range(1, min(max(faltas_count, 0), total_tempos) + 1))
                     obs = raw_obs if fdis else ""
 
             registros[aluno.id] = {
-                "atraso": max(atraso_min, 0),
+                "atraso": atraso,
                 "faltas": sorted({t for t in faltas_tempos if 1 <= t <= total_tempos}),
                 "fdis": fdis,
                 "obs": obs,
@@ -3584,11 +3584,7 @@ def create_app():
 
         if request.method == "POST":
             for aluno in alunos:
-                atraso_raw = request.form.get(f"atraso-{aluno.id}", "0")
-                try:
-                    atraso = max(int(atraso_raw), 0)
-                except (TypeError, ValueError):
-                    atraso = 0
+                atraso = request.form.get(f"atraso-{aluno.id}") == "1"
 
                 faltas_raw = request.form.getlist(f"faltas-{aluno.id}[]")
                 faltas_tempos = sorted({
@@ -3605,12 +3601,12 @@ def create_app():
                     db.session.add(registo)
                     registos_db[aluno.id] = registo
 
-                registo.atraso = atraso > 0
+                registo.atraso = atraso
                 registo.faltas = len(faltas_tempos)
                 registo.falta_disciplinar = 1 if fdis else 0
                 registo.observacoes = meta_prefix + json.dumps(
                     {
-                        "atraso_min": atraso,
+                        "atraso": atraso,
                         "faltas_tempos": faltas_tempos,
                         "obs": obs if fdis else "",
                     },
