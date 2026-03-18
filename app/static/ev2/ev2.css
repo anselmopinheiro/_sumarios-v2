@@ -1,0 +1,127 @@
+body {
+  font-family: system-ui, Arial, sans-serif;
+  margin: 1.5rem;
+  color: #1f2937;
+  background: #f8fafc;
+}
+
+h1 {
+  margin-bottom: 0.75rem;
+}
+
+h3 {
+  margin-top: 1.25rem;
+  margin-bottom: 0.6rem;
+}
+
+a { color: #1d4ed8; }
+
+.ev2-panel {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.ev2-form-grid {
+  display: grid;
+  gap: 0.55rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  align-items: end;
+}
+
+label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.2rem;
+}
+
+.required::after {
+  content: " *";
+  color: #b91c1c;
+}
+
+input, select, textarea, button {
+  font: inherit;
+}
+
+input, select, textarea {
+  width: 100%;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  box-sizing: border-box;
+  background: #fff;
+}
+
+textarea { min-height: 70px; }
+
+.ev2-actions {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+button {
+  border: 1px solid #2563eb;
+  background: #2563eb;
+  color: #fff;
+  padding: 0.42rem 0.66rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+button:hover { background: #1d4ed8; }
+
+button.secondary {
+  background: #fff;
+  color: #1f2937;
+  border-color: #94a3b8;
+}
+
+.ev2-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+}
+
+.ev2-table th, .ev2-table td {
+  border: 1px solid #dbe2ea;
+  padding: 0.5rem 0.6rem;
+  vertical-align: middle;
+}
+
+.ev2-table th {
+  background: #e2e8f0;
+  font-weight: 700;
+}
+
+.ev2-table tbody tr:nth-child(even) {
+  background: #f8fafc;
+}
+
+.col-id, .col-center {
+  text-align: center;
+}
+
+.col-left {
+  text-align: left;
+}
+
+.msg-box {
+  display: none;
+  padding: .5rem;
+  margin: .5rem 0;
+  border: 1px solid #0a58ca;
+  color: #0a58ca;
+  border-radius: 6px;
+  background: #eff6ff;
+}
+
+.filters-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.6rem;
+  margin-bottom: 0.7rem;
+}

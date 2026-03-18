@@ -70,6 +70,8 @@ from sqlalchemy.sql.sqltypes import (
 
 from config import Config
 from offline_blueprint import offline_bp, refresh_snapshot_from_remote, snapshot_remote_to_local
+from ev2_routes import ev2_bp
+from ev2_config_routes import ev2_config_bp
 from offline_store import (
     count_offline_errors,
     get_offline_db_path as resolve_offline_db_path,
@@ -107,6 +109,8 @@ from models import (
     TurmaDisciplina,
     Aluno,
     AulaAluno,
+    Avaliacao,
+    AvaliacaoItem,
     AulaSumarioHistorico,
     DTTurma,
     DTAluno,
@@ -136,6 +140,8 @@ from models import (
     Entrega,
     EntregaParametro,
     ParametroDefinicao,
+    EV2Domain,
+    EV2Rubric,
 )
 
 from calendario_service import (
@@ -158,6 +164,7 @@ from calendario_service import (
     calcular_mapa_avaliacao_diaria,
     listar_sumarios_pendentes,
 )
+
 
 BACKUP_LOCK = threading.Lock()
 
@@ -1779,6 +1786,8 @@ def create_app():
     db.init_app(app)
     Migrate(app, db)
     app.register_blueprint(offline_bp)
+    app.register_blueprint(ev2_bp)
+    app.register_blueprint(ev2_config_bp)
 
     @app.get("/health")
     def healthcheck():
@@ -3303,6 +3312,171 @@ def create_app():
     # ----------------------------------------
     # DASHBOARD
     # ----------------------------------------
+    def calcular_media_por_dominio(avaliacao):
+        dominios = {}
+        for item in (avaliacao.itens or []):
+            rubrica = getattr(item, "rubrica", None)
+            dominio = getattr(rubrica, "dominio", None)
+            if not dominio or item.pontuacao is None:
+                continue
+            letra = (getattr(dominio, "letra", None) or getattr(dominio, "nome", None) or "Sem domínio").strip()
+            if letra not in dominios:
+                dominios[letra] = []
+            dominios[letra].append(float(item.pontuacao))
+
+        medias = {letra: round(sum(vals) / len(vals), 1) for letra, vals in dominios.items() if vals}
+        return medias
+
+    def _detetar_ciclo_aula(aula):
+        ciclo = (getattr(aula, "ciclo", None) or "").strip().lower()
+        if ciclo in {"basico", "secundario"}:
+            return ciclo
+
+        turma_tipo = (getattr(getattr(aula, "turma", None), "tipo", None) or "").strip().lower()
+        if "secund" in turma_tipo:
+            return "secundario"
+        return "basico"
+
+    @app.route('/aula/<int:aula_id>/avaliar', methods=['GET', 'POST'])
+    def aula_avaliar(aula_id):
+        aula = CalendarioAula.query.get_or_404(aula_id)
+        alunos_turma = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
+        presencas = {
+            row.aluno_id: row
+            for row in AulaAluno.query.filter_by(aula_id=aula.id).all()
+        }
+        alunos = [
+            aluno
+            for aluno in alunos_turma
+            if not (getattr(aluno, "faltou", False) or (presencas.get(aluno.id) and (presencas[aluno.id].faltas or 0) > 0))
+        ]
+        aluno_ids_presentes = {aluno.id for aluno in alunos}
+        dominios = (
+            EV2Domain.query.options(joinedload(EV2Domain.rubricas))
+            .filter_by(ativo=True)
+            .order_by(EV2Domain.letra.asc(), EV2Domain.nome.asc())
+            .all()
+        )
+        dominios_view = []
+        for idx, dominio in enumerate(dominios):
+            letra = getattr(dominio, "letra", None)
+            if not letra:
+                letra = chr(ord("A") + idx)
+            rubricas_dominio = sorted(
+                [r for r in (dominio.rubricas or []) if getattr(r, "ativo", True)],
+                key=lambda r: ((r.codigo or ""), (r.nome or "")),
+            )
+            dominios_view.append(
+                {
+                    "id": dominio.id,
+                    "nome": dominio.nome,
+                    "letra": letra,
+                    "codigo": getattr(dominio, "codigo", None),
+                    "rubricas": rubricas_dominio,
+                }
+            )
+
+        rubricas = [rubrica for dominio in dominios_view for rubrica in dominio["rubricas"]]
+        rubricas_por_dominio = {dominio["id"]: dominio["rubricas"] for dominio in dominios_view}
+
+        if request.method == 'POST':
+            rubrica_id = request.form.get("rubrica_id", type=int)
+            valor_raw = request.form.get("valor", "0")
+            try:
+                valor = float(valor_raw)
+            except (TypeError, ValueError):
+                valor = 0.0
+
+            if not rubrica_id:
+                return jsonify({"status": "error", "message": "rubrica_id é obrigatório"}), 400
+
+            aluno_ids = request.form.getlist("aluno_ids[]")
+            if not aluno_ids:
+                aluno_unico = request.form.get("aluno_id")
+                if aluno_unico:
+                    aluno_ids = [aluno_unico]
+            aluno_ids = [int(aluno_id) for aluno_id in aluno_ids if str(aluno_id).isdigit()]
+            aluno_ids = [aluno_id for aluno_id in aluno_ids if aluno_id in aluno_ids_presentes]
+            if not aluno_ids:
+                return jsonify({"status": "error", "message": "Sem alunos elegíveis para atualizar"}), 400
+
+            for aluno_id in aluno_ids:
+                avaliacao = Avaliacao.query.filter_by(aula_id=aula.id, aluno_id=aluno_id).first()
+                if not avaliacao:
+                    avaliacao = Avaliacao(aula_id=aula.id, aluno_id=aluno_id)
+                    db.session.add(avaliacao)
+                    db.session.flush()
+
+                item = AvaliacaoItem.query.filter_by(avaliacao_id=avaliacao.id, rubrica_id=rubrica_id).first()
+                if not item:
+                    item = AvaliacaoItem(avaliacao_id=avaliacao.id, rubrica_id=rubrica_id)
+                    db.session.add(item)
+                item.pontuacao = valor
+
+                medias = calcular_media_por_dominio(avaliacao)
+                avaliacao.resultado = round(sum(medias.values()) / len(medias), 1) if medias else 0.0
+
+            db.session.commit()
+
+            medias_atualizadas = {}
+            for aluno_id in aluno_ids:
+                av = (
+                    Avaliacao.query.filter_by(aula_id=aula.id, aluno_id=aluno_id)
+                    .options(
+                        joinedload(Avaliacao.itens)
+                        .joinedload(AvaliacaoItem.rubrica)
+                        .joinedload(EV2Rubric.dominio)
+                    )
+                    .first()
+                )
+                medias_atualizadas[str(aluno_id)] = calcular_media_por_dominio(av) if av else {}
+
+            return jsonify(
+                {
+                    "status": "ok",
+                    "rubrica_id": rubrica_id,
+                    "valor": valor,
+                    "medias_por_aluno": medias_atualizadas,
+                }
+            ), 200
+
+        avaliacao_map = {
+            av.aluno_id: av
+            for av in (
+                Avaliacao.query.filter_by(aula_id=aula.id)
+                .options(
+                    joinedload(Avaliacao.itens)
+                    .joinedload(AvaliacaoItem.rubrica)
+                    .joinedload(EV2Rubric.dominio)
+                )
+                .all()
+            )
+        }
+
+        avaliacoes = {}
+        medias_por_aluno = {}
+        for aluno in alunos:
+            av = avaliacao_map.get(aluno.id)
+            avaliacoes[aluno.id] = {}
+            if not av:
+                medias_por_aluno[aluno.id] = {}
+                continue
+            for item in av.itens or []:
+                if item.pontuacao is not None:
+                    avaliacoes[aluno.id][item.rubrica_id] = item.pontuacao
+            medias_por_aluno[aluno.id] = calcular_media_por_dominio(av)
+
+        return render_template(
+            'aula_avaliar.html',
+            aula=aula,
+            alunos=alunos,
+            dominios=dominios_view,
+            rubricas_por_dominio=rubricas_por_dominio,
+            avaliacoes=avaliacoes,
+            medias_por_aluno=medias_por_aluno,
+            ciclo_aula=_detetar_ciclo_aula(aula),
+        )
+
     @app.route("/")
     def dashboard():
         turmas = turmas_abertas_ativas()
