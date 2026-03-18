@@ -3544,7 +3544,11 @@ def create_app():
     def aula_faltas(aula_id):
         aula = CalendarioAula.query.get_or_404(aula_id)
         alunos = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
-        total_tempos = int(getattr(aula, "total_tempos", 0) or 0)
+        total_tempos_raw = getattr(aula, "total_tempos", 0) or 0
+        try:
+            total_tempos = max(int(total_tempos_raw), 0)
+        except (TypeError, ValueError):
+            total_tempos = 0
         registos_db = {r.aluno_id: r for r in AulaAluno.query.filter_by(aula_id=aula.id).all()}
         registros = {}
         for aluno in alunos:
