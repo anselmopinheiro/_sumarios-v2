@@ -106,15 +106,15 @@
       tr.dataset.descricao = r.descricao || '';
       tr.dataset.ativo = r.ativo ? '1' : '0';
       tr.innerHTML = `
-        <td>${r.id}</td>
-        <td>${dmap[String(r.domain_id)] || r.domain_nome || '—'}</td>
-        <td>${r.codigo || ''}</td>
-        <td>${r.nome || ''}</td>
-        <td>${r.descricao || ''}</td>
-        <td>${r.ativo ? 'Sim' : 'Não'}</td>
-        <td>
-          <button type="button" class="js-rubrica-edit">Editar</button>
-          <button type="button" class="js-rubrica-delete">Eliminar</button>
+        <td class="col-id">${r.id}</td>
+        <td class="col-left">${dmap[String(r.domain_id)] || r.domain_nome || '—'}</td>
+        <td class="col-left">${r.codigo || ''}</td>
+        <td class="col-left">${r.nome || ''}</td>
+        <td class="col-left">${r.descricao || ''}</td>
+        <td class="col-center">${r.ativo ? 'Sim' : 'Não'}</td>
+        <td class="col-left">
+          <button type="button" class="js-rubrica-edit secondary">Editar</button>
+          <button type="button" class="js-rubrica-delete secondary">Eliminar</button>
         </td>
       `;
       tbody.appendChild(tr);
@@ -129,6 +129,21 @@
       return;
     }
     renderRubricasTable(data);
+    applyRubricasFilters();
+  }
+
+
+  function applyRubricasFilters() {
+    const domainFilter = document.getElementById('js-rubrica-filter-domain')?.value || '';
+    const term = (document.getElementById('js-rubrica-search')?.value || '').trim().toLowerCase();
+    document.querySelectorAll('#js-rubricas-table tbody tr').forEach((row) => {
+      const rowDomain = row.dataset.domainId || '';
+      const codigo = (row.dataset.codigo || '').toLowerCase();
+      const nome = (row.dataset.nome || '').toLowerCase();
+      const passDomain = !domainFilter || rowDomain === String(domainFilter);
+      const passSearch = !term || codigo.includes(term) || nome.includes(term);
+      row.style.display = passDomain && passSearch ? '' : 'none';
+    });
   }
 
   ready(function(){
@@ -204,6 +219,12 @@
         resetRubricaForm();
       });
     }
+
+    const filterDomain = document.getElementById('js-rubrica-filter-domain');
+    const searchInput = document.getElementById('js-rubrica-search');
+    if (filterDomain) filterDomain.addEventListener('change', applyRubricasFilters);
+    if (searchInput) searchInput.addEventListener('input', applyRubricasFilters);
+    applyRubricasFilters();
 
     const importForm = document.getElementById('js-rubricas-import-form');
     if (importForm) {
