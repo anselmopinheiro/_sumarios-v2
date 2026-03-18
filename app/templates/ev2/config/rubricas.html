@@ -1,0 +1,145 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>EV2 · Rubricas</title>
+  <link rel="stylesheet" href="{{ url_for('ev2_config.static', filename='ev2/ev2.css') }}">
+</head>
+<body>
+  <h1>EV2 · Rubricas</h1>
+  <p><a href="/ev2/config/domains">Gerir domínios</a></p>
+  <div id="js-rubrica-msg" class="msg-box"></div>
+
+  <div class="ev2-panel">
+    <h3>Importar de outro domínio</h3>
+    <form method="post" action="/ev2/config/rubricas/import" class="js-import-rubricas ev2-form-grid" id="js-rubricas-import-form">
+      <div>
+        <label class="required">Domínio origem</label>
+        <select name="source_domain_id" required>
+          <option value="">— selecionar —</option>
+          {% for d in domains %}
+          <option value="{{ d.id }}">{{ d.nome }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label class="required">Domínio destino</label>
+        <select name="target_domain_id" required>
+          <option value="">— selecionar —</option>
+          {% for d in domains %}
+          <option value="{{ d.id }}" {% if selected_domain_id and selected_domain_id == d.id %}selected{% endif %}>{{ d.nome }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="ev2-actions">
+        <button type="submit">Importar rubricas</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="ev2-panel">
+    <h3 id="js-rubrica-form-title">{{ 'Editar rubrica' if edit_rubrica else 'Nova rubrica' }}</h3>
+    <form method="post" action="{{ '/ev2/config/rubricas/' ~ edit_rubrica.id if edit_rubrica else '/ev2/config/rubricas' }}" id="js-rubrica-form" class="ev2-form-grid">
+      <input type="hidden" name="rubrica_id" id="js-rubrica-id" value="{{ edit_rubrica.id if edit_rubrica else '' }}">
+
+      <div>
+        <label class="required">Domínio</label>
+        <select name="domain_id" id="js-rubrica-domain" required>
+          <option value="">— selecionar —</option>
+          {% for d in domains %}
+          <option value="{{ d.id }}" {% if edit_rubrica and edit_rubrica.domain_id == d.id %}selected{% elif (not edit_rubrica) and selected_domain_id and selected_domain_id == d.id %}selected{% endif %}>{{ d.nome }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label class="required">Código</label>
+        <input name="codigo" id="js-rubrica-codigo" required value="{{ edit_rubrica.codigo if edit_rubrica else '' }}">
+      </div>
+
+      <div>
+        <label class="required">Nome / Designação</label>
+        <input name="nome" id="js-rubrica-nome" required value="{{ edit_rubrica.nome if edit_rubrica else '' }}">
+      </div>
+
+      <div>
+        <label>Descrição</label>
+        <textarea name="descricao" id="js-rubrica-descricao">{{ edit_rubrica.descricao if edit_rubrica and edit_rubrica.descricao else '' }}</textarea>
+      </div>
+
+      <div>
+        <label>Ordem (placeholder)</label>
+        <input type="number" id="js-rubrica-ordem" placeholder="não persistido no modelo atual">
+      </div>
+
+      <div>
+        <label>Peso (placeholder)</label>
+        <input type="number" step="0.01" id="js-rubrica-peso" placeholder="não persistido no modelo atual">
+      </div>
+
+      <div>
+        <label><input type="checkbox" name="ativo" id="js-rubrica-ativo" value="1" {% if not edit_rubrica or edit_rubrica.ativo %}checked{% endif %}> Ativo</label>
+      </div>
+
+      <div class="ev2-actions">
+        <button type="submit" id="js-rubrica-save-btn">{{ 'Guardar alterações' if edit_rubrica else 'Criar rubrica' }}</button>
+        <button type="button" id="js-rubrica-cancel" class="secondary" style="display:{{ 'inline-block' if edit_rubrica else 'none' }};">Cancelar</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="ev2-panel">
+    <h3>Lista</h3>
+
+    <div class="filters-row">
+      <div>
+        <label>Filtrar por domínio</label>
+        <select id="js-rubrica-filter-domain">
+          <option value="">— todos —</option>
+          {% for d in domains %}
+          <option value="{{ d.id }}" {% if selected_domain_id and selected_domain_id == d.id %}selected{% endif %}>{{ d.nome }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>Pesquisar (nome/código)</label>
+        <input id="js-rubrica-search" type="search" placeholder="ex: R1, Participação...">
+      </div>
+    </div>
+
+    <table class="ev2-table" id="js-rubricas-table">
+      <thead>
+        <tr>
+          <th class="col-id">ID</th>
+          <th class="col-left">Domínio</th>
+          <th class="col-left">Código</th>
+          <th class="col-left">Nome</th>
+          <th class="col-left">Descrição</th>
+          <th class="col-center">Ativo</th>
+          <th class="col-left">Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rubricas %}
+        <tr data-rubrica-id="{{ r.id }}" data-domain-id="{{ r.domain_id }}" data-codigo="{{ r.codigo }}" data-nome="{{ r.nome }}" data-descricao="{{ r.descricao or '' }}" data-ativo="{{ 1 if r.ativo else 0 }}">
+          <td class="col-id">{{ r.id }}</td>
+          <td class="col-left">{{ r.dominio.nome if r.dominio else '—' }}</td>
+          <td class="col-left">{{ r.codigo }}</td>
+          <td class="col-left">{{ r.nome }}</td>
+          <td class="col-left">{{ r.descricao or '' }}</td>
+          <td class="col-center">{{ 'Sim' if r.ativo else 'Não' }}</td>
+          <td class="col-left">
+            <button type="button" class="js-rubrica-edit secondary">Editar</button>
+            <button type="button" class="js-rubrica-delete secondary">Eliminar</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <script src="{{ url_for('ev2_config.static', filename='ev2/ev2_config_crud.js') }}"></script>
+</body>
+</html>

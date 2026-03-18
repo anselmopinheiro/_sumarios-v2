@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import sqlite3
 from datetime import datetime, timedelta
@@ -82,9 +83,20 @@ def enqueue_upsert_aulas_alunos(aula_id, aluno_id, payload_dict, instance_path=N
 
 
 def pending_count(instance_path=None):
-    with _connect(instance_path) as conn:
-        row = conn.execute("SELECT COUNT(*) AS n FROM outbox WHERE status='pending'").fetchone()
-        return int(row["n"] if row else 0)
+    base = instance_path or os.path.join(os.getcwd(), "instance")
+    os.makedirs(base, exist_ok=True)
+    db_path = os.path.join(base, "offline.db")
+
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT COUNT(*) AS n FROM outbox WHERE status='pending'").fetchone()
+            return int(row["n"] if row else 0)
+    except sqlite3.OperationalError as exc:
+        if "no such table: outbox" in str(exc).lower():
+            logging.warning("Table 'outbox' missing in database %s. Returning 0 pending messages.", db_path)
+            return 0
+        raise
 
 
 def list_pending(limit=200, instance_path=None):
