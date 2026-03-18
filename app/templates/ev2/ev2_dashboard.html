@@ -1,0 +1,95 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>EV2 Dashboard</title>
+  <link rel="stylesheet" href="/static/ev2/ev2.css">
+  <style>
+    .grid { display:grid; grid-template-columns: repeat(auto-fit,minmax(280px,1fr)); gap:1rem; }
+    .card { border:1px solid #ddd; border-radius:8px; padding:1rem; }
+    label{ display:block; margin-top:.5rem; font-size:.9rem; }
+    input, select{ width:100%; padding:.4rem; }
+    .row { display:grid; grid-template-columns:1fr 1fr; gap:.6rem; }
+    button { margin-top:.8rem; padding:.5rem .8rem; }
+    pre { background:#111; color:#ddd; padding:1rem; border-radius:6px; min-height:220px; overflow:auto; }
+  </style>
+</head>
+<body>
+  <h1>EV2 Dashboard (mínimo)</h1>
+  <p>Pré-visualização de mapas JSON e export CSV/XML via endpoints EV2.</p>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Parâmetros base</h3>
+      <label>turma_id <input id="turma_id" type="number" required></label>
+      <label>disciplina_id <input id="disciplina_id" type="number" required></label>
+      <label>aluno_id (opcional) <input id="aluno_id" type="number"></label>
+      <div class="row">
+        <label>reference_date <input id="reference_date" type="date"></label>
+        <label>month/year <input id="month" type="number" min="1" max="12" placeholder="month"></label>
+      </div>
+      <div class="row">
+        <label>year <input id="year" type="number" placeholder="year"></label>
+        <label>periodo_id <input id="periodo_id" type="number"></label>
+      </div>
+      <div class="row">
+        <label>ano_letivo_id <input id="ano_letivo_id" type="number"></label>
+        <label>semestre (1|2) <input id="semestre" type="number" min="1" max="2"></label>
+      </div>
+      <div class="row">
+        <label>data_inicio <input id="data_inicio" type="date"></label>
+        <label>data_fim <input id="data_fim" type="date"></label>
+      </div>
+      <label><input id="include_raw" type="checkbox"> include_raw</label>
+      <label><input id="include_debug" type="checkbox"> include_debug (exports)</label>
+    </div>
+
+    <div class="card">
+      <h3>Preview JSON Maps</h3>
+      <div class="row">
+        <button data-map="weekly" class="js-preview">Weekly</button>
+        <button data-map="monthly" class="js-preview">Monthly</button>
+      </div>
+      <div class="row">
+        <button data-map="period" class="js-preview">Period</button>
+        <button data-map="semester" class="js-preview">Semester</button>
+      </div>
+      <div class="row">
+        <button data-map="annual" class="js-preview">Annual</button>
+        <button data-map="final" class="js-preview">Final</button>
+      </div>
+
+      <h3 style="margin-top:1rem">Export Maps</h3>
+      <label>Map type
+        <select id="export_map_type">
+          <option>weekly</option><option>monthly</option><option>period</option>
+          <option>semester</option><option>annual</option><option>final</option>
+        </select>
+      </label>
+      <div class="row">
+        <button data-fmt="csv" class="js-export">Download CSV</button>
+        <button data-fmt="xml" class="js-export">Download XML</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Placeholder Events</h3>
+      <div class="row">
+        <button data-endpoint="/ev2/events" data-method="GET" class="js-event">List events</button>
+        <button data-endpoint="/ev2/events" data-method="POST" class="js-event">Create event</button>
+      </div>
+      <label>event_id <input id="event_id" type="number" value="1"></label>
+      <div class="row">
+        <button data-kind="detail" class="js-event-id">Event detail</button>
+        <button data-kind="students" class="js-event-id">Add students</button>
+      </div>
+      <button data-kind="assessments" class="js-event-id">Submit assessments</button>
+    </div>
+  </div>
+
+  <h3>Output</h3>
+  <pre id="output">{}</pre>
+
+  <script src="/static/ev2/ev2_dashboard.js"></script>
+</body>
+</html>

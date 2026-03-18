@@ -1,0 +1,71 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>EV2 · Domínios</title>
+  <link rel="stylesheet" href="{{ url_for('ev2_config.static', filename='ev2/ev2.css') }}">
+</head>
+<body>
+  <h1>EV2 · Domínios</h1>
+  <p><a href="/ev2/config/rubricas">Gerir rubricas</a></p>
+  <div id="js-domain-msg" class="msg-box"></div>
+
+  <div class="ev2-panel">
+    <h3>{{ 'Editar domínio' if edit_domain else 'Novo domínio' }}</h3>
+    <form method="post" action="{{ '/ev2/config/domains/' ~ edit_domain.id if edit_domain else '/ev2/config/domains' }}" class="ev2-form-grid">
+      {% if edit_domain %}<input type="hidden" name="_method" value="PUT">{% endif %}
+      <div>
+        <label class="required">Nome</label>
+        <input name="nome" required value="{{ edit_domain.nome if edit_domain else '' }}">
+      </div>
+      <div>
+        <label>Letra</label>
+        <input name="letra" value="{{ edit_domain.letra if edit_domain and edit_domain.letra else '' }}" placeholder="D1">
+      </div>
+      <div>
+        <label>Código</label>
+        <input name="codigo" value="{{ edit_domain.codigo if edit_domain and edit_domain.codigo else '' }}" placeholder="DOM-01">
+      </div>
+      <div>
+        <label>Descrição</label>
+        <textarea name="descricao">{{ edit_domain.descricao if edit_domain and edit_domain.descricao else '' }}</textarea>
+      </div>
+      <div>
+        <label><input type="checkbox" name="ativo" value="1" {% if not edit_domain or edit_domain.ativo %}checked{% endif %}> Ativo</label>
+      </div>
+      <div class="ev2-actions">
+        <button type="submit">{{ 'Guardar alterações' if edit_domain else 'Criar domínio' }}</button>
+        {% if edit_domain %}<a href="/ev2/config/domains">Cancelar</a>{% endif %}
+      </div>
+    </form>
+  </div>
+
+  <div class="ev2-panel">
+    <h3>Lista</h3>
+    <table class="ev2-table">
+      <thead>
+        <tr><th class="col-id">ID</th><th class="col-left">Nome</th><th class="col-left">Letra</th><th class="col-left">Código</th><th class="col-left">Descrição</th><th class="col-center">Ativo</th><th class="col-center">Rubricas</th><th class="col-left">Ações</th></tr>
+      </thead>
+      <tbody>
+        {% for d in domains %}
+        <tr>
+          <td class="col-id">{{ d.id }}</td>
+          <td class="js-domain-name col-left">{{ d.nome }}</td>
+          <td class="col-left">{{ d.letra or '' }}</td>
+          <td class="col-left">{{ d.codigo or '' }}</td>
+          <td class="col-left">{{ d.descricao or '' }}</td>
+          <td class="col-center">{{ 'Sim' if d.ativo else 'Não' }}</td>
+          <td class="col-center">{{ d.rubricas|length }}</td>
+          <td class="col-left ev2-actions">
+            <a href="/ev2/config/domains?edit={{ d.id }}">Editar</a>
+            <button type="button" class="js-domain-delete secondary" data-domain-id="{{ d.id }}">Eliminar domínio</button>
+            <button type="button" class="js-domain-duplicate secondary" data-domain-id="{{ d.id }}">Duplicar domínio</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <script src="{{ url_for('ev2_config.static', filename='ev2/ev2_config_crud.js') }}"></script>
+</body>
+</html>
