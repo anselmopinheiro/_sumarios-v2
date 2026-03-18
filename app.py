@@ -3340,7 +3340,17 @@ def create_app():
     @app.route('/aula/<int:aula_id>/avaliar', methods=['GET', 'POST'])
     def aula_avaliar(aula_id):
         aula = CalendarioAula.query.get_or_404(aula_id)
-        alunos = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
+        alunos_turma = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
+        presencas = {
+            row.aluno_id: row
+            for row in AulaAluno.query.filter_by(aula_id=aula.id).all()
+        }
+        alunos = [
+            aluno
+            for aluno in alunos_turma
+            if not (getattr(aluno, "faltou", False) or (presencas.get(aluno.id) and (presencas[aluno.id].faltas or 0) > 0))
+        ]
+        aluno_ids_presentes = {aluno.id for aluno in alunos}
         dominios = (
             EV2Domain.query.options(joinedload(EV2Domain.rubricas))
             .filter_by(ativo=True)
@@ -3369,46 +3379,65 @@ def create_app():
         rubricas_por_dominio = {dominio["id"]: dominio["rubricas"] for dominio in dominios_view}
 
         if request.method == 'POST':
-            ciclo_aula = _detetar_ciclo_aula(aula)
-            for aluno in alunos:
-                avaliacao = Avaliacao.query.filter_by(aula_id=aula.id, aluno_id=aluno.id).first()
+            rubrica_id = request.form.get("rubrica_id", type=int)
+            valor_raw = request.form.get("valor", "0")
+            try:
+                valor = float(valor_raw)
+            except (TypeError, ValueError):
+                valor = 0.0
+
+            if not rubrica_id:
+                return jsonify({"status": "error", "message": "rubrica_id é obrigatório"}), 400
+
+            aluno_ids = request.form.getlist("aluno_ids[]")
+            if not aluno_ids:
+                aluno_unico = request.form.get("aluno_id")
+                if aluno_unico:
+                    aluno_ids = [aluno_unico]
+            aluno_ids = [int(aluno_id) for aluno_id in aluno_ids if str(aluno_id).isdigit()]
+            aluno_ids = [aluno_id for aluno_id in aluno_ids if aluno_id in aluno_ids_presentes]
+            if not aluno_ids:
+                return jsonify({"status": "error", "message": "Sem alunos elegíveis para atualizar"}), 400
+
+            for aluno_id in aluno_ids:
+                avaliacao = Avaliacao.query.filter_by(aula_id=aula.id, aluno_id=aluno_id).first()
                 if not avaliacao:
-                    avaliacao = Avaliacao(aula_id=aula.id, aluno_id=aluno.id)
+                    avaliacao = Avaliacao(aula_id=aula.id, aluno_id=aluno_id)
                     db.session.add(avaliacao)
                     db.session.flush()
 
-                for rubrica in rubricas:
-                    auto_rubrica = request.form.get(f"auto_rubrica_{rubrica.id}") == "1"
-                    if auto_rubrica:
-                        if ciclo_aula == "secundario":
-                            valor = float(getattr(rubrica, "pontuacao_padrao_secundario", 12) or 12)
-                        else:
-                            valor = float(getattr(rubrica, "pontuacao_padrao_basico", 3) or 3)
-                    else:
-                        campo = f"pontuacao-{aluno.id}-{rubrica.id}"
-                        raw_val = request.form.get(campo)
-                        if raw_val in (None, ""):
-                            valor = 0.0
-                        else:
-                            try:
-                                valor = float(raw_val)
-                            except (TypeError, ValueError):
-                                valor = 0.0
-                    item = AvaliacaoItem.query.filter_by(avaliacao_id=avaliacao.id, rubrica_id=rubrica.id).first()
-                    if not item:
-                        item = AvaliacaoItem(avaliacao_id=avaliacao.id, rubrica_id=rubrica.id)
-                        db.session.add(item)
-                    item.pontuacao = valor
+                item = AvaliacaoItem.query.filter_by(avaliacao_id=avaliacao.id, rubrica_id=rubrica_id).first()
+                if not item:
+                    item = AvaliacaoItem(avaliacao_id=avaliacao.id, rubrica_id=rubrica_id)
+                    db.session.add(item)
+                item.pontuacao = valor
 
                 medias = calcular_media_por_dominio(avaliacao)
-                if medias:
-                    avaliacao.resultado = round(sum(medias.values()) / len(medias), 1)
-                else:
-                    avaliacao.resultado = 0.0
+                avaliacao.resultado = round(sum(medias.values()) / len(medias), 1) if medias else 0.0
 
             db.session.commit()
-            flash('Avaliações guardadas com sucesso.', 'success')
-            return redirect(url_for('calendario_semana'))
+
+            medias_atualizadas = {}
+            for aluno_id in aluno_ids:
+                av = (
+                    Avaliacao.query.filter_by(aula_id=aula.id, aluno_id=aluno_id)
+                    .options(
+                        joinedload(Avaliacao.itens)
+                        .joinedload(AvaliacaoItem.rubrica)
+                        .joinedload(EV2Rubric.dominio)
+                    )
+                    .first()
+                )
+                medias_atualizadas[str(aluno_id)] = calcular_media_por_dominio(av) if av else {}
+
+            return jsonify(
+                {
+                    "status": "ok",
+                    "rubrica_id": rubrica_id,
+                    "valor": valor,
+                    "medias_por_aluno": medias_atualizadas,
+                }
+            ), 200
 
         avaliacao_map = {
             av.aluno_id: av
@@ -3444,6 +3473,7 @@ def create_app():
             rubricas_por_dominio=rubricas_por_dominio,
             avaliacoes=avaliacoes,
             medias_por_aluno=medias_por_aluno,
+            ciclo_aula=_detetar_ciclo_aula(aula),
         )
 
     @app.route("/")

@@ -5,9 +5,9 @@
   Turma {{ aula.turma_id }} · Aula #{{ aula.id }} · Data {{ aula.data.strftime('%Y-%m-%d') if aula.data else '-' }}
 </p>
 
-<form method="post">
+<form method="post" id="avaliacao-form">
   <div class="table-responsive">
-    <table class="table table-bordered table-sm align-middle">
+    <table class="table table-bordered table-sm align-middle" id="avaliacao-table" data-ciclo-aula="{{ ciclo_aula }}">
       <thead class="table-light">
         <tr>
           <th rowspan="2">Aluno</th>
@@ -22,7 +22,14 @@
               <th>
                 <div>{{ rubrica.nome }}</div>
                 <label class="small fw-normal">
-                  <input type="checkbox" name="auto_rubrica_{{ rubrica.id }}" value="1">
+                  <input
+                    type="checkbox"
+                    name="auto_rubrica_{{ rubrica.id }}"
+                    value="1"
+                    data-rubrica-id="{{ rubrica.id }}"
+                    data-valor-basico="{{ rubrica.pontuacao_padrao_basico if rubrica.pontuacao_padrao_basico is not none else 3 }}"
+                    data-valor-secundario="{{ rubrica.pontuacao_padrao_secundario if rubrica.pontuacao_padrao_secundario is not none else 12 }}"
+                  >
                   aplicar pontuação automática
                 </label>
               </th>
@@ -32,7 +39,7 @@
       </thead>
       <tbody>
         {% for aluno in alunos %}
-          <tr>
+          <tr data-aluno-id="{{ aluno.id }}">
             <td>
               {{ aluno.numero or '-' }} - {{ aluno.nome }}
             </td>
@@ -44,12 +51,14 @@
                     step="0.5"
                     class="form-control form-control-sm"
                     name="pontuacao-{{ aluno.id }}-{{ rubrica.id }}"
+                    data-aluno-id="{{ aluno.id }}"
+                    data-rubrica-id="{{ rubrica.id }}"
                     value="{{ avaliacoes.get(aluno.id, {}).get(rubrica.id, '') }}"
                   >
                 </td>
               {% endfor %}
             {% endfor %}
-            <td>
+            <td class="media-cell" data-aluno-id="{{ aluno.id }}">
               {% set medias = medias_por_aluno.get(aluno.id, {}) %}
               {% if medias %}
                 {% for letra, media in medias.items() %}
@@ -68,4 +77,95 @@
   <button type="submit" class="btn btn-primary">Guardar Avaliações</button>
   <a href="{{ url_for('calendario_semana') }}" class="btn btn-outline-secondary">Voltar</a>
 </form>
+
+<script>
+(() => {
+  const form = document.getElementById("avaliacao-form");
+  const table = document.getElementById("avaliacao-table");
+  if (!form || !table) return;
+
+  const ciclo = table.dataset.cicloAula || "basico";
+  const alunoIds = Array.from(table.querySelectorAll("tr[data-aluno-id]"))
+    .map((tr) => tr.dataset.alunoId)
+    .filter(Boolean);
+
+  function renderMedias(alunoId, medias) {
+    const cell = table.querySelector(`.media-cell[data-aluno-id="${alunoId}"]`);
+    if (!cell) return;
+    const entries = Object.entries(medias || {});
+    if (!entries.length) {
+      cell.innerHTML = '<span class="text-muted">—</span>';
+      return;
+    }
+    cell.innerHTML = entries
+      .map(([letra, media]) => `<div><strong>${letra}:</strong> ${media}</div>`)
+      .join("");
+  }
+
+  async function postUpdate(payload) {
+    const body = new URLSearchParams();
+    Object.entries(payload).forEach(([key, value]) => {
+      if (Array.isArray(value)) {
+        value.forEach((v) => body.append(key, v));
+      } else {
+        body.append(key, value);
+      }
+    });
+
+    const resp = await fetch(window.location.pathname, {
+      method: "POST",
+      headers: { "X-Requested-With": "XMLHttpRequest" },
+      body,
+    });
+    if (!resp.ok) throw new Error("Falha ao guardar avaliação.");
+    return resp.json();
+  }
+
+  table.querySelectorAll('input[type="checkbox"][data-rubrica-id]').forEach((checkbox) => {
+    checkbox.addEventListener("change", async () => {
+      if (!checkbox.checked) return;
+      const rubricaId = checkbox.dataset.rubricaId;
+      const valor = ciclo === "secundario"
+        ? (checkbox.dataset.valorSecundario || "12")
+        : (checkbox.dataset.valorBasico || "3");
+      try {
+        const data = await postUpdate({
+          "aluno_ids[]": alunoIds,
+          rubrica_id: rubricaId,
+          valor,
+        });
+
+        table.querySelectorAll(`input[data-rubrica-id="${rubricaId}"][type="number"]`)
+          .forEach((inp) => { inp.value = valor; });
+
+        Object.entries(data.medias_por_aluno || {}).forEach(([alunoId, medias]) => {
+          renderMedias(alunoId, medias);
+        });
+      } catch (err) {
+        console.error(err);
+      }
+    });
+  });
+
+  table.querySelectorAll('input[type="number"][data-rubrica-id][data-aluno-id]').forEach((input) => {
+    input.addEventListener("change", async () => {
+      const valor = input.value === "" ? "0" : input.value;
+      try {
+        const data = await postUpdate({
+          "aluno_ids[]": [input.dataset.alunoId],
+          rubrica_id: input.dataset.rubricaId,
+          valor,
+        });
+        Object.entries(data.medias_por_aluno || {}).forEach(([alunoId, medias]) => {
+          renderMedias(alunoId, medias);
+        });
+      } catch (err) {
+        console.error(err);
+      }
+    });
+  });
+
+  form.addEventListener("submit", (event) => event.preventDefault());
+})();
+</script>
 {% endblock %}
