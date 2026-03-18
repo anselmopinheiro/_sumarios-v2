@@ -19,7 +19,13 @@
         <tr>
           {% for dominio in dominios %}
             {% for rubrica in dominio.rubricas %}
-              <th>{{ rubrica.nome }}</th>
+              <th>
+                <div>{{ rubrica.nome }}</div>
+                <label class="small fw-normal">
+                  <input type="checkbox" name="auto_rubrica_{{ rubrica.id }}" value="1">
+                  aplicar pontuação automática
+                </label>
+              </th>
             {% endfor %}
           {% endfor %}
         </tr>
@@ -29,16 +35,6 @@
           <tr>
             <td>
               {{ aluno.numero or '-' }} - {{ aluno.nome }}
-              <div class="mt-1 d-flex gap-2 flex-wrap">
-                <label class="form-check-label">
-                  <input type="checkbox" class="form-check-input" name="auto_{{ aluno.id }}" value="3">
-                  atribuir 3
-                </label>
-                <label class="form-check-label">
-                  <input type="checkbox" class="form-check-input" name="auto10_{{ aluno.id }}" value="10">
-                  atribuir 10
-                </label>
-              </div>
             </td>
             {% for dominio in dominios %}
               {% for rubrica in dominio.rubricas %}

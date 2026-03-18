@@ -3327,6 +3327,16 @@ def create_app():
         medias = {letra: round(sum(vals) / len(vals), 1) for letra, vals in dominios.items() if vals}
         return medias
 
+    def _detetar_ciclo_aula(aula):
+        ciclo = (getattr(aula, "ciclo", None) or "").strip().lower()
+        if ciclo in {"basico", "secundario"}:
+            return ciclo
+
+        turma_tipo = (getattr(getattr(aula, "turma", None), "tipo", None) or "").strip().lower()
+        if "secund" in turma_tipo:
+            return "secundario"
+        return "basico"
+
     @app.route('/aula/<int:aula_id>/avaliar', methods=['GET', 'POST'])
     def aula_avaliar(aula_id):
         aula = CalendarioAula.query.get_or_404(aula_id)
@@ -3359,6 +3369,7 @@ def create_app():
         rubricas_por_dominio = {dominio["id"]: dominio["rubricas"] for dominio in dominios_view}
 
         if request.method == 'POST':
+            ciclo_aula = _detetar_ciclo_aula(aula)
             for aluno in alunos:
                 avaliacao = Avaliacao.query.filter_by(aula_id=aula.id, aluno_id=aluno.id).first()
                 if not avaliacao:
@@ -3366,14 +3377,13 @@ def create_app():
                     db.session.add(avaliacao)
                     db.session.flush()
 
-                auto3_marcado = request.form.get(f"auto_{aluno.id}") == "3"
-                auto10_marcado = request.form.get(f"auto10_{aluno.id}") == "10"
-
                 for rubrica in rubricas:
-                    if auto10_marcado:
-                        valor = 10.0
-                    elif auto3_marcado:
-                        valor = 3.0
+                    auto_rubrica = request.form.get(f"auto_rubrica_{rubrica.id}") == "1"
+                    if auto_rubrica:
+                        if ciclo_aula == "secundario":
+                            valor = float(getattr(rubrica, "pontuacao_padrao_secundario", 12) or 12)
+                        else:
+                            valor = float(getattr(rubrica, "pontuacao_padrao_basico", 3) or 3)
                     else:
                         campo = f"pontuacao-{aluno.id}-{rubrica.id}"
                         raw_val = request.form.get(campo)
