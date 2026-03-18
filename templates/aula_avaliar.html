@@ -12,7 +12,9 @@
         <tr>
           <th rowspan="2">Aluno</th>
           {% for dominio in dominios %}
-            <th colspan="{{ dominio.rubricas|length }}">{{ dominio.letra }}</th>
+            <th colspan="{{ dominio.rubricas|length }}">
+              {{ dominio.letra }} – {{ dominio.nome }}{% if dominio.codigo %} ({{ dominio.codigo }}){% endif %}
+            </th>
           {% endfor %}
           <th rowspan="2">Médias por domínio</th>
         </tr>

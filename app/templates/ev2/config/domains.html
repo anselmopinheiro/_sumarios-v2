@@ -19,6 +19,14 @@
         <input name="nome" required value="{{ edit_domain.nome if edit_domain else '' }}">
       </div>
       <div>
+        <label>Letra</label>
+        <input name="letra" value="{{ edit_domain.letra if edit_domain and edit_domain.letra else '' }}" placeholder="D1">
+      </div>
+      <div>
+        <label>Código</label>
+        <input name="codigo" value="{{ edit_domain.codigo if edit_domain and edit_domain.codigo else '' }}" placeholder="DOM-01">
+      </div>
+      <div>
         <label>Descrição</label>
         <textarea name="descricao">{{ edit_domain.descricao if edit_domain and edit_domain.descricao else '' }}</textarea>
       </div>
@@ -36,13 +44,15 @@
     <h3>Lista</h3>
     <table class="ev2-table">
       <thead>
-        <tr><th class="col-id">ID</th><th class="col-left">Nome</th><th class="col-left">Descrição</th><th class="col-center">Ativo</th><th class="col-center">Rubricas</th><th class="col-left">Ações</th></tr>
+        <tr><th class="col-id">ID</th><th class="col-left">Nome</th><th class="col-left">Letra</th><th class="col-left">Código</th><th class="col-left">Descrição</th><th class="col-center">Ativo</th><th class="col-center">Rubricas</th><th class="col-left">Ações</th></tr>
       </thead>
       <tbody>
         {% for d in domains %}
         <tr>
           <td class="col-id">{{ d.id }}</td>
           <td class="js-domain-name col-left">{{ d.nome }}</td>
+          <td class="col-left">{{ d.letra or '' }}</td>
+          <td class="col-left">{{ d.codigo or '' }}</td>
           <td class="col-left">{{ d.descricao or '' }}</td>
           <td class="col-center">{{ 'Sim' if d.ativo else 'Não' }}</td>
           <td class="col-center">{{ d.rubricas|length }}</td>

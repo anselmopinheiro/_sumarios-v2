@@ -61,6 +61,8 @@ def _domain_to_dict(domain: EV2Domain) -> dict:
     return {
         "id": domain.id,
         "nome": domain.nome,
+        "letra": getattr(domain, "letra", None),
+        "codigo": getattr(domain, "codigo", None),
         "descricao": domain.descricao,
         "ativo": bool(domain.ativo),
         "rubricas_count": len(domain.rubricas),
@@ -121,13 +123,15 @@ def ev2_domains_collection():
 
     data = _payload()
     nome = (data.get("nome") or "").strip()
+    letra = (data.get("letra") or "").strip() or None
+    codigo = (data.get("codigo") or "").strip() or None
     descricao = (data.get("descricao") or "").strip() or None
     ativo = _to_bool(data.get("ativo"), default=True)
 
     if not nome:
         return _error("Campo obrigatório: nome", 400, "ev2_config.ev2_domains_collection")
 
-    entity = EV2Domain(nome=nome, descricao=descricao, ativo=ativo)
+    entity = EV2Domain(nome=nome, letra=letra, codigo=codigo, descricao=descricao, ativo=ativo)
     db.session.add(entity)
     try:
         db.session.commit()
@@ -161,7 +165,13 @@ def ev2_domain_duplicate():
     if EV2Domain.query.filter(EV2Domain.nome == new_designation).first():
         return _error("Já existe domínio com essa designação.", 400, "ev2_config.ev2_domains_collection")
 
-    clone = EV2Domain(nome=new_designation, descricao=source.descricao, ativo=source.ativo)
+    clone = EV2Domain(
+        nome=new_designation,
+        letra=source.letra,
+        codigo=source.codigo,
+        descricao=source.descricao,
+        ativo=source.ativo,
+    )
     db.session.add(clone)
     db.session.flush()
 
@@ -231,6 +241,8 @@ def ev2_domain_item(domain_id: int):
     if method == "PUT":
         data = _payload()
         nome = (data.get("nome") or "").strip()
+        letra = (data.get("letra") or "").strip() or None
+        codigo = (data.get("codigo") or "").strip() or None
         descricao = (data.get("descricao") or "").strip() or None
         ativo = _to_bool(data.get("ativo"), default=True)
 
@@ -245,6 +257,8 @@ def ev2_domain_item(domain_id: int):
             return _error("Já existe um domínio com esse nome.", 409, "ev2_config.ev2_domains_collection")
 
         domain.nome = nome
+        domain.letra = letra
+        domain.codigo = codigo
         domain.descricao = descricao
         domain.ativo = ativo
         db.session.commit()

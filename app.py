@@ -3371,6 +3371,7 @@ def create_app():
                     "id": dominio.id,
                     "nome": dominio.nome,
                     "letra": letra,
+                    "codigo": getattr(dominio, "codigo", None),
                     "rubricas": rubricas_dominio,
                 }
             )
