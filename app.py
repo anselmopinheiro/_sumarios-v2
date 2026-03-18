@@ -3313,6 +3313,9 @@ def create_app():
     # DASHBOARD
     # ----------------------------------------
     def calcular_media_por_dominio(avaliacao):
+        aluno = getattr(avaliacao, "aluno", None)
+        if getattr(aluno, "faltou", False):
+            return {}
         dominios = {}
         for item in (avaliacao.itens or []):
             rubrica = getattr(item, "rubrica", None)
@@ -3340,17 +3343,17 @@ def create_app():
     @app.route('/aula/<int:aula_id>/avaliar', methods=['GET', 'POST'])
     def aula_avaliar(aula_id):
         aula = CalendarioAula.query.get_or_404(aula_id)
-        alunos_turma = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
+        alunos = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
         presencas = {
             row.aluno_id: row
             for row in AulaAluno.query.filter_by(aula_id=aula.id).all()
         }
-        alunos = [
-            aluno
-            for aluno in alunos_turma
-            if not (getattr(aluno, "faltou", False) or (presencas.get(aluno.id) and (presencas[aluno.id].faltas or 0) > 0))
-        ]
-        aluno_ids_presentes = {aluno.id for aluno in alunos}
+        alunos_faltosos_ids = {
+            aluno.id
+            for aluno in alunos
+            if getattr(aluno, "faltou", False) or (presencas.get(aluno.id) and (presencas[aluno.id].faltas or 0) > 0)
+        }
+        aluno_ids_presentes = {aluno.id for aluno in alunos if aluno.id not in alunos_faltosos_ids}
         dominios = (
             EV2Domain.query.options(joinedload(EV2Domain.rubricas))
             .filter_by(ativo=True)
@@ -3456,6 +3459,10 @@ def create_app():
         avaliacoes = {}
         medias_por_aluno = {}
         for aluno in alunos:
+            if aluno.id in alunos_faltosos_ids:
+                avaliacoes[aluno.id] = {}
+                medias_por_aluno[aluno.id] = {}
+                continue
             av = avaliacao_map.get(aluno.id)
             avaliacoes[aluno.id] = {}
             if not av:
@@ -3474,6 +3481,7 @@ def create_app():
             rubricas_por_dominio=rubricas_por_dominio,
             avaliacoes=avaliacoes,
             medias_por_aluno=medias_por_aluno,
+            alunos_faltosos_ids=alunos_faltosos_ids,
             ciclo_aula=_detetar_ciclo_aula(aula),
         )
 

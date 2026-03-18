@@ -49,7 +49,8 @@
       </thead>
       <tbody>
         {% for aluno in alunos %}
-          <tr data-aluno-id="{{ aluno.id }}">
+          {% set faltou = aluno.id in alunos_faltosos_ids %}
+          <tr data-aluno-id="{{ aluno.id }}" data-presente="{{ 0 if faltou else 1 }}">
             <td>
               {{ aluno.numero or '-' }} - {{ aluno.nome }}
             </td>
@@ -63,19 +64,24 @@
                     name="pontuacao-{{ aluno.id }}-{{ rubrica.id }}"
                     data-aluno-id="{{ aluno.id }}"
                     data-rubrica-id="{{ rubrica.id }}"
+                    {% if faltou %}disabled{% endif %}
                     value="{{ avaliacoes.get(aluno.id, {}).get(rubrica.id, '') }}"
                   >
                 </td>
               {% endfor %}
             {% endfor %}
             <td class="media-cell" data-aluno-id="{{ aluno.id }}">
-              {% set medias = medias_por_aluno.get(aluno.id, {}) %}
-              {% if medias %}
-                {% for letra, media in medias.items() %}
-                  <div><strong>{{ letra }}:</strong> {{ media }}</div>
-                {% endfor %}
+              {% if faltou %}
+                <span class="text-muted">Faltou</span>
               {% else %}
-                <span class="text-muted">—</span>
+                {% set medias = medias_por_aluno.get(aluno.id, {}) %}
+                {% if medias %}
+                  {% for letra, media in medias.items() %}
+                    <div><strong>{{ letra }}:</strong> {{ media }}</div>
+                  {% endfor %}
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
               {% endif %}
             </td>
           </tr>
@@ -95,7 +101,7 @@
   if (!form || !table) return;
 
   const ciclo = table.dataset.cicloAula || "basico";
-  const alunoIds = Array.from(table.querySelectorAll("tr[data-aluno-id]"))
+  const alunoIds = Array.from(table.querySelectorAll('tr[data-aluno-id][data-presente="1"]'))
     .map((tr) => tr.dataset.alunoId)
     .filter(Boolean);
 
