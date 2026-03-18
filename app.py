@@ -3549,14 +3549,6 @@ def create_app():
             total_tempos = max(int(total_tempos_raw), 0)
         except (TypeError, ValueError):
             total_tempos = 0
-        if total_tempos <= 0:
-            tempos_turma_raw = getattr(getattr(aula, "turma", None), "tempos_por_bloco", 0) or 0
-            try:
-                total_tempos = max(int(tempos_turma_raw), 0)
-            except (TypeError, ValueError):
-                total_tempos = 0
-        if total_tempos <= 0:
-            total_tempos = 6
         registos_db = {r.aluno_id: r for r in AulaAluno.query.filter_by(aula_id=aula.id).all()}
         registros = {}
         for aluno in alunos:
