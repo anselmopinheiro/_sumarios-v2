@@ -28,17 +28,17 @@ def upgrade():
     if not _has_column("ev2_rubrics", "pontuacao_padrao_basico"):
         op.add_column(
             "ev2_rubrics",
-            sa.Column("pontuacao_padrao_basico", sa.Float(), nullable=False, server_default=sa.text("3")),
+            sa.Column("pontuacao_padrao_basico", sa.Float(), nullable=True, server_default="3"),
         )
     if not _has_column("ev2_rubrics", "pontuacao_padrao_secundario"):
         op.add_column(
             "ev2_rubrics",
-            sa.Column("pontuacao_padrao_secundario", sa.Float(), nullable=False, server_default=sa.text("12")),
+            sa.Column("pontuacao_padrao_secundario", sa.Float(), nullable=True, server_default="12"),
         )
 
 
 def downgrade():
-    if _has_column("ev2_rubrics", "pontuacao_padrao_secundario"):
-        op.drop_column("ev2_rubrics", "pontuacao_padrao_secundario")
     if _has_column("ev2_rubrics", "pontuacao_padrao_basico"):
         op.drop_column("ev2_rubrics", "pontuacao_padrao_basico")
+    if _has_column("ev2_rubrics", "pontuacao_padrao_secundario"):
+        op.drop_column("ev2_rubrics", "pontuacao_padrao_secundario")

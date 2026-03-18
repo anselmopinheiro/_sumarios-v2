@@ -806,12 +806,8 @@ class EV2Rubric(db.Model):
     nome = db.Column(db.String(140), nullable=False)
     descricao = db.Column(db.Text)
     ativo = db.Column(db.Boolean, nullable=False, default=True, server_default=db.text("true"))
-    pontuacao_padrao_basico = db.Column(
-        db.Float, nullable=False, default=3.0, server_default=db.text("3")
-    )
-    pontuacao_padrao_secundario = db.Column(
-        db.Float, nullable=False, default=12.0, server_default=db.text("12")
-    )
+    pontuacao_padrao_basico = db.Column(db.Float, default=3)
+    pontuacao_padrao_secundario = db.Column(db.Float, default=12)
 
     dominio = db.relationship("EV2Domain", back_populates="rubricas")
     subject_rubrics = db.relationship("EV2SubjectRubric", back_populates="rubrica")
