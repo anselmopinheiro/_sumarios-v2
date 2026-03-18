@@ -109,6 +109,8 @@ from models import (
     TurmaDisciplina,
     Aluno,
     AulaAluno,
+    Avaliacao,
+    AvaliacaoItem,
     AulaSumarioHistorico,
     DTTurma,
     DTAluno,
@@ -138,6 +140,7 @@ from models import (
     Entrega,
     EntregaParametro,
     ParametroDefinicao,
+    EV2Rubric,
 )
 
 from calendario_service import (
@@ -3308,6 +3311,75 @@ def create_app():
     # ----------------------------------------
     # DASHBOARD
     # ----------------------------------------
+    def calcular_media_por_dominio(avaliacao):
+        acumulado = defaultdict(list)
+        for item in (avaliacao.itens or []):
+            dominio_nome = (getattr(getattr(item, "rubrica", None), "dominio", None) and item.rubrica.dominio.nome) or "Sem domínio"
+            if item.pontuacao is not None:
+                acumulado[dominio_nome].append(float(item.pontuacao))
+
+        medias = {}
+        for dominio, valores in acumulado.items():
+            medias[dominio] = round(sum(valores) / len(valores), 2) if valores else 0.0
+        return medias
+
+    @app.route('/aula/<int:aula_id>/avaliar', methods=['GET', 'POST'])
+    def aula_avaliar(aula_id):
+        aula = CalendarioAula.query.get_or_404(aula_id)
+        alunos = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
+        rubricas = EV2Rubric.query.filter_by(ativo=True).order_by(EV2Rubric.domain_id.asc(), EV2Rubric.codigo.asc()).all()
+
+        if request.method == 'POST':
+            for aluno in alunos:
+                avaliacao = Avaliacao.query.filter_by(aula_id=aula.id, aluno_id=aluno.id).first()
+                if not avaliacao:
+                    avaliacao = Avaliacao(aula_id=aula.id, aluno_id=aluno.id)
+                    db.session.add(avaliacao)
+                    db.session.flush()
+
+                pontuacoes = []
+                for rubrica in rubricas:
+                    campo = f'pontuacao_{aluno.id}_{rubrica.id}'
+                    raw_val = request.form.get(campo)
+                    if raw_val in (None, ''):
+                        continue
+                    try:
+                        valor = float(raw_val)
+                    except ValueError:
+                        continue
+
+                    item = AvaliacaoItem.query.filter_by(avaliacao_id=avaliacao.id, rubrica_id=rubrica.id).first()
+                    if not item:
+                        item = AvaliacaoItem(avaliacao_id=avaliacao.id, rubrica_id=rubrica.id)
+                        db.session.add(item)
+                    item.pontuacao = valor
+                    pontuacoes.append(valor)
+
+                avaliacao.resultado = round(sum(pontuacoes) / len(pontuacoes), 2) if pontuacoes else None
+
+            db.session.commit()
+            flash('Avaliações guardadas com sucesso.', 'success')
+            return redirect(url_for('calendario_semana'))
+
+        avaliacao_map = {
+            av.aluno_id: av
+            for av in Avaliacao.query.filter_by(aula_id=aula.id).options(joinedload(Avaliacao.itens)).all()
+        }
+
+        medias_por_aluno = {
+            aluno_id: calcular_media_por_dominio(av)
+            for aluno_id, av in avaliacao_map.items()
+        }
+
+        return render_template(
+            'aula_avaliar.html',
+            aula=aula,
+            alunos=alunos,
+            rubricas=rubricas,
+            avaliacao_map=avaliacao_map,
+            medias_por_aluno=medias_por_aluno,
+        )
+
     @app.route("/")
     def dashboard():
         turmas = turmas_abertas_ativas()

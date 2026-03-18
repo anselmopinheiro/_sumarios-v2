@@ -745,6 +745,44 @@ class AulaAluno(db.Model):
     )
 
 
+
+
+class Avaliacao(db.Model):
+    __tablename__ = "avaliacoes"
+
+    id = db.Column(db.Integer, primary_key=True)
+    aluno_id = db.Column(db.Integer, db.ForeignKey("alunos.id"), nullable=False)
+    aula_id = db.Column(db.Integer, db.ForeignKey("calendario_aulas.id"), nullable=False)
+    resultado = db.Column(db.Float, nullable=True)
+
+    aluno = db.relationship("Aluno", backref="aula_avaliacoes")
+    aula = db.relationship("CalendarioAula", backref="aula_avaliacoes")
+    itens = db.relationship("AvaliacaoItem", back_populates="avaliacao", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        db.UniqueConstraint("aluno_id", "aula_id", name="uq_avaliacao_aluno_aula"),
+        db.Index("ix_avaliacoes_aula", "aula_id"),
+        db.Index("ix_avaliacoes_aluno", "aluno_id"),
+    )
+
+
+class AvaliacaoItem(db.Model):
+    __tablename__ = "avaliacao_itens"
+
+    id = db.Column(db.Integer, primary_key=True)
+    avaliacao_id = db.Column(db.Integer, db.ForeignKey("avaliacoes.id"), nullable=False)
+    rubrica_id = db.Column(db.Integer, db.ForeignKey("ev2_rubrics.id"), nullable=False)
+    pontuacao = db.Column(db.Float, nullable=True)
+
+    avaliacao = db.relationship("Avaliacao", back_populates="itens")
+    rubrica = db.relationship("EV2Rubric")
+
+    __table_args__ = (
+        db.UniqueConstraint("avaliacao_id", "rubrica_id", name="uq_avaliacao_item_once"),
+        db.Index("ix_avaliacao_itens_avaliacao", "avaliacao_id"),
+        db.Index("ix_avaliacao_itens_rubrica", "rubrica_id"),
+    )
+
 class EV2Domain(db.Model):
     __tablename__ = "ev2_domains"
 
