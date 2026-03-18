@@ -1,0 +1,89 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Painel de Faltas e Atrasos – Aula</h2>
+<p>
+  Turma {{ aula.turma_id }} · Aula #{{ aula.id }} · Data {{ aula.data.strftime('%Y-%m-%d') if aula.data else '-' }}
+</p>
+
+<form method="post">
+  <div class="table-responsive">
+    <table class="table table-bordered table-sm align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>No</th>
+          <th>Nome</th>
+          <th>Atraso (min)</th>
+          <th>Faltas (tempos)</th>
+          <th>FDis</th>
+          <th>Observações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for aluno in alunos %}
+          {% set reg = registros.get(aluno.id, {}) %}
+          <tr>
+            <td>{{ aluno.numero or loop.index }}</td>
+            <td>{{ aluno.nome }}</td>
+            <td>
+              <input type="number" min="0" class="form-control form-control-sm" name="atraso-{{ aluno.id }}" value="{{ reg.get('atraso', 0) }}">
+            </td>
+            <td>
+              <div class="d-flex flex-wrap gap-2">
+                {% for tempo in range(1, total_tempos + 1) %}
+                  <label class="form-check-label small">
+                    <input
+                      type="checkbox"
+                      class="form-check-input me-1"
+                      name="faltas-{{ aluno.id }}[]"
+                      value="{{ tempo }}"
+                      {% if tempo in reg.get('faltas', []) %}checked{% endif %}
+                    >
+                    {{ tempo }}
+                  </label>
+                {% endfor %}
+              </div>
+            </td>
+            <td class="text-center">
+              <input
+                type="checkbox"
+                class="form-check-input"
+                name="fdis-{{ aluno.id }}"
+                value="1"
+                {% if reg.get('fdis') %}checked{% endif %}
+                onchange="toggleObservacoes({{ aluno.id }})"
+              >
+            </td>
+            <td>
+              <textarea
+                name="obs-{{ aluno.id }}"
+                id="obs-{{ aluno.id }}"
+                class="form-control form-control-sm"
+                rows="2"
+                {% if not reg.get('fdis') %}style="display:none"{% endif %}
+              >{{ reg.get('obs', '') }}</textarea>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <button type="submit" class="btn btn-primary">Guardar</button>
+  <a href="{{ url_for('aula_avaliar', aula_id=aula.id) }}" class="btn btn-outline-secondary">Voltar à avaliação</a>
+</form>
+
+<script>
+function toggleObservacoes(aluno_id){
+  const checkbox = document.querySelector(`input[name='fdis-${aluno_id}']`);
+  const textarea = document.getElementById(`obs-${aluno_id}`);
+  if (!checkbox || !textarea) return;
+  if (checkbox.checked){
+    textarea.style.display = "block";
+    textarea.focus();
+  } else {
+    textarea.style.display = "none";
+    textarea.value = "";
+  }
+}
+</script>
+{% endblock %}

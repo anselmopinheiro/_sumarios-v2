@@ -5,8 +5,8 @@
   Turma {{ aula.turma_id }} · Aula #{{ aula.id }} · Data {{ aula.data.strftime('%Y-%m-%d') if aula.data else '-' }}
 </p>
 <p>
-  <a href="{{ url_for('aula_pontualidade', aula_id=aula.id) }}" class="btn btn-outline-secondary btn-sm">
-    Painel de Pontualidade / Faltas
+  <a href="{{ url_for('aula_faltas', aula_id=aula.id) }}" class="btn btn-outline-secondary btn-sm">
+    Painel de Faltas e Atrasos
   </a>
 </p>
 

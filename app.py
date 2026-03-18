@@ -3540,6 +3540,95 @@ def create_app():
             pontualidade=pontualidade,
         )
 
+    @app.route('/aula/<int:aula_id>/faltas', methods=['GET', 'POST'])
+    def aula_faltas(aula_id):
+        aula = CalendarioAula.query.get_or_404(aula_id)
+        alunos = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
+        total_tempos = int(getattr(aula, "total_tempos", 0) or 0)
+        if total_tempos <= 0:
+            total_tempos = int(getattr(getattr(aula, "turma", None), "tempos_por_bloco", 0) or 0)
+        if total_tempos <= 0:
+            total_tempos = 6
+
+        meta_prefix = "__faltas_meta__:"
+        registos_db = {r.aluno_id: r for r in AulaAluno.query.filter_by(aula_id=aula.id).all()}
+        registros = {}
+        for aluno in alunos:
+            r = registos_db.get(aluno.id)
+            atraso_min = 0
+            faltas_tempos = []
+            fdis = bool(getattr(r, "falta_disciplinar", 0)) if r else False
+            obs = ""
+            if r:
+                raw_obs = (r.observacoes or "").strip()
+                if raw_obs.startswith(meta_prefix):
+                    try:
+                        meta = json.loads(raw_obs[len(meta_prefix):])
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        meta = {}
+                    atraso_min = int(meta.get("atraso_min") or 0)
+                    faltas_tempos = [int(t) for t in (meta.get("faltas_tempos") or []) if str(t).isdigit()]
+                    obs = str(meta.get("obs") or "")
+                else:
+                    atraso_min = 5 if bool(r.atraso) else 0
+                    faltas_count = int(r.faltas or 0)
+                    faltas_tempos = list(range(1, min(max(faltas_count, 0), total_tempos) + 1))
+                    obs = raw_obs if fdis else ""
+
+            registros[aluno.id] = {
+                "atraso": max(atraso_min, 0),
+                "faltas": sorted({t for t in faltas_tempos if 1 <= t <= total_tempos}),
+                "fdis": fdis,
+                "obs": obs,
+            }
+
+        if request.method == "POST":
+            for aluno in alunos:
+                atraso_raw = request.form.get(f"atraso-{aluno.id}", "0")
+                try:
+                    atraso = max(int(atraso_raw), 0)
+                except (TypeError, ValueError):
+                    atraso = 0
+
+                faltas_raw = request.form.getlist(f"faltas-{aluno.id}[]")
+                faltas_tempos = sorted({
+                    int(t)
+                    for t in faltas_raw
+                    if str(t).isdigit() and 1 <= int(t) <= total_tempos
+                })
+                fdis = request.form.get(f"fdis-{aluno.id}") == "1"
+                obs = (request.form.get(f"obs-{aluno.id}", "") or "").strip()
+
+                registo = registos_db.get(aluno.id)
+                if not registo:
+                    registo = AulaAluno(aula_id=aula.id, aluno_id=aluno.id)
+                    db.session.add(registo)
+                    registos_db[aluno.id] = registo
+
+                registo.atraso = atraso > 0
+                registo.faltas = len(faltas_tempos)
+                registo.falta_disciplinar = 1 if fdis else 0
+                registo.observacoes = meta_prefix + json.dumps(
+                    {
+                        "atraso_min": atraso,
+                        "faltas_tempos": faltas_tempos,
+                        "obs": obs if fdis else "",
+                    },
+                    ensure_ascii=False,
+                )
+
+            db.session.commit()
+            flash("Registos de faltas e atrasos atualizados.", "success")
+            return redirect(url_for("aula_faltas", aula_id=aula.id))
+
+        return render_template(
+            "aula_faltas.html",
+            aula=aula,
+            alunos=alunos,
+            registros=registros,
+            total_tempos=total_tempos,
+        )
+
     @app.route("/")
     def dashboard():
         turmas = turmas_abertas_ativas()
