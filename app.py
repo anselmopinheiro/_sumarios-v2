@@ -3501,6 +3501,45 @@ def create_app():
             ciclo_aula=_detetar_ciclo_aula(aula),
         )
 
+    @app.route('/aula/<int:aula_id>/pontualidade', methods=['GET', 'POST'])
+    def aula_pontualidade(aula_id):
+        aula = CalendarioAula.query.get_or_404(aula_id)
+        alunos = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
+        registos = {r.aluno_id: r for r in AulaAluno.query.filter_by(aula_id=aula.id).all()}
+
+        pontualidade = {aluno.id: 1 for aluno in alunos}
+        for aluno in alunos:
+            registo = registos.get(aluno.id)
+            if not registo:
+                continue
+            pontualidade[aluno.id] = 0 if (bool(registo.atraso) or (registo.faltas or 0) > 0) else 1
+
+        if request.method == "POST":
+            for aluno in alunos:
+                valor_bruto = request.form.get(f"pontualidade-{aluno.id}", "1")
+                try:
+                    valor = int(valor_bruto)
+                except (TypeError, ValueError):
+                    valor = 1
+                valor = 1 if valor == 1 else 0
+
+                registo = registos.get(aluno.id)
+                if not registo:
+                    registo = AulaAluno(aula_id=aula.id, aluno_id=aluno.id)
+                    db.session.add(registo)
+                    registos[aluno.id] = registo
+                registo.atraso = (valor == 0)
+            db.session.commit()
+            flash("Pontualidade e faltas atualizadas.", "success")
+            return redirect(url_for("aula_avaliar", aula_id=aula.id))
+
+        return render_template(
+            "aula_pontualidade.html",
+            aula=aula,
+            alunos=alunos,
+            pontualidade=pontualidade,
+        )
+
     @app.route("/")
     def dashboard():
         turmas = turmas_abertas_ativas()
