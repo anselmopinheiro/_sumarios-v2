@@ -3356,6 +3356,7 @@ def create_app():
             )
 
         rubricas = [rubrica for dominio in dominios_view for rubrica in dominio["rubricas"]]
+        rubricas_por_dominio = {dominio["id"]: dominio["rubricas"] for dominio in dominios_view}
 
         if request.method == 'POST':
             for aluno in alunos:
@@ -3368,7 +3369,6 @@ def create_app():
                 auto3_marcado = request.form.get(f"auto_{aluno.id}") == "3"
                 auto10_marcado = request.form.get(f"auto10_{aluno.id}") == "10"
 
-                pontuacoes = []
                 for rubrica in rubricas:
                     if auto10_marcado:
                         valor = 10.0
@@ -3378,23 +3378,27 @@ def create_app():
                         campo = f"pontuacao-{aluno.id}-{rubrica.id}"
                         raw_val = request.form.get(campo)
                         if raw_val in (None, ""):
-                            continue
-                        try:
-                            valor = float(raw_val)
-                        except (TypeError, ValueError):
-                            continue
+                            valor = 0.0
+                        else:
+                            try:
+                                valor = float(raw_val)
+                            except (TypeError, ValueError):
+                                valor = 0.0
                     item = AvaliacaoItem.query.filter_by(avaliacao_id=avaliacao.id, rubrica_id=rubrica.id).first()
                     if not item:
                         item = AvaliacaoItem(avaliacao_id=avaliacao.id, rubrica_id=rubrica.id)
                         db.session.add(item)
                     item.pontuacao = valor
-                    pontuacoes.append(valor)
 
-                avaliacao.resultado = round(sum(pontuacoes) / len(pontuacoes), 1) if pontuacoes else None
+                medias = calcular_media_por_dominio(avaliacao)
+                if medias:
+                    avaliacao.resultado = round(sum(medias.values()) / len(medias), 1)
+                else:
+                    avaliacao.resultado = 0.0
 
             db.session.commit()
             flash('Avaliações guardadas com sucesso.', 'success')
-            return redirect(url_for('aula_avaliar', aula_id=aula.id))
+            return redirect(url_for('calendario_semana'))
 
         avaliacao_map = {
             av.aluno_id: av
@@ -3427,6 +3431,7 @@ def create_app():
             aula=aula,
             alunos=alunos,
             dominios=dominios_view,
+            rubricas_por_dominio=rubricas_por_dominio,
             avaliacoes=avaliacoes,
             medias_por_aluno=medias_por_aluno,
         )
