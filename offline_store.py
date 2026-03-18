@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -15,6 +16,13 @@ SNAPSHOT_TABLES = {
 }
 
 UNIQUE_VIOLATION_CODE = "23505"
+
+logger = logging.getLogger(__name__)
+
+
+def _is_missing_table_error(exc, table_name):
+    msg = str(exc or "").lower()
+    return f"no such table: {table_name}" in msg
 
 
 def get_offline_db_path(instance_path):
@@ -290,21 +298,34 @@ def list_offline_errors(instance_path, limit=50):
 
 
 def count_offline_errors(instance_path):
-    with _connect(instance_path) as conn:
-        row = conn.execute("SELECT COUNT(*) n FROM offline_errors").fetchone()
-        return int(row["n"] if row else 0)
+    try:
+        with _connect(instance_path) as conn:
+            row = conn.execute("SELECT COUNT(*) n FROM offline_errors").fetchone()
+            return int(row["n"] if row else 0)
+    except sqlite3.OperationalError as exc:
+        if _is_missing_table_error(exc, "offline_errors"):
+            logger.warning("offline_errors table missing in %s; returning 0", get_offline_db_path(instance_path))
+            return 0
+        raise
+
 
 
 def get_last_offline_error(instance_path):
-    with _connect(instance_path) as conn:
-        row = conn.execute(
-            """
-            SELECT id, created_at, operation, summary, details, context_json
-            FROM offline_errors
-            ORDER BY created_at DESC, id DESC
-            LIMIT 1
-            """
-        ).fetchone()
+    try:
+        with _connect(instance_path) as conn:
+            row = conn.execute(
+                """
+                SELECT id, created_at, operation, summary, details, context_json
+                FROM offline_errors
+                ORDER BY created_at DESC, id DESC
+                LIMIT 1
+                """
+            ).fetchone()
+    except sqlite3.OperationalError as exc:
+        if _is_missing_table_error(exc, "offline_errors"):
+            logger.warning("offline_errors table missing in %s; returning None", get_offline_db_path(instance_path))
+            return None
+        raise
 
     if not row:
         return None
@@ -359,11 +380,18 @@ def set_state_datetime(instance_path, key, dt_utc):
 
 
 def get_state_datetime(instance_path, key):
-    with _connect(instance_path) as conn:
-        row = conn.execute("SELECT value FROM offline_state WHERE key=?", (str(key),)).fetchone()
+    try:
+        with _connect(instance_path) as conn:
+            row = conn.execute("SELECT value FROM offline_state WHERE key=?", (str(key),)).fetchone()
+    except sqlite3.OperationalError as exc:
+        if _is_missing_table_error(exc, "offline_state"):
+            logger.warning("offline_state table missing in %s; returning None", get_offline_db_path(instance_path))
+            return None
+        raise
     if not row:
         return None
     return _parse_iso_utc(row["value"])
+
 
 
 def is_online(app, ping_fn):
@@ -566,17 +594,28 @@ def mark_outbox(instance_path, item_id, status, last_error=None):
 
 
 def outbox_status(instance_path):
-    with _connect(instance_path) as conn:
-        pending = conn.execute("SELECT COUNT(*) n FROM outbox WHERE status='pending'").fetchone()["n"]
-        errors = conn.execute("SELECT COUNT(*) n FROM outbox WHERE status='error'").fetchone()["n"]
-        last_error_row = conn.execute(
-            "SELECT last_error FROM outbox WHERE last_error IS NOT NULL ORDER BY id DESC LIMIT 1"
-        ).fetchone()
-        return {
-            "pending": int(pending),
-            "errors": int(errors),
-            "last_error": last_error_row["last_error"] if last_error_row else None,
-        }
+    try:
+        with _connect(instance_path) as conn:
+            pending = conn.execute("SELECT COUNT(*) n FROM outbox WHERE status='pending'").fetchone()["n"]
+            errors = conn.execute("SELECT COUNT(*) n FROM outbox WHERE status='error'").fetchone()["n"]
+            last_error_row = conn.execute(
+                "SELECT last_error FROM outbox WHERE last_error IS NOT NULL ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            return {
+                "pending": int(pending),
+                "errors": int(errors),
+                "last_error": last_error_row["last_error"] if last_error_row else None,
+            }
+    except sqlite3.OperationalError as exc:
+        if _is_missing_table_error(exc, "outbox"):
+            logger.warning("offline outbox table missing in %s; returning zero status", get_offline_db_path(instance_path))
+            return {
+                "pending": 0,
+                "errors": 0,
+                "last_error": None,
+            }
+        raise
+
 
 
 def start_snapshot_run(instance_path, mode="manual"):
@@ -624,27 +663,57 @@ def list_snapshot_runs(instance_path, limit=20):
 
 
 def get_snapshot_status(instance_path):
-    with _connect(instance_path) as conn:
-        last = conn.execute("SELECT * FROM snapshot_runs ORDER BY id DESC LIMIT 1").fetchone()
-        counts = {
-            "turmas": conn.execute("SELECT COUNT(*) n FROM snapshot_turmas").fetchone()["n"],
-            "alunos": conn.execute("SELECT COUNT(*) n FROM snapshot_alunos").fetchone()["n"],
-            "aulas": conn.execute("SELECT COUNT(*) n FROM snapshot_calendario_aulas").fetchone()["n"],
-            "periodos": conn.execute("SELECT COUNT(*) n FROM snapshot_periodos").fetchone()["n"],
-            "modulos": conn.execute("SELECT COUNT(*) n FROM snapshot_modulos").fetchone()["n"],
-        }
+    try:
+        with _connect(instance_path) as conn:
+            last = conn.execute("SELECT * FROM snapshot_runs ORDER BY id DESC LIMIT 1").fetchone()
+            counts = {
+                "turmas": conn.execute("SELECT COUNT(*) n FROM snapshot_turmas").fetchone()["n"],
+                "alunos": conn.execute("SELECT COUNT(*) n FROM snapshot_alunos").fetchone()["n"],
+                "aulas": conn.execute("SELECT COUNT(*) n FROM snapshot_calendario_aulas").fetchone()["n"],
+                "periodos": conn.execute("SELECT COUNT(*) n FROM snapshot_periodos").fetchone()["n"],
+                "modulos": conn.execute("SELECT COUNT(*) n FROM snapshot_modulos").fetchone()["n"],
+            }
+    except sqlite3.OperationalError as exc:
+        if any(_is_missing_table_error(exc, t) for t in (
+            "snapshot_runs",
+            "snapshot_turmas",
+            "snapshot_alunos",
+            "snapshot_calendario_aulas",
+            "snapshot_periodos",
+            "snapshot_modulos",
+        )):
+            logger.warning("snapshot tables missing in %s; returning zero snapshot status", get_offline_db_path(instance_path))
+            return {
+                "last_run": None,
+                "counts": {
+                    "turmas": 0,
+                    "alunos": 0,
+                    "aulas": 0,
+                    "periodos": 0,
+                    "modulos": 0,
+                },
+            }
+        raise
     return {
         "last_run": dict(last) if last else None,
         "counts": {k: int(v) for k, v in counts.items()},
     }
 
 
+
 def get_setting(instance_path, key, default=None):
-    with _connect(instance_path) as conn:
-        row = conn.execute("SELECT value FROM offline_settings WHERE key=?", (key,)).fetchone()
-        if not row:
+    try:
+        with _connect(instance_path) as conn:
+            row = conn.execute("SELECT value FROM offline_settings WHERE key=?", (key,)).fetchone()
+            if not row:
+                return default
+            return row["value"]
+    except sqlite3.OperationalError as exc:
+        if _is_missing_table_error(exc, "offline_settings"):
+            logger.warning("offline_settings table missing in %s; returning default for key '%s'", get_offline_db_path(instance_path), key)
             return default
-        return row["value"]
+        raise
+
 
 
 def set_setting(instance_path, key, value):
