@@ -3544,11 +3544,34 @@ def create_app():
     def aula_faltas(aula_id):
         aula = CalendarioAula.query.get_or_404(aula_id)
         alunos = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
-        total_tempos_raw = getattr(aula, "total_tempos", 0) or 0
-        try:
-            total_tempos = max(int(total_tempos_raw), 0)
-        except (TypeError, ValueError):
-            total_tempos = 0
+
+        total_tempos = 0
+        total_tempos_raw = getattr(aula, "total_tempos", None)
+        if total_tempos_raw not in (None, ""):
+            try:
+                total_tempos = max(int(total_tempos_raw), 0)
+            except (TypeError, ValueError):
+                total_tempos = 0
+
+        if total_tempos <= 0:
+            horarios = Horario.query.filter_by(turma_id=aula.turma_id, weekday=aula.weekday).all()
+            total_horarios = 0
+            for horario in horarios:
+                try:
+                    total_horarios += max(int(getattr(horario, "horas", 0) or 0), 0)
+                except (TypeError, ValueError):
+                    continue
+            total_tempos = total_horarios
+
+        if total_tempos <= 0:
+            tempo_dia = _tempo_da_turma_no_dia(aula.turma, aula.data)
+            try:
+                total_tempos = max(int(tempo_dia or 0), 0)
+            except (TypeError, ValueError):
+                total_tempos = 0
+
+        # Nunca renderizar menos de 1 checkbox no painel.
+        total_tempos = max(total_tempos, 1)
         registos_db = {r.aluno_id: r for r in AulaAluno.query.filter_by(aula_id=aula.id).all()}
         registros = {}
         for aluno in alunos:
