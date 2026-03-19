@@ -6,66 +6,79 @@
 </p>
 
 <form method="post">
-  <table border="1">
-    <thead>
-      <tr>
-        <th>No</th>
-        <th>Nome</th>
-        <th>Atraso</th>
-        <th>Faltas</th>
-        <th>FDis</th>
-        <th>Observações</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for aluno in alunos %}
-        <tr>
-          <td>{{ loop.index }}</td>
-          <td>{{ aluno.nome }}</td>
+<table style="width:100%; border-collapse: collapse; border: 1px solid #aaa; font-family: Arial, sans-serif;">
+  <thead>
+    <tr>
+      <th style="border:1px solid #aaa; padding:6px; width:40px; text-align:center;">No</th>
+      <th style="border:1px solid #aaa; padding:6px;">Nome</th>
+      <th style="border:1px solid #aaa; padding:6px; width:80px; text-align:center;">Atraso</th>
+      <th style="border:1px solid #aaa; padding:6px; width:200px;">Faltas</th>
+      <th style="border:1px solid #aaa; padding:6px; width:80px; text-align:center;">FDis</th>
+      <th style="border:1px solid #aaa; padding:6px;">Observações</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for aluno in alunos %}
+    <tr>
+      <td style="border:1px solid #aaa; padding:6px; text-align:center;">{{ loop.index }}</td>
+      <td style="border:1px solid #aaa; padding:6px;">{{ aluno.nome }}</td>
 
-          <td>
-            <input type="checkbox" name="atraso-{{ aluno.id }}" value="1"
-                   {% if registros[aluno.id]['atraso'] %}checked{% endif %}>
-          </td>
+      <td style="border:1px solid #aaa; padding:6px; text-align:center;">
+        <input type="checkbox"
+               name="atraso-{{ aluno.id }}"
+               value="1"
+               {% if registros[aluno.id]['atraso'] %}checked{% endif %}>
+      </td>
 
-          <td>
-            <div style="display:flex; gap:5px; flex-wrap:wrap;">
-              {% for tempo in range(1, total_tempos + 1) %}
-                <label>
-                  <input type="checkbox" name="faltas-{{ aluno.id }}[]" value="{{ tempo }}"
-                         {% if tempo in registros[aluno.id]['faltas'] %}checked{% endif %}>
-                  {{ tempo }}
-                </label>
-              {% endfor %}
-            </div>
-          </td>
+      <td style="border:1px solid #aaa; padding:6px;">
+        {% set total_tempos = total_tempos or 0 %}
+        {% if total_tempos > 0 %}
+          {% for tempo in range(1, total_tempos + 1) %}
+            <label style="display:inline-block; margin-right:8px; font-size:90%;">
+              <input type="checkbox"
+                     name="faltas-{{ aluno.id }}[]"
+                     value="{{ tempo }}"
+                     {% if tempo in registros[aluno.id]['faltas'] %}checked{% endif %}>
+              {{ tempo }}
+            </label>
+          {% endfor %}
+        {% else %}
+          <span style="color:#888;">Sem tempos</span>
+        {% endif %}
+      </td>
 
-          <td>
-            <input type="checkbox" name="fdis-{{ aluno.id }}" value="1"
-                   {% if registros[aluno.id]['fdis'] %}checked{% endif %}
-                   onchange="toggleObservacoes({{ aluno.id }})">
-          </td>
+      <td style="border:1px solid #aaa; padding:6px; text-align:center;">
+        <input type="checkbox"
+               name="fdis-{{ aluno.id }}"
+               id="fdis-{{ aluno.id }}"
+               onchange="toggleObservacoes({{ aluno.id }})"
+               {% if registros[aluno.id]['fdis'] %}checked{% endif %}>
+      </td>
 
-          <td>
-            <textarea name="obs-{{ aluno.id }}" id="obs-{{ aluno.id }}" {% if not registros[aluno.id]['fdis'] %}style="display:none"{% endif %}>{{ registros[aluno.id]['obs'] }}</textarea>
-          </td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  <button type="submit">Guardar</button>
+      <td style="border:1px solid #aaa; padding:6px;">
+        <textarea name="obs-{{ aluno.id }}"
+                  id="obs-{{ aluno.id }}"
+                  style="width:100%; height:60px; {% if not registros[aluno.id]['fdis'] %}display:none;{% endif %}"
+        >{{ registros[aluno.id]['obs'] }}</textarea>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<button type="submit" style="margin-top:12px; padding:8px 14px;">Guardar</button>
 </form>
 
 <script>
-function toggleObservacoes(aluno_id){
-    let checkbox = document.querySelector(`input[name='fdis-${aluno_id}']`);
-    let textarea = document.getElementById(`obs-${aluno_id}`);
-    if(checkbox.checked){
-        textarea.style.display = "block";
-        textarea.focus();
+function toggleObservacoes(aluno_id) {
+    const fdisCheckbox = document.getElementById(`fdis-${aluno_id}`);
+    const obsTextarea = document.getElementById(`obs-${aluno_id}`);
+    if (fdisCheckbox.checked) {
+        obsTextarea.style.display = "block";
+        obsTextarea.focus();
     } else {
-        textarea.style.display = "none";
-        textarea.value = "";
+        obsTextarea.style.display = "none";
+        obsTextarea.value = "";
     }
 }
 </script>
