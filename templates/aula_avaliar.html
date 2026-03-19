@@ -15,15 +15,20 @@
     <table class="table table-bordered table-sm align-middle" id="avaliacao-table" data-ciclo-aula="{{ ciclo_aula }}">
       <thead class="table-light">
         <tr>
-          <th rowspan="2">Aluno</th>
+          <th rowspan="2">No</th>
+          <th rowspan="2">Nome</th>
+          <th rowspan="2">Atraso</th>
+          <th rowspan="2">Faltas</th>
           {% for dominio in dominios %}
             <th colspan="{{ dominio.rubricas|length }}">
               {{ dominio.letra }} – {{ dominio.nome }}{% if dominio.codigo %} ({{ dominio.codigo }}){% endif %}
             </th>
           {% endfor %}
           {% for dominio in dominios %}
-            <th data-media-dominio="{{ dominio.letra }}">{{ dominio.letra }}</th>
+            <th rowspan="2" data-media-dominio="{{ dominio.letra }}">{{ dominio.letra }}</th>
           {% endfor %}
+          <th rowspan="2">FDis</th>
+          <th rowspan="2">Observações</th>
         </tr>
         <tr>
           {% for dominio in dominios %}
@@ -56,10 +61,22 @@
       </thead>
       <tbody>
         {% for aluno in alunos %}
-          {% set faltou = aluno.id in alunos_faltosos_ids %}
-          <tr data-aluno-id="{{ aluno.id }}" data-presente="{{ 0 if faltou else 1 }}">
+          {% set avaliavel = avaliavel_por_aluno.get(aluno.id, True) %}
+          <tr data-aluno-id="{{ aluno.id }}" data-presente="{{ 1 if avaliavel else 0 }}">
+            <td>{{ loop.index }}</td>
+            <td>{{ aluno.nome }}</td>
+            <td class="text-center">
+              <input type="checkbox" name="atraso-{{ aluno.id }}" value="1" {% if registros_faltas[aluno.id]['atraso'] %}checked{% endif %}>
+            </td>
             <td>
-              {{ aluno.numero or '-' }} - {{ aluno.nome }}
+              <div style="display:flex; flex-wrap:wrap; gap:4px 6px;">
+                {% for tempo in range(1, total_tempos + 1) %}
+                  <label style="display:inline-block; margin-right:6px; font-size:90%;">
+                    <input type="checkbox" name="faltas-{{ aluno.id }}[]" value="{{ tempo }}" {% if tempo in registros_faltas[aluno.id]['faltas'] %}checked{% endif %}>
+                    {{ tempo }}
+                  </label>
+                {% endfor %}
+              </div>
             </td>
             {% for dominio in dominios %}
               {% for rubrica in dominio.rubricas %}
@@ -71,7 +88,7 @@
                     name="pontuacao-{{ aluno.id }}-{{ rubrica.id }}"
                     data-aluno-id="{{ aluno.id }}"
                     data-rubrica-id="{{ rubrica.id }}"
-                    {% if faltou %}disabled{% endif %}
+                    {% if not avaliavel %}disabled title="Não avaliado — aluno ausente todos os tempos" style="background-color:#f5f5f5"{% endif %}
                     value="{{ avaliacoes.get(aluno.id, {}).get(rubrica.id, '') }}"
                   >
                 </td>
@@ -80,7 +97,7 @@
             {% set medias = medias_por_aluno.get(aluno.id, {}) %}
             {% for dominio in dominios %}
               <td class="media-cell text-center" data-aluno-id="{{ aluno.id }}" data-dominio-letra="{{ dominio.letra }}">
-                {% if faltou %}
+                {% if not avaliavel %}
                   <span class="text-muted">-</span>
                 {% elif medias.get(dominio.letra) is not none %}
                   {{ medias.get(dominio.letra) }}
@@ -89,6 +106,12 @@
                 {% endif %}
               </td>
             {% endfor %}
+            <td class="text-center">
+              <input type="checkbox" name="fdis-{{ aluno.id }}" id="fdis-{{ aluno.id }}" value="1" onchange="toggleObservacoes({{ aluno.id }})" {% if registros_faltas[aluno.id]['fdis'] %}checked{% endif %}>
+            </td>
+            <td>
+              <textarea name="obs-{{ aluno.id }}" id="obs-{{ aluno.id }}" class="form-control form-control-sm" style="width:100%; {% if not registros_faltas[aluno.id]['fdis'] %}display:none;{% endif %}">{{ registros_faltas[aluno.id]['obs'] }}</textarea>
+            </td>
           </tr>
         {% endfor %}
       </tbody>
@@ -201,7 +224,19 @@
     });
   });
 
-  form.addEventListener("submit", (event) => event.preventDefault());
 })();
+
+function toggleObservacoes(aluno_id) {
+  const fdisCheckbox = document.getElementById(`fdis-${aluno_id}`);
+  const obsTextarea = document.getElementById(`obs-${aluno_id}`);
+  if (!fdisCheckbox || !obsTextarea) return;
+  if (fdisCheckbox.checked) {
+    obsTextarea.style.display = "block";
+    obsTextarea.focus();
+  } else {
+    obsTextarea.style.display = "none";
+    obsTextarea.value = "";
+  }
+}
 </script>
 {% endblock %}

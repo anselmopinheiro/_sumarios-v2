@@ -3354,20 +3354,82 @@ def create_app():
             return "secundario"
         return "basico"
 
+    def _resolver_total_tempos_aula(aula):
+        total_tempos = 0
+        total_tempos_raw = getattr(aula, "total_tempos", None)
+        if total_tempos_raw not in (None, ""):
+            try:
+                total_tempos = max(int(total_tempos_raw), 0)
+            except (TypeError, ValueError):
+                total_tempos = 0
+
+        if total_tempos <= 0:
+            horarios = Horario.query.filter_by(turma_id=aula.turma_id, weekday=aula.weekday).all()
+            total_horarios = 0
+            for horario in horarios:
+                try:
+                    total_horarios += max(int(getattr(horario, "horas", 0) or 0), 0)
+                except (TypeError, ValueError):
+                    continue
+            total_tempos = total_horarios
+
+        if total_tempos <= 0:
+            tempo_dia = _tempo_da_turma_no_dia(aula.turma, aula.data)
+            try:
+                total_tempos = max(int(tempo_dia or 0), 0)
+            except (TypeError, ValueError):
+                total_tempos = 0
+
+        return max(total_tempos, 1)
+
+    def _carregar_registros_faltas(aula, alunos, total_tempos):
+        registos_db = {r.aluno_id: r for r in AulaAluno.query.filter_by(aula_id=aula.id).all()}
+        registros = {}
+        for aluno in alunos:
+            r = registos_db.get(aluno.id)
+            atraso = False
+            faltas_tempos = []
+            fdis = False
+            obs = ""
+            if r:
+                meta = {}
+                raw_obs = (r.observacoes or "").strip()
+                if raw_obs:
+                    try:
+                        parsed = json.loads(raw_obs)
+                        if isinstance(parsed, dict):
+                            meta = parsed
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        meta = {}
+                atraso = bool(meta.get("atraso", r.atraso))
+                faltas_default = list(range(1, min(max(int(r.faltas or 0), 0), total_tempos) + 1))
+                faltas_tempos = [
+                    int(t) for t in (meta.get("faltas", faltas_default) or [])
+                    if str(t).isdigit()
+                ]
+                fdis = bool(meta.get("fdis", bool(getattr(r, "falta_disciplinar", 0))))
+                obs = str(meta.get("obs", raw_obs if not meta else ""))
+
+            registros[aluno.id] = {
+                "atraso": atraso,
+                "faltas": sorted({t for t in faltas_tempos if 1 <= t <= total_tempos}),
+                "fdis": fdis,
+                "obs": obs,
+            }
+        return registros, registos_db
+
     @app.route('/aula/<int:aula_id>/avaliar', methods=['GET', 'POST'])
     def aula_avaliar(aula_id):
         aula = CalendarioAula.query.get_or_404(aula_id)
         alunos = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
-        presencas = {
-            row.aluno_id: row
-            for row in AulaAluno.query.filter_by(aula_id=aula.id).all()
-        }
-        alunos_faltosos_ids = {
-            aluno.id
-            for aluno in alunos
-            if getattr(aluno, "faltou", False) or (presencas.get(aluno.id) and (presencas[aluno.id].faltas or 0) > 0)
-        }
-        aluno_ids_presentes = {aluno.id for aluno in alunos if aluno.id not in alunos_faltosos_ids}
+        total_tempos = _resolver_total_tempos_aula(aula)
+        registros_faltas, presencas = _carregar_registros_faltas(aula, alunos, total_tempos)
+        avaliavel_por_aluno = {}
+        for aluno in alunos:
+            faltas_aluno = registros_faltas.get(aluno.id, {}).get("faltas", [])
+            avaliavel_por_aluno[aluno.id] = (not getattr(aluno, "faltou", False)) and (len(faltas_aluno) < total_tempos)
+        alunos_faltosos_ids = {aluno_id for aluno_id, avaliavel in avaliavel_por_aluno.items() if not avaliavel}
+        aluno_ids_avaliaveis = {aluno_id for aluno_id, avaliavel in avaliavel_por_aluno.items() if avaliavel}
         dominios = (
             EV2Domain.query.options(joinedload(EV2Domain.rubricas))
             .filter_by(ativo=True)
@@ -3398,66 +3460,125 @@ def create_app():
 
         if request.method == 'POST':
             rubrica_id = request.form.get("rubrica_id", type=int)
-            valor_raw = request.form.get("valor")
-            valor = None
-            if valor_raw not in (None, ""):
-                try:
-                    valor = float(valor_raw)
-                except (TypeError, ValueError):
-                    valor = None
+            if rubrica_id:
+                valor_raw = request.form.get("valor")
+                valor = None
+                if valor_raw not in (None, ""):
+                    try:
+                        valor = float(valor_raw)
+                    except (TypeError, ValueError):
+                        valor = None
 
-            if not rubrica_id:
-                return jsonify({"status": "error", "message": "rubrica_id é obrigatório"}), 400
+                aluno_ids = request.form.getlist("aluno_ids[]")
+                if not aluno_ids:
+                    aluno_unico = request.form.get("aluno_id")
+                    if aluno_unico:
+                        aluno_ids = [aluno_unico]
+                aluno_ids = [int(aluno_id) for aluno_id in aluno_ids if str(aluno_id).isdigit()]
+                aluno_ids = [aluno_id for aluno_id in aluno_ids if aluno_id in aluno_ids_avaliaveis]
+                if not aluno_ids:
+                    return jsonify({"status": "error", "message": "Sem alunos elegíveis para atualizar"}), 400
 
-            aluno_ids = request.form.getlist("aluno_ids[]")
-            if not aluno_ids:
-                aluno_unico = request.form.get("aluno_id")
-                if aluno_unico:
-                    aluno_ids = [aluno_unico]
-            aluno_ids = [int(aluno_id) for aluno_id in aluno_ids if str(aluno_id).isdigit()]
-            aluno_ids = [aluno_id for aluno_id in aluno_ids if aluno_id in aluno_ids_presentes]
-            if not aluno_ids:
-                return jsonify({"status": "error", "message": "Sem alunos elegíveis para atualizar"}), 400
+                for aluno_id in aluno_ids:
+                    avaliacao = Avaliacao.query.filter_by(aula_id=aula.id, aluno_id=aluno_id).first()
+                    if not avaliacao:
+                        avaliacao = Avaliacao(aula_id=aula.id, aluno_id=aluno_id)
+                        db.session.add(avaliacao)
+                        db.session.flush()
 
-            for aluno_id in aluno_ids:
-                avaliacao = Avaliacao.query.filter_by(aula_id=aula.id, aluno_id=aluno_id).first()
+                    item = AvaliacaoItem.query.filter_by(avaliacao_id=avaliacao.id, rubrica_id=rubrica_id).first()
+                    if not item:
+                        item = AvaliacaoItem(avaliacao_id=avaliacao.id, rubrica_id=rubrica_id)
+                        db.session.add(item)
+                    item.pontuacao = valor
+
+                    medias = calcular_media_por_dominio(avaliacao)
+                    avaliacao.resultado = round(sum(medias.values()) / len(medias), 1) if medias else 0.0
+
+                db.session.commit()
+
+                medias_atualizadas = {}
+                for aluno_id in aluno_ids:
+                    av = (
+                        Avaliacao.query.filter_by(aula_id=aula.id, aluno_id=aluno_id)
+                        .options(
+                            joinedload(Avaliacao.itens)
+                            .joinedload(AvaliacaoItem.rubrica)
+                            .joinedload(EV2Rubric.dominio)
+                        )
+                        .first()
+                    )
+                    medias_atualizadas[str(aluno_id)] = calcular_media_por_dominio(av) if av else {}
+
+                return jsonify(
+                    {
+                        "status": "ok",
+                        "rubrica_id": rubrica_id,
+                        "valor": valor,
+                        "medias_por_aluno": medias_atualizadas,
+                    }
+                ), 200
+
+            # Submissão completa do formulário (faltas/atraso/fdis/obs + rubricas).
+            for aluno in alunos:
+                atraso = request.form.get(f"atraso-{aluno.id}") == "1"
+                faltas_raw = request.form.getlist(f"faltas-{aluno.id}[]")
+                faltas_tempos = sorted({
+                    int(t)
+                    for t in faltas_raw
+                    if str(t).isdigit() and 1 <= int(t) <= total_tempos
+                })
+                fdis = request.form.get(f"fdis-{aluno.id}") == "1"
+                obs = (request.form.get(f"obs-{aluno.id}", "") or "").strip()
+
+                registo = presencas.get(aluno.id)
+                if not registo:
+                    registo = AulaAluno(aula_id=aula.id, aluno_id=aluno.id)
+                    db.session.add(registo)
+                    presencas[aluno.id] = registo
+
+                registo.atraso = atraso
+                registo.faltas = len(faltas_tempos)
+                registo.falta_disciplinar = 1 if fdis else 0
+                registo.observacoes = json.dumps(
+                    {
+                        "atraso": atraso,
+                        "faltas": faltas_tempos,
+                        "fdis": fdis,
+                        "obs": obs if fdis else "",
+                    },
+                    ensure_ascii=False,
+                )
+
+                if aluno.id not in aluno_ids_avaliaveis:
+                    continue
+
+                avaliacao = Avaliacao.query.filter_by(aula_id=aula.id, aluno_id=aluno.id).first()
                 if not avaliacao:
-                    avaliacao = Avaliacao(aula_id=aula.id, aluno_id=aluno_id)
+                    avaliacao = Avaliacao(aula_id=aula.id, aluno_id=aluno.id)
                     db.session.add(avaliacao)
                     db.session.flush()
 
-                item = AvaliacaoItem.query.filter_by(avaliacao_id=avaliacao.id, rubrica_id=rubrica_id).first()
-                if not item:
-                    item = AvaliacaoItem(avaliacao_id=avaliacao.id, rubrica_id=rubrica_id)
-                    db.session.add(item)
-                item.pontuacao = valor
+                for rubrica in rubricas:
+                    valor_raw = request.form.get(f"pontuacao-{aluno.id}-{rubrica.id}", "")
+                    valor = None
+                    if valor_raw not in (None, ""):
+                        try:
+                            valor = float(valor_raw)
+                        except (TypeError, ValueError):
+                            valor = None
+                    item = AvaliacaoItem.query.filter_by(avaliacao_id=avaliacao.id, rubrica_id=rubrica.id).first()
+                    if not item:
+                        item = AvaliacaoItem(avaliacao_id=avaliacao.id, rubrica_id=rubrica.id)
+                        db.session.add(item)
+                    item.pontuacao = valor
 
                 medias = calcular_media_por_dominio(avaliacao)
                 avaliacao.resultado = round(sum(medias.values()) / len(medias), 1) if medias else 0.0
 
             db.session.commit()
-
-            medias_atualizadas = {}
-            for aluno_id in aluno_ids:
-                av = (
-                    Avaliacao.query.filter_by(aula_id=aula.id, aluno_id=aluno_id)
-                    .options(
-                        joinedload(Avaliacao.itens)
-                        .joinedload(AvaliacaoItem.rubrica)
-                        .joinedload(EV2Rubric.dominio)
-                    )
-                    .first()
-                )
-                medias_atualizadas[str(aluno_id)] = calcular_media_por_dominio(av) if av else {}
-
-            return jsonify(
-                {
-                    "status": "ok",
-                    "rubrica_id": rubrica_id,
-                    "valor": valor,
-                    "medias_por_aluno": medias_atualizadas,
-                }
-            ), 200
+            flash("Registros de faltas atualizados", "success")
+            return redirect(url_for("aula_avaliar", aula_id=aula.id))
 
         avaliacao_map = {
             av.aluno_id: av
@@ -3497,6 +3618,9 @@ def create_app():
             rubricas_por_dominio=rubricas_por_dominio,
             avaliacoes=avaliacoes,
             medias_por_aluno=medias_por_aluno,
+            registros_faltas=registros_faltas,
+            avaliavel_por_aluno=avaliavel_por_aluno,
+            total_tempos=total_tempos,
             alunos_faltosos_ids=alunos_faltosos_ids,
             ciclo_aula=_detetar_ciclo_aula(aula),
         )
@@ -3544,67 +3668,8 @@ def create_app():
     def aula_faltas(aula_id):
         aula = CalendarioAula.query.get_or_404(aula_id)
         alunos = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
-
-        total_tempos = 0
-        total_tempos_raw = getattr(aula, "total_tempos", None)
-        if total_tempos_raw not in (None, ""):
-            try:
-                total_tempos = max(int(total_tempos_raw), 0)
-            except (TypeError, ValueError):
-                total_tempos = 0
-
-        if total_tempos <= 0:
-            horarios = Horario.query.filter_by(turma_id=aula.turma_id, weekday=aula.weekday).all()
-            total_horarios = 0
-            for horario in horarios:
-                try:
-                    total_horarios += max(int(getattr(horario, "horas", 0) or 0), 0)
-                except (TypeError, ValueError):
-                    continue
-            total_tempos = total_horarios
-
-        if total_tempos <= 0:
-            tempo_dia = _tempo_da_turma_no_dia(aula.turma, aula.data)
-            try:
-                total_tempos = max(int(tempo_dia or 0), 0)
-            except (TypeError, ValueError):
-                total_tempos = 0
-
-        # Nunca renderizar menos de 1 checkbox no painel.
-        total_tempos = max(total_tempos, 1)
-        registos_db = {r.aluno_id: r for r in AulaAluno.query.filter_by(aula_id=aula.id).all()}
-        registros = {}
-        for aluno in alunos:
-            r = registos_db.get(aluno.id)
-            atraso = False  # True = atrasado; False = pontual
-            faltas_tempos = []
-            fdis = False
-            obs = ""
-            if r:
-                meta = {}
-                raw_obs = (r.observacoes or "").strip()
-                if raw_obs:
-                    try:
-                        parsed = json.loads(raw_obs)
-                        if isinstance(parsed, dict):
-                            meta = parsed
-                    except (TypeError, ValueError, json.JSONDecodeError):
-                        meta = {}
-                atraso = bool(meta.get("atraso", r.atraso))
-                faltas_default = list(range(1, min(max(int(r.faltas or 0), 0), total_tempos) + 1))
-                faltas_tempos = [
-                    int(t) for t in (meta.get("faltas", faltas_default) or [])
-                    if str(t).isdigit()
-                ]
-                fdis = bool(meta.get("fdis", bool(getattr(r, "falta_disciplinar", 0))))
-                obs = str(meta.get("obs", raw_obs if not meta else ""))
-
-            registros[aluno.id] = {
-                "atraso": atraso,
-                "faltas": sorted({t for t in faltas_tempos if 1 <= t <= total_tempos}),
-                "fdis": fdis,
-                "obs": obs,
-            }
+        total_tempos = _resolver_total_tempos_aula(aula)
+        registros, registos_db = _carregar_registros_faltas(aula, alunos, total_tempos)
 
         if request.method == "POST":
             for aluno in alunos:
