@@ -289,6 +289,18 @@
                     class="btn btn-sm btn-outline-info">
                     Trabalhos
                   </a>
+                  <div class="dropdown">
+                    <button class="btn btn-sm btn-outline-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                      Avaliar
+                    </button>
+                    <ul class="dropdown-menu">
+                      <li><a class="dropdown-item" href="{{ url_for('avaliacao_aula_redirect', id_aula=a.id) }}" title="Avaliação de Aula">Aula</a></li>
+                      <li><span class="dropdown-item disabled" title="Obser Direta indisponível para este evento">Obser Direta</span></li>
+                      <li><span class="dropdown-item disabled" title="Portfólio indisponível para este evento">Portfólio</span></li>
+                      <li><span class="dropdown-item disabled" title="Projetos indisponível para este evento">Projetos</span></li>
+                      <li><span class="dropdown-item disabled" title="Trabalhos indisponível para este evento">Trabalhos</span></li>
+                    </ul>
+                  </div>
                 {% endif %}
                 <a href="{{ url_for('calendario_edit', turma_id=turma.id, aula_id=a.id) }}"
                   class="btn btn-sm btn-warning">

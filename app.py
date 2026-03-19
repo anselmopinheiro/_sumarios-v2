@@ -3572,6 +3572,10 @@ def create_app():
             ciclo_aula=_detetar_ciclo_aula(aula),
         )
 
+    @app.route('/avaliacao/aula/<int:id_aula>')
+    def avaliacao_aula_redirect(id_aula):
+        return redirect(url_for("aula_avaliar", aula_id=id_aula))
+
     @app.route('/aula/<int:aula_id>/pontualidade', methods=['GET', 'POST'])
     def aula_pontualidade(aula_id):
         aula = CalendarioAula.query.get_or_404(aula_id)
