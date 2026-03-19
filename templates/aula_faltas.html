@@ -31,21 +31,24 @@
       </td>
 
       <td style="border:1px solid #aaa; padding:6px;">
-        {% for tempo in range(1, total_tempos + 1) %}
-          <label style="display:inline-block; margin-right:8px; font-size:90%;">
-            <input type="checkbox"
-                   name="faltas-{{ aluno.id }}[]"
-                   value="{{ tempo }}"
-                   {% if tempo in registros[aluno.id]['faltas'] %}checked{% endif %}>
-            {{ tempo }}
-          </label>
-        {% endfor %}
+        <div style="display:flex; flex-wrap:wrap; gap:4px 6px;">
+          {% for tempo in range(1, total_tempos + 1) %}
+            <label style="display:inline-block; margin-right:6px; font-size:90%;">
+              <input type="checkbox"
+                     name="faltas-{{ aluno.id }}[]"
+                     value="{{ tempo }}"
+                     {% if tempo in registros[aluno.id]['faltas'] %}checked{% endif %}>
+              {{ tempo }}
+            </label>
+          {% endfor %}
+        </div>
       </td>
 
       <td style="border:1px solid #aaa; padding:6px; text-align:center;">
         <input type="checkbox"
                name="fdis-{{ aluno.id }}"
                id="fdis-{{ aluno.id }}"
+               value="1"
                onchange="toggleObservacoes({{ aluno.id }})"
                {% if registros[aluno.id]['fdis'] %}checked{% endif %}>
       </td>
