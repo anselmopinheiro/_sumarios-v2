@@ -3618,7 +3618,14 @@ def create_app():
     @app.route('/avaliacao/<tipo>/<int:id_objeto>', methods=['GET', 'POST'])
     def avaliacao_objeto(tipo, id_objeto):
         tipo = (tipo or "").strip().lower()
-        tipo_map = {"trabalho": "trabalhos", "projeto": "projetos"}
+        tipo_map = {
+            "obser": "observacao_direta",
+            "portfolio": "portfolio",
+            "projeto": "projetos",
+            "trabalho": "trabalhos",
+        }
+        if tipo == "aula":
+            return redirect(url_for("aula_avaliar", aula_id=id_objeto))
         if tipo not in tipo_map:
             abort(404)
 

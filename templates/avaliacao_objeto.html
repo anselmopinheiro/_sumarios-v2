@@ -1,6 +1,13 @@
 {% extends 'base.html' %}
 {% block content %}
-<h2>Avaliação de {{ 'Trabalho' if tipo == 'trabalho' else 'Projeto' }}</h2>
+<h2>
+  Avaliação de
+  {% if tipo == 'trabalho' %}Trabalho
+  {% elif tipo == 'projeto' %}Projeto
+  {% elif tipo == 'obser' %}Observação Direta
+  {% elif tipo == 'portfolio' %}Portfólio
+  {% else %}Evento{% endif %}
+</h2>
 <p>{{ event.titulo }} · {{ event.data.strftime('%Y-%m-%d') if event.data else '-' }}</p>
 
 <form method="post" id="avaliacao-objeto-form">

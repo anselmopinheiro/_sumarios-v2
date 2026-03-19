@@ -268,12 +268,40 @@
                       <button class="btn btn-sm btn-outline-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                         Avaliar
                       </button>
+                      {% set ev_obser = (a.ev2_events|selectattr('evaluation_type','equalto','observacao_direta')|list|first) %}
+                      {% set ev_portfolio = (a.ev2_events|selectattr('evaluation_type','equalto','portfolio')|list|first) %}
+                      {% set ev_projetos = (a.ev2_events|selectattr('evaluation_type','equalto','projetos')|list|first) %}
+                      {% set ev_trabalhos = (a.ev2_events|selectattr('evaluation_type','equalto','trabalhos')|list|first) %}
                       <ul class="dropdown-menu">
                         <li><a class="dropdown-item" href="{{ url_for('avaliacao_aula_redirect', id_aula=a.id) }}" title="Avaliação de Aula">Aula</a></li>
-                        <li><span class="dropdown-item disabled" title="Obser Direta indisponível para este evento">Obser Direta</span></li>
-                        <li><span class="dropdown-item disabled" title="Portfólio indisponível para este evento">Portfólio</span></li>
-                        <li><span class="dropdown-item disabled" title="Projetos indisponível para este evento">Projetos</span></li>
-                        <li><span class="dropdown-item disabled" title="Trabalhos indisponível para este evento">Trabalhos</span></li>
+                        <li>
+                          {% if ev_obser %}
+                            <a class="dropdown-item" href="{{ url_for('avaliacao_objeto', tipo='obser', id_objeto=ev_obser.id) }}" title="Avaliação Obser Direta">Obser Direta</a>
+                          {% else %}
+                            <span class="dropdown-item disabled" title="Obser Direta indisponível para este evento">Obser Direta</span>
+                          {% endif %}
+                        </li>
+                        <li>
+                          {% if ev_portfolio %}
+                            <a class="dropdown-item" href="{{ url_for('avaliacao_objeto', tipo='portfolio', id_objeto=ev_portfolio.id) }}" title="Avaliação Portfólio">Portfólio</a>
+                          {% else %}
+                            <span class="dropdown-item disabled" title="Portfólio indisponível para este evento">Portfólio</span>
+                          {% endif %}
+                        </li>
+                        <li>
+                          {% if ev_projetos %}
+                            <a class="dropdown-item" href="{{ url_for('avaliacao_objeto', tipo='projeto', id_objeto=ev_projetos.id) }}" title="Avaliação Projetos">Projetos</a>
+                          {% else %}
+                            <span class="dropdown-item disabled" title="Projetos indisponível para este evento">Projetos</span>
+                          {% endif %}
+                        </li>
+                        <li>
+                          {% if ev_trabalhos %}
+                            <a class="dropdown-item" href="{{ url_for('avaliacao_objeto', tipo='trabalho', id_objeto=ev_trabalhos.id) }}" title="Avaliação Trabalhos">Trabalhos</a>
+                          {% else %}
+                            <span class="dropdown-item disabled" title="Trabalhos indisponível para este evento">Trabalhos</span>
+                          {% endif %}
+                        </li>
                       </ul>
                     </div>
                   {% endif %}
