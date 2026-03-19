@@ -142,6 +142,9 @@ from models import (
     ParametroDefinicao,
     EV2Domain,
     EV2Rubric,
+    EV2Event,
+    EV2EventStudent,
+    EV2Assessment,
 )
 
 from calendario_service import (
@@ -3606,6 +3609,141 @@ def create_app():
             aula=aula,
             alunos=alunos,
             pontualidade=pontualidade,
+        )
+
+    @app.route('/avaliacao/<tipo>/<int:id_objeto>', methods=['GET', 'POST'])
+    def avaliacao_objeto(tipo, id_objeto):
+        tipo = (tipo or "").strip().lower()
+        tipo_map = {"trabalho": "trabalhos", "projeto": "projetos"}
+        if tipo not in tipo_map:
+            abort(404)
+
+        event = EV2Event.query.filter_by(id=id_objeto, evaluation_type=tipo_map[tipo]).first_or_404()
+        alunos_evento = (
+            EV2EventStudent.query.filter_by(event_id=event.id)
+            .options(joinedload(EV2EventStudent.aluno), joinedload(EV2EventStudent.assessments).joinedload(EV2Assessment.rubrica).joinedload(EV2Rubric.dominio))
+            .all()
+        )
+
+        dominios = (
+            EV2Domain.query.options(joinedload(EV2Domain.rubricas))
+            .filter_by(ativo=True)
+            .order_by(EV2Domain.letra.asc(), EV2Domain.nome.asc())
+            .all()
+        )
+        dominios_view = []
+        for idx, dominio in enumerate(dominios):
+            letra = getattr(dominio, "letra", None) or chr(ord("A") + idx)
+            rubricas_dominio = sorted(
+                [r for r in (dominio.rubricas or []) if getattr(r, "ativo", True)],
+                key=lambda r: ((r.codigo or ""), (r.nome or "")),
+            )
+            dominios_view.append({"id": dominio.id, "nome": dominio.nome, "letra": letra, "rubricas": rubricas_dominio})
+        rubricas = [rubrica for dominio in dominios_view for rubrica in dominio["rubricas"]]
+
+        registros_faltas = {}
+        total_tempos = 1
+        if event.aula_id:
+            aula_evento = CalendarioAula.query.get(event.aula_id)
+            if aula_evento:
+                total_tempos = _resolver_total_tempos_aula(aula_evento)
+                alunos_aula = [es.aluno for es in alunos_evento if es.aluno]
+                registros_faltas, _ = _carregar_registros_faltas(aula_evento, alunos_aula, total_tempos)
+
+        avaliavel_por_aluno = {}
+        for es in alunos_evento:
+            aluno = es.aluno
+            if not aluno:
+                continue
+            faltas = registros_faltas.get(aluno.id, {}).get("faltas", [])
+            fdis = bool(registros_faltas.get(aluno.id, {}).get("fdis"))
+            ausente_total = es.estado_assiduidade == "ausente_total" or es.tempos_presentes <= 0
+            avaliavel_por_aluno[aluno.id] = bool(es.elegivel_avaliacao) and (not ausente_total) and (len(faltas) < total_tempos) and (not fdis)
+
+        def _media_por_dominio_event_student(event_student):
+            dominios_scores = {}
+            for assessment in (event_student.assessments or []):
+                if assessment.tipo != "rubrica" or assessment.score_numeric is None:
+                    continue
+                rubrica = getattr(assessment, "rubrica", None)
+                dominio = getattr(rubrica, "dominio", None)
+                letra = getattr(dominio, "letra", None)
+                if not letra:
+                    continue
+                dominios_scores.setdefault(letra, []).append(float(assessment.score_numeric))
+            return {letra: round(sum(vals) / len(vals), 1) for letra, vals in dominios_scores.items() if vals}
+
+        if request.method == "POST":
+            rubrica_id = request.form.get("rubrica_id", type=int)
+            if not rubrica_id:
+                return jsonify({"status": "error", "message": "rubrica_id é obrigatório"}), 400
+            valor_raw = request.form.get("valor")
+            valor = None
+            if valor_raw not in (None, ""):
+                try:
+                    valor = float(valor_raw)
+                except (TypeError, ValueError):
+                    valor = None
+
+            aluno_ids = request.form.getlist("aluno_ids[]")
+            if not aluno_ids:
+                aluno_unico = request.form.get("aluno_id")
+                if aluno_unico:
+                    aluno_ids = [aluno_unico]
+            aluno_ids = [int(aid) for aid in aluno_ids if str(aid).isdigit()]
+            aluno_ids = [aid for aid in aluno_ids if avaliavel_por_aluno.get(aid, False)]
+            if not aluno_ids:
+                return jsonify({"status": "error", "message": "Sem alunos elegíveis para atualizar"}), 400
+
+            for aid in aluno_ids:
+                es = next((row for row in alunos_evento if row.aluno_id == aid), None)
+                if not es:
+                    continue
+                assessment = EV2Assessment.query.filter_by(event_student_id=es.id, rubric_id=rubrica_id).first()
+                if not assessment:
+                    assessment = EV2Assessment(event_student_id=es.id, tipo="rubrica", rubric_id=rubrica_id, weight=0)
+                    db.session.add(assessment)
+                if valor is None:
+                    assessment.state = "nao_observado"
+                    assessment.score_numeric = None
+                else:
+                    assessment.state = "avaliado"
+                    assessment.score_numeric = valor
+
+            db.session.commit()
+
+            medias_atualizadas = {}
+            for aid in aluno_ids:
+                es = EV2EventStudent.query.filter_by(event_id=event.id, aluno_id=aid).options(
+                    joinedload(EV2EventStudent.assessments).joinedload(EV2Assessment.rubrica).joinedload(EV2Rubric.dominio)
+                ).first()
+                medias_atualizadas[str(aid)] = _media_por_dominio_event_student(es) if es else {}
+            return jsonify({"status": "ok", "medias_por_aluno": medias_atualizadas}), 200
+
+        avaliacoes = {}
+        medias_por_aluno = {}
+        linhas = []
+        for es in alunos_evento:
+            aluno = es.aluno
+            if not aluno:
+                continue
+            linhas.append({"aluno": aluno, "grupo": es.group_key or ""})
+            avaliacoes[aluno.id] = {}
+            for assessment in (es.assessments or []):
+                if assessment.tipo == "rubrica" and assessment.rubric_id and assessment.score_numeric is not None:
+                    avaliacoes[aluno.id][assessment.rubric_id] = float(assessment.score_numeric)
+            medias_por_aluno[aluno.id] = _media_por_dominio_event_student(es) if avaliavel_por_aluno.get(aluno.id, False) else {}
+
+        return render_template(
+            "avaliacao_objeto.html",
+            tipo=tipo,
+            event=event,
+            linhas=linhas,
+            dominios=dominios_view,
+            rubricas=rubricas,
+            avaliacoes=avaliacoes,
+            medias_por_aluno=medias_por_aluno,
+            avaliavel_por_aluno=avaliavel_por_aluno,
         )
 
     @app.route('/aula/<int:aula_id>/faltas', methods=['GET', 'POST'])

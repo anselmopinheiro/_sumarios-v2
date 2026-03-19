@@ -1,0 +1,114 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Avaliação de {{ 'Trabalho' if tipo == 'trabalho' else 'Projeto' }}</h2>
+<p>{{ event.titulo }} · {{ event.data.strftime('%Y-%m-%d') if event.data else '-' }}</p>
+
+<form method="post" id="avaliacao-objeto-form">
+  <div class="table-responsive">
+    <table class="table table-bordered table-sm align-middle" id="avaliacao-objeto-table">
+      <thead class="table-light">
+        <tr>
+          <th rowspan="2">No</th>
+          <th rowspan="2">Nome</th>
+          <th rowspan="2">Grupo</th>
+          {% for dominio in dominios %}
+            <th colspan="{{ dominio.rubricas|length }}">{{ dominio.letra }} – {{ dominio.nome }}</th>
+          {% endfor %}
+          {% for dominio in dominios %}
+            <th rowspan="2" data-media-dominio="{{ dominio.letra }}">{{ dominio.letra }}</th>
+          {% endfor %}
+          <th rowspan="2">Observações</th>
+        </tr>
+        <tr>
+          {% for dominio in dominios %}
+            {% for rubrica in dominio.rubricas %}
+              <th>
+                <div>{{ rubrica.nome }}</div>
+                <div class="d-flex flex-column gap-1 mt-1">
+                  <button type="button" class="btn btn-outline-primary btn-sm" onclick="aplicarValorAutomatico({{ rubrica.id }})" data-rubrica-id="{{ rubrica.id }}">Aplicar automático</button>
+                  <button type="button" class="btn btn-outline-secondary btn-sm" onclick="confirmarLimpar({{ rubrica.id }})">Limpar</button>
+                </div>
+              </th>
+            {% endfor %}
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for linha in linhas %}
+          {% set aluno = linha.aluno %}
+          {% set avaliavel = avaliavel_por_aluno.get(aluno.id, True) %}
+          <tr data-aluno-id="{{ aluno.id }}" data-presente="{{ 1 if avaliavel else 0 }}">
+            <td>{{ loop.index }}</td>
+            <td>{{ aluno.nome }}</td>
+            <td>{{ linha.grupo or '-' }}</td>
+            {% for dominio in dominios %}
+              {% for rubrica in dominio.rubricas %}
+                <td>
+                  <input type="number" step="0.5" class="form-control form-control-sm"
+                         name="pontuacao-{{ aluno.id }}-{{ rubrica.id }}"
+                         data-aluno-id="{{ aluno.id }}"
+                         data-rubrica-id="{{ rubrica.id }}"
+                         {% if not avaliavel %}disabled title="Não avaliado — ausente ou falta disciplinar" style="background-color:#f5f5f5"{% endif %}
+                         value="{{ avaliacoes.get(aluno.id, {}).get(rubrica.id, '') }}">
+                </td>
+              {% endfor %}
+            {% endfor %}
+            {% set medias = medias_por_aluno.get(aluno.id, {}) %}
+            {% for dominio in dominios %}
+              <td class="media-cell text-center" data-aluno-id="{{ aluno.id }}" data-dominio-letra="{{ dominio.letra }}">
+                {% if not avaliavel %}-{% elif medias.get(dominio.letra) is not none %}{{ medias.get(dominio.letra) }}{% else %}-{% endif %}
+              </td>
+            {% endfor %}
+            <td><textarea class="form-control form-control-sm" rows="2"></textarea></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</form>
+
+<script>
+(() => {
+  const table = document.getElementById("avaliacao-objeto-table");
+  if (!table) return;
+  const alunoIds = Array.from(table.querySelectorAll('tr[data-aluno-id][data-presente="1"]')).map((tr) => tr.dataset.alunoId);
+  const domainLetters = Array.from(table.querySelectorAll("th[data-media-dominio]")).map((th) => th.dataset.mediaDominio);
+
+  function renderMedias(alunoId, medias) {
+    const map = medias || {};
+    domainLetters.forEach((letra) => {
+      const cell = table.querySelector(`.media-cell[data-aluno-id="${alunoId}"][data-dominio-letra="${letra}"]`);
+      if (!cell) return;
+      cell.textContent = map[letra] == null ? "-" : map[letra];
+    });
+  }
+
+  async function postUpdate(payload) {
+    const body = new URLSearchParams();
+    Object.entries(payload).forEach(([key, value]) => {
+      if (Array.isArray(value)) value.forEach((v) => body.append(key, v));
+      else body.append(key, value);
+    });
+    const resp = await fetch(window.location.pathname, { method: "POST", headers: { "X-Requested-With": "XMLHttpRequest" }, body });
+    if (!resp.ok) throw new Error("Falha ao guardar avaliação.");
+    return resp.json();
+  }
+
+  window.aplicarValorAutomatico = async function aplicarValorAutomatico(rubricaId) {
+    try {
+      const data = await postUpdate({ "aluno_ids[]": alunoIds, rubrica_id: rubricaId, valor: "3" });
+      table.querySelectorAll(`input[data-rubrica-id="${rubricaId}"]`).forEach((inp) => { inp.value = "3"; });
+      Object.entries(data.medias_por_aluno || {}).forEach(([alunoId, medias]) => renderMedias(alunoId, medias));
+    } catch (err) { console.error(err); }
+  };
+
+  window.confirmarLimpar = async function confirmarLimpar(rubricaId) {
+    try {
+      const data = await postUpdate({ "aluno_ids[]": alunoIds, rubrica_id: rubricaId, valor: "" });
+      table.querySelectorAll(`input[data-rubrica-id="${rubricaId}"]`).forEach((inp) => { inp.value = ""; });
+      Object.entries(data.medias_por_aluno || {}).forEach(([alunoId, medias]) => renderMedias(alunoId, medias));
+    } catch (err) { console.error(err); }
+  };
+})();
+</script>
+{% endblock %}
