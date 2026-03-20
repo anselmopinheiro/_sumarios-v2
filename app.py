@@ -3358,7 +3358,7 @@ def create_app():
             return "secundario"
         return "basico"
 
-    def _resolver_total_tempos_aula(aula):
+    def resolve_num_tempos_aula(aula):
         total_tempos = 0
         total_tempos_raw = getattr(aula, "total_tempos", None)
         if total_tempos_raw not in (None, ""):
@@ -3366,6 +3366,12 @@ def create_app():
                 total_tempos = max(int(total_tempos_raw), 0)
             except (TypeError, ValueError):
                 total_tempos = 0
+
+        if total_tempos <= 0:
+            total_tempos = _total_previsto_ui(
+                getattr(aula, "sumarios", None),
+                getattr(aula, "tempos_sem_aula", None),
+            )
 
         if total_tempos <= 0:
             horarios = Horario.query.filter_by(turma_id=aula.turma_id, weekday=aula.weekday).all()
@@ -3376,6 +3382,11 @@ def create_app():
                 except (TypeError, ValueError):
                     continue
             total_tempos = total_horarios
+            if total_tempos > 0:
+                app.logger.warning(
+                    "Fallback de tempos por horário usado para aula_id=%s (sem valor específico da ocorrência).",
+                    getattr(aula, "id", None),
+                )
 
         if total_tempos <= 0:
             tempo_dia = _tempo_da_turma_no_dia(aula.turma, aula.data)
@@ -3385,6 +3396,9 @@ def create_app():
                 total_tempos = 0
 
         return max(total_tempos, 1)
+
+    def _resolver_total_tempos_aula(aula):
+        return resolve_num_tempos_aula(aula)
 
     def _carregar_registros_faltas(aula, alunos, total_tempos):
         registos_db = {r.aluno_id: r for r in AulaAluno.query.filter_by(aula_id=aula.id).all()}
@@ -4099,8 +4113,17 @@ def create_app():
     def aula_faltas(aula_id):
         aula = CalendarioAula.query.get_or_404(aula_id)
         alunos = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
-        total_tempos = _resolver_total_tempos_aula(aula)
+        total_tempos = resolve_num_tempos_aula(aula)
         registros, registos_db = _carregar_registros_faltas(aula, alunos, total_tempos)
+        turma_label = getattr(getattr(aula, "turma", None), "nome", None) or f"Turma {aula.turma_id}"
+        numero_sumario = (getattr(aula, "sumarios", None) or "").strip() or "—"
+        modulo_nome = getattr(getattr(aula, "modulo", None), "nome", None)
+        if modulo_nome:
+            modulo_label = modulo_nome
+        elif getattr(aula, "numero_modulo", None) not in (None, ""):
+            modulo_label = f"Módulo {aula.numero_modulo}"
+        else:
+            modulo_label = "—"
 
         if request.method == "POST":
             for aluno in alunos:
@@ -4144,6 +4167,10 @@ def create_app():
             alunos=alunos,
             registros=registros,
             total_tempos=total_tempos,
+            num_tempos_reais=total_tempos,
+            turma_label=turma_label,
+            numero_sumario=numero_sumario,
+            modulo_label=modulo_label,
         )
 
     @app.route("/")
