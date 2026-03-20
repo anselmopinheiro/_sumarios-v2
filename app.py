@@ -3427,6 +3427,27 @@ def create_app():
         if not turma:
             return None
         disciplina = (turma.disciplinas or [None])[0]
+        if disciplina:
+            return disciplina
+
+        ano_letivo_id = getattr(turma, "ano_letivo_id", None)
+        if not ano_letivo_id:
+            ano_ativo = AnoLetivo.query.filter_by(ativo=True).order_by(AnoLetivo.id.desc()).first()
+            if not ano_ativo:
+                ano_ativo = AnoLetivo.query.order_by(AnoLetivo.id.desc()).first()
+            if not ano_ativo:
+                return None
+            ano_letivo_id = ano_ativo.id
+
+        disciplina = Disciplina(
+            nome="Disciplina automática (avaliação)",
+            sigla="AUTO",
+            ano_letivo_id=ano_letivo_id,
+        )
+        db.session.add(disciplina)
+        db.session.flush()
+        db.session.add(TurmaDisciplina(turma_id=turma.id, disciplina_id=disciplina.id))
+        db.session.flush()
         return disciplina
 
     def _obter_ou_criar_evento_avaliacao(aula, tipo):
@@ -3754,11 +3775,16 @@ def create_app():
         if request.method == "POST":
             event = ctx["event"] or _obter_ou_criar_evento_avaliacao(aula, tipo)
             if not event:
-                return jsonify({"status": "error", "message": "Não foi possível gravar sem disciplina/configuração associada à aula."}), 400
+                app.logger.warning(
+                    "Autosave falhou sem contexto persistível | aula_id=%s tipo=%s",
+                    aula.id,
+                    tipo,
+                )
+                return jsonify({"ok": False, "error": "Não foi possível inicializar o contexto desta avaliação.", "status": "error"}), 500
 
             rubrica_id = request.form.get("rubrica_id", type=int)
             if not rubrica_id:
-                return jsonify({"status": "error", "message": "rubrica_id é obrigatório"}), 400
+                return jsonify({"ok": False, "error": "rubrica_id é obrigatório", "status": "error"}), 400
             valor_raw = request.form.get("valor")
             valor = None
             if valor_raw not in (None, ""):
@@ -3775,7 +3801,13 @@ def create_app():
             aluno_ids = [int(aid) for aid in aluno_ids if str(aid).isdigit()]
             aluno_ids = [aid for aid in aluno_ids if ctx["avaliavel_por_aluno"].get(aid, False)]
             if not aluno_ids:
-                return jsonify({"status": "error", "message": "Sem alunos elegíveis para atualizar"}), 400
+                app.logger.info(
+                    "Autosave sem alunos elegíveis | aula_id=%s tipo=%s rubrica_id=%s",
+                    aula.id,
+                    tipo,
+                    rubrica_id,
+                )
+                return jsonify({"ok": False, "error": "Sem alunos elegíveis para atualizar", "status": "error"}), 400
 
             estudantes_existentes = {es.aluno_id: es for es in EV2EventStudent.query.filter_by(event_id=event.id).all()}
             for aid in aluno_ids:
@@ -3812,7 +3844,7 @@ def create_app():
                     joinedload(EV2EventStudent.assessments).joinedload(EV2Assessment.rubrica).joinedload(EV2Rubric.dominio)
                 ).first()
                 medias_atualizadas[str(aid)] = _media_por_dominio_event_student(es) if es else {}
-            return jsonify({"status": "ok", "medias_por_aluno": medias_atualizadas}), 200
+            return jsonify({"ok": True, "status": "ok", "medias_por_aluno": medias_atualizadas}), 200
 
         avaliacoes = {}
         medias_por_aluno = {}
