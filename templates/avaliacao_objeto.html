@@ -14,18 +14,44 @@
 
 {% if tipo in ['projeto', 'trabalho'] %}
   <div class="card card-body mb-3">
+    {% if eventos_relevantes %}
+      <div class="d-flex gap-2 align-items-end mb-2">
+        <div class="flex-grow-1">
+          <label class="form-label form-label-sm">Escolher {{ 'Projeto' if tipo == 'projeto' else 'Trabalho' }}</label>
+          <select id="evento-existente" class="form-select form-select-sm">
+            {% for ev in eventos_relevantes %}
+              <option value="{{ ev.id }}" {% if evento_ativo_id == ev.id %}selected{% endif %}>
+                {{ ('Projeto' if tipo == 'projeto' else 'Trabalho') }} {{ ev.numero or '—' }} — {{ ev.titulo }}{% if ev.prazo_entrega %} (Prazo {{ ev.prazo_entrega.strftime('%d-%m-%Y') }}){% endif %}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selecionarItemExistente()">Escolher outro</button>
+      </div>
+    {% endif %}
     <div class="row g-2 align-items-end">
       <div class="col-sm-3">
         <label class="form-label form-label-sm">Número</label>
         <input id="meta-numero" type="number" min="1" class="form-control form-control-sm" value="{{ meta_numero or '' }}">
       </div>
-      <div class="col-sm-7">
+      <div class="col-sm-5">
         <label class="form-label form-label-sm">Título</label>
         <input id="meta-titulo" type="text" class="form-control form-control-sm" value="{{ meta_titulo or '' }}">
       </div>
       <div class="col-sm-2">
+        <label class="form-label form-label-sm">Início</label>
+        <input id="meta-data-inicio" type="date" class="form-control form-control-sm" value="{{ meta_data_inicio or '' }}">
+      </div>
+      <div class="col-sm-2">
+        <label class="form-label form-label-sm">Prazo entrega</label>
+        <input id="meta-prazo" type="date" class="form-control form-control-sm" value="{{ meta_prazo_entrega or '' }}">
+      </div>
+      <div class="col-sm-2">
         <button type="button" class="btn btn-sm btn-outline-primary w-100" onclick="guardarMetaObjeto()">Guardar</button>
       </div>
+    </div>
+    <div class="mt-2">
+      <button type="button" class="btn btn-sm btn-primary" onclick="criarNovoItem()">Novo {{ 'Projeto' if tipo == 'projeto' else 'Trabalho' }}</button>
     </div>
   </div>
 {% endif %}
@@ -34,9 +60,22 @@
   <div class="card card-body mb-3">
     <div class="d-flex justify-content-between align-items-center mb-2">
       <strong class="small">Grupos</strong>
-      <div class="input-group input-group-sm" style="max-width: 340px;">
-        <input id="novo-grupo-nome" type="text" class="form-control" placeholder="Novo grupo">
-        <button type="button" class="btn btn-outline-primary" onclick="criarGrupo()">Criar</button>
+      <div class="d-flex gap-2">
+        <div class="input-group input-group-sm" style="max-width: 340px;">
+          <input id="novo-grupo-nome" type="text" class="form-control" placeholder="Novo grupo">
+          <button type="button" class="btn btn-outline-primary" onclick="criarGrupo()">Criar</button>
+        </div>
+        <div class="input-group input-group-sm" style="max-width: 260px;">
+          <select id="grupos-origem" class="form-select">
+            <option value="">Importar grupos de…</option>
+            {% for origem in grupos_origem %}
+              {% if origem.id != evento_ativo_id %}
+                <option value="{{ origem.id }}">{{ origem.titulo }}</option>
+              {% endif %}
+            {% endfor %}
+          </select>
+          <button type="button" class="btn btn-outline-secondary" onclick="importarGrupos()">Importar</button>
+        </div>
       </div>
     </div>
     <div class="d-flex flex-wrap gap-2">
@@ -206,7 +245,39 @@
         action: "save_meta",
         numero: document.getElementById("meta-numero")?.value || "",
         titulo: document.getElementById("meta-titulo")?.value || "",
+        data_inicio: document.getElementById("meta-data-inicio")?.value || "",
+        prazo_entrega: document.getElementById("meta-prazo")?.value || "",
       });
+    } catch (err) { console.error(err); }
+  };
+
+  window.criarNovoItem = async function criarNovoItem() {
+    try {
+      const data = await postUpdate({
+        action: "create_item",
+        numero: document.getElementById("meta-numero")?.value || "",
+        titulo: document.getElementById("meta-titulo")?.value || "",
+        data_inicio: document.getElementById("meta-data-inicio")?.value || "",
+        prazo_entrega: document.getElementById("meta-prazo")?.value || "",
+      });
+      if (data.event_id) {
+        const url = new URL(window.location.href);
+        url.searchParams.set("event_id", data.event_id);
+        window.location.href = url.toString();
+      } else {
+        window.location.reload();
+      }
+    } catch (err) { console.error(err); }
+  };
+
+  window.selecionarItemExistente = async function selecionarItemExistente() {
+    const eventId = document.getElementById("evento-existente")?.value;
+    if (!eventId) return;
+    try {
+      await postUpdate({ action: "select_item", event_id: eventId });
+      const url = new URL(window.location.href);
+      url.searchParams.set("event_id", eventId);
+      window.location.href = url.toString();
     } catch (err) { console.error(err); }
   };
 
@@ -229,6 +300,15 @@
   window.atribuirGrupo = async function atribuirGrupo(alunoId, groupId) {
     try {
       await postUpdate({ action: "group_assign", aluno_id: alunoId, group_id: groupId });
+    } catch (err) { console.error(err); }
+  };
+
+  window.importarGrupos = async function importarGrupos() {
+    const sourceId = document.getElementById("grupos-origem")?.value;
+    if (!sourceId) return;
+    try {
+      await postUpdate({ action: "import_groups", source_event_id: sourceId });
+      window.location.reload();
     } catch (err) { console.error(err); }
   };
 })();

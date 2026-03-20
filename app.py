@@ -148,6 +148,7 @@ from models import (
     EV2Assessment,
     EV2EvaluationGroup,
     EV2EvaluationGroupMember,
+    EV2AulaEventLink,
 )
 
 from calendario_service import (
@@ -2464,9 +2465,16 @@ def create_app():
             if "numero" not in ev2_event_cols:
                 db.session.execute(text("ALTER TABLE ev2_events ADD COLUMN numero INTEGER"))
                 db.session.commit()
+            if "data_inicio" not in ev2_event_cols:
+                db.session.execute(text("ALTER TABLE ev2_events ADD COLUMN data_inicio DATE"))
+                db.session.commit()
+            if "prazo_entrega" not in ev2_event_cols:
+                db.session.execute(text("ALTER TABLE ev2_events ADD COLUMN prazo_entrega DATE"))
+                db.session.commit()
 
         EV2EvaluationGroup.__table__.create(db.engine, checkfirst=True)
         EV2EvaluationGroupMember.__table__.create(db.engine, checkfirst=True)
+        EV2AulaEventLink.__table__.create(db.engine, checkfirst=True)
 
         try:
             script = ScriptDirectory("migrations")
@@ -3553,6 +3561,8 @@ def create_app():
             aula_id=aula.id,
             evaluation_type=evaluation_type,
             titulo=f"{evaluation_type.replace('_', ' ').title()} · Aula {aula.id}",
+            data_inicio=aula.data,
+            prazo_entrega=aula.data,
             descricao="Evento criado automaticamente pela página unificada de avaliação.",
             data=aula.data,
             group_mode="grupo" if evaluation_type in {"projetos", "trabalhos"} else "individual",
@@ -3591,7 +3601,31 @@ def create_app():
             return None
         return EV2Event.query.filter_by(aula_id=aula.id, evaluation_type=evaluation_type).first()
 
-    def build_avaliacao_context_for_aula(aula, tipo):
+    def _listar_eventos_relevantes_aula(aula, tipo):
+        tipo_map = {
+            "obser": "observacao_direta",
+            "portfolio": "portfolio",
+            "projeto": "projetos",
+            "trabalho": "trabalhos",
+        }
+        evaluation_type = tipo_map.get(tipo)
+        if not evaluation_type:
+            return []
+        query = (
+            EV2Event.query.join(EV2SubjectConfig, EV2Event.subject_config_id == EV2SubjectConfig.id)
+            .filter(EV2SubjectConfig.turma_id == aula.turma_id, EV2Event.evaluation_type == evaluation_type)
+        )
+        eventos = query.order_by(EV2Event.numero.desc().nullslast(), EV2Event.data.desc(), EV2Event.id.desc()).all()
+        relevantes = []
+        for ev in eventos:
+            data_inicio = ev.data_inicio or ev.data
+            prazo = ev.prazo_entrega or ev.data
+            associado = any(link.aula_id == aula.id for link in (ev.aula_links or []))
+            if associado or (data_inicio and prazo and data_inicio <= aula.data <= prazo):
+                relevantes.append(ev)
+        return relevantes
+
+    def build_avaliacao_context_for_aula(aula, tipo, event_override=None):
         alunos = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
         total_tempos = _resolver_total_tempos_aula(aula)
         registros_faltas, _ = _carregar_registros_faltas(aula, alunos, total_tempos)
@@ -3623,7 +3657,7 @@ def create_app():
             )
             dominios_view.append({"id": dominio.id, "nome": dominio.nome, "letra": letra, "rubricas": rubricas_dominio})
 
-        event = _obter_evento_avaliacao_existente(aula, tipo)
+        event = event_override or _obter_evento_avaliacao_existente(aula, tipo)
         event_students = []
         grupos = []
         grupo_por_aluno = {}
@@ -3845,7 +3879,15 @@ def create_app():
         if tipo not in {"obser", "portfolio", "projeto", "trabalho"}:
             abort(404)
 
-        ctx = build_avaliacao_context_for_aula(aula, tipo)
+        eventos_relevantes = _listar_eventos_relevantes_aula(aula, tipo) if tipo in {"projeto", "trabalho"} else []
+        event_id_escolhido = request.values.get("event_id", type=int)
+        evento_ativo = None
+        if event_id_escolhido:
+            evento_ativo = next((ev for ev in eventos_relevantes if ev.id == event_id_escolhido), None)
+        if not evento_ativo and eventos_relevantes:
+            evento_ativo = eventos_relevantes[0]
+
+        ctx = build_avaliacao_context_for_aula(aula, tipo, event_override=evento_ativo)
 
         def _media_por_dominio_event_student(event_student):
             dominios_scores = {}
@@ -3871,9 +3913,45 @@ def create_app():
                 return jsonify({"ok": False, "error": "Não foi possível inicializar o contexto desta avaliação.", "status": "error"}), 500
 
             action = (request.form.get("action") or "score").strip().lower()
+            if action == "create_item" and tipo in {"projeto", "trabalho"}:
+                tipo_evento = "projetos" if tipo == "projeto" else "trabalhos"
+                numero_max = (
+                    db.session.query(db.func.max(EV2Event.numero))
+                    .join(EV2SubjectConfig, EV2Event.subject_config_id == EV2SubjectConfig.id)
+                    .filter(EV2SubjectConfig.turma_id == aula.turma_id, EV2Event.evaluation_type == tipo_evento)
+                    .scalar()
+                    or 0
+                )
+                numero = request.form.get("numero", type=int) or int(numero_max) + 1
+                titulo = (request.form.get("titulo") or f"{'Projeto' if tipo == 'projeto' else 'Trabalho'} {numero}").strip()
+                data_inicio_raw = request.form.get("data_inicio")
+                prazo_raw = request.form.get("prazo_entrega")
+                data_inicio = date.fromisoformat(data_inicio_raw) if data_inicio_raw else aula.data
+                prazo_entrega = date.fromisoformat(prazo_raw) if prazo_raw else data_inicio
+                event.numero = numero
+                event.titulo = titulo
+                event.data_inicio = data_inicio
+                event.prazo_entrega = prazo_entrega
+                if not EV2AulaEventLink.query.filter_by(aula_id=aula.id, event_id=event.id).first():
+                    db.session.add(EV2AulaEventLink(aula_id=aula.id, event_id=event.id))
+                db.session.commit()
+                return jsonify({"ok": True, "status": "ok", "event_id": event.id}), 200
+
+            if action == "select_item" and tipo in {"projeto", "trabalho"}:
+                event_id_select = request.form.get("event_id", type=int)
+                selected = EV2Event.query.filter_by(id=event_id_select).first()
+                if not selected:
+                    return jsonify({"ok": False, "error": "Item não encontrado", "status": "error"}), 404
+                if not EV2AulaEventLink.query.filter_by(aula_id=aula.id, event_id=selected.id).first():
+                    db.session.add(EV2AulaEventLink(aula_id=aula.id, event_id=selected.id))
+                    db.session.commit()
+                return jsonify({"ok": True, "status": "ok"}), 200
+
             if action == "save_meta":
                 titulo = (request.form.get("titulo") or "").strip()
                 numero_raw = (request.form.get("numero") or "").strip()
+                data_inicio_raw = (request.form.get("data_inicio") or "").strip()
+                prazo_raw = (request.form.get("prazo_entrega") or "").strip()
                 numero = None
                 if numero_raw:
                     try:
@@ -3884,8 +3962,29 @@ def create_app():
                     if titulo:
                         event.titulo = titulo
                     event.numero = numero
+                    if data_inicio_raw:
+                        event.data_inicio = date.fromisoformat(data_inicio_raw)
+                    if prazo_raw:
+                        event.prazo_entrega = date.fromisoformat(prazo_raw)
                     db.session.commit()
                 return jsonify({"ok": True, "status": "ok", "titulo": event.titulo, "numero": event.numero}), 200
+
+            if action == "import_groups" and tipo in {"projeto", "portfolio"}:
+                source_event_id = request.form.get("source_event_id", type=int)
+                if not source_event_id:
+                    return jsonify({"ok": False, "error": "Origem inválida", "status": "error"}), 400
+                source_groups = EV2EvaluationGroup.query.filter_by(event_id=source_event_id).all()
+                for source_group in source_groups:
+                    novo_nome = f"{source_group.nome} (importado)"
+                    if EV2EvaluationGroup.query.filter_by(event_id=event.id, nome=novo_nome).first():
+                        continue
+                    novo = EV2EvaluationGroup(event_id=event.id, nome=novo_nome, ordem=source_group.ordem)
+                    db.session.add(novo)
+                    db.session.flush()
+                    for membro in source_group.members or []:
+                        db.session.add(EV2EvaluationGroupMember(group_id=novo.id, aluno_id=membro.aluno_id))
+                db.session.commit()
+                return jsonify({"ok": True, "status": "ok"}), 200
 
             if action == "group_create" and tipo in {"portfolio", "projeto"}:
                 nome_grupo = (request.form.get("nome_grupo") or "").strip()
@@ -4038,6 +4137,15 @@ def create_app():
             grupo_por_aluno=ctx.get("grupo_por_aluno", {}),
             meta_numero=(ctx["event"].numero if ctx.get("event") else None),
             meta_titulo=(ctx["event"].titulo if ctx.get("event") else ""),
+            meta_data_inicio=(ctx["event"].data_inicio.isoformat() if ctx.get("event") and ctx["event"].data_inicio else aula.data.isoformat() if aula.data else ""),
+            meta_prazo_entrega=(ctx["event"].prazo_entrega.isoformat() if ctx.get("event") and ctx["event"].prazo_entrega else ""),
+            eventos_relevantes=eventos_relevantes,
+            evento_ativo_id=(ctx["event"].id if ctx.get("event") else None),
+            grupos_origem=(
+                _listar_eventos_relevantes_aula(aula, tipo)
+                if tipo in {"projeto", "portfolio"}
+                else []
+            ),
             embed_mode=True,
         )
 
@@ -4255,6 +4363,11 @@ def create_app():
             grupo_por_aluno=grupo_por_aluno,
             meta_numero=getattr(event, "numero", None),
             meta_titulo=getattr(event, "titulo", ""),
+            meta_data_inicio=(event.data_inicio.isoformat() if getattr(event, "data_inicio", None) else ""),
+            meta_prazo_entrega=(event.prazo_entrega.isoformat() if getattr(event, "prazo_entrega", None) else ""),
+            eventos_relevantes=[],
+            evento_ativo_id=getattr(event, "id", None),
+            grupos_origem=[],
             embed_mode=(request.args.get("embed") == "1"),
         )
 

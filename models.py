@@ -939,6 +939,8 @@ class EV2Event(db.Model):
     evaluation_type = db.Column(db.String(32), nullable=False)
     numero = db.Column(db.Integer, nullable=True)
     titulo = db.Column(db.String(255), nullable=False)
+    data_inicio = db.Column(db.Date, nullable=True)
+    prazo_entrega = db.Column(db.Date, nullable=True)
     descricao = db.Column(db.Text)
     data = db.Column(db.Date, nullable=False)
     group_mode = db.Column(db.String(20), nullable=False, default="individual", server_default="individual")
@@ -980,6 +982,30 @@ class EV2Event(db.Model):
         db.Index("ix_ev2_events_disciplina_data", "disciplina_id", "data"),
         db.Index("ix_ev2_events_aula_type", "aula_id", "evaluation_type"),
         db.Index("ix_ev2_events_aula_data", "aula_id", "data"),
+        db.Index("ix_ev2_events_tipo_numero", "evaluation_type", "numero"),
+    )
+
+
+class EV2AulaEventLink(db.Model):
+    __tablename__ = "ev2_aula_event_links"
+
+    id = db.Column(db.Integer, primary_key=True)
+    aula_id = db.Column(db.Integer, db.ForeignKey("calendario_aulas.id"), nullable=False, index=True)
+    event_id = db.Column(db.Integer, db.ForeignKey("ev2_events.id"), nullable=False, index=True)
+    created_at = db.Column(
+        db.DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=db.text("now()"),
+    )
+
+    aula = db.relationship("CalendarioAula", backref=db.backref("ev2_event_links", cascade="all, delete-orphan"))
+    event = db.relationship("EV2Event", backref=db.backref("aula_links", cascade="all, delete-orphan"))
+
+    __table_args__ = (
+        db.UniqueConstraint("aula_id", "event_id", name="uq_ev2_aula_event_once"),
+        db.Index("ix_ev2_aula_event_aula", "aula_id"),
+        db.Index("ix_ev2_aula_event_event", "event_id"),
     )
 
 
