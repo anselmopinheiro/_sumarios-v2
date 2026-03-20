@@ -12,6 +12,46 @@
   <p>{{ (event.titulo if event else (titulo_evento or 'Avaliação')) }} · {{ (event.data if event else data_evento).strftime('%Y-%m-%d') if (event and event.data) or data_evento else '-' }}</p>
 {% endif %}
 
+{% if tipo in ['projeto', 'trabalho'] %}
+  <div class="card card-body mb-3">
+    <div class="row g-2 align-items-end">
+      <div class="col-sm-3">
+        <label class="form-label form-label-sm">Número</label>
+        <input id="meta-numero" type="number" min="1" class="form-control form-control-sm" value="{{ meta_numero or '' }}">
+      </div>
+      <div class="col-sm-7">
+        <label class="form-label form-label-sm">Título</label>
+        <input id="meta-titulo" type="text" class="form-control form-control-sm" value="{{ meta_titulo or '' }}">
+      </div>
+      <div class="col-sm-2">
+        <button type="button" class="btn btn-sm btn-outline-primary w-100" onclick="guardarMetaObjeto()">Guardar</button>
+      </div>
+    </div>
+  </div>
+{% endif %}
+
+{% if tipo in ['projeto', 'portfolio'] %}
+  <div class="card card-body mb-3">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <strong class="small">Grupos</strong>
+      <div class="input-group input-group-sm" style="max-width: 340px;">
+        <input id="novo-grupo-nome" type="text" class="form-control" placeholder="Novo grupo">
+        <button type="button" class="btn btn-outline-primary" onclick="criarGrupo()">Criar</button>
+      </div>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      {% for grupo in grupos %}
+        <span class="badge text-bg-light border">
+          {{ grupo.nome }}
+          <button type="button" class="btn btn-link btn-sm p-0 ms-1 text-danger text-decoration-none" onclick="apagarGrupo({{ grupo.id }})">×</button>
+        </span>
+      {% else %}
+        <span class="text-muted small">Sem grupos criados.</span>
+      {% endfor %}
+    </div>
+  </div>
+{% endif %}
+
 <form method="post" id="avaliacao-objeto-form">
   <div class="table-responsive">
     <table class="table table-bordered table-sm align-middle" id="avaliacao-objeto-table">
@@ -50,7 +90,19 @@
           <tr data-aluno-id="{{ aluno.id }}" data-presente="{{ 1 if avaliavel else 0 }}">
             <td>{{ loop.index }}</td>
             <td>{{ aluno.nome }}</td>
-            <td>{{ linha.grupo or '-' }}</td>
+            <td>
+              {% set grupo_atual = grupo_por_aluno.get(aluno.id, linha.grupo or '') %}
+              {% if tipo in ['projeto', 'portfolio'] %}
+                <select class="form-select form-select-sm" onchange="atribuirGrupo({{ aluno.id }}, this.value)">
+                  <option value="">—</option>
+                  {% for grupo in grupos %}
+                    <option value="{{ grupo.id }}" {% if grupo_atual == grupo.nome %}selected{% endif %}>{{ grupo.nome }}</option>
+                  {% endfor %}
+                </select>
+              {% else %}
+                {{ grupo_atual or '-' }}
+              {% endif %}
+            </td>
             {% for dominio in dominios %}
               {% for rubrica in dominio.rubricas %}
                 <td>
@@ -146,6 +198,38 @@
 
   window.irParaAvaliacao = function irParaAvaliacao(tipo, idObjeto) {
     window.location.href = `/avaliacao/${tipo}/${idObjeto}`;
+  };
+
+  window.guardarMetaObjeto = async function guardarMetaObjeto() {
+    try {
+      await postUpdate({
+        action: "save_meta",
+        numero: document.getElementById("meta-numero")?.value || "",
+        titulo: document.getElementById("meta-titulo")?.value || "",
+      });
+    } catch (err) { console.error(err); }
+  };
+
+  window.criarGrupo = async function criarGrupo() {
+    const nome = document.getElementById("novo-grupo-nome")?.value || "";
+    if (!nome.trim()) return;
+    try {
+      await postUpdate({ action: "group_create", nome_grupo: nome.trim() });
+      window.location.reload();
+    } catch (err) { console.error(err); }
+  };
+
+  window.apagarGrupo = async function apagarGrupo(groupId) {
+    try {
+      await postUpdate({ action: "group_delete", group_id: groupId });
+      window.location.reload();
+    } catch (err) { console.error(err); }
+  };
+
+  window.atribuirGrupo = async function atribuirGrupo(alunoId, groupId) {
+    try {
+      await postUpdate({ action: "group_assign", aluno_id: alunoId, group_id: groupId });
+    } catch (err) { console.error(err); }
   };
 })();
 </script>

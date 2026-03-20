@@ -937,6 +937,7 @@ class EV2Event(db.Model):
     disciplina_id = db.Column(db.Integer, db.ForeignKey("disciplinas.id"), nullable=False)
     aula_id = db.Column(db.Integer, db.ForeignKey("calendario_aulas.id"), nullable=True)
     evaluation_type = db.Column(db.String(32), nullable=False)
+    numero = db.Column(db.Integer, nullable=True)
     titulo = db.Column(db.String(255), nullable=False)
     descricao = db.Column(db.Text)
     data = db.Column(db.Date, nullable=False)
@@ -1021,6 +1022,44 @@ class EV2EventStudent(db.Model):
         db.Index("ix_ev2_event_students_event", "event_id"),
         db.Index("ix_ev2_event_students_aluno", "aluno_id"),
         db.Index("ix_ev2_event_students_aluno_event", "aluno_id", "event_id"),
+    )
+
+
+class EV2EvaluationGroup(db.Model):
+    __tablename__ = "ev2_evaluation_groups"
+
+    id = db.Column(db.Integer, primary_key=True)
+    event_id = db.Column(db.Integer, db.ForeignKey("ev2_events.id"), nullable=False, index=True)
+    nome = db.Column(db.String(120), nullable=False)
+    ordem = db.Column(db.Integer, nullable=True)
+    created_at = db.Column(
+        db.DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=db.text("now()"),
+    )
+
+    event = db.relationship("EV2Event", backref=db.backref("evaluation_groups", cascade="all, delete-orphan"))
+
+    __table_args__ = (
+        db.UniqueConstraint("event_id", "nome", name="uq_ev2_eval_group_event_nome"),
+        db.Index("ix_ev2_eval_group_event_ordem", "event_id", "ordem"),
+    )
+
+
+class EV2EvaluationGroupMember(db.Model):
+    __tablename__ = "ev2_evaluation_group_members"
+
+    id = db.Column(db.Integer, primary_key=True)
+    group_id = db.Column(db.Integer, db.ForeignKey("ev2_evaluation_groups.id"), nullable=False, index=True)
+    aluno_id = db.Column(db.Integer, db.ForeignKey("alunos.id"), nullable=False, index=True)
+
+    group = db.relationship("EV2EvaluationGroup", backref=db.backref("members", cascade="all, delete-orphan"))
+    aluno = db.relationship("Aluno")
+
+    __table_args__ = (
+        db.UniqueConstraint("group_id", "aluno_id", name="uq_ev2_eval_group_member_once"),
+        db.Index("ix_ev2_eval_group_member_group", "group_id"),
     )
 
 
