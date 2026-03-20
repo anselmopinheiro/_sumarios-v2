@@ -67,12 +67,14 @@
         </div>
         <div class="input-group input-group-sm" style="max-width: 260px;">
           <select id="grupos-origem" class="form-select">
-            <option value="">Importar grupos de…</option>
-            {% for origem in grupos_origem %}
-              {% if origem.id != evento_ativo_id %}
-                <option value="{{ origem.id }}">{{ origem.titulo }}</option>
-              {% endif %}
-            {% endfor %}
+            {% if grupos_origem %}
+              <option value="">Importar grupos de…</option>
+              {% for origem in grupos_origem %}
+                <option value="{{ origem.key }}">{{ origem.label }}</option>
+              {% endfor %}
+            {% else %}
+              <option value="" disabled selected>Sem grupos disponíveis para importar</option>
+            {% endif %}
           </select>
           <button type="button" class="btn btn-outline-secondary" onclick="importarGrupos()">Importar</button>
         </div>
@@ -304,10 +306,10 @@
   };
 
   window.importarGrupos = async function importarGrupos() {
-    const sourceId = document.getElementById("grupos-origem")?.value;
-    if (!sourceId) return;
+    const sourceKey = document.getElementById("grupos-origem")?.value;
+    if (!sourceKey) return;
     try {
-      await postUpdate({ action: "import_groups", source_event_id: sourceId });
+      await postUpdate({ action: "import_groups", source_key: sourceKey });
       window.location.reload();
     } catch (err) { console.error(err); }
   };

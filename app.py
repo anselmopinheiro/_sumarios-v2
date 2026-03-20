@@ -3625,6 +3625,69 @@ def create_app():
                 relevantes.append(ev)
         return relevantes
 
+    def list_group_import_sources(current_event, turma_id):
+        sources = []
+        current_event_id = getattr(current_event, "id", None)
+
+        ev2_items = (
+            EV2Event.query.join(EV2SubjectConfig, EV2Event.subject_config_id == EV2SubjectConfig.id)
+            .filter(EV2SubjectConfig.turma_id == turma_id)
+            .order_by(EV2Event.data.desc(), EV2Event.id.desc())
+            .all()
+        )
+        for ev in ev2_items:
+            if current_event_id and ev.id == current_event_id:
+                continue
+            groups = EV2EvaluationGroup.query.filter_by(event_id=ev.id).all()
+            if not groups:
+                continue
+            member_count = 0
+            for g in groups:
+                member_count += EV2EvaluationGroupMember.query.filter_by(group_id=g.id).count()
+            if member_count <= 0:
+                continue
+            tipo_lbl = {
+                "projetos": "Projeto",
+                "trabalhos": "Trabalho",
+                "portfolio": "Portfólio",
+                "observacao_direta": "Obser Direta",
+            }.get(ev.evaluation_type, "Item")
+            label = f"{tipo_lbl} {ev.numero or '#'+str(ev.id)} — {ev.titulo or ''}".strip()
+            sources.append({
+                "key": f"ev2:{ev.id}",
+                "label": label,
+                "group_count": len(groups),
+                "member_count": member_count,
+            })
+
+        trabalhos = Trabalho.query.filter_by(turma_id=turma_id).order_by(Trabalho.id.desc()).all()
+        for trabalho in trabalhos:
+            grupos = trabalho.grupos or []
+            if not grupos:
+                continue
+            member_count = sum(len(g.membros or []) for g in grupos)
+            if member_count <= 0:
+                continue
+            label = f"Trabalho {getattr(trabalho, 'numero', None) or '#'+str(trabalho.id)} — {trabalho.titulo or ''}".strip()
+            sources.append({
+                "key": f"trabalho:{trabalho.id}",
+                "label": label,
+                "group_count": len(grupos),
+                "member_count": member_count,
+            })
+
+        grupos_turma = GrupoTurma.query.filter_by(turma_id=turma_id).all()
+        member_count_catalogo = sum(len(g.membros or []) for g in grupos_turma)
+        if grupos_turma and member_count_catalogo > 0:
+            sources.append({
+                "key": "turma_catalogo",
+                "label": "Atividades — Grupos da turma",
+                "group_count": len(grupos_turma),
+                "member_count": member_count_catalogo,
+            })
+
+        return sources
+
     def build_avaliacao_context_for_aula(aula, tipo, event_override=None):
         alunos = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
         total_tempos = _resolver_total_tempos_aula(aula)
@@ -3975,19 +4038,44 @@ def create_app():
                 return jsonify({"ok": True, "status": "ok", "titulo": event.titulo, "numero": event.numero}), 200
 
             if action == "import_groups" and tipo in {"projeto", "portfolio"}:
-                source_event_id = request.form.get("source_event_id", type=int)
-                if not source_event_id:
+                source_key = (request.form.get("source_key") or "").strip()
+                if not source_key:
                     return jsonify({"ok": False, "error": "Origem inválida", "status": "error"}), 400
-                source_groups = EV2EvaluationGroup.query.filter_by(event_id=source_event_id).all()
-                for source_group in source_groups:
-                    novo_nome = f"{source_group.nome} (importado)"
-                    if EV2EvaluationGroup.query.filter_by(event_id=event.id, nome=novo_nome).first():
-                        continue
-                    novo = EV2EvaluationGroup(event_id=event.id, nome=novo_nome, ordem=source_group.ordem)
-                    db.session.add(novo)
-                    db.session.flush()
-                    for membro in source_group.members or []:
-                        db.session.add(EV2EvaluationGroupMember(group_id=novo.id, aluno_id=membro.aluno_id))
+
+                # regra simples nesta fase: importar substitui os grupos atuais do item
+                for grupo_atual in EV2EvaluationGroup.query.filter_by(event_id=event.id).all():
+                    db.session.delete(grupo_atual)
+                db.session.flush()
+
+                if source_key.startswith("ev2:"):
+                    source_event_id = int(source_key.split(":", 1)[1])
+                    source_groups = EV2EvaluationGroup.query.filter_by(event_id=source_event_id).all()
+                    for source_group in source_groups:
+                        novo = EV2EvaluationGroup(event_id=event.id, nome=source_group.nome, ordem=source_group.ordem)
+                        db.session.add(novo)
+                        db.session.flush()
+                        for membro in source_group.members or []:
+                            if not EV2EvaluationGroupMember.query.filter_by(group_id=novo.id, aluno_id=membro.aluno_id).first():
+                                db.session.add(EV2EvaluationGroupMember(group_id=novo.id, aluno_id=membro.aluno_id))
+                elif source_key.startswith("trabalho:"):
+                    trabalho_id = int(source_key.split(":", 1)[1])
+                    trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=aula.turma_id).first()
+                    if trabalho:
+                        for idx, source_group in enumerate(trabalho.grupos or [], start=1):
+                            novo = EV2EvaluationGroup(event_id=event.id, nome=source_group.nome, ordem=idx)
+                            db.session.add(novo)
+                            db.session.flush()
+                            for membro in source_group.membros or []:
+                                if not EV2EvaluationGroupMember.query.filter_by(group_id=novo.id, aluno_id=membro.aluno_id).first():
+                                    db.session.add(EV2EvaluationGroupMember(group_id=novo.id, aluno_id=membro.aluno_id))
+                elif source_key == "turma_catalogo":
+                    for idx, source_group in enumerate(GrupoTurma.query.filter_by(turma_id=aula.turma_id).all(), start=1):
+                        novo = EV2EvaluationGroup(event_id=event.id, nome=source_group.nome, ordem=idx)
+                        db.session.add(novo)
+                        db.session.flush()
+                        for membro in source_group.membros or []:
+                            if not EV2EvaluationGroupMember.query.filter_by(group_id=novo.id, aluno_id=membro.aluno_id).first():
+                                db.session.add(EV2EvaluationGroupMember(group_id=novo.id, aluno_id=membro.aluno_id))
                 db.session.commit()
                 return jsonify({"ok": True, "status": "ok"}), 200
 
@@ -4146,11 +4234,7 @@ def create_app():
             meta_prazo_entrega=(ctx["event"].prazo_entrega.isoformat() if ctx.get("event") and ctx["event"].prazo_entrega else ""),
             eventos_relevantes=eventos_relevantes,
             evento_ativo_id=(ctx["event"].id if ctx.get("event") else None),
-            grupos_origem=(
-                _listar_eventos_relevantes_aula(aula, tipo)
-                if tipo in {"projeto", "portfolio"}
-                else []
-            ),
+            grupos_origem=(list_group_import_sources(ctx.get("event"), aula.turma_id) if tipo in {"projeto", "portfolio", "trabalho"} else []),
             embed_mode=True,
         )
 
