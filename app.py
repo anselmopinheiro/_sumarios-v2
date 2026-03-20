@@ -4177,7 +4177,17 @@ def create_app():
                 reg.entregue = entregue
                 reg.data_entrega = data_entrega
                 db.session.commit()
-                return jsonify({"ok": True, "status": "ok"}), 200
+                return jsonify(
+                    {
+                        "ok": True,
+                        "status": "ok",
+                        "group_id": grupo.id,
+                        "theme_id": reg.theme_id,
+                        "theme_nome": (tema.nome_tema if tema else ""),
+                        "entregue": bool(reg.entregue),
+                        "data_entrega": (reg.data_entrega.isoformat() if reg.data_entrega else ""),
+                    }
+                ), 200
 
             if action == "save_meta":
                 titulo = (request.form.get("titulo") or "").strip()
@@ -4455,6 +4465,7 @@ def create_app():
         temas = []
         atribuicoes_tema = {}
         tema_por_grupo = {}
+        groups_data = []
         if tipo in {"projeto", "trabalho"} and ctx.get("event"):
             temas = EV2EventTheme.query.filter_by(event_id=ctx["event"].id).order_by(EV2EventTheme.ordem.asc(), EV2EventTheme.id.asc()).all()
             atribuicoes_tema = {
@@ -4494,6 +4505,32 @@ def create_app():
             else:
                 medias_por_aluno[aluno.id] = {}
 
+        if tipo in {"projeto", "trabalho"}:
+            alunos_por_grupo = defaultdict(list)
+            for linha in linhas:
+                nome_grupo = (linha.get("grupo") or "").strip() or "Sem grupo"
+                alunos_por_grupo[nome_grupo].append(linha)
+
+            order_map = {g.nome: idx for idx, g in enumerate(ctx.get("grupos", []), start=1)}
+            group_name_to_id = {g.nome: g.id for g in ctx.get("grupos", [])}
+            for nome_grupo in sorted(alunos_por_grupo.keys(), key=lambda g: (9999 if g == "Sem grupo" else order_map.get(g, 9000), g.lower())):
+                linhas_grupo = sorted(
+                    alunos_por_grupo[nome_grupo],
+                    key=lambda l: ((getattr(l["aluno"], "numero", None) is None), getattr(l["aluno"], "numero", 0), getattr(l["aluno"], "nome", "")),
+                )
+                gid = group_name_to_id.get(nome_grupo)
+                atr = atribuicoes_tema.get(gid) if gid else None
+                groups_data.append(
+                    {
+                        "group_id": gid,
+                        "group_name": nome_grupo,
+                        "theme_id": (atr.theme_id if atr else None),
+                        "entregue": bool(atr.entregue) if atr else False,
+                        "data_entrega": (atr.data_entrega.isoformat() if atr and atr.data_entrega else ""),
+                        "rows": linhas_grupo,
+                    }
+                )
+
         return render_template(
             "avaliacao_objeto.html",
             tipo=tipo,
@@ -4521,6 +4558,7 @@ def create_app():
             grupo_item_config=grupo_item_config,
             temas=temas,
             tema_multiplo=(ctx["event"].tema_multiplo if ctx.get("event") and tipo in {"projeto", "trabalho"} else False),
+            groups_data=groups_data,
             embed_mode=True,
         )
 
