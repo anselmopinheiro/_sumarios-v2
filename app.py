@@ -3750,6 +3750,39 @@ def create_app():
 
         return sources
 
+    def _sincronizar_grupos_evento_com_turma(event, turma_id):
+        if not event or not turma_id:
+            return
+        grupos_turma = GrupoTurma.query.filter_by(turma_id=turma_id).order_by(GrupoTurma.nome.asc()).all()
+        membros_por_grupo_turma = {
+            g.nome: [m.aluno_id for m in (g.membros or []) if m.aluno_id]
+            for g in grupos_turma
+        }
+
+        grupos_evento = EV2EvaluationGroup.query.filter_by(event_id=event.id).all()
+        nomes_evento = {g.nome: g for g in grupos_evento if g.nome and not g.nome.startswith("__IND__")}
+        nomes_turma = set(membros_por_grupo_turma.keys())
+
+        for nome, grp in nomes_evento.items():
+            if nome not in nomes_turma:
+                db.session.delete(grp)
+        db.session.flush()
+
+        for ordem, nome in enumerate(sorted(nomes_turma), start=1):
+            grp = EV2EvaluationGroup.query.filter_by(event_id=event.id, nome=nome).first()
+            if not grp:
+                grp = EV2EvaluationGroup(event_id=event.id, nome=nome, ordem=ordem)
+                db.session.add(grp)
+                db.session.flush()
+            grp.ordem = ordem
+            EV2EvaluationGroupMember.query.filter_by(group_id=grp.id).delete()
+            for aluno_id in membros_por_grupo_turma.get(nome, []):
+                db.session.add(EV2EvaluationGroupMember(group_id=grp.id, aluno_id=aluno_id))
+                es = EV2EventStudent.query.filter_by(event_id=event.id, aluno_id=aluno_id).first()
+                if es:
+                    es.group_key = nome
+        db.session.commit()
+
     def build_avaliacao_context_for_aula(aula, tipo, event_override=None):
         alunos = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
         total_tempos = _resolver_total_tempos_aula(aula)
@@ -4018,6 +4051,9 @@ def create_app():
             evento_ativo = eventos_relevantes[0]
 
         ctx = build_avaliacao_context_for_aula(aula, tipo, event_override=evento_ativo)
+        if tipo in {"portfolio", "projeto", "trabalho"} and ctx.get("event"):
+            _sincronizar_grupos_evento_com_turma(ctx["event"], aula.turma_id)
+            ctx = build_avaliacao_context_for_aula(aula, tipo, event_override=ctx["event"])
 
         def _media_por_dominio_event_student(event_student):
             dominios_scores = {}
@@ -4041,6 +4077,8 @@ def create_app():
                     tipo,
                 )
                 return jsonify({"ok": False, "error": "Não foi possível inicializar o contexto desta avaliação.", "status": "error"}), 500
+            if tipo in {"portfolio", "projeto", "trabalho"}:
+                _sincronizar_grupos_evento_com_turma(event, aula.turma_id)
 
             action = (request.form.get("action") or "score").strip().lower()
             if action == "create_item" and tipo in {"portfolio", "projeto", "trabalho"}:
@@ -4217,100 +4255,16 @@ def create_app():
                 return jsonify({"ok": True, "status": "ok", "titulo": event.titulo, "numero": event.numero}), 200
 
             if action == "import_groups" and tipo in {"projeto", "portfolio"}:
-                source_key = (request.form.get("source_key") or "").strip()
-                if not source_key:
-                    return jsonify({"ok": False, "error": "Origem inválida", "status": "error"}), 400
-
-                # regra simples nesta fase: importar substitui os grupos atuais do item
-                for grupo_atual in EV2EvaluationGroup.query.filter_by(event_id=event.id).all():
-                    db.session.delete(grupo_atual)
-                db.session.flush()
-
-                if source_key.startswith("ev2:"):
-                    source_event_id = int(source_key.split(":", 1)[1])
-                    source_groups = EV2EvaluationGroup.query.filter_by(event_id=source_event_id).all()
-                    for source_group in source_groups:
-                        novo = EV2EvaluationGroup(event_id=event.id, nome=source_group.nome, ordem=source_group.ordem)
-                        db.session.add(novo)
-                        db.session.flush()
-                        for membro in source_group.members or []:
-                            if not EV2EvaluationGroupMember.query.filter_by(group_id=novo.id, aluno_id=membro.aluno_id).first():
-                                db.session.add(EV2EvaluationGroupMember(group_id=novo.id, aluno_id=membro.aluno_id))
-                elif source_key.startswith("trabalho:"):
-                    trabalho_id = int(source_key.split(":", 1)[1])
-                    trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=aula.turma_id).first()
-                    if trabalho:
-                        for idx, source_group in enumerate(trabalho.grupos or [], start=1):
-                            novo = EV2EvaluationGroup(event_id=event.id, nome=source_group.nome, ordem=idx)
-                            db.session.add(novo)
-                            db.session.flush()
-                            for membro in source_group.membros or []:
-                                if not EV2EvaluationGroupMember.query.filter_by(group_id=novo.id, aluno_id=membro.aluno_id).first():
-                                    db.session.add(EV2EvaluationGroupMember(group_id=novo.id, aluno_id=membro.aluno_id))
-                elif source_key == "turma_catalogo":
-                    for idx, source_group in enumerate(GrupoTurma.query.filter_by(turma_id=aula.turma_id).all(), start=1):
-                        novo = EV2EvaluationGroup(event_id=event.id, nome=source_group.nome, ordem=idx)
-                        db.session.add(novo)
-                        db.session.flush()
-                        for membro in source_group.membros or []:
-                            if not EV2EvaluationGroupMember.query.filter_by(group_id=novo.id, aluno_id=membro.aluno_id).first():
-                                db.session.add(EV2EvaluationGroupMember(group_id=novo.id, aluno_id=membro.aluno_id))
-                db.session.commit()
-                return jsonify({"ok": True, "status": "ok"}), 200
+                return jsonify({"ok": False, "error": "Os grupos são geridos na turma. Use “Gerir grupos da turma”.", "status": "error"}), 400
 
             if action == "group_create" and tipo in {"portfolio", "projeto"}:
-                nome_grupo = (request.form.get("nome_grupo") or "").strip()
-                if not nome_grupo:
-                    return jsonify({"ok": False, "error": "Nome do grupo é obrigatório", "status": "error"}), 400
-                existente = EV2EvaluationGroup.query.filter_by(event_id=event.id, nome=nome_grupo).first()
-                if existente:
-                    return jsonify({"ok": False, "error": "Já existe um grupo com esse nome", "status": "error"}), 400
-                ordem_max = db.session.query(db.func.max(EV2EvaluationGroup.ordem)).filter_by(event_id=event.id).scalar() or 0
-                grupo = EV2EvaluationGroup(event_id=event.id, nome=nome_grupo, ordem=int(ordem_max) + 1)
-                db.session.add(grupo)
-                db.session.commit()
-                return jsonify({"ok": True, "status": "ok"}), 200
+                return jsonify({"ok": False, "error": "Os grupos são geridos na turma.", "status": "error"}), 400
 
             if action == "group_delete" and tipo in {"portfolio", "projeto"}:
-                group_id = request.form.get("group_id", type=int)
-                grupo = EV2EvaluationGroup.query.filter_by(id=group_id, event_id=event.id).first()
-                if not grupo:
-                    return jsonify({"ok": False, "error": "Grupo não encontrado", "status": "error"}), 404
-                nome_grupo = grupo.nome
-                db.session.delete(grupo)
-                for es in EV2EventStudent.query.filter_by(event_id=event.id, group_key=nome_grupo).all():
-                    es.group_key = None
-                db.session.commit()
-                return jsonify({"ok": True, "status": "ok"}), 200
+                return jsonify({"ok": False, "error": "Os grupos são geridos na turma.", "status": "error"}), 400
 
             if action == "group_assign" and tipo in {"portfolio", "projeto"}:
-                group_id = request.form.get("group_id", type=int)
-                aluno_id = request.form.get("aluno_id", type=int)
-                if not aluno_id:
-                    return jsonify({"ok": False, "error": "Aluno inválido", "status": "error"}), 400
-                grupos_ids_evento = [g.id for g in EV2EvaluationGroup.query.filter_by(event_id=event.id).all()]
-                if grupos_ids_evento:
-                    antigos = EV2EvaluationGroupMember.query.filter(
-                        EV2EvaluationGroupMember.aluno_id == aluno_id,
-                        EV2EvaluationGroupMember.group_id.in_(grupos_ids_evento),
-                    ).all()
-                    for antigo in antigos:
-                        db.session.delete(antigo)
-                es = EV2EventStudent.query.filter_by(event_id=event.id, aluno_id=aluno_id).first()
-                if not group_id:
-                    if es:
-                        es.group_key = None
-                    db.session.commit()
-                    return jsonify({"ok": True, "status": "ok"}), 200
-
-                grupo = EV2EvaluationGroup.query.filter_by(id=group_id, event_id=event.id).first()
-                if not grupo:
-                    return jsonify({"ok": False, "error": "Grupo inválido", "status": "error"}), 400
-                db.session.add(EV2EvaluationGroupMember(group_id=grupo.id, aluno_id=aluno_id))
-                if es:
-                    es.group_key = grupo.nome
-                db.session.commit()
-                return jsonify({"ok": True, "status": "ok"}), 200
+                return jsonify({"ok": False, "error": "Associação de alunos a grupos é feita em /turmas/<id>/grupos.", "status": "error"}), 400
 
             if action == "save_observacao" and tipo == "portfolio":
                 aluno_id = request.form.get("aluno_id", type=int)
@@ -4556,6 +4510,7 @@ def create_app():
         return render_template(
             "avaliacao_objeto.html",
             tipo=tipo,
+            aula=aula,
             event=ctx["event"],
             titulo_evento=f"{tipo.title()} · Aula {aula.id}",
             data_evento=aula.data,
