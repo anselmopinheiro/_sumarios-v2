@@ -3783,6 +3783,18 @@ def create_app():
                     es.group_key = nome
         db.session.commit()
 
+    def resolve_turma_groups_for_aula(aula):
+        grupos = GrupoTurma.query.filter_by(turma_id=aula.turma_id).order_by(GrupoTurma.nome.asc()).all()
+        aluno_para_grupo = {}
+        membros_por_grupo = defaultdict(list)
+        for grupo in grupos:
+            for membro in (grupo.membros or []):
+                if not membro.aluno_id:
+                    continue
+                aluno_para_grupo[membro.aluno_id] = grupo
+                membros_por_grupo[grupo.id].append(membro.aluno_id)
+        return grupos, membros_por_grupo, aluno_para_grupo
+
     def build_avaliacao_context_for_aula(aula, tipo, event_override=None):
         alunos = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
         total_tempos = _resolver_total_tempos_aula(aula)
@@ -4196,7 +4208,26 @@ def create_app():
             if action == "set_group_theme" and tipo in {"projeto", "trabalho"}:
                 if not event:
                     return jsonify({"ok": False, "error": "Item não selecionado", "status": "error"}), 400
-                group_id = request.form.get("group_id", type=int)
+                group_raw = (request.form.get("group_id") or "").strip()
+                group_id = int(group_raw) if group_raw.isdigit() else None
+                aluno_individual_id = None
+                if (not group_id) and group_raw.startswith("individual-"):
+                    aluno_part = group_raw.split("-", 1)[1]
+                    if aluno_part.isdigit():
+                        aluno_individual_id = int(aluno_part)
+                        nome_ind = f"__IND__{aluno_individual_id}"
+                        grp_ind = EV2EvaluationGroup.query.filter_by(event_id=event.id, nome=nome_ind).first()
+                        if not grp_ind:
+                            ordem_max = db.session.query(db.func.max(EV2EvaluationGroup.ordem)).filter_by(event_id=event.id).scalar() or 0
+                            grp_ind = EV2EvaluationGroup(event_id=event.id, nome=nome_ind, ordem=int(ordem_max) + 1)
+                            db.session.add(grp_ind)
+                            db.session.flush()
+                            db.session.add(EV2EvaluationGroupMember(group_id=grp_ind.id, aluno_id=aluno_individual_id))
+                            es = EV2EventStudent.query.filter_by(event_id=event.id, aluno_id=aluno_individual_id).first()
+                            if es:
+                                es.group_key = grp_ind.nome
+                            db.session.commit()
+                        group_id = grp_ind.id
                 theme_id = request.form.get("theme_id", type=int)
                 entregue = request.form.get("entregue") == "1"
                 data_entrega_raw = (request.form.get("data_entrega") or "").strip()
@@ -4420,13 +4451,15 @@ def create_app():
         atribuicoes_tema = {}
         tema_por_grupo = {}
         groups_data = []
+        grupos_turma, _membros_grupo_turma, aluno_para_grupo_turma = resolve_turma_groups_for_aula(aula)
         if tipo in {"projeto", "trabalho"} and ctx.get("event"):
             temas = EV2EventTheme.query.filter_by(event_id=ctx["event"].id).order_by(EV2EventTheme.ordem.asc(), EV2EventTheme.id.asc()).all()
             atribuicoes_tema = {
                 a.group_id: a
                 for a in EV2AulaThemeAssignment.query.filter_by(aula_id=aula.id, event_id=ctx["event"].id).all()
             }
-            for grupo in ctx.get("grupos", []):
+            grupos_ctx = [g for g in ctx.get("grupos", []) if not (g.nome or "").startswith("__IND__")]
+            for grupo in grupos_ctx:
                 atr = atribuicoes_tema.get(grupo.id)
                 grupo_item_config.append({
                     "grupo_id": grupo.id,
@@ -4439,10 +4472,11 @@ def create_app():
                     tema_por_grupo[grupo.id] = atr.theme.nome_tema
         for aluno in ctx["alunos"]:
             es = students_by_aluno.get(aluno.id)
-            grupo_nome = getattr(es, "group_key", "") if es else ""
+            grupo_turma = aluno_para_grupo_turma.get(aluno.id)
+            grupo_nome = (grupo_turma.nome if grupo_turma else "")
             tema_label = ""
             if tipo in {"projeto", "trabalho"}:
-                group_id = next((g.id for g in ctx.get("grupos", []) if g.nome == grupo_nome), None)
+                group_id = next((g.id for g in ctx.get("grupos", []) if g.nome == grupo_nome), None) if ctx.get("event") else None
                 tema_label = tema_por_grupo.get(group_id, "")
                 if getattr(ctx.get("event"), "tema_multiplo", False):
                     if not group_id or not tema_label:
@@ -4468,20 +4502,12 @@ def create_app():
                     continue
                 aluno = linha["aluno"]
                 ind_name = f"__IND__{aluno.id}"
-                grupo_individual = EV2EvaluationGroup.query.filter_by(event_id=ctx["event"].id, nome=ind_name).first()
-                if not grupo_individual:
-                    ordem_max = db.session.query(db.func.max(EV2EvaluationGroup.ordem)).filter_by(event_id=ctx["event"].id).scalar() or 0
-                    grupo_individual = EV2EvaluationGroup(event_id=ctx["event"].id, nome=ind_name, ordem=int(ordem_max) + 1)
-                    db.session.add(grupo_individual)
-                    db.session.flush()
-                    db.session.add(EV2EvaluationGroupMember(group_id=grupo_individual.id, aluno_id=aluno.id))
-                    db.session.commit()
                 lines_by_group[ind_name].append(linha)
 
-            visible_groups = [g for g in ctx.get("grupos", []) if not (g.nome or "").startswith("__IND__")]
+            visible_groups = [g for g in grupos_turma]
             order_map = {g.nome: idx for idx, g in enumerate(visible_groups, start=1)}
             all_group_names = sorted(lines_by_group.keys(), key=lambda g: (9000 if g.startswith("__IND__") else order_map.get(g, 8000), g.lower()))
-            group_name_to_id = {g.nome: g.id for g in EV2EvaluationGroup.query.filter_by(event_id=ctx["event"].id).all()}
+            group_name_to_id = {g.nome: g.id for g in (ctx.get("grupos", []) if ctx.get("event") else [])}
             for nome_grupo in all_group_names:
                 linhas_grupo = sorted(
                     lines_by_group[nome_grupo],
@@ -4496,7 +4522,7 @@ def create_app():
                     nome_label = f"Sem grupo — {linhas_grupo[0]['aluno'].nome}" if linhas_grupo else "Individual"
                 groups_data.append(
                     {
-                        "group_id": gid,
+                        "group_id": gid if gid else (f"individual-{linhas_grupo[0]['aluno'].id}" if linhas_grupo else ""),
                         "group_name": nome_label,
                         "is_individual_group": is_individual,
                         "theme_id": (atr.theme_id if atr else None),
@@ -4506,7 +4532,7 @@ def create_app():
                     }
                 )
 
-        grupos_visiveis = [g for g in ctx.get("grupos", []) if not (g.nome or "").startswith("__IND__")]
+        grupos_visiveis = grupos_turma
         return render_template(
             "avaliacao_objeto.html",
             tipo=tipo,
