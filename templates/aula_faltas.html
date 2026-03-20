@@ -71,7 +71,7 @@
   </div>
 
   <button type="submit" class="btn btn-primary">Guardar</button>
-  <a href="{{ url_for('avaliacao_objeto', tipo='aula', id_objeto=aula.id) }}" class="btn btn-outline-secondary">Voltar para Avaliação</a>
+  <a href="{{ url_for('aula_avaliacao_shell', aula_id=aula.id) }}" class="btn btn-outline-secondary">Voltar para Avaliação</a>
 </form>
 
 <script>

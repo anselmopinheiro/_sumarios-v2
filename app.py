@@ -142,6 +142,7 @@ from models import (
     ParametroDefinicao,
     EV2Domain,
     EV2Rubric,
+    EV2SubjectConfig,
     EV2Event,
     EV2EventStudent,
     EV2Assessment,
@@ -3421,8 +3422,88 @@ def create_app():
             }
         return registros, registos_db
 
+    def _resolver_disciplina_aula(aula):
+        turma = getattr(aula, "turma", None)
+        if not turma:
+            return None
+        disciplina = (turma.disciplinas or [None])[0]
+        return disciplina
+
+    def _obter_ou_criar_evento_avaliacao(aula, tipo):
+        tipo_map = {
+            "obser": "observacao_direta",
+            "portfolio": "portfolio",
+            "projeto": "projetos",
+            "trabalho": "trabalhos",
+        }
+        evaluation_type = tipo_map.get(tipo)
+        if not evaluation_type:
+            return None
+
+        event = EV2Event.query.filter_by(aula_id=aula.id, evaluation_type=evaluation_type).first()
+        if event:
+            return event
+
+        disciplina = _resolver_disciplina_aula(aula)
+        if not disciplina:
+            return None
+
+        subject_config = (
+            EV2SubjectConfig.query.filter_by(
+                turma_id=aula.turma_id,
+                disciplina_id=disciplina.id,
+                ativo=True,
+            )
+            .order_by(EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
+            .first()
+        )
+        if not subject_config:
+            subject_config = EV2SubjectConfig(
+                turma_id=aula.turma_id,
+                disciplina_id=disciplina.id,
+                nome="Configuração automática",
+                ativo=True,
+                usar_ev2=True,
+            )
+            db.session.add(subject_config)
+            db.session.flush()
+
+        event = EV2Event(
+            subject_config_id=subject_config.id,
+            disciplina_id=disciplina.id,
+            aula_id=aula.id,
+            evaluation_type=evaluation_type,
+            titulo=f"{evaluation_type.replace('_', ' ').title()} · Aula {aula.id}",
+            descricao="Evento criado automaticamente pela página unificada de avaliação.",
+            data=aula.data,
+            group_mode="grupo" if evaluation_type in {"projetos", "trabalhos"} else "individual",
+            peso_evento=100,
+            extra_component_weight=0,
+            config_snapshot={"source": "auto-shell"},
+        )
+        db.session.add(event)
+        db.session.flush()
+
+        alunos = Aluno.query.filter_by(turma_id=aula.turma_id).all()
+        for aluno in alunos:
+            db.session.add(
+                EV2EventStudent(
+                    event_id=event.id,
+                    aluno_id=aluno.id,
+                    tempos_totais=1,
+                    tempos_presentes=1,
+                    estado_assiduidade="presente_total",
+                    pontualidade_manual=True,
+                    elegivel_avaliacao=True,
+                )
+            )
+        db.session.commit()
+        return event
+
     @app.route('/aula/<int:aula_id>/avaliar', methods=['GET', 'POST'])
     def aula_avaliar(aula_id):
+        if request.method == "GET" and request.args.get("embed") != "1":
+            return redirect(url_for("aula_avaliacao_shell", aula_id=aula_id, tipo="aula"))
         aula = CalendarioAula.query.get_or_404(aula_id)
         alunos = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
         total_tempos = _resolver_total_tempos_aula(aula)
@@ -3570,11 +3651,36 @@ def create_app():
             total_tempos=total_tempos,
             alunos_faltosos_ids=alunos_faltosos_ids,
             ciclo_aula=_detetar_ciclo_aula(aula),
+            embed_mode=(request.args.get("embed") == "1"),
         )
+
+    @app.route('/aula/<int:aula_id>/avaliacao')
+    def aula_avaliacao_shell(aula_id):
+        aula = CalendarioAula.query.get_or_404(aula_id)
+        tipo = (request.args.get("tipo") or "aula").strip().lower()
+        if tipo not in {"aula", "obser", "portfolio", "projeto", "trabalho"}:
+            tipo = "aula"
+        return render_template("aula_avaliacao_shell.html", aula=aula, tipo_ativo=tipo)
+
+    @app.route('/aula/<int:aula_id>/avaliacao/<tipo>')
+    def aula_avaliacao_tipo(aula_id, tipo):
+        aula = CalendarioAula.query.get_or_404(aula_id)
+        tipo = (tipo or "").strip().lower()
+        if tipo == "aula":
+            return redirect(url_for("aula_avaliar", aula_id=aula.id, embed=1))
+        if tipo not in {"obser", "portfolio", "projeto", "trabalho"}:
+            abort(404)
+        event = _obter_ou_criar_evento_avaliacao(aula, tipo)
+        if not event:
+            return (
+                "<div class='alert alert-danger m-3'>Não foi possível preparar a avaliação deste tipo para a aula.</div>",
+                400,
+            )
+        return redirect(url_for("avaliacao_objeto", tipo=tipo, id_objeto=event.id, embed=1))
 
     @app.route('/avaliacao/aula/<int:id_aula>')
     def avaliacao_aula_redirect(id_aula):
-        return redirect(url_for("aula_avaliar", aula_id=id_aula))
+        return redirect(url_for("aula_avaliacao_shell", aula_id=id_aula, tipo="aula"))
 
     @app.route('/aula/<int:aula_id>/pontualidade', methods=['GET', 'POST'])
     def aula_pontualidade(aula_id):
@@ -3630,7 +3736,7 @@ def create_app():
         }
         if tipo == "aula":
             CalendarioAula.query.get_or_404(id_objeto)
-            return redirect(url_for("aula_avaliar", aula_id=id_objeto))
+            return redirect(url_for("aula_avaliacao_shell", aula_id=id_objeto, tipo="aula"))
 
         event = EV2Event.query.filter_by(id=id_objeto, evaluation_type=tipo_map[tipo]).first_or_404()
         alunos_evento = (
@@ -3770,6 +3876,7 @@ def create_app():
             medias_por_aluno=medias_por_aluno,
             avaliavel_por_aluno=avaliavel_por_aluno,
             bloqueio_motivo_por_aluno=bloqueio_motivo_por_aluno,
+            embed_mode=(request.args.get("embed") == "1"),
         )
 
     @app.route('/aula/<int:aula_id>/faltas', methods=['GET', 'POST'])

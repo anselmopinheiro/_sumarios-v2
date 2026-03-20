@@ -264,25 +264,9 @@
                        class="btn btn-sm btn-outline-info">Alunos</a>
                     <a href="{{ url_for('turma_trabalhos', turma_id=a.turma_id) }}"
                        class="btn btn-sm btn-outline-info">Trabalhos</a>
-                    {% set ev_obser = (a.ev2_events|selectattr('evaluation_type','equalto','observacao_direta')|list|first) %}
-                    {% set ev_portfolio = (a.ev2_events|selectattr('evaluation_type','equalto','portfolio')|list|first) %}
-                    {% set ev_projetos = (a.ev2_events|selectattr('evaluation_type','equalto','projetos')|list|first) %}
-                    {% set ev_trabalhos = (a.ev2_events|selectattr('evaluation_type','equalto','trabalhos')|list|first) %}
-                    <div class="dropdown">
-                      <div class="btn-group" role="group">
-                        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('avaliacao_objeto', tipo='aula', id_objeto=a.id) }}" title="Avaliação de Aula">Avaliar</a>
-                        <button class="btn btn-sm btn-outline-primary dropdown-toggle dropdown-toggle-split" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                          <span class="visually-hidden">Abrir tipos de avaliação</span>
-                        </button>
-                        <ul class="dropdown-menu">
-                          <li><a class="dropdown-item" href="{{ url_for('avaliacao_objeto', tipo='aula', id_objeto=a.id) }}" title="Avaliação de Aula">Aula</a></li>
-                          <li>{% if ev_obser %}<a class="dropdown-item" href="{{ url_for('avaliacao_objeto', tipo='obser', id_objeto=ev_obser.id) }}" title="Avaliação de Observação Direta">Obser Direta</a>{% else %}<span class="dropdown-item disabled" title="Obser Direta indisponível para este evento">Obser Direta</span>{% endif %}</li>
-                          <li>{% if ev_portfolio %}<a class="dropdown-item" href="{{ url_for('avaliacao_objeto', tipo='portfolio', id_objeto=ev_portfolio.id) }}" title="Avaliação de Portfólio">Portfólio</a>{% else %}<span class="dropdown-item disabled" title="Portfólio indisponível para este evento">Portfólio</span>{% endif %}</li>
-                          <li>{% if ev_projetos %}<a class="dropdown-item" href="{{ url_for('avaliacao_objeto', tipo='projeto', id_objeto=ev_projetos.id) }}" title="Avaliação de Projetos">Projetos</a>{% else %}<span class="dropdown-item disabled" title="Projetos indisponível para este evento">Projetos</span>{% endif %}</li>
-                          <li>{% if ev_trabalhos %}<a class="dropdown-item" href="{{ url_for('avaliacao_objeto', tipo='trabalho', id_objeto=ev_trabalhos.id) }}" title="Avaliação de Trabalhos">Trabalhos</a>{% else %}<span class="dropdown-item disabled" title="Trabalhos indisponível para este evento">Trabalhos</span>{% endif %}</li>
-                        </ul>
-                      </div>
-                    </div>
+                    <a class="btn btn-sm btn-outline-primary" href="{{ url_for('aula_avaliacao_shell', aula_id=a.id) }}" title="Abrir página unificada de avaliação">
+                      Avaliação
+                    </a>
                     <a href="{{ url_for('aula_faltas', aula_id=a.id) }}" class="btn btn-sm btn-outline-danger" title="Marcar Faltas">Faltas</a>
                   {% endif %}
                   <a href="{{ url_for('calendario_edit', turma_id=a.turma_id, aula_id=a.id, view='semana', data_ref=semana_inicio.isoformat(), turma_filtro=turma.id if turma else None, periodo_id=periodo_atual.id if periodo_atual else None) }}"

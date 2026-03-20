@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+{% extends 'embedded_base.html' if embed_mode else 'base.html' %}
 {% block content %}
 <h2>Avaliação por Aula</h2>
 <p>
@@ -93,8 +93,9 @@
     </table>
   </div>
 
-  <button type="submit" class="btn btn-primary">Guardar Avaliações</button>
-  <a href="{{ url_for('calendario_semana') }}" class="btn btn-outline-secondary">Voltar</a>
+  {% if not embed_mode %}
+    <a href="{{ url_for('calendario_semana') }}" class="btn btn-outline-secondary">Voltar</a>
+  {% endif %}
 </form>
 
 <script>
@@ -181,21 +182,26 @@
     }
   };
 
+  const debounceTimers = new Map();
   table.querySelectorAll('input[type="number"][data-rubrica-id][data-aluno-id]').forEach((input) => {
-    input.addEventListener("change", async () => {
-      const valor = input.value === "" ? "" : input.value;
-      try {
-        const data = await postUpdate({
-          "aluno_ids[]": [input.dataset.alunoId],
-          rubrica_id: input.dataset.rubricaId,
-          valor,
-        });
-        Object.entries(data.medias_por_aluno || {}).forEach(([alunoId, medias]) => {
-          renderMedias(alunoId, medias);
-        });
-      } catch (err) {
-        console.error(err);
-      }
+    input.addEventListener("input", () => {
+      const key = `${input.dataset.alunoId}-${input.dataset.rubricaId}`;
+      if (debounceTimers.has(key)) clearTimeout(debounceTimers.get(key));
+      debounceTimers.set(key, setTimeout(async () => {
+        const valor = input.value === "" ? "" : input.value;
+        try {
+          const data = await postUpdate({
+            "aluno_ids[]": [input.dataset.alunoId],
+            rubrica_id: input.dataset.rubricaId,
+            valor,
+          });
+          Object.entries(data.medias_por_aluno || {}).forEach(([alunoId, medias]) => {
+            renderMedias(alunoId, medias);
+          });
+        } catch (err) {
+          console.error(err);
+        }
+      }, 500));
     });
   });
 
