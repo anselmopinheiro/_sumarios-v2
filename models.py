@@ -992,6 +992,7 @@ class EV2AulaEventLink(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     aula_id = db.Column(db.Integer, db.ForeignKey("calendario_aulas.id"), nullable=False, index=True)
     event_id = db.Column(db.Integer, db.ForeignKey("ev2_events.id"), nullable=False, index=True)
+    grupo_turma_id = db.Column(db.Integer, db.ForeignKey("grupos_turma.id"), nullable=True, index=True)
     created_at = db.Column(
         db.DateTime,
         nullable=False,
@@ -1001,11 +1002,13 @@ class EV2AulaEventLink(db.Model):
 
     aula = db.relationship("CalendarioAula", backref=db.backref("ev2_event_links", cascade="all, delete-orphan"))
     event = db.relationship("EV2Event", backref=db.backref("aula_links", cascade="all, delete-orphan"))
+    grupo_turma = db.relationship("GrupoTurma")
 
     __table_args__ = (
-        db.UniqueConstraint("aula_id", "event_id", name="uq_ev2_aula_event_once"),
+        db.UniqueConstraint("aula_id", "event_id", "grupo_turma_id", name="uq_ev2_aula_event_once"),
         db.Index("ix_ev2_aula_event_aula", "aula_id"),
         db.Index("ix_ev2_aula_event_event", "event_id"),
+        db.Index("ix_ev2_aula_event_grupo", "grupo_turma_id"),
     )
 
 

@@ -56,6 +56,30 @@
   </div>
 {% endif %}
 
+{% if tipo in ['projeto', 'trabalho'] and grupo_item_config %}
+  <div class="card card-body mb-3">
+    <strong class="small mb-2">Associação por grupo (aula atual)</strong>
+    <div class="row g-2">
+      {% for cfg in grupo_item_config %}
+        <div class="col-md-6">
+          <label class="form-label form-label-sm">{{ cfg.grupo_nome }}</label>
+          <div class="input-group input-group-sm">
+            <select class="form-select" id="grupo-item-{{ cfg.grupo_id }}">
+              <option value="">— Sem associação —</option>
+              {% for ev in eventos_relevantes %}
+                <option value="{{ ev.id }}" {% if cfg.event_id == ev.id %}selected{% endif %}>
+                  {{ ('Projeto' if tipo == 'projeto' else 'Trabalho') }} {{ ev.numero or '—' }} — {{ ev.titulo or 'Sem título' }}
+                </option>
+              {% endfor %}
+            </select>
+            <button type="button" class="btn btn-outline-secondary" onclick="guardarItemGrupo({{ cfg.grupo_id }})">Guardar</button>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+{% endif %}
+
 {% if tipo == 'obser' %}
   <div class="card card-body mb-3">
     <label for="obser-descritivo" class="form-label form-label-sm mb-1">Descritivo</label>
@@ -108,13 +132,14 @@
           <th rowspan="2">No</th>
           <th rowspan="2">Nome</th>
           <th rowspan="2">Grupo</th>
+          {% if tipo in ['projeto', 'trabalho'] %}<th rowspan="2">{{ 'Projeto' if tipo == 'projeto' else 'Trabalho' }}</th>{% endif %}
           {% for dominio in dominios %}
             <th colspan="{{ dominio.rubricas|length }}">{{ dominio.letra }} – {{ dominio.nome }}</th>
           {% endfor %}
           {% for dominio in dominios %}
             <th rowspan="2" data-media-dominio="{{ dominio.letra }}">{{ dominio.letra }}</th>
           {% endfor %}
-          <th rowspan="2">Observações</th>
+          <th rowspan="2">{% if tipo == 'portfolio' %}Projeto / Observações{% else %}Observações{% endif %}</th>
         </tr>
         <tr>
           {% for dominio in dominios %}
@@ -151,6 +176,9 @@
                 {{ grupo_atual or '-' }}
               {% endif %}
             </td>
+            {% if tipo in ['projeto', 'trabalho'] %}
+              <td class="small">{{ linha.item_label or '—' }}</td>
+            {% endif %}
             {% for dominio in dominios %}
               {% for rubrica in dominio.rubricas %}
                 <td>
@@ -170,10 +198,17 @@
               </td>
             {% endfor %}
             <td>
-              <textarea class="form-control form-control-sm"
-                        rows="2"
-                        readonly
-                        title="Observações do registo do evento">{{ linha.observacoes }}</textarea>
+              {% if tipo == 'portfolio' %}
+                <textarea class="form-control form-control-sm js-portfolio-observacoes"
+                          data-aluno-id="{{ aluno.id }}"
+                          rows="2"
+                          placeholder="Designação do projeto/tema e observações...">{{ linha.observacoes }}</textarea>
+              {% else %}
+                <textarea class="form-control form-control-sm"
+                          rows="2"
+                          readonly
+                          title="Observações do registo do evento">{{ linha.observacoes }}</textarea>
+              {% endif %}
             </td>
           </tr>
         {% endfor %}
@@ -348,6 +383,30 @@
       window.location.reload();
     } catch (err) { console.error(err); }
   };
+
+  window.guardarItemGrupo = async function guardarItemGrupo(groupId) {
+    const eventId = document.getElementById(`grupo-item-${groupId}`)?.value || "";
+    try {
+      await postUpdate({ action: "set_group_item", group_id: groupId, event_id: eventId });
+      window.location.reload();
+    } catch (err) { console.error(err); }
+  };
+
+  table.querySelectorAll(".js-portfolio-observacoes").forEach((input) => {
+    input.addEventListener("input", () => {
+      const key = `obs-${input.dataset.alunoId}`;
+      if (debounceTimers.has(key)) clearTimeout(debounceTimers.get(key));
+      debounceTimers.set(key, setTimeout(async () => {
+        try {
+          await postUpdate({
+            action: "save_observacao",
+            aluno_id: input.dataset.alunoId,
+            observacoes: input.value || "",
+          });
+        } catch (err) { console.error(err); }
+      }, 500));
+    });
+  });
 })();
 </script>
 {% endblock %}
