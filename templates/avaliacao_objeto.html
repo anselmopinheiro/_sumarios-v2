@@ -195,7 +195,7 @@
       if (Array.isArray(value)) value.forEach((v) => body.append(key, v));
       else body.append(key, value);
     });
-    const resp = await fetch(window.location.pathname, { method: "POST", headers: { "X-Requested-With": "XMLHttpRequest" }, body });
+    const resp = await fetch(`${window.location.pathname}${window.location.search}`, { method: "POST", headers: { "X-Requested-With": "XMLHttpRequest" }, body });
     if (!resp.ok) throw new Error("Falha ao guardar avaliação.");
     return resp.json();
   }

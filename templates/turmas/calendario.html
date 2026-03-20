@@ -293,10 +293,10 @@
                     class="btn btn-sm btn-outline-info">
                     Trabalhos
                   </a>
-                  <a class="btn btn-sm btn-outline-primary" href="{{ url_for('aula_avaliacao_shell', aula_id=a.id) }}" title="Abrir página unificada de avaliação">
+                  <a class="btn btn-sm btn-outline-primary" href="{{ url_for('aula_avaliacao_shell', aula_id=a.id, next=request.full_path) }}" title="Abrir página unificada de avaliação">
                     Avaliação
                   </a>
-                  <a href="{{ url_for('aula_faltas', aula_id=a.id) }}" class="btn btn-sm btn-outline-danger" title="Marcar Faltas">
+                  <a href="{{ url_for('aula_faltas', aula_id=a.id, next=request.full_path) }}" class="btn btn-sm btn-outline-danger" title="Marcar Faltas">
                     Faltas
                   </a>
                 {% endif %}

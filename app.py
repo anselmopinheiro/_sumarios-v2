@@ -3852,6 +3852,10 @@ def create_app():
         tipo = (request.args.get("tipo") or "aula").strip().lower()
         if tipo not in {"aula", "obser", "portfolio", "projeto", "trabalho"}:
             tipo = "aula"
+        fallback_sumarios = url_for("calendario_semana")
+        return_url = _safe_next_url(request.args.get("next"), fallback=fallback_sumarios)
+        if return_url == fallback_sumarios:
+            return_url = _safe_next_url(request.referrer, fallback=fallback_sumarios)
         turma_label = getattr(getattr(aula, "turma", None), "nome", None) or f"Turma {aula.turma_id}"
         numero_sumario = (getattr(aula, "sumarios", None) or "").strip() or "—"
         modulo_nome = getattr(getattr(aula, "modulo", None), "nome", None)
@@ -3868,6 +3872,7 @@ def create_app():
             turma_label=turma_label,
             numero_sumario=numero_sumario,
             modulo_label=modulo_label,
+            return_url=return_url,
         )
 
     @app.route('/aula/<int:aula_id>/avaliacao/<tipo>', methods=['GET', 'POST'])
@@ -4377,6 +4382,10 @@ def create_app():
         alunos = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
         total_tempos = resolve_num_tempos_aula(aula)
         registros, registos_db = _carregar_registros_faltas(aula, alunos, total_tempos)
+        fallback_sumarios = url_for("calendario_semana")
+        return_url = _safe_next_url(request.args.get("next"), fallback=fallback_sumarios)
+        if return_url == fallback_sumarios:
+            return_url = _safe_next_url(request.referrer, fallback=fallback_sumarios)
         turma_label = getattr(getattr(aula, "turma", None), "nome", None) or f"Turma {aula.turma_id}"
         numero_sumario = (getattr(aula, "sumarios", None) or "").strip() or "—"
         modulo_nome = getattr(getattr(aula, "modulo", None), "nome", None)
@@ -4433,6 +4442,7 @@ def create_app():
             turma_label=turma_label,
             numero_sumario=numero_sumario,
             modulo_label=modulo_label,
+            return_url=return_url,
         )
 
     @app.route("/")

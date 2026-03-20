@@ -6,7 +6,8 @@
     <small class="text-muted">Turma {{ turma_label }} · Sumário {{ numero_sumario }} · Módulo {{ modulo_label }}</small>
   </div>
   <div class="d-flex gap-2">
-    <a class="btn btn-outline-danger btn-sm" href="{{ url_for('aula_faltas', aula_id=aula.id) }}" title="Marcar Faltas">Faltas</a>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ return_url }}" title="Voltar aos sumários">Voltar aos sumários</a>
+    <a class="btn btn-outline-danger btn-sm" href="{{ url_for('aula_faltas', aula_id=aula.id, next=return_url) }}" title="Marcar Faltas">Faltas</a>
     <span id="save-indicator" class="badge text-bg-secondary">Sem alterações</span>
   </div>
 </div>
@@ -24,13 +25,14 @@
 <div class="border rounded overflow-hidden">
   <iframe id="avaliacao-frame"
           title="Conteúdo da avaliação"
-          src="{{ url_for('aula_avaliacao_tipo', aula_id=aula.id, tipo=tipo_ativo) }}"
+          src="{{ url_for('aula_avaliacao_tipo', aula_id=aula.id, tipo=tipo_ativo, next=return_url) }}"
           style="width:100%; min-height:75vh; border:0;"></iframe>
 </div>
 
 <script>
 (() => {
   const aulaId = {{ aula.id }};
+  const returnUrl = {{ return_url|tojson }};
   const tabs = document.querySelectorAll('#avaliacao-tabs [data-tipo]');
   const frame = document.getElementById('avaliacao-frame');
   const indicator = document.getElementById('save-indicator');
@@ -46,10 +48,11 @@
 
   function activate(tipo) {
     tabs.forEach((btn) => btn.classList.toggle('active', btn.dataset.tipo === tipo));
-    const url = `/aula/${aulaId}/avaliacao/${tipo}`;
+    const url = `/aula/${aulaId}/avaliacao/${tipo}?next=${encodeURIComponent(returnUrl)}`;
     frame.src = url;
     const pageUrl = new URL(window.location.href);
     pageUrl.searchParams.set('tipo', tipo);
+    pageUrl.searchParams.set('next', returnUrl);
     history.replaceState({}, '', pageUrl.toString());
   }
 

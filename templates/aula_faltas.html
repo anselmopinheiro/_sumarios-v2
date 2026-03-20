@@ -5,7 +5,10 @@
     <h2 class="mb-0">Faltas</h2>
     <small class="text-muted">Turma {{ turma_label }} · Sumário {{ numero_sumario }} · Módulo {{ modulo_label }}</small>
   </div>
-  <a href="{{ url_for('aula_avaliacao_shell', aula_id=aula.id) }}" class="btn btn-outline-secondary btn-sm">Voltar para Avaliação</a>
+  <div class="d-flex gap-2">
+    <a href="{{ return_url }}" class="btn btn-outline-secondary btn-sm">Voltar aos sumários</a>
+    <a href="{{ url_for('aula_avaliacao_shell', aula_id=aula.id, next=return_url) }}" class="btn btn-outline-secondary btn-sm">Voltar para Avaliação</a>
+  </div>
 </div>
 
 <form method="post">
