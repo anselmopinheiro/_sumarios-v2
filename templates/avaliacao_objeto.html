@@ -44,6 +44,7 @@
         {% for linha in linhas %}
           {% set aluno = linha.aluno %}
           {% set avaliavel = avaliavel_por_aluno.get(aluno.id, True) %}
+          {% set bloqueio_motivo = bloqueio_motivo_por_aluno.get(aluno.id, 'Não avaliado — ausente ou falta disciplinar') %}
           <tr data-aluno-id="{{ aluno.id }}" data-presente="{{ 1 if avaliavel else 0 }}">
             <td>{{ loop.index }}</td>
             <td>{{ aluno.nome }}</td>
@@ -55,7 +56,7 @@
                          name="pontuacao-{{ aluno.id }}-{{ rubrica.id }}"
                          data-aluno-id="{{ aluno.id }}"
                          data-rubrica-id="{{ rubrica.id }}"
-                         {% if not avaliavel %}disabled title="Não avaliado — ausente ou falta disciplinar" style="background-color:#f5f5f5"{% endif %}
+                         {% if not avaliavel %}disabled title="{{ bloqueio_motivo }}" style="background-color:#f5f5f5"{% endif %}
                          value="{{ avaliacoes.get(aluno.id, {}).get(rubrica.id, '') }}">
                 </td>
               {% endfor %}
@@ -66,7 +67,12 @@
                 {% if not avaliavel %}-{% elif medias.get(dominio.letra) is not none %}{{ medias.get(dominio.letra) }}{% else %}-{% endif %}
               </td>
             {% endfor %}
-            <td><textarea class="form-control form-control-sm" rows="2"></textarea></td>
+            <td>
+              <textarea class="form-control form-control-sm"
+                        rows="2"
+                        readonly
+                        title="Observações do registo do evento">{{ linha.observacoes }}</textarea>
+            </td>
           </tr>
         {% endfor %}
       </tbody>
@@ -104,7 +110,7 @@
   window.aplicarValorAutomatico = async function aplicarValorAutomatico(rubricaId) {
     try {
       const data = await postUpdate({ "aluno_ids[]": alunoIds, rubrica_id: rubricaId, valor: "3" });
-      table.querySelectorAll(`input[data-rubrica-id="${rubricaId}"]`).forEach((inp) => { inp.value = "3"; });
+      table.querySelectorAll(`input[data-rubrica-id="${rubricaId}"]:not(:disabled)`).forEach((inp) => { inp.value = "3"; });
       Object.entries(data.medias_por_aluno || {}).forEach(([alunoId, medias]) => renderMedias(alunoId, medias));
     } catch (err) { console.error(err); }
   };
@@ -112,9 +118,27 @@
   window.confirmarLimpar = async function confirmarLimpar(rubricaId) {
     try {
       const data = await postUpdate({ "aluno_ids[]": alunoIds, rubrica_id: rubricaId, valor: "" });
-      table.querySelectorAll(`input[data-rubrica-id="${rubricaId}"]`).forEach((inp) => { inp.value = ""; });
+      table.querySelectorAll(`input[data-rubrica-id="${rubricaId}"]:not(:disabled)`).forEach((inp) => { inp.value = ""; });
       Object.entries(data.medias_por_aluno || {}).forEach(([alunoId, medias]) => renderMedias(alunoId, medias));
     } catch (err) { console.error(err); }
+  };
+
+  table.querySelectorAll('input[type="number"][data-rubrica-id][data-aluno-id]').forEach((input) => {
+    input.addEventListener("change", async () => {
+      const valor = input.value === "" ? "" : input.value;
+      try {
+        const data = await postUpdate({
+          "aluno_ids[]": [input.dataset.alunoId],
+          rubrica_id: input.dataset.rubricaId,
+          valor,
+        });
+        Object.entries(data.medias_por_aluno || {}).forEach(([alunoId, medias]) => renderMedias(alunoId, medias));
+      } catch (err) { console.error(err); }
+    });
+  });
+
+  window.irParaAvaliacao = function irParaAvaliacao(tipo, idObjeto) {
+    window.location.href = `/avaliacao/${tipo}/${idObjeto}`;
   };
 })();
 </script>

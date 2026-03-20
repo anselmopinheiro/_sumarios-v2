@@ -3665,6 +3665,7 @@ def create_app():
                 registros_faltas, _ = _carregar_registros_faltas(aula_evento, alunos_aula, total_tempos)
 
         avaliavel_por_aluno = {}
+        bloqueio_motivo_por_aluno = {}
         for es in alunos_evento:
             aluno = es.aluno
             if not aluno:
@@ -3672,7 +3673,17 @@ def create_app():
             faltas = registros_faltas.get(aluno.id, {}).get("faltas", [])
             fdis = bool(registros_faltas.get(aluno.id, {}).get("fdis"))
             ausente_total = es.estado_assiduidade == "ausente_total" or es.tempos_presentes <= 0
-            avaliavel_por_aluno[aluno.id] = bool(es.elegivel_avaliacao) and (not ausente_total) and (len(faltas) < total_tempos) and (not fdis)
+            elegivel = bool(es.elegivel_avaliacao) and (not ausente_total) and (len(faltas) < total_tempos) and (not fdis)
+            avaliavel_por_aluno[aluno.id] = elegivel
+            if not elegivel:
+                if fdis:
+                    bloqueio_motivo_por_aluno[aluno.id] = "Bloqueado: falta disciplinar (FDis)."
+                elif len(faltas) >= total_tempos:
+                    bloqueio_motivo_por_aluno[aluno.id] = "Bloqueado: aluno em falta no total dos tempos da aula."
+                elif ausente_total:
+                    bloqueio_motivo_por_aluno[aluno.id] = "Bloqueado: assiduidade marcada como ausente total."
+                else:
+                    bloqueio_motivo_por_aluno[aluno.id] = "Bloqueado: aluno não elegível para avaliação neste evento."
 
         def _media_por_dominio_event_student(event_student):
             dominios_scores = {}
@@ -3741,7 +3752,7 @@ def create_app():
             aluno = es.aluno
             if not aluno:
                 continue
-            linhas.append({"aluno": aluno, "grupo": es.group_key or ""})
+            linhas.append({"aluno": aluno, "grupo": es.group_key or "", "observacoes": es.observacoes or ""})
             avaliacoes[aluno.id] = {}
             for assessment in (es.assessments or []):
                 if assessment.tipo == "rubrica" and assessment.rubric_id and assessment.score_numeric is not None:
@@ -3758,6 +3769,7 @@ def create_app():
             avaliacoes=avaliacoes,
             medias_por_aluno=medias_por_aluno,
             avaliavel_por_aluno=avaliavel_por_aluno,
+            bloqueio_motivo_por_aluno=bloqueio_motivo_por_aluno,
         )
 
     @app.route('/aula/<int:aula_id>/faltas', methods=['GET', 'POST'])
