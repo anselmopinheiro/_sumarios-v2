@@ -4506,24 +4506,45 @@ def create_app():
                 medias_por_aluno[aluno.id] = {}
 
         if tipo in {"projeto", "trabalho"}:
-            alunos_por_grupo = defaultdict(list)
+            lines_by_group = defaultdict(list)
             for linha in linhas:
-                nome_grupo = (linha.get("grupo") or "").strip() or "Sem grupo"
-                alunos_por_grupo[nome_grupo].append(linha)
+                nome_grupo = (linha.get("grupo") or "").strip()
+                if nome_grupo:
+                    lines_by_group[nome_grupo].append(linha)
+                    continue
+                aluno = linha["aluno"]
+                ind_name = f"__IND__{aluno.id}"
+                grupo_individual = EV2EvaluationGroup.query.filter_by(event_id=ctx["event"].id, nome=ind_name).first()
+                if not grupo_individual:
+                    ordem_max = db.session.query(db.func.max(EV2EvaluationGroup.ordem)).filter_by(event_id=ctx["event"].id).scalar() or 0
+                    grupo_individual = EV2EvaluationGroup(event_id=ctx["event"].id, nome=ind_name, ordem=int(ordem_max) + 1)
+                    db.session.add(grupo_individual)
+                    db.session.flush()
+                    db.session.add(EV2EvaluationGroupMember(group_id=grupo_individual.id, aluno_id=aluno.id))
+                    db.session.commit()
+                lines_by_group[ind_name].append(linha)
 
-            order_map = {g.nome: idx for idx, g in enumerate(ctx.get("grupos", []), start=1)}
-            group_name_to_id = {g.nome: g.id for g in ctx.get("grupos", [])}
-            for nome_grupo in sorted(alunos_por_grupo.keys(), key=lambda g: (9999 if g == "Sem grupo" else order_map.get(g, 9000), g.lower())):
+            visible_groups = [g for g in ctx.get("grupos", []) if not (g.nome or "").startswith("__IND__")]
+            order_map = {g.nome: idx for idx, g in enumerate(visible_groups, start=1)}
+            all_group_names = sorted(lines_by_group.keys(), key=lambda g: (9000 if g.startswith("__IND__") else order_map.get(g, 8000), g.lower()))
+            group_name_to_id = {g.nome: g.id for g in EV2EvaluationGroup.query.filter_by(event_id=ctx["event"].id).all()}
+            for nome_grupo in all_group_names:
                 linhas_grupo = sorted(
-                    alunos_por_grupo[nome_grupo],
+                    lines_by_group[nome_grupo],
                     key=lambda l: ((getattr(l["aluno"], "numero", None) is None), getattr(l["aluno"], "numero", 0), getattr(l["aluno"], "nome", "")),
                 )
                 gid = group_name_to_id.get(nome_grupo)
                 atr = atribuicoes_tema.get(gid) if gid else None
+                nome_label = nome_grupo
+                is_individual = False
+                if nome_grupo.startswith("__IND__"):
+                    is_individual = True
+                    nome_label = f"Sem grupo — {linhas_grupo[0]['aluno'].nome}" if linhas_grupo else "Individual"
                 groups_data.append(
                     {
                         "group_id": gid,
-                        "group_name": nome_grupo,
+                        "group_name": nome_label,
+                        "is_individual_group": is_individual,
                         "theme_id": (atr.theme_id if atr else None),
                         "entregue": bool(atr.entregue) if atr else False,
                         "data_entrega": (atr.data_entrega.isoformat() if atr and atr.data_entrega else ""),
@@ -4531,6 +4552,7 @@ def create_app():
                     }
                 )
 
+        grupos_visiveis = [g for g in ctx.get("grupos", []) if not (g.nome or "").startswith("__IND__")]
         return render_template(
             "avaliacao_objeto.html",
             tipo=tipo,
@@ -4544,7 +4566,7 @@ def create_app():
             medias_por_aluno=medias_por_aluno,
             avaliavel_por_aluno=ctx["avaliavel_por_aluno"],
             bloqueio_motivo_por_aluno=ctx["bloqueio_motivo_por_aluno"],
-            grupos=ctx.get("grupos", []),
+            grupos=grupos_visiveis,
             grupo_por_aluno=ctx.get("grupo_por_aluno", {}),
             meta_numero=(ctx["event"].numero if ctx.get("event") else None),
             meta_titulo=(ctx["event"].titulo if ctx.get("event") else ""),
