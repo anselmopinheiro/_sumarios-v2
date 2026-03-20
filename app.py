@@ -3500,6 +3500,71 @@ def create_app():
         db.session.commit()
         return event
 
+    def _obter_evento_avaliacao_existente(aula, tipo):
+        tipo_map = {
+            "obser": "observacao_direta",
+            "portfolio": "portfolio",
+            "projeto": "projetos",
+            "trabalho": "trabalhos",
+        }
+        evaluation_type = tipo_map.get(tipo)
+        if not evaluation_type:
+            return None
+        return EV2Event.query.filter_by(aula_id=aula.id, evaluation_type=evaluation_type).first()
+
+    def build_avaliacao_context_for_aula(aula, tipo):
+        alunos = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
+        total_tempos = _resolver_total_tempos_aula(aula)
+        registros_faltas, _ = _carregar_registros_faltas(aula, alunos, total_tempos)
+
+        avaliavel_por_aluno = {}
+        bloqueio_motivo_por_aluno = {}
+        for aluno in alunos:
+            faltas = registros_faltas.get(aluno.id, {}).get("faltas", [])
+            fdis = bool(registros_faltas.get(aluno.id, {}).get("fdis"))
+            elegivel = len(faltas) < total_tempos and (not fdis)
+            avaliavel_por_aluno[aluno.id] = elegivel
+            if not elegivel:
+                bloqueio_motivo_por_aluno[aluno.id] = (
+                    "Bloqueado: falta disciplinar (FDis)." if fdis else "Bloqueado: aluno em falta no total dos tempos da aula."
+                )
+
+        dominios = (
+            EV2Domain.query.options(joinedload(EV2Domain.rubricas))
+            .filter_by(ativo=True)
+            .order_by(EV2Domain.letra.asc(), EV2Domain.nome.asc())
+            .all()
+        )
+        dominios_view = []
+        for idx, dominio in enumerate(dominios):
+            letra = getattr(dominio, "letra", None) or chr(ord("A") + idx)
+            rubricas_dominio = sorted(
+                [r for r in (dominio.rubricas or []) if getattr(r, "ativo", True)],
+                key=lambda r: ((r.codigo or ""), (r.nome or "")),
+            )
+            dominios_view.append({"id": dominio.id, "nome": dominio.nome, "letra": letra, "rubricas": rubricas_dominio})
+
+        event = _obter_evento_avaliacao_existente(aula, tipo)
+        event_students = []
+        if event:
+            event_students = (
+                EV2EventStudent.query.filter_by(event_id=event.id)
+                .options(
+                    joinedload(EV2EventStudent.aluno),
+                    joinedload(EV2EventStudent.assessments).joinedload(EV2Assessment.rubrica).joinedload(EV2Rubric.dominio),
+                )
+                .all()
+            )
+
+        return {
+            "alunos": alunos,
+            "dominios_view": dominios_view,
+            "avaliavel_por_aluno": avaliavel_por_aluno,
+            "bloqueio_motivo_por_aluno": bloqueio_motivo_por_aluno,
+            "event": event,
+            "event_students": event_students,
+        }
+
     @app.route('/aula/<int:aula_id>/avaliar', methods=['GET', 'POST'])
     def aula_avaliar(aula_id):
         if request.method == "GET" and request.args.get("embed") != "1":
@@ -3662,7 +3727,7 @@ def create_app():
             tipo = "aula"
         return render_template("aula_avaliacao_shell.html", aula=aula, tipo_ativo=tipo)
 
-    @app.route('/aula/<int:aula_id>/avaliacao/<tipo>')
+    @app.route('/aula/<int:aula_id>/avaliacao/<tipo>', methods=['GET', 'POST'])
     def aula_avaliacao_tipo(aula_id, tipo):
         aula = CalendarioAula.query.get_or_404(aula_id)
         tipo = (tipo or "").strip().lower()
@@ -3670,13 +3735,116 @@ def create_app():
             return redirect(url_for("aula_avaliar", aula_id=aula.id, embed=1))
         if tipo not in {"obser", "portfolio", "projeto", "trabalho"}:
             abort(404)
-        event = _obter_ou_criar_evento_avaliacao(aula, tipo)
-        if not event:
-            return (
-                "<div class='alert alert-danger m-3'>Não foi possível preparar a avaliação deste tipo para a aula.</div>",
-                400,
-            )
-        return redirect(url_for("avaliacao_objeto", tipo=tipo, id_objeto=event.id, embed=1))
+
+        ctx = build_avaliacao_context_for_aula(aula, tipo)
+
+        def _media_por_dominio_event_student(event_student):
+            dominios_scores = {}
+            for assessment in (event_student.assessments or []):
+                if assessment.tipo != "rubrica" or assessment.score_numeric is None:
+                    continue
+                rubrica = getattr(assessment, "rubrica", None)
+                dominio = getattr(rubrica, "dominio", None)
+                letra = getattr(dominio, "letra", None)
+                if not letra:
+                    continue
+                dominios_scores.setdefault(letra, []).append(float(assessment.score_numeric))
+            return {letra: round(sum(vals) / len(vals), 1) for letra, vals in dominios_scores.items() if vals}
+
+        if request.method == "POST":
+            event = ctx["event"] or _obter_ou_criar_evento_avaliacao(aula, tipo)
+            if not event:
+                return jsonify({"status": "error", "message": "Não foi possível gravar sem disciplina/configuração associada à aula."}), 400
+
+            rubrica_id = request.form.get("rubrica_id", type=int)
+            if not rubrica_id:
+                return jsonify({"status": "error", "message": "rubrica_id é obrigatório"}), 400
+            valor_raw = request.form.get("valor")
+            valor = None
+            if valor_raw not in (None, ""):
+                try:
+                    valor = float(valor_raw)
+                except (TypeError, ValueError):
+                    valor = None
+
+            aluno_ids = request.form.getlist("aluno_ids[]")
+            if not aluno_ids:
+                aluno_unico = request.form.get("aluno_id")
+                if aluno_unico:
+                    aluno_ids = [aluno_unico]
+            aluno_ids = [int(aid) for aid in aluno_ids if str(aid).isdigit()]
+            aluno_ids = [aid for aid in aluno_ids if ctx["avaliavel_por_aluno"].get(aid, False)]
+            if not aluno_ids:
+                return jsonify({"status": "error", "message": "Sem alunos elegíveis para atualizar"}), 400
+
+            estudantes_existentes = {es.aluno_id: es for es in EV2EventStudent.query.filter_by(event_id=event.id).all()}
+            for aid in aluno_ids:
+                if aid not in estudantes_existentes:
+                    novo = EV2EventStudent(
+                        event_id=event.id,
+                        aluno_id=aid,
+                        tempos_totais=1,
+                        tempos_presentes=1,
+                        estado_assiduidade="presente_total",
+                        pontualidade_manual=True,
+                        elegivel_avaliacao=True,
+                    )
+                    db.session.add(novo)
+                    db.session.flush()
+                    estudantes_existentes[aid] = novo
+
+                es = estudantes_existentes[aid]
+                assessment = EV2Assessment.query.filter_by(event_student_id=es.id, rubric_id=rubrica_id).first()
+                if not assessment:
+                    assessment = EV2Assessment(event_student_id=es.id, tipo="rubrica", rubric_id=rubrica_id, weight=0)
+                    db.session.add(assessment)
+                if valor is None:
+                    assessment.state = "nao_observado"
+                    assessment.score_numeric = None
+                else:
+                    assessment.state = "avaliado"
+                    assessment.score_numeric = valor
+            db.session.commit()
+
+            medias_atualizadas = {}
+            for aid in aluno_ids:
+                es = EV2EventStudent.query.filter_by(event_id=event.id, aluno_id=aid).options(
+                    joinedload(EV2EventStudent.assessments).joinedload(EV2Assessment.rubrica).joinedload(EV2Rubric.dominio)
+                ).first()
+                medias_atualizadas[str(aid)] = _media_por_dominio_event_student(es) if es else {}
+            return jsonify({"status": "ok", "medias_por_aluno": medias_atualizadas}), 200
+
+        avaliacoes = {}
+        medias_por_aluno = {}
+        linhas = []
+        students_by_aluno = {es.aluno_id: es for es in ctx["event_students"]}
+        for aluno in ctx["alunos"]:
+            es = students_by_aluno.get(aluno.id)
+            linhas.append({"aluno": aluno, "grupo": getattr(es, "group_key", "") if es else "", "observacoes": getattr(es, "observacoes", "") if es else ""})
+            avaliacoes[aluno.id] = {}
+            if es:
+                for assessment in (es.assessments or []):
+                    if assessment.tipo == "rubrica" and assessment.rubric_id and assessment.score_numeric is not None:
+                        avaliacoes[aluno.id][assessment.rubric_id] = float(assessment.score_numeric)
+                medias_por_aluno[aluno.id] = _media_por_dominio_event_student(es) if ctx["avaliavel_por_aluno"].get(aluno.id, False) else {}
+            else:
+                medias_por_aluno[aluno.id] = {}
+
+        return render_template(
+            "avaliacao_objeto.html",
+            tipo=tipo,
+            event=ctx["event"],
+            titulo_evento=f"{tipo.title()} · Aula {aula.id}",
+            data_evento=aula.data,
+            linhas=linhas,
+            dominios=ctx["dominios_view"],
+            rubricas=[rubrica for dominio in ctx["dominios_view"] for rubrica in dominio["rubricas"]],
+            avaliacoes=avaliacoes,
+            medias_por_aluno=medias_por_aluno,
+            avaliavel_por_aluno=ctx["avaliavel_por_aluno"],
+            bloqueio_motivo_por_aluno=ctx["bloqueio_motivo_por_aluno"],
+            embed_mode=True,
+        )
 
     @app.route('/avaliacao/aula/<int:id_aula>')
     def avaliacao_aula_redirect(id_aula):
