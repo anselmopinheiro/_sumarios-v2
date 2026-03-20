@@ -46,33 +46,53 @@
         <label class="form-label form-label-sm">Prazo entrega</label>
         <input id="meta-prazo" type="date" class="form-control form-control-sm" value="{{ meta_prazo_entrega or '' }}">
       </div>
+      {% if tipo in ['projeto', 'trabalho'] %}
+      <div class="col-sm-2">
+        <label class="form-label form-label-sm">Temas</label>
+        <select id="meta-tema-multiplo" class="form-select form-select-sm">
+          <option value="0" {% if not tema_multiplo %}selected{% endif %}>Tema único</option>
+          <option value="1" {% if tema_multiplo %}selected{% endif %}>Vários temas</option>
+        </select>
+      </div>
+      {% endif %}
       <div class="col-sm-2">
         <button type="button" class="btn btn-sm btn-outline-primary w-100" onclick="guardarMetaObjeto()">Guardar</button>
       </div>
     </div>
+    {% if tipo in ['projeto', 'trabalho'] %}
+    <div class="mt-2">
+      <label class="form-label form-label-sm">Temas (um por linha)</label>
+      <textarea id="meta-temas" class="form-control form-control-sm" rows="2" placeholder="Tema 1&#10;Tema 2"></textarea>
+    </div>
+    {% endif %}
     <div class="mt-2">
       <button type="button" class="btn btn-sm btn-primary" onclick="criarNovoItem()">Novo {% if tipo == 'projeto' %}Projeto{% elif tipo == 'trabalho' %}Trabalho{% else %}Portfólio{% endif %}</button>
     </div>
   </div>
 {% endif %}
 
-{% if tipo in ['projeto', 'trabalho'] and grupo_item_config %}
+{% if tipo in ['projeto', 'trabalho'] and grupo_item_config and tema_multiplo %}
   <div class="card card-body mb-3">
-    <strong class="small mb-2">Associação por grupo (aula atual)</strong>
+    <strong class="small mb-2">Associação grupo → tema (aula atual)</strong>
     <div class="row g-2">
       {% for cfg in grupo_item_config %}
         <div class="col-md-6">
           <label class="form-label form-label-sm">{{ cfg.grupo_nome }}</label>
           <div class="input-group input-group-sm">
-            <select class="form-select" id="grupo-item-{{ cfg.grupo_id }}">
-              <option value="">— Sem associação —</option>
-              {% for ev in eventos_relevantes %}
-                <option value="{{ ev.id }}" {% if cfg.event_id == ev.id %}selected{% endif %}>
-                  {{ ('Projeto' if tipo == 'projeto' else 'Trabalho') }} {{ ev.numero or '—' }} — {{ ev.titulo or 'Sem título' }}
+            <select class="form-select" id="grupo-tema-{{ cfg.grupo_id }}">
+              <option value="">— Sem tema —</option>
+              {% for tema in temas %}
+                <option value="{{ tema.id }}" {% if cfg.theme_id == tema.id %}selected{% endif %}>
+                  {{ tema.nome_tema }}
                 </option>
               {% endfor %}
             </select>
-            <button type="button" class="btn btn-outline-secondary" onclick="guardarItemGrupo({{ cfg.grupo_id }})">Guardar</button>
+            <div class="form-check ms-2 mt-1">
+              <input class="form-check-input" type="checkbox" id="grupo-entregue-{{ cfg.grupo_id }}" {% if cfg.entregue %}checked{% endif %}>
+              <label class="form-check-label small" for="grupo-entregue-{{ cfg.grupo_id }}">Entregue</label>
+            </div>
+            <input type="date" class="form-control" id="grupo-data-entrega-{{ cfg.grupo_id }}" value="{{ cfg.data_entrega or '' }}">
+            <button type="button" class="btn btn-outline-secondary" onclick="guardarTemaGrupo({{ cfg.grupo_id }})">Guardar</button>
           </div>
         </div>
       {% endfor %}
@@ -132,7 +152,7 @@
           <th rowspan="2">No</th>
           <th rowspan="2">Nome</th>
           <th rowspan="2">Grupo</th>
-          {% if tipo in ['projeto', 'trabalho'] %}<th rowspan="2">{{ 'Projeto' if tipo == 'projeto' else 'Trabalho' }}</th>{% endif %}
+          {% if tipo in ['projeto', 'trabalho'] %}<th rowspan="2">Tema</th>{% endif %}
           {% for dominio in dominios %}
             <th colspan="{{ dominio.rubricas|length }}">{{ dominio.letra }} – {{ dominio.nome }}</th>
           {% endfor %}
@@ -177,7 +197,7 @@
               {% endif %}
             </td>
             {% if tipo in ['projeto', 'trabalho'] %}
-              <td class="small">{{ linha.item_label or '—' }}</td>
+              <td class="small">{{ linha.tema_label or ('Tema único' if not tema_multiplo else '—') }}</td>
             {% endif %}
             {% for dominio in dominios %}
               {% for rubrica in dominio.rubricas %}
@@ -319,6 +339,8 @@
         titulo: document.getElementById("meta-titulo")?.value || "",
         data_inicio: document.getElementById("meta-data-inicio")?.value || "",
         prazo_entrega: document.getElementById("meta-prazo")?.value || "",
+        tema_multiplo: document.getElementById("meta-tema-multiplo")?.value || "0",
+        temas: document.getElementById("meta-temas")?.value || "",
       });
     } catch (err) { console.error(err); }
   };
@@ -331,6 +353,8 @@
         titulo: document.getElementById("meta-titulo")?.value || "",
         data_inicio: document.getElementById("meta-data-inicio")?.value || "",
         prazo_entrega: document.getElementById("meta-prazo")?.value || "",
+        tema_multiplo: document.getElementById("meta-tema-multiplo")?.value || "0",
+        temas: document.getElementById("meta-temas")?.value || "",
       });
       if (data.event_id) {
         const url = new URL(window.location.href);
@@ -384,10 +408,18 @@
     } catch (err) { console.error(err); }
   };
 
-  window.guardarItemGrupo = async function guardarItemGrupo(groupId) {
-    const eventId = document.getElementById(`grupo-item-${groupId}`)?.value || "";
+  window.guardarTemaGrupo = async function guardarTemaGrupo(groupId) {
+    const themeId = document.getElementById(`grupo-tema-${groupId}`)?.value || "";
+    const entregue = document.getElementById(`grupo-entregue-${groupId}`)?.checked ? "1" : "0";
+    const dataEntrega = document.getElementById(`grupo-data-entrega-${groupId}`)?.value || "";
     try {
-      await postUpdate({ action: "set_group_item", group_id: groupId, event_id: eventId });
+      await postUpdate({
+        action: "set_group_theme",
+        group_id: groupId,
+        theme_id: themeId,
+        entregue,
+        data_entrega: dataEntrega,
+      });
       window.location.reload();
     } catch (err) { console.error(err); }
   };

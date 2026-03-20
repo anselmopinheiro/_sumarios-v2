@@ -148,6 +148,8 @@ from models import (
     EV2Assessment,
     EV2EvaluationGroup,
     EV2EvaluationGroupMember,
+    EV2EventTheme,
+    EV2AulaThemeAssignment,
     EV2AulaEventLink,
 )
 
@@ -2471,9 +2473,14 @@ def create_app():
             if "prazo_entrega" not in ev2_event_cols:
                 db.session.execute(text("ALTER TABLE ev2_events ADD COLUMN prazo_entrega DATE"))
                 db.session.commit()
+            if "tema_multiplo" not in ev2_event_cols:
+                db.session.execute(text("ALTER TABLE ev2_events ADD COLUMN tema_multiplo BOOLEAN NOT NULL DEFAULT 0"))
+                db.session.commit()
 
         EV2EvaluationGroup.__table__.create(db.engine, checkfirst=True)
         EV2EvaluationGroupMember.__table__.create(db.engine, checkfirst=True)
+        EV2EventTheme.__table__.create(db.engine, checkfirst=True)
+        EV2AulaThemeAssignment.__table__.create(db.engine, checkfirst=True)
         EV2AulaEventLink.__table__.create(db.engine, checkfirst=True)
         if "ev2_aula_event_links" in tabelas:
             link_cols = {col["name"] for col in insp.get_columns("ev2_aula_event_links")}
@@ -4043,6 +4050,8 @@ def create_app():
                 titulo = (request.form.get("titulo") or f"{label_item} {numero}").strip()
                 data_inicio_raw = request.form.get("data_inicio")
                 prazo_raw = request.form.get("prazo_entrega")
+                tema_multiplo = (request.form.get("tema_multiplo") == "1")
+                temas_raw = (request.form.get("temas") or "").strip()
                 data_inicio = date.fromisoformat(data_inicio_raw) if data_inicio_raw else aula.data
                 prazo_entrega = date.fromisoformat(prazo_raw) if prazo_raw else data_inicio
                 disciplina = _resolver_disciplina_aula(aula)
@@ -4076,6 +4085,7 @@ def create_app():
                     titulo=titulo,
                     data_inicio=data_inicio,
                     prazo_entrega=prazo_entrega,
+                    tema_multiplo=tema_multiplo,
                     descricao=f"{label_item} criado automaticamente pela shell de avaliação.",
                     data=aula.data,
                     group_mode="grupo" if tipo in {"portfolio", "projeto", "trabalho"} else "individual",
@@ -4100,6 +4110,11 @@ def create_app():
                     )
                 if not EV2AulaEventLink.query.filter_by(aula_id=aula.id, event_id=novo_evento.id).first():
                     db.session.add(EV2AulaEventLink(aula_id=aula.id, event_id=novo_evento.id))
+                nomes_temas = [t.strip() for t in temas_raw.split("\n") if t.strip()]
+                if not nomes_temas:
+                    nomes_temas = ["Tema único" if tema_multiplo else (titulo or "Tema único")]
+                for idx, nome_tema in enumerate(nomes_temas, start=1):
+                    db.session.add(EV2EventTheme(event_id=novo_evento.id, nome_tema=nome_tema, ordem=idx))
                 db.session.commit()
                 return jsonify({"ok": True, "status": "ok", "event_id": novo_evento.id}), 200
 
@@ -4140,6 +4155,30 @@ def create_app():
                 db.session.commit()
                 return jsonify({"ok": True, "status": "ok"}), 200
 
+            if action == "set_group_theme" and tipo in {"projeto", "trabalho"}:
+                if not event:
+                    return jsonify({"ok": False, "error": "Item não selecionado", "status": "error"}), 400
+                group_id = request.form.get("group_id", type=int)
+                theme_id = request.form.get("theme_id", type=int)
+                entregue = request.form.get("entregue") == "1"
+                data_entrega_raw = (request.form.get("data_entrega") or "").strip()
+                data_entrega = date.fromisoformat(data_entrega_raw) if data_entrega_raw else None
+                grupo = EV2EvaluationGroup.query.filter_by(id=group_id, event_id=event.id).first()
+                if not grupo:
+                    return jsonify({"ok": False, "error": "Grupo inválido", "status": "error"}), 400
+                tema = EV2EventTheme.query.filter_by(id=theme_id, event_id=event.id).first() if theme_id else None
+                if theme_id and not tema:
+                    return jsonify({"ok": False, "error": "Tema inválido", "status": "error"}), 400
+                reg = EV2AulaThemeAssignment.query.filter_by(aula_id=aula.id, event_id=event.id, group_id=grupo.id).first()
+                if not reg:
+                    reg = EV2AulaThemeAssignment(aula_id=aula.id, event_id=event.id, group_id=grupo.id)
+                    db.session.add(reg)
+                reg.theme_id = tema.id if tema else None
+                reg.entregue = entregue
+                reg.data_entrega = data_entrega
+                db.session.commit()
+                return jsonify({"ok": True, "status": "ok"}), 200
+
             if action == "save_meta":
                 titulo = (request.form.get("titulo") or "").strip()
                 numero_raw = (request.form.get("numero") or "").strip()
@@ -4159,6 +4198,8 @@ def create_app():
                         event.data_inicio = date.fromisoformat(data_inicio_raw)
                     if prazo_raw:
                         event.prazo_entrega = date.fromisoformat(prazo_raw)
+                    if tipo in {"projeto", "trabalho"}:
+                        event.tema_multiplo = (request.form.get("tema_multiplo") == "1")
                     db.session.commit()
                 elif tipo == "obser":
                     event.descricao = (request.form.get("observacoes") or "").strip() or None
@@ -4311,7 +4352,7 @@ def create_app():
                 return jsonify({"ok": False, "error": "Sem alunos elegíveis para atualizar", "status": "error"}), 400
 
             aluno_ids_sincronizados = set(aluno_ids)
-            if tipo == "portfolio":
+            if tipo in {"portfolio", "projeto", "trabalho"}:
                 memberships = (
                     EV2EvaluationGroupMember.query.join(
                         EV2EvaluationGroup,
@@ -4329,52 +4370,42 @@ def create_app():
                     for gid in group_ids_por_aluno.get(aid, set()):
                         for membro_id in alunos_por_grupo.get(gid, set()):
                             if ctx["avaliavel_por_aluno"].get(membro_id, False):
+                                if tipo in {"projeto", "trabalho"} and getattr(event, "tema_multiplo", False):
+                                    reg_a = EV2AulaThemeAssignment.query.filter_by(aula_id=aula.id, event_id=event.id, group_id=gid).first()
+                                    reg_b = next((r for r in EV2AulaThemeAssignment.query.filter_by(aula_id=aula.id, event_id=event.id).all() if r.group_id in group_ids_por_aluno.get(membro_id, set())), None)
+                                    if not reg_a or not reg_b or reg_a.theme_id != reg_b.theme_id:
+                                        continue
                                 aluno_ids_sincronizados.add(membro_id)
                 aluno_ids = sorted(aluno_ids_sincronizados)
-            elif tipo in {"projeto", "trabalho"}:
-                membros_catalogo = GrupoTurmaMembro.query.join(
-                    GrupoTurma, GrupoTurmaMembro.grupo_turma_id == GrupoTurma.id
-                ).filter(GrupoTurma.turma_id == aula.turma_id).all()
-                aluno_para_grupo = {m.aluno_id: m.grupo_turma_id for m in membros_catalogo}
-                grupo_para_alunos = defaultdict(set)
-                for membro in membros_catalogo:
-                    grupo_para_alunos[membro.grupo_turma_id].add(membro.aluno_id)
-                synced = set(aluno_ids)
-                for aid in list(synced):
-                    item_ctx = resolve_group_item_for_aula(aula.id, tipo, aid)
-                    group_id = aluno_para_grupo.get(aid)
-                    event_id = item_ctx["event"].id if item_ctx.get("event") else None
-                    if not group_id or not event_id:
-                        continue
-                    for membro_id in grupo_para_alunos.get(group_id, set()):
-                        membro_item = resolve_group_item_for_aula(aula.id, tipo, membro_id)
-                        membro_event_id = membro_item["event"].id if membro_item.get("event") else None
-                        if membro_event_id == event_id and ctx["avaliavel_por_aluno"].get(membro_id, False):
-                            synced.add(membro_id)
-                aluno_ids = sorted(synced)
-
-            if tipo in {"projeto", "trabalho"}:
-                ids_filtrados = []
+            if tipo in {"projeto", "trabalho"} and getattr(event, "tema_multiplo", False):
+                memberships = (
+                    EV2EvaluationGroupMember.query.join(EV2EvaluationGroup, EV2EvaluationGroupMember.group_id == EV2EvaluationGroup.id)
+                    .filter(EV2EvaluationGroup.event_id == event.id)
+                    .all()
+                )
+                group_ids_por_aluno = defaultdict(set)
+                for member in memberships:
+                    group_ids_por_aluno[member.aluno_id].add(member.group_id)
+                atribuicoes = {
+                    a.group_id: a
+                    for a in EV2AulaThemeAssignment.query.filter_by(aula_id=aula.id, event_id=event.id).all()
+                }
+                validos = []
                 for aid in aluno_ids:
-                    item_ctx = resolve_group_item_for_aula(aula.id, tipo, aid)
-                    if item_ctx.get("event"):
-                        ids_filtrados.append(aid)
-                aluno_ids = ids_filtrados
+                    gids = group_ids_por_aluno.get(aid, set())
+                    if not gids:
+                        continue
+                    if any(atribuicoes.get(gid) and atribuicoes[gid].theme_id for gid in gids):
+                        validos.append(aid)
+                aluno_ids = validos
                 if not aluno_ids:
-                    return jsonify({"ok": False, "error": "Sem item associado ao grupo do aluno nesta aula.", "status": "error"}), 400
+                    return jsonify({"ok": False, "error": "Sem grupo/tema atribuído para este item nesta aula.", "status": "error"}), 400
 
             estudantes_existentes = {es.aluno_id: es for es in EV2EventStudent.query.filter_by(event_id=event.id).all()}
             for aid in aluno_ids:
-                alvo_event = event
-                if tipo in {"projeto", "trabalho"}:
-                    item_ctx = resolve_group_item_for_aula(aula.id, tipo, aid)
-                    alvo_event = item_ctx.get("event")
-                    if not alvo_event:
-                        continue
-                    estudantes_existentes = {es.aluno_id: es for es in EV2EventStudent.query.filter_by(event_id=alvo_event.id).all()}
                 if aid not in estudantes_existentes:
                     novo = EV2EventStudent(
-                        event_id=alvo_event.id,
+                        event_id=event.id,
                         aluno_id=aid,
                         tempos_totais=1,
                         tempos_presentes=1,
@@ -4401,11 +4432,7 @@ def create_app():
 
             medias_atualizadas = {}
             for aid in aluno_ids:
-                alvo_event_id = event.id
-                if tipo in {"projeto", "trabalho"}:
-                    item_ctx = resolve_group_item_for_aula(aula.id, tipo, aid)
-                    alvo_event_id = item_ctx["event"].id if item_ctx.get("event") else None
-                es = EV2EventStudent.query.filter_by(event_id=alvo_event_id, aluno_id=aid).options(
+                es = EV2EventStudent.query.filter_by(event_id=event.id, aluno_id=aid).options(
                     joinedload(EV2EventStudent.assessments).joinedload(EV2Assessment.rubrica).joinedload(EV2Rubric.dominio)
                 ).first()
                 medias_atualizadas[str(aid)] = _media_por_dominio_event_student(es) if es else {}
@@ -4425,42 +4452,39 @@ def create_app():
         linhas = []
         students_by_aluno = {es.aluno_id: es for es in ctx["event_students"]}
         grupo_item_config = []
-        grupo_item_map = {}
-        if tipo in {"projeto", "trabalho"}:
-            tipo_evento = "projetos" if tipo == "projeto" else "trabalhos"
-            grupos_turma = GrupoTurma.query.filter_by(turma_id=aula.turma_id).order_by(GrupoTurma.nome.asc()).all()
-            links_grupo = (
-                EV2AulaEventLink.query.join(EV2Event, EV2AulaEventLink.event_id == EV2Event.id)
-                .filter(EV2AulaEventLink.aula_id == aula.id, EV2AulaEventLink.grupo_turma_id.isnot(None), EV2Event.evaluation_type == tipo_evento)
-                .all()
-            )
-            link_por_grupo = {lnk.grupo_turma_id: lnk.event for lnk in links_grupo if lnk.grupo_turma_id}
-            for grupo in grupos_turma:
-                item = link_por_grupo.get(grupo.id)
-                grupo_item_map[grupo.id] = item
-                grupo_item_config.append({"grupo_id": grupo.id, "grupo_nome": grupo.nome, "event_id": (item.id if item else None)})
+        temas = []
+        atribuicoes_tema = {}
+        tema_por_grupo = {}
+        if tipo in {"projeto", "trabalho"} and ctx.get("event"):
+            temas = EV2EventTheme.query.filter_by(event_id=ctx["event"].id).order_by(EV2EventTheme.ordem.asc(), EV2EventTheme.id.asc()).all()
+            atribuicoes_tema = {
+                a.group_id: a
+                for a in EV2AulaThemeAssignment.query.filter_by(aula_id=aula.id, event_id=ctx["event"].id).all()
+            }
+            for grupo in ctx.get("grupos", []):
+                atr = atribuicoes_tema.get(grupo.id)
+                grupo_item_config.append({
+                    "grupo_id": grupo.id,
+                    "grupo_nome": grupo.nome,
+                    "theme_id": (atr.theme_id if atr else None),
+                    "entregue": bool(atr.entregue) if atr else False,
+                    "data_entrega": (atr.data_entrega.isoformat() if atr and atr.data_entrega else ""),
+                })
+                if atr and atr.theme:
+                    tema_por_grupo[grupo.id] = atr.theme.nome_tema
         for aluno in ctx["alunos"]:
             es = students_by_aluno.get(aluno.id)
             grupo_nome = getattr(es, "group_key", "") if es else ""
-            item_label = ""
-            item_event = None
-            grupo_turma_id = None
+            tema_label = ""
             if tipo in {"projeto", "trabalho"}:
-                item_ctx = resolve_group_item_for_aula(aula.id, tipo, aluno.id)
-                grupo_nome = item_ctx.get("grupo_nome") or "Sem grupo"
-                item_event = item_ctx.get("event")
-                grupo_turma_id = item_ctx.get("grupo_turma_id")
-                if item_event:
-                    item_label = f"{'Projeto' if tipo == 'projeto' else 'Trabalho'} {item_event.numero or '—'} — {item_event.titulo or 'Sem título'}"
-                elif grupo_turma_id:
-                    ctx["bloqueio_motivo_por_aluno"][aluno.id] = f"Sem {'projeto' if tipo == 'projeto' else 'trabalho'} associado a este grupo nesta aula."
-                    ctx["avaliavel_por_aluno"][aluno.id] = False
-            linhas.append({"aluno": aluno, "grupo": grupo_nome, "item_label": item_label, "observacoes": getattr(es, "observacoes", "") if es else ""})
+                group_id = next((g.id for g in ctx.get("grupos", []) if g.nome == grupo_nome), None)
+                tema_label = tema_por_grupo.get(group_id, "")
+                if getattr(ctx.get("event"), "tema_multiplo", False):
+                    if not group_id or not tema_label:
+                        ctx["bloqueio_motivo_por_aluno"][aluno.id] = "Sem grupo/tema atribuído."
+                        ctx["avaliavel_por_aluno"][aluno.id] = False
+            linhas.append({"aluno": aluno, "grupo": grupo_nome, "tema_label": tema_label, "observacoes": getattr(es, "observacoes", "") if es else ""})
             avaliacoes[aluno.id] = {}
-            if tipo in {"projeto", "trabalho"} and item_event:
-                es = EV2EventStudent.query.filter_by(event_id=item_event.id, aluno_id=aluno.id).options(
-                    joinedload(EV2EventStudent.assessments).joinedload(EV2Assessment.rubrica).joinedload(EV2Rubric.dominio)
-                ).first()
             if es:
                 for assessment in (es.assessments or []):
                     if assessment.tipo == "rubrica" and assessment.rubric_id and assessment.score_numeric is not None:
@@ -4495,6 +4519,8 @@ def create_app():
             evento_ativo_id=(ctx["event"].id if ctx.get("event") else None),
             grupos_origem=(list_group_import_sources(ctx.get("event"), aula.turma_id) if tipo in {"projeto", "portfolio", "trabalho"} else []),
             grupo_item_config=grupo_item_config,
+            temas=temas,
+            tema_multiplo=(ctx["event"].tema_multiplo if ctx.get("event") and tipo in {"projeto", "trabalho"} else False),
             embed_mode=True,
         )
 

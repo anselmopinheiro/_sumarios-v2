@@ -941,6 +941,7 @@ class EV2Event(db.Model):
     titulo = db.Column(db.String(255), nullable=False)
     data_inicio = db.Column(db.Date, nullable=True)
     prazo_entrega = db.Column(db.Date, nullable=True)
+    tema_multiplo = db.Column(db.Boolean, nullable=False, default=False, server_default=db.text("false"))
     descricao = db.Column(db.Text)
     data = db.Column(db.Date, nullable=False)
     group_mode = db.Column(db.String(20), nullable=False, default="individual", server_default="individual")
@@ -1089,6 +1090,46 @@ class EV2EvaluationGroupMember(db.Model):
     __table_args__ = (
         db.UniqueConstraint("group_id", "aluno_id", name="uq_ev2_eval_group_member_once"),
         db.Index("ix_ev2_eval_group_member_group", "group_id"),
+    )
+
+
+class EV2EventTheme(db.Model):
+    __tablename__ = "ev2_event_themes"
+
+    id = db.Column(db.Integer, primary_key=True)
+    event_id = db.Column(db.Integer, db.ForeignKey("ev2_events.id"), nullable=False, index=True)
+    nome_tema = db.Column(db.String(255), nullable=False)
+    descricao = db.Column(db.Text, nullable=True)
+    ordem = db.Column(db.Integer, nullable=True)
+
+    event = db.relationship("EV2Event", backref=db.backref("themes", cascade="all, delete-orphan"))
+
+    __table_args__ = (
+        db.UniqueConstraint("event_id", "nome_tema", name="uq_ev2_event_theme_nome"),
+        db.Index("ix_ev2_event_theme_event_ordem", "event_id", "ordem"),
+    )
+
+
+class EV2AulaThemeAssignment(db.Model):
+    __tablename__ = "ev2_aula_theme_assignments"
+
+    id = db.Column(db.Integer, primary_key=True)
+    aula_id = db.Column(db.Integer, db.ForeignKey("calendario_aulas.id"), nullable=False, index=True)
+    event_id = db.Column(db.Integer, db.ForeignKey("ev2_events.id"), nullable=False, index=True)
+    group_id = db.Column(db.Integer, db.ForeignKey("ev2_evaluation_groups.id"), nullable=False, index=True)
+    theme_id = db.Column(db.Integer, db.ForeignKey("ev2_event_themes.id"), nullable=True, index=True)
+    entregue = db.Column(db.Boolean, nullable=False, default=False, server_default=db.text("false"))
+    data_entrega = db.Column(db.Date, nullable=True)
+    observacoes = db.Column(db.Text, nullable=True)
+
+    aula = db.relationship("CalendarioAula")
+    event = db.relationship("EV2Event")
+    group = db.relationship("EV2EvaluationGroup")
+    theme = db.relationship("EV2EventTheme")
+
+    __table_args__ = (
+        db.UniqueConstraint("aula_id", "event_id", "group_id", name="uq_ev2_aula_theme_assignment"),
+        db.Index("ix_ev2_aula_theme_assignment_aula_event", "aula_id", "event_id"),
     )
 
 
