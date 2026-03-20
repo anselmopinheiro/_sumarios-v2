@@ -3783,6 +3783,37 @@ def create_app():
                     es.group_key = nome
         db.session.commit()
 
+    def _bootstrap_effective_groups_from_turma(event, turma_id, force=False):
+        if not event or not turma_id:
+            return
+        existentes = EV2EvaluationGroup.query.filter_by(event_id=event.id).count()
+        if existentes > 0 and not force:
+            return
+        if force:
+            for grp in EV2EvaluationGroup.query.filter_by(event_id=event.id).all():
+                db.session.delete(grp)
+            db.session.flush()
+        grupos_turma = GrupoTurma.query.filter_by(turma_id=turma_id).order_by(GrupoTurma.nome.asc()).all()
+        for ordem, grupo_turma in enumerate(grupos_turma, start=1):
+            grp = EV2EvaluationGroup(event_id=event.id, nome=grupo_turma.nome, ordem=ordem)
+            db.session.add(grp)
+            db.session.flush()
+            for membro in (grupo_turma.membros or []):
+                if membro.aluno_id:
+                    db.session.add(EV2EvaluationGroupMember(group_id=grp.id, aluno_id=membro.aluno_id))
+                    es = EV2EventStudent.query.filter_by(event_id=event.id, aluno_id=membro.aluno_id).first()
+                    if es:
+                        es.group_key = grp.nome
+        db.session.commit()
+
+    def ensure_effective_groups_for_aula_tipo(aula, tipo, event=None):
+        if tipo not in {"obser", "portfolio", "projeto", "trabalho"}:
+            return event
+        alvo = event or _obter_evento_avaliacao_existente(aula, tipo) or _obter_ou_criar_evento_avaliacao(aula, tipo)
+        if alvo:
+            _bootstrap_effective_groups_from_turma(alvo, aula.turma_id, force=False)
+        return alvo
+
     def resolve_turma_groups_for_aula(aula):
         grupos = GrupoTurma.query.filter_by(turma_id=aula.turma_id).order_by(GrupoTurma.nome.asc()).all()
         aluno_para_grupo = {}
@@ -3840,7 +3871,7 @@ def create_app():
                 )
                 .all()
             )
-            if tipo in {"portfolio", "projeto"}:
+            if tipo in {"obser", "portfolio", "projeto", "trabalho"}:
                 grupos = EV2EvaluationGroup.query.filter_by(event_id=event.id).order_by(EV2EvaluationGroup.ordem.asc(), EV2EvaluationGroup.nome.asc()).all()
                 membros = (
                     EV2EvaluationGroupMember.query.join(EV2EvaluationGroup, EV2EvaluationGroupMember.group_id == EV2EvaluationGroup.id)
@@ -4064,8 +4095,8 @@ def create_app():
 
         ctx = build_avaliacao_context_for_aula(aula, tipo, event_override=evento_ativo)
         if tipo in {"portfolio", "projeto", "trabalho"} and ctx.get("event"):
-            _sincronizar_grupos_evento_com_turma(ctx["event"], aula.turma_id)
-            ctx = build_avaliacao_context_for_aula(aula, tipo, event_override=ctx["event"])
+            ev = ensure_effective_groups_for_aula_tipo(aula, tipo, ctx.get("event"))
+            ctx = build_avaliacao_context_for_aula(aula, tipo, event_override=ev)
 
         def _media_por_dominio_event_student(event_student):
             dominios_scores = {}
@@ -4089,8 +4120,8 @@ def create_app():
                     tipo,
                 )
                 return jsonify({"ok": False, "error": "Não foi possível inicializar o contexto desta avaliação.", "status": "error"}), 500
-            if tipo in {"portfolio", "projeto", "trabalho"}:
-                _sincronizar_grupos_evento_com_turma(event, aula.turma_id)
+            if tipo in {"obser", "portfolio", "projeto", "trabalho"}:
+                event = ensure_effective_groups_for_aula_tipo(aula, tipo, event)
 
             action = (request.form.get("action") or "score").strip().lower()
             if action == "create_item" and tipo in {"portfolio", "projeto", "trabalho"}:
@@ -4285,17 +4316,60 @@ def create_app():
                     db.session.commit()
                 return jsonify({"ok": True, "status": "ok", "titulo": event.titulo, "numero": event.numero}), 200
 
-            if action == "import_groups" and tipo in {"projeto", "portfolio"}:
-                return jsonify({"ok": False, "error": "Os grupos são geridos na turma. Use “Gerir grupos da turma”.", "status": "error"}), 400
+            if action == "group_reset_from_turma" and tipo in {"obser", "portfolio", "projeto", "trabalho"}:
+                _bootstrap_effective_groups_from_turma(event, aula.turma_id, force=True)
+                return jsonify({"ok": True, "status": "ok"}), 200
 
-            if action == "group_create" and tipo in {"portfolio", "projeto"}:
-                return jsonify({"ok": False, "error": "Os grupos são geridos na turma.", "status": "error"}), 400
+            if action == "group_create" and tipo in {"obser", "portfolio", "projeto", "trabalho"}:
+                nome_grupo = (request.form.get("nome_grupo") or "").strip()
+                if not nome_grupo:
+                    return jsonify({"ok": False, "error": "Nome do grupo é obrigatório", "status": "error"}), 400
+                if EV2EvaluationGroup.query.filter_by(event_id=event.id, nome=nome_grupo).first():
+                    return jsonify({"ok": False, "error": "Grupo já existe", "status": "error"}), 400
+                ordem_max = db.session.query(db.func.max(EV2EvaluationGroup.ordem)).filter_by(event_id=event.id).scalar() or 0
+                db.session.add(EV2EvaluationGroup(event_id=event.id, nome=nome_grupo, ordem=int(ordem_max) + 1))
+                db.session.commit()
+                return jsonify({"ok": True, "status": "ok"}), 200
 
-            if action == "group_delete" and tipo in {"portfolio", "projeto"}:
-                return jsonify({"ok": False, "error": "Os grupos são geridos na turma.", "status": "error"}), 400
+            if action == "group_delete" and tipo in {"obser", "portfolio", "projeto", "trabalho"}:
+                group_id = request.form.get("group_id", type=int)
+                grupo = EV2EvaluationGroup.query.filter_by(id=group_id, event_id=event.id).first()
+                if not grupo:
+                    return jsonify({"ok": False, "error": "Grupo não encontrado", "status": "error"}), 404
+                nome = grupo.nome
+                db.session.delete(grupo)
+                for es in EV2EventStudent.query.filter_by(event_id=event.id, group_key=nome).all():
+                    es.group_key = None
+                db.session.commit()
+                return jsonify({"ok": True, "status": "ok"}), 200
 
-            if action == "group_assign" and tipo in {"portfolio", "projeto"}:
-                return jsonify({"ok": False, "error": "Associação de alunos a grupos é feita em /turmas/<id>/grupos.", "status": "error"}), 400
+            if action == "group_assign" and tipo in {"obser", "portfolio", "projeto", "trabalho"}:
+                group_id = request.form.get("group_id", type=int)
+                aluno_id = request.form.get("aluno_id", type=int)
+                if not aluno_id:
+                    return jsonify({"ok": False, "error": "Aluno inválido", "status": "error"}), 400
+                grupos_ids_evento = [g.id for g in EV2EvaluationGroup.query.filter_by(event_id=event.id).all()]
+                if grupos_ids_evento:
+                    antigos = EV2EvaluationGroupMember.query.filter(
+                        EV2EvaluationGroupMember.aluno_id == aluno_id,
+                        EV2EvaluationGroupMember.group_id.in_(grupos_ids_evento),
+                    ).all()
+                    for antigo in antigos:
+                        db.session.delete(antigo)
+                es = EV2EventStudent.query.filter_by(event_id=event.id, aluno_id=aluno_id).first()
+                if not group_id:
+                    if es:
+                        es.group_key = None
+                    db.session.commit()
+                    return jsonify({"ok": True, "status": "ok"}), 200
+                grp = EV2EvaluationGroup.query.filter_by(id=group_id, event_id=event.id).first()
+                if not grp:
+                    return jsonify({"ok": False, "error": "Grupo inválido", "status": "error"}), 400
+                db.session.add(EV2EvaluationGroupMember(group_id=grp.id, aluno_id=aluno_id))
+                if es:
+                    es.group_key = grp.nome
+                db.session.commit()
+                return jsonify({"ok": True, "status": "ok"}), 200
 
             if action == "save_observacao" and tipo == "portfolio":
                 aluno_id = request.form.get("aluno_id", type=int)
@@ -4347,7 +4421,7 @@ def create_app():
                 return jsonify({"ok": False, "error": "Sem alunos elegíveis para atualizar", "status": "error"}), 400
 
             aluno_ids_sincronizados = set(aluno_ids)
-            if tipo in {"portfolio", "projeto", "trabalho"}:
+            if tipo in {"obser", "portfolio", "projeto", "trabalho"}:
                 memberships = (
                     EV2EvaluationGroupMember.query.join(
                         EV2EvaluationGroup,
@@ -4532,7 +4606,7 @@ def create_app():
                     }
                 )
 
-        grupos_visiveis = grupos_turma
+        grupos_visiveis = [g for g in ctx.get("grupos", []) if not (g.nome or "").startswith("__IND__")]
         return render_template(
             "avaliacao_objeto.html",
             tipo=tipo,

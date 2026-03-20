@@ -107,17 +107,27 @@
   </div>
 {% endif %}
 
-{% if tipo in ['projeto', 'trabalho', 'portfolio'] %}
+{% if tipo in ['obser', 'projeto', 'trabalho', 'portfolio'] %}
   <div class="card card-body mb-3">
-    <div class="d-flex justify-content-between align-items-center">
-      <div class="small text-muted">
-        Os grupos desta avaliação vêm dos grupos da turma.
-        {% if aula and aula.turma_id %}
-          Faça a gestão em <a href="{{ url_for('turma_grupos_catalogo', turma_id=aula.turma_id) }}" target="_blank" rel="noopener">/turmas/{{ aula.turma_id }}/grupos</a>.
-        {% endif %}
-      </div>
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <div class="small text-muted">Grupos desta avaliação (baseados nos grupos da turma).</div>
+      <button type="button" class="btn btn-outline-secondary btn-sm" onclick="reporGruposTurma()">Repor grupos da turma</button>
     </div>
-  </div>
+    <div class="d-flex gap-2">
+      <input id="novo-grupo-nome" class="form-control form-control-sm" placeholder="Novo grupo local">
+      <button type="button" class="btn btn-outline-primary btn-sm" onclick="criarGrupo()">Criar grupo</button>
+      {% if aula and aula.turma_id %}
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('turma_grupos_catalogo', turma_id=aula.turma_id) }}" target="_blank" rel="noopener">Gerir grupos da turma</a>
+      {% endif %}
+    </div>
+    <div class="mt-2 small text-muted">
+      {% for grupo in grupos %}
+        <span class="badge text-bg-light border">{{ grupo.nome }}</span>
+      {% else %}
+        Sem grupos locais definidos.
+      {% endfor %}
+    </div>
+      </div>
 {% endif %}
 
 <form method="post" id="avaliacao-objeto-form">
@@ -186,7 +196,14 @@
               <tr data-aluno-id="{{ aluno.id }}" data-presente="{{ 1 if avaliavel else 0 }}">
                 <td>{{ aluno.numero or '-' }}</td>
                 <td>{{ aluno.nome }}</td>
-                <td></td>
+                <td>
+                  <select class="form-select form-select-sm" onchange="atribuirGrupo({{ aluno.id }}, this.value)">
+                    <option value="">Individual</option>
+                    {% for grupo in grupos %}
+                      <option value="{{ grupo.id }}" {% if grp.group_name == grupo.nome %}selected{% endif %}>{{ grupo.nome }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
                 <td></td>
                 <td></td>
                 <td></td>
@@ -222,7 +239,16 @@
               <td>{{ aluno.nome }}</td>
               <td>
                 {% set grupo_atual = grupo_por_aluno.get(aluno.id, linha.grupo or '') %}
-                {{ grupo_atual or '-' }}
+                {% if tipo in ['obser', 'portfolio'] %}
+                  <select class="form-select form-select-sm" onchange="atribuirGrupo({{ aluno.id }}, this.value)">
+                    <option value="">Individual</option>
+                    {% for grupo in grupos %}
+                      <option value="{{ grupo.id }}" {% if grupo_atual == grupo.nome %}selected{% endif %}>{{ grupo.nome }}</option>
+                    {% endfor %}
+                  </select>
+                {% else %}
+                  {{ grupo_atual or '-' }}
+                {% endif %}
               </td>
               {% if tipo in ['projeto', 'trabalho'] %}<td class="small"></td>{% endif %}
               {% for dominio in dominios %}
@@ -425,6 +451,13 @@
     if (!sourceKey) return;
     try {
       await postUpdate({ action: "import_groups", source_key: sourceKey });
+      window.location.reload();
+    } catch (err) { console.error(err); }
+  };
+
+  window.reporGruposTurma = async function reporGruposTurma() {
+    try {
+      await postUpdate({ action: "group_reset_from_turma" });
       window.location.reload();
     } catch (err) { console.error(err); }
   };
