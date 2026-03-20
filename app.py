@@ -1439,6 +1439,38 @@ def _mapear_alunos_em_falta(aulas):
     return resultados
 
 
+def _mapear_alunos_com_falta_disciplinar(aulas):
+    ids = [a.id for a in aulas if getattr(a, "id", None)]
+    if not ids:
+        return {}
+
+    resultados = defaultdict(list)
+    registos = (
+        AulaAluno.query.options(joinedload(AulaAluno.aluno))
+        .join(Aluno)
+        .filter(AulaAluno.aula_id.in_(ids), AulaAluno.falta_disciplinar == 1)
+        .order_by(Aluno.numero.is_(None), Aluno.numero, Aluno.nome)
+        .all()
+    )
+
+    for registo in registos:
+        aluno = registo.aluno
+        numero = aluno.numero if aluno else None
+        etiqueta_num = (
+            f"{numero:02d}"
+            if numero is not None
+            else (
+                str(aluno.processo).zfill(2)
+                if aluno and aluno.processo is not None
+                else "--"
+            )
+        )
+        nome = aluno.nome if aluno else ""
+        resultados[registo.aula_id].append(f"{etiqueta_num} {nome}".strip())
+
+    return resultados
+
+
 def _mapear_aulas_com_avaliacao(aulas):
     ids = [a.id for a in aulas if getattr(a, "id", None)]
     if not ids:
@@ -8535,6 +8567,7 @@ def create_app():
             query_aulas = query_aulas.filter_by(periodo_id=periodo_atual.id)
         aulas = query_aulas.order_by(CalendarioAula.data).all()
         faltas_por_aula = _mapear_alunos_em_falta(aulas)
+        faltas_disciplinares_por_aula = _mapear_alunos_com_falta_disciplinar(aulas)
         aulas_com_avaliacao = _mapear_aulas_com_avaliacao(aulas)
         sumarios_anteriores = _mapear_sumarios_anteriores(aulas)
 
@@ -8552,6 +8585,7 @@ def create_app():
             ano_fechado=ano_fechado,
             aulas=aulas,
             faltas_por_aula=faltas_por_aula,
+            faltas_disciplinares_por_aula=faltas_disciplinares_por_aula,
             aulas_com_avaliacao=aulas_com_avaliacao,
             sumarios_anteriores=sumarios_anteriores,
             periodo_atual=periodo_atual,
@@ -8927,6 +8961,7 @@ def create_app():
             if a.turma_id
         }
         faltas_por_aula = _mapear_alunos_em_falta(aulas)
+        faltas_disciplinares_por_aula = _mapear_alunos_com_falta_disciplinar(aulas)
         aulas_com_avaliacao = _mapear_aulas_com_avaliacao(aulas)
         sumarios_anteriores = _mapear_sumarios_anteriores(aulas)
 
@@ -8937,6 +8972,7 @@ def create_app():
             periodos_disponiveis=periodos_disponiveis,
             aulas=aulas,
             faltas_por_aula=faltas_por_aula,
+            faltas_disciplinares_por_aula=faltas_disciplinares_por_aula,
             aulas_com_avaliacao=aulas_com_avaliacao,
             tempos_por_aula=tempos_por_aula,
             sumarios_anteriores=sumarios_anteriores,
@@ -9032,6 +9068,7 @@ def create_app():
             a.id: _tempo_da_turma_no_dia(a.turma, a.data) for a in aulas
         }
         faltas_por_aula = _mapear_alunos_em_falta(aulas)
+        faltas_disciplinares_por_aula = _mapear_alunos_com_falta_disciplinar(aulas)
         aulas_com_avaliacao = _mapear_aulas_com_avaliacao(aulas)
         sumarios_anteriores = _mapear_sumarios_anteriores(aulas)
 
@@ -9061,6 +9098,7 @@ def create_app():
             semana_seguinte=semana_inicio + timedelta(days=7),
             aulas_por_data=aulas_por_data,
             faltas_por_aula=faltas_por_aula,
+            faltas_disciplinares_por_aula=faltas_disciplinares_por_aula,
             aulas_com_avaliacao=aulas_com_avaliacao,
             tempos_por_aula=tempos_por_aula,
             sumarios_anteriores=sumarios_anteriores,
@@ -9179,6 +9217,7 @@ def create_app():
 
         aulas = listar_sumarios_pendentes(hoje, turma_id=turma_id)
         faltas_por_aula = _mapear_alunos_em_falta(aulas)
+        faltas_disciplinares_por_aula = _mapear_alunos_com_falta_disciplinar(aulas)
         aulas_com_avaliacao = _mapear_aulas_com_avaliacao(aulas)
         anos_fechados = {
             a.turma_id: bool(
@@ -9196,6 +9235,7 @@ def create_app():
             turmas=turmas_abertas_ativas(),
             turma_selecionada=turma_selecionada,
             faltas_por_aula=faltas_por_aula,
+            faltas_disciplinares_por_aula=faltas_disciplinares_por_aula,
             aulas_com_avaliacao=aulas_com_avaliacao,
             sumarios_anteriores=sumarios_anteriores,
             tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,
