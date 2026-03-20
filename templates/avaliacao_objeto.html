@@ -191,6 +191,18 @@
     });
   }
 
+  function applyUpdatedMembers(updatedMembers) {
+    (updatedMembers || []).forEach((item) => {
+      const alunoId = String(item.aluno_id);
+      const rubricaId = String(item.rubrica_id);
+      const inputs = table.querySelectorAll(`input[data-aluno-id="${alunoId}"][data-rubrica-id="${rubricaId}"]`);
+      inputs.forEach((inp) => {
+        inp.value = item.valor == null ? "" : item.valor;
+      });
+      renderMedias(alunoId, item.medias_por_dominio || {});
+    });
+  }
+
   async function postUpdate(payload) {
     const body = new URLSearchParams();
     Object.entries(payload).forEach(([key, value]) => {
@@ -207,6 +219,7 @@
       const data = await postUpdate({ "aluno_ids[]": alunoIds, rubrica_id: rubricaId, valor: "3" });
       table.querySelectorAll(`input[data-rubrica-id="${rubricaId}"]:not(:disabled)`).forEach((inp) => { inp.value = "3"; });
       Object.entries(data.medias_por_aluno || {}).forEach(([alunoId, medias]) => renderMedias(alunoId, medias));
+      applyUpdatedMembers(data.updated_members);
     } catch (err) { console.error(err); }
   };
 
@@ -215,6 +228,7 @@
       const data = await postUpdate({ "aluno_ids[]": alunoIds, rubrica_id: rubricaId, valor: "" });
       table.querySelectorAll(`input[data-rubrica-id="${rubricaId}"]:not(:disabled)`).forEach((inp) => { inp.value = ""; });
       Object.entries(data.medias_por_aluno || {}).forEach(([alunoId, medias]) => renderMedias(alunoId, medias));
+      applyUpdatedMembers(data.updated_members);
     } catch (err) { console.error(err); }
   };
 
@@ -232,6 +246,7 @@
             valor,
           });
           Object.entries(data.medias_por_aluno || {}).forEach(([alunoId, medias]) => renderMedias(alunoId, medias));
+          applyUpdatedMembers(data.updated_members);
         } catch (err) { console.error(err); }
       }, 500));
     });

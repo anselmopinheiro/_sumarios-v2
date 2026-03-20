@@ -4160,6 +4160,28 @@ def create_app():
                 )
                 return jsonify({"ok": False, "error": "Sem alunos elegíveis para atualizar", "status": "error"}), 400
 
+            aluno_ids_sincronizados = set(aluno_ids)
+            if tipo in {"projeto", "trabalho"}:
+                memberships = (
+                    EV2EvaluationGroupMember.query.join(
+                        EV2EvaluationGroup,
+                        EV2EvaluationGroupMember.group_id == EV2EvaluationGroup.id,
+                    )
+                    .filter(EV2EvaluationGroup.event_id == event.id)
+                    .all()
+                )
+                group_ids_por_aluno = defaultdict(set)
+                alunos_por_grupo = defaultdict(set)
+                for member in memberships:
+                    group_ids_por_aluno[member.aluno_id].add(member.group_id)
+                    alunos_por_grupo[member.group_id].add(member.aluno_id)
+                for aid in list(aluno_ids_sincronizados):
+                    for gid in group_ids_por_aluno.get(aid, set()):
+                        for membro_id in alunos_por_grupo.get(gid, set()):
+                            if ctx["avaliavel_por_aluno"].get(membro_id, False):
+                                aluno_ids_sincronizados.add(membro_id)
+                aluno_ids = sorted(aluno_ids_sincronizados)
+
             estudantes_existentes = {es.aluno_id: es for es in EV2EventStudent.query.filter_by(event_id=event.id).all()}
             for aid in aluno_ids:
                 if aid not in estudantes_existentes:
@@ -4195,7 +4217,16 @@ def create_app():
                     joinedload(EV2EventStudent.assessments).joinedload(EV2Assessment.rubrica).joinedload(EV2Rubric.dominio)
                 ).first()
                 medias_atualizadas[str(aid)] = _media_por_dominio_event_student(es) if es else {}
-            return jsonify({"ok": True, "status": "ok", "medias_por_aluno": medias_atualizadas}), 200
+            updated_members = [
+                {
+                    "aluno_id": aid,
+                    "rubrica_id": rubrica_id,
+                    "valor": valor,
+                    "medias_por_dominio": medias_atualizadas.get(str(aid), {}),
+                }
+                for aid in aluno_ids
+            ]
+            return jsonify({"ok": True, "status": "ok", "medias_por_aluno": medias_atualizadas, "updated_members": updated_members}), 200
 
         avaliacoes = {}
         medias_por_aluno = {}
@@ -4386,6 +4417,28 @@ def create_app():
             if not aluno_ids:
                 return jsonify({"status": "error", "message": "Sem alunos elegíveis para atualizar"}), 400
 
+            if tipo in {"projeto", "trabalho"}:
+                memberships = (
+                    EV2EvaluationGroupMember.query.join(
+                        EV2EvaluationGroup,
+                        EV2EvaluationGroupMember.group_id == EV2EvaluationGroup.id,
+                    )
+                    .filter(EV2EvaluationGroup.event_id == event.id)
+                    .all()
+                )
+                group_ids_por_aluno = defaultdict(set)
+                alunos_por_grupo = defaultdict(set)
+                for member in memberships:
+                    group_ids_por_aluno[member.aluno_id].add(member.group_id)
+                    alunos_por_grupo[member.group_id].add(member.aluno_id)
+                synced_ids = set(aluno_ids)
+                for aid in list(synced_ids):
+                    for gid in group_ids_por_aluno.get(aid, set()):
+                        for membro_id in alunos_por_grupo.get(gid, set()):
+                            if avaliavel_por_aluno.get(membro_id, False):
+                                synced_ids.add(membro_id)
+                aluno_ids = sorted(synced_ids)
+
             for aid in aluno_ids:
                 es = next((row for row in alunos_evento if row.aluno_id == aid), None)
                 if not es:
@@ -4409,7 +4462,16 @@ def create_app():
                     joinedload(EV2EventStudent.assessments).joinedload(EV2Assessment.rubrica).joinedload(EV2Rubric.dominio)
                 ).first()
                 medias_atualizadas[str(aid)] = _media_por_dominio_event_student(es) if es else {}
-            return jsonify({"status": "ok", "medias_por_aluno": medias_atualizadas}), 200
+            updated_members = [
+                {
+                    "aluno_id": aid,
+                    "rubrica_id": rubrica_id,
+                    "valor": valor,
+                    "medias_por_dominio": medias_atualizadas.get(str(aid), {}),
+                }
+                for aid in aluno_ids
+            ]
+            return jsonify({"status": "ok", "medias_por_aluno": medias_atualizadas, "updated_members": updated_members}), 200
 
         avaliacoes = {}
         medias_por_aluno = {}
