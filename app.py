@@ -3618,6 +3618,10 @@ def create_app():
     @app.route('/avaliacao/<tipo>/<int:id_objeto>', methods=['GET', 'POST'])
     def avaliacao_objeto(tipo, id_objeto):
         tipo = (tipo or "").strip().lower()
+        valid_types = ['aula', 'obser', 'portfolio', 'projeto', 'trabalho']
+        if tipo not in valid_types:
+            abort(404)
+
         tipo_map = {
             "obser": "observacao_direta",
             "portfolio": "portfolio",
@@ -3625,9 +3629,8 @@ def create_app():
             "trabalho": "trabalhos",
         }
         if tipo == "aula":
+            CalendarioAula.query.get_or_404(id_objeto)
             return redirect(url_for("aula_avaliar", aula_id=id_objeto))
-        if tipo not in tipo_map:
-            abort(404)
 
         event = EV2Event.query.filter_by(id=id_objeto, evaluation_type=tipo_map[tipo]).first_or_404()
         alunos_evento = (
