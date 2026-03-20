@@ -3565,7 +3565,7 @@ def create_app():
             prazo_entrega=aula.data,
             descricao="Evento criado automaticamente pela página unificada de avaliação.",
             data=aula.data,
-            group_mode="grupo" if evaluation_type in {"projetos", "trabalhos"} else "individual",
+            group_mode="grupo" if evaluation_type in {"portfolio", "projetos", "trabalhos"} else "individual",
             peso_evento=100,
             extra_component_weight=0,
             config_snapshot={"source": "auto-shell"},
@@ -3624,6 +3624,24 @@ def create_app():
             if associado or (data_inicio and prazo and data_inicio <= aula.data <= prazo):
                 relevantes.append(ev)
         return relevantes
+
+    def _proximo_numero_evento_turma(aula, tipo):
+        tipo_map = {
+            "portfolio": "portfolio",
+            "projeto": "projetos",
+            "trabalho": "trabalhos",
+        }
+        evaluation_type = tipo_map.get(tipo)
+        if not evaluation_type:
+            return None
+        numero_max = (
+            db.session.query(db.func.max(EV2Event.numero))
+            .join(EV2SubjectConfig, EV2Event.subject_config_id == EV2SubjectConfig.id)
+            .filter(EV2SubjectConfig.turma_id == aula.turma_id, EV2Event.evaluation_type == evaluation_type)
+            .scalar()
+            or 0
+        )
+        return int(numero_max) + 1
 
     def list_group_import_sources(current_event, turma_id):
         sources = []
@@ -3947,7 +3965,7 @@ def create_app():
         if tipo not in {"obser", "portfolio", "projeto", "trabalho"}:
             abort(404)
 
-        eventos_relevantes = _listar_eventos_relevantes_aula(aula, tipo) if tipo in {"projeto", "trabalho"} else []
+        eventos_relevantes = _listar_eventos_relevantes_aula(aula, tipo) if tipo in {"portfolio", "projeto", "trabalho"} else []
         event_id_escolhido = request.values.get("event_id", type=int)
         evento_ativo = None
         if event_id_escolhido:
@@ -3981,31 +3999,74 @@ def create_app():
                 return jsonify({"ok": False, "error": "Não foi possível inicializar o contexto desta avaliação.", "status": "error"}), 500
 
             action = (request.form.get("action") or "score").strip().lower()
-            if action == "create_item" and tipo in {"projeto", "trabalho"}:
-                tipo_evento = "projetos" if tipo == "projeto" else "trabalhos"
-                numero_max = (
-                    db.session.query(db.func.max(EV2Event.numero))
-                    .join(EV2SubjectConfig, EV2Event.subject_config_id == EV2SubjectConfig.id)
-                    .filter(EV2SubjectConfig.turma_id == aula.turma_id, EV2Event.evaluation_type == tipo_evento)
-                    .scalar()
-                    or 0
-                )
-                numero = request.form.get("numero", type=int) or int(numero_max) + 1
-                titulo = (request.form.get("titulo") or f"{'Projeto' if tipo == 'projeto' else 'Trabalho'} {numero}").strip()
+            if action == "create_item" and tipo in {"portfolio", "projeto", "trabalho"}:
+                tipo_evento = {"portfolio": "portfolio", "projeto": "projetos", "trabalho": "trabalhos"}[tipo]
+                label_item = {"portfolio": "Portfólio", "projeto": "Projeto", "trabalho": "Trabalho"}[tipo]
+                numero = request.form.get("numero", type=int) or _proximo_numero_evento_turma(aula, tipo)
+                titulo = (request.form.get("titulo") or f"{label_item} {numero}").strip()
                 data_inicio_raw = request.form.get("data_inicio")
                 prazo_raw = request.form.get("prazo_entrega")
                 data_inicio = date.fromisoformat(data_inicio_raw) if data_inicio_raw else aula.data
                 prazo_entrega = date.fromisoformat(prazo_raw) if prazo_raw else data_inicio
-                event.numero = numero
-                event.titulo = titulo
-                event.data_inicio = data_inicio
-                event.prazo_entrega = prazo_entrega
-                if not EV2AulaEventLink.query.filter_by(aula_id=aula.id, event_id=event.id).first():
-                    db.session.add(EV2AulaEventLink(aula_id=aula.id, event_id=event.id))
+                disciplina = _resolver_disciplina_aula(aula)
+                if not disciplina:
+                    return jsonify({"ok": False, "error": "Disciplina não encontrada", "status": "error"}), 400
+                subject_config = (
+                    EV2SubjectConfig.query.filter_by(
+                        turma_id=aula.turma_id,
+                        disciplina_id=disciplina.id,
+                        ativo=True,
+                    )
+                    .order_by(EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
+                    .first()
+                )
+                if not subject_config:
+                    subject_config = EV2SubjectConfig(
+                        turma_id=aula.turma_id,
+                        disciplina_id=disciplina.id,
+                        nome="Configuração automática",
+                        ativo=True,
+                        usar_ev2=True,
+                    )
+                    db.session.add(subject_config)
+                    db.session.flush()
+                novo_evento = EV2Event(
+                    subject_config_id=subject_config.id,
+                    disciplina_id=disciplina.id,
+                    aula_id=aula.id,
+                    evaluation_type=tipo_evento,
+                    numero=numero,
+                    titulo=titulo,
+                    data_inicio=data_inicio,
+                    prazo_entrega=prazo_entrega,
+                    descricao=f"{label_item} criado automaticamente pela shell de avaliação.",
+                    data=aula.data,
+                    group_mode="grupo" if tipo in {"portfolio", "projeto", "trabalho"} else "individual",
+                    peso_evento=100,
+                    extra_component_weight=0,
+                    config_snapshot={"source": "auto-shell"},
+                )
+                db.session.add(novo_evento)
+                db.session.flush()
+                alunos = Aluno.query.filter_by(turma_id=aula.turma_id).all()
+                for aluno in alunos:
+                    db.session.add(
+                        EV2EventStudent(
+                            event_id=novo_evento.id,
+                            aluno_id=aluno.id,
+                            tempos_totais=1,
+                            tempos_presentes=1,
+                            estado_assiduidade="presente_total",
+                            pontualidade_manual=True,
+                            elegivel_avaliacao=True,
+                        )
+                    )
+                if not EV2AulaEventLink.query.filter_by(aula_id=aula.id, event_id=novo_evento.id).first():
+                    db.session.add(EV2AulaEventLink(aula_id=aula.id, event_id=novo_evento.id))
                 db.session.commit()
-                return jsonify({"ok": True, "status": "ok", "event_id": event.id}), 200
+                return jsonify({"ok": True, "status": "ok", "event_id": novo_evento.id}), 200
 
-            if action == "select_item" and tipo in {"projeto", "trabalho"}:
+            if action == "select_item" and tipo in {"portfolio", "projeto", "trabalho"}:
                 event_id_select = request.form.get("event_id", type=int)
                 selected = EV2Event.query.filter_by(id=event_id_select).first()
                 if not selected:
@@ -4026,7 +4087,7 @@ def create_app():
                         numero = int(numero_raw)
                     except (TypeError, ValueError):
                         return jsonify({"ok": False, "error": "Número inválido", "status": "error"}), 400
-                if tipo in {"projeto", "trabalho"}:
+                if tipo in {"portfolio", "projeto", "trabalho"}:
                     if titulo:
                         event.titulo = titulo
                     event.numero = numero
@@ -4034,6 +4095,9 @@ def create_app():
                         event.data_inicio = date.fromisoformat(data_inicio_raw)
                     if prazo_raw:
                         event.prazo_entrega = date.fromisoformat(prazo_raw)
+                    db.session.commit()
+                elif tipo == "obser":
+                    event.descricao = (request.form.get("observacoes") or "").strip() or None
                     db.session.commit()
                 return jsonify({"ok": True, "status": "ok", "titulo": event.titulo, "numero": event.numero}), 200
 
@@ -4161,7 +4225,7 @@ def create_app():
                 return jsonify({"ok": False, "error": "Sem alunos elegíveis para atualizar", "status": "error"}), 400
 
             aluno_ids_sincronizados = set(aluno_ids)
-            if tipo in {"projeto", "trabalho"}:
+            if tipo in {"portfolio", "projeto", "trabalho"}:
                 memberships = (
                     EV2EvaluationGroupMember.query.join(
                         EV2EvaluationGroup,
@@ -4263,6 +4327,8 @@ def create_app():
             meta_titulo=(ctx["event"].titulo if ctx.get("event") else ""),
             meta_data_inicio=(ctx["event"].data_inicio.isoformat() if ctx.get("event") and ctx["event"].data_inicio else aula.data.isoformat() if aula.data else ""),
             meta_prazo_entrega=(ctx["event"].prazo_entrega.isoformat() if ctx.get("event") and ctx["event"].prazo_entrega else ""),
+            meta_observacoes=(ctx["event"].descricao if ctx.get("event") else ""),
+            meta_numero_sugerido=(_proximo_numero_evento_turma(aula, tipo) if tipo in {"portfolio", "projeto", "trabalho"} else None),
             eventos_relevantes=eventos_relevantes,
             evento_ativo_id=(ctx["event"].id if ctx.get("event") else None),
             grupos_origem=(list_group_import_sources(ctx.get("event"), aula.turma_id) if tipo in {"projeto", "portfolio", "trabalho"} else []),
@@ -4396,6 +4462,31 @@ def create_app():
             return {letra: round(sum(vals) / len(vals), 1) for letra, vals in dominios_scores.items() if vals}
 
         if request.method == "POST":
+            action = (request.form.get("action") or "score").strip().lower()
+            if action == "save_meta":
+                titulo = (request.form.get("titulo") or "").strip()
+                numero_raw = (request.form.get("numero") or "").strip()
+                data_inicio_raw = (request.form.get("data_inicio") or "").strip()
+                prazo_raw = (request.form.get("prazo_entrega") or "").strip()
+                numero = None
+                if numero_raw:
+                    try:
+                        numero = int(numero_raw)
+                    except (TypeError, ValueError):
+                        return jsonify({"ok": False, "error": "Número inválido", "status": "error"}), 400
+                if tipo in {"portfolio", "projeto", "trabalho"}:
+                    if titulo:
+                        event.titulo = titulo
+                    event.numero = numero
+                    if data_inicio_raw:
+                        event.data_inicio = date.fromisoformat(data_inicio_raw)
+                    if prazo_raw:
+                        event.prazo_entrega = date.fromisoformat(prazo_raw)
+                elif tipo == "obser":
+                    event.descricao = (request.form.get("observacoes") or "").strip() or None
+                db.session.commit()
+                return jsonify({"ok": True, "status": "ok", "titulo": event.titulo, "numero": event.numero}), 200
+
             rubrica_id = request.form.get("rubrica_id", type=int)
             if not rubrica_id:
                 return jsonify({"status": "error", "message": "rubrica_id é obrigatório"}), 400
@@ -4417,7 +4508,7 @@ def create_app():
             if not aluno_ids:
                 return jsonify({"status": "error", "message": "Sem alunos elegíveis para atualizar"}), 400
 
-            if tipo in {"projeto", "trabalho"}:
+            if tipo in {"portfolio", "projeto", "trabalho"}:
                 memberships = (
                     EV2EvaluationGroupMember.query.join(
                         EV2EvaluationGroup,
@@ -4516,6 +4607,8 @@ def create_app():
             meta_titulo=getattr(event, "titulo", ""),
             meta_data_inicio=(event.data_inicio.isoformat() if getattr(event, "data_inicio", None) else ""),
             meta_prazo_entrega=(event.prazo_entrega.isoformat() if getattr(event, "prazo_entrega", None) else ""),
+            meta_observacoes=(event.descricao if tipo == "obser" else ""),
+            meta_numero_sugerido=None,
             eventos_relevantes=[],
             evento_ativo_id=getattr(event, "id", None),
             grupos_origem=[],
