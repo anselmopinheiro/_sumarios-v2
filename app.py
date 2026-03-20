@@ -3746,7 +3746,23 @@ def create_app():
         tipo = (request.args.get("tipo") or "aula").strip().lower()
         if tipo not in {"aula", "obser", "portfolio", "projeto", "trabalho"}:
             tipo = "aula"
-        return render_template("aula_avaliacao_shell.html", aula=aula, tipo_ativo=tipo)
+        turma_label = getattr(getattr(aula, "turma", None), "nome", None) or f"Turma {aula.turma_id}"
+        numero_sumario = (getattr(aula, "sumarios", None) or "").strip() or "—"
+        modulo_nome = getattr(getattr(aula, "modulo", None), "nome", None)
+        if modulo_nome:
+            modulo_label = modulo_nome
+        elif getattr(aula, "numero_modulo", None) not in (None, ""):
+            modulo_label = f"Módulo {aula.numero_modulo}"
+        else:
+            modulo_label = "—"
+        return render_template(
+            "aula_avaliacao_shell.html",
+            aula=aula,
+            tipo_ativo=tipo,
+            turma_label=turma_label,
+            numero_sumario=numero_sumario,
+            modulo_label=modulo_label,
+        )
 
     @app.route('/aula/<int:aula_id>/avaliacao/<tipo>', methods=['GET', 'POST'])
     def aula_avaliacao_tipo(aula_id, tipo):

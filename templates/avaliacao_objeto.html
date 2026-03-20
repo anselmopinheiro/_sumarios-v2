@@ -1,14 +1,16 @@
 {% extends 'embedded_base.html' if embed_mode else 'base.html' %}
 {% block content %}
-<h2>
-  Avaliação de
-  {% if tipo == 'trabalho' %}Trabalho
-  {% elif tipo == 'projeto' %}Projeto
-  {% elif tipo == 'obser' %}Observação Direta
-  {% elif tipo == 'portfolio' %}Portfólio
-  {% else %}Evento{% endif %}
-</h2>
-<p>{{ (event.titulo if event else (titulo_evento or 'Avaliação')) }} · {{ (event.data if event else data_evento).strftime('%Y-%m-%d') if (event and event.data) or data_evento else '-' }}</p>
+{% if not embed_mode %}
+  <h2>
+    Avaliação de
+    {% if tipo == 'trabalho' %}Trabalho
+    {% elif tipo == 'projeto' %}Projeto
+    {% elif tipo == 'obser' %}Observação Direta
+    {% elif tipo == 'portfolio' %}Portfólio
+    {% else %}Evento{% endif %}
+  </h2>
+  <p>{{ (event.titulo if event else (titulo_evento or 'Avaliação')) }} · {{ (event.data if event else data_evento).strftime('%Y-%m-%d') if (event and event.data) or data_evento else '-' }}</p>
+{% endif %}
 
 <form method="post" id="avaliacao-objeto-form">
   <div class="table-responsive">

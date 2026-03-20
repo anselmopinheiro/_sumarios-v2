@@ -3,7 +3,7 @@
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
   <div>
     <h2 class="mb-0">Avaliação</h2>
-    <small class="text-muted">Aula #{{ aula.id }} · {{ aula.data.strftime('%Y-%m-%d') if aula.data else '-' }}</small>
+    <small class="text-muted">Turma {{ turma_label }} · Sumário {{ numero_sumario }} · Módulo {{ modulo_label }}</small>
   </div>
   <div class="d-flex gap-2">
     <a class="btn btn-outline-danger btn-sm" href="{{ url_for('aula_faltas', aula_id=aula.id) }}" title="Marcar Faltas">Faltas</a>
