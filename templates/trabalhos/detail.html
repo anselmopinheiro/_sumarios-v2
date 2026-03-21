@@ -136,13 +136,10 @@
         <th>Média</th>
         <th>Fator</th>
         <th>Nota final</th>
-        <th>Entregue</th>
-        <th>Data entrega</th>
-        <th>Consec.</th>
-        <th>Qualidade</th>
-        <th>Observações</th>
+        <th>Membro</th>
         {% for d in dominios_obrigatorios %}<th>{{ d.letra }} - {{ d.nome }}</th>{% endfor %}
         {% for p in parametros %}<th>{{ p.nome }}{% if p.escala %} <small class="text-muted">({{ p.escala }})</small>{% endif %}</th>{% endfor %}
+        <th>Observações individuais</th>
         <th></th>
       </tr>
     </thead>
@@ -152,25 +149,21 @@
       {% set entrega_grupo = block.entrega_grupo %}
       <tr class="table-light group-main-row" data-group-main="{{ grupo.id if grupo else 0 }}">
         {% if trabalho.modo == 'grupo' %}
-        <td>{{ grupo.nome if grupo else 'Aluno sem grupo' }}</td>
+        <td>{{ grupo.nome if grupo is not mapping else grupo['nome'] }}</td>
         <td>
           <div class="lista-membros">
-            {% if grupo %}
-              {% for membro in grupo.membros %}
+            {% for membro in (grupo.membros if grupo is not mapping else grupo['membros']) %}
                 {% if membro.aluno %}
                 <span class="lista-membro-item" data-aluno-id="{{ membro.aluno.id }}">
                   {{ membro.aluno.numero or '—' }} {{ membro.aluno.nome_curto_exibicao }}
+                  {% if grupo is not mapping %}
                   <button type="button" class="btn btn-link btn-sm p-0 text-danger btn-remove-member" data-grupo-id="{{ grupo.id }}" data-aluno-id="{{ membro.aluno.id }}" title="Remover membro">remover</button>
+                  {% endif %}
                 </span>
                 {% endif %}
-              {% endfor %}
-            {% else %}
-              {% for mrow in block.members %}
-                <span class="lista-membro-item">{{ mrow.aluno_label }}</span>
-              {% endfor %}
-            {% endif %}
+            {% endfor %}
           </div>
-          {% if grupo %}
+          {% if grupo is not mapping %}
           <div class="mt-1 d-flex gap-1">
             <select class="form-select form-select-sm field-add-member">
               <option value="">Adicionar aluno...</option>
@@ -181,35 +174,21 @@
           </div>
           {% endif %}
         </td>
-        <td><input class="form-control form-control-sm field-tema-grupo" value="{{ (grupo.tema if trabalho.usar_tema_por_grupo else (trabalho.tema_global or grupo.tema)) if grupo else '' }}" {% if not grupo or not trabalho.usar_tema_por_grupo %}disabled{% endif %}></td>
-        <td><input type="date" class="form-control form-control-sm field-data-entrega-grupo" value="{{ (grupo.data_entrega or (entrega_grupo.data_entrega if entrega_grupo else None)).strftime('%Y-%m-%d') if grupo and (grupo.data_entrega or (entrega_grupo and entrega_grupo.data_entrega)) else '' }}" {% if not grupo %}disabled{% endif %}></td>
-        <td><input class="form-control form-control-sm field-observacoes-grupo" value="{{ grupo.observacoes if grupo else '' }}" {% if not grupo %}disabled{% endif %}></td>
-        <td><input type="checkbox" class="form-check-input field-entregue-grupo" {% if entrega_grupo and entrega_grupo.entregue %}checked{% endif %} {% if not grupo %}disabled{% endif %}></td>
+        <td><input class="form-control form-control-sm field-tema-grupo" value="{{ ((grupo.tema if grupo is not mapping else grupo['tema']) if trabalho.usar_tema_por_grupo else (trabalho.tema_global or (grupo.tema if grupo is not mapping else grupo['tema']))) }}" {% if grupo is mapping or not trabalho.usar_tema_por_grupo %}disabled{% endif %}></td>
+        <td><input type="date" class="form-control form-control-sm field-data-entrega-grupo" value="{{ ((grupo.data_entrega if grupo is not mapping else grupo['data_entrega']) or (entrega_grupo.data_entrega if entrega_grupo else None)).strftime('%Y-%m-%d') if ((grupo.data_entrega if grupo is not mapping else grupo['data_entrega']) or (entrega_grupo and entrega_grupo.data_entrega)) else '' }}" {% if grupo is mapping %}disabled{% endif %}></td>
+        <td><input class="form-control form-control-sm field-observacoes-grupo" value="{{ (grupo.observacoes if grupo is not mapping else grupo['observacoes']) or '' }}" {% if grupo is mapping %}disabled{% endif %}></td>
+        <td><input type="checkbox" class="form-check-input field-entregue-grupo" {% if entrega_grupo and entrega_grupo.entregue %}checked{% endif %} {% if grupo is mapping %}disabled{% endif %}></td>
         {% endif %}
         <td class="field-estado"><span class="badge-estado {{ block.estado_css }}">{{ block.estado }}</span></td>
         <td class="field-media-base">{{ '%.2f'|format(block.media_base) }}</td>
         <td class="field-fator-estado">{{ '%.2f'|format(block.fator_estado) }}</td>
         <td class="field-nota-final">{{ '%.2f'|format(block.nota_final) }}</td>
-        <td colspan="{{ 6 + (parametros|length) }}"></td>
+        <td colspan="{{ 3 + (dominios_obrigatorios|length) + (parametros|length) }}"></td>
       </tr>
       {% for row in block.members %}
       {% set entrega = row.entrega_aluno %}
       <tr data-grupo-id="{{ row.grupo.id if row.grupo else 0 }}" data-aluno-id="{{ row.aluno.id }}">
-        <td><input type="checkbox" class="form-check-input field-entregue" {% if entrega and entrega.entregue %}checked{% endif %}></td>
-        <td><input type="date" class="form-control form-control-sm field-data-entrega" value="{{ entrega.data_entrega.strftime('%Y-%m-%d') if entrega and entrega.data_entrega else '' }}"></td>
-        <td>
-          <select class="form-select form-select-sm field-consecucao">
-            <option value=""></option>
-            {% for i in range(1,6) %}<option value="{{ i }}" {% if entrega and entrega.consecucao==i %}selected{% endif %}>{{ i }}</option>{% endfor %}
-          </select>
-        </td>
-        <td>
-          <select class="form-select form-select-sm field-qualidade">
-            <option value=""></option>
-            {% for i in range(1,6) %}<option value="{{ i }}" {% if entrega and entrega.qualidade==i %}selected{% endif %}>{{ i }}</option>{% endfor %}
-          </select>
-        </td>
-        <td><input class="form-control form-control-sm field-observacoes" value="{{ entrega.observacoes if entrega else '' }}"></td>
+        <td colspan="{% if trabalho.modo == 'grupo' %}10{% else %}4{% endif %}" class="text-muted small">{{ row.aluno_label }}</td>
         {% if dominios_obrigatorios %}
           {% for dominio in dominios_obrigatorios %}
           {% set dominio_idx = loop.index0 %}
@@ -236,6 +215,7 @@
           {% endif %}
         </td>
         {% endfor %}
+        <td><input class="form-control form-control-sm field-observacoes" value="{{ entrega.observacoes if entrega else '' }}"></td>
         <td><button class="btn btn-sm btn-primary btn-save-row">Guardar</button></td>
       </tr>
       {% endfor %}
@@ -266,17 +246,20 @@
     const alunoId = tr.dataset.alunoId;
     const payload = {
       aluno_id: Number(alunoId),
-      entregue: tr.querySelector('.field-entregue')?.checked || false,
-      data_entrega: tr.querySelector('.field-data-entrega')?.value || null,
+      entregue: true,
+      data_entrega: null,
       entregue_grupo: tr.querySelector('.field-entregue-grupo')?.checked || false,
       data_entrega_grupo: tr.querySelector('.field-data-entrega-grupo')?.value || null,
       tema_grupo: tr.querySelector('.field-tema-grupo')?.value || null,
       observacoes_grupo: tr.querySelector('.field-observacoes-grupo')?.value || null,
-      consecucao: tr.querySelector('.field-consecucao')?.value || null,
-      qualidade: tr.querySelector('.field-qualidade')?.value || null,
+      consecucao: null,
+      qualidade: null,
       observacoes: tr.querySelector('.field-observacoes')?.value || null,
       extra: {}
     };
+    const dominios = tr.querySelectorAll('.field-dominio');
+    if(dominios[0]) payload.consecucao = dominios[0].value || null;
+    if(dominios[1]) payload.qualidade = dominios[1].value || null;
     tr.querySelectorAll('.field-extra').forEach((el)=>{
       payload.extra[el.dataset.paramId] = el.value;
     });
@@ -325,12 +308,6 @@
     if(typeof data.nota_final !== 'undefined'){
       const notaCell = tr.querySelector('.field-nota-final');
       if(notaCell) notaCell.textContent = Number(data.nota_final).toFixed(2);
-    }
-    if(data.data_entrega){
-      const dt = tr.querySelector('.field-data-entrega');
-      if(dt && !dt.value){
-        dt.value = data.data_entrega;
-      }
     }
     toast('Linha guardada com sucesso', 'success');
   }

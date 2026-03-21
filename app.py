@@ -8801,7 +8801,10 @@ def create_app():
             .first()
         )
         if not subject_config:
-            return []
+            return [
+                {"id": "consecucao", "nome": "Consec.", "letra": "A", "rubricas": []},
+                {"id": "qualidade", "nome": "Qualidade", "letra": "B", "rubricas": []},
+            ]
         dominios = (
             EV2Domain.query
             .join(EV2Rubric, EV2Rubric.domain_id == EV2Domain.id)
@@ -8820,6 +8823,11 @@ def create_app():
             letra = getattr(dominio, "letra", None) or chr(ord("A") + idx)
             rubricas = sorted([r for r in (dominio.rubricas or []) if getattr(r, "ativo", True)], key=lambda r: (r.nome or "").lower())
             view.append({"id": dominio.id, "nome": dominio.nome, "letra": letra, "rubricas": rubricas})
+        if not view:
+            return [
+                {"id": "consecucao", "nome": "Consec.", "letra": "A", "rubricas": []},
+                {"id": "qualidade", "nome": "Qualidade", "letra": "B", "rubricas": []},
+            ]
         return view
 
     @app.route("/turmas/<int:turma_id>/grupos", methods=["GET", "POST"])
@@ -9096,10 +9104,21 @@ def create_app():
         dominios_obrigatorios = _listar_dominios_obrigatorios_turma(turma_id)
         blocks_map = {}
         for row in rows:
-            gid = row["grupo"].id if row.get("grupo") else f"solo-{row['aluno'].id}"
+            grupo_obj = row.get("grupo")
+            if not grupo_obj and trabalho.modo == "grupo":
+                grupo_obj = {
+                    "id": f"solo-{row['aluno'].id}",
+                    "nome": f"Grupo individual — {row['aluno_label']}",
+                    "membros": [],
+                    "virtual": True,
+                    "tema": None,
+                    "data_entrega": None,
+                    "observacoes": None,
+                }
+            gid = grupo_obj.id if hasattr(grupo_obj, "id") else grupo_obj.get("id")
             if gid not in blocks_map:
                 blocks_map[gid] = {
-                    "grupo": row.get("grupo"),
+                    "grupo": grupo_obj,
                     "members": [],
                     "entrega_grupo": row.get("entrega_grupo"),
                     "media_base": 0.0,
@@ -9109,6 +9128,8 @@ def create_app():
                     "estado_css": row.get("estado_css"),
                 }
             blocks_map[gid]["members"].append(row)
+            if isinstance(grupo_obj, dict):
+                blocks_map[gid]["grupo"]["membros"].append(type("M", (), {"aluno": row["aluno"]})())
         group_blocks = []
         for _, block in blocks_map.items():
             membros = block["members"]
@@ -9375,6 +9396,13 @@ def create_app():
             return jsonify({"ok": False, "error": "Aluno inválido."}), 404
 
         grupo = TrabalhoGrupo.query.filter_by(id=grupo_id, trabalho_id=trabalho.id).first()
+        if not grupo and grupo_id == 0 and trabalho.modo == "grupo":
+            nome = f"Grupo individual — {(aluno.nome_curto or aluno.nome or f'Aluno {aluno.id}').strip()}"
+            grupo = TrabalhoGrupo(trabalho_id=trabalho.id, nome=nome)
+            db.session.add(grupo)
+            db.session.flush()
+            db.session.add(TrabalhoGrupoMembro(trabalho_grupo_id=grupo.id, aluno_id=aluno_id))
+            db.session.flush()
         if not grupo:
             return jsonify({"ok": False, "error": "Grupo inválido."}), 404
         pertence = TrabalhoGrupoMembro.query.filter_by(trabalho_grupo_id=grupo.id, aluno_id=aluno_id).first()
