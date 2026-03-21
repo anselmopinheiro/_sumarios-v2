@@ -4,12 +4,13 @@
 <p class="text-muted">{{ trabalho.descricao or '' }}</p>
 <p class="text-muted">Prazo global: <strong>{{ trabalho.data_limite.strftime('%d/%m/%Y') if trabalho.data_limite else '—' }}</strong></p>
 <div class="mb-3 d-flex gap-2 flex-wrap">
+  {% set grupos_count = grupos_vm|length %}
   {% set next_url = request.args.get('next') %}
   <a class="btn btn-outline-secondary" href="{{ next_url if next_url else url_for('turma_trabalhos', turma_id=turma.id) }}">Voltar</a>
   <a class="btn btn-outline-primary" href="{{ url_for('trabalho_edit', turma_id=turma.id, trabalho_id=trabalho.id) }}">Editar atividade</a>
   {% if trabalho.modo == 'grupo' %}
   <form method="post" action="{{ url_for('trabalho_importar_grupos_turma', turma_id=turma.id, trabalho_id=trabalho.id) }}">
-    <button class="btn btn-outline-dark" type="submit">Importar grupos pré-definidos</button>
+    <button class="btn btn-outline-dark" type="submit" {% if grupos_count > 0 %}disabled title="Já existem grupos nesta atividade"{% endif %}>Importar grupos pré-definidos</button>
   </form>
   {% endif %}
   <div class="ms-auto d-flex gap-2 align-items-center">
@@ -62,7 +63,7 @@
               {% for a in alunos_disponiveis %}<option value="{{ a.id }}">{{ a.numero or '—' }} {{ a.nome_curto_exibicao }}</option>{% endfor %}
             </select>
           </div>
-          <div class="col-md-2"><button class="btn btn-sm btn-primary w-100" type="submit">Criar grupo</button></div>
+          <div class="col-md-2"><button id="create-grupo-btn" class="btn btn-sm btn-primary w-100" type="submit" {% if alunos_disponiveis|length == 0 %}disabled title="Sem alunos disponíveis para criar grupo"{% endif %}>Criar grupo</button></div>
         </form>
       </div>
     </div>
@@ -163,6 +164,7 @@
   const grid = document.getElementById('grupos-container');
   if(!grid) return;
   const membrosPicker = document.getElementById('membros-picker');
+  const createGrupoBtn = document.getElementById('create-grupo-btn');
   const saveStatus = document.getElementById('save-status');
   const saveAllBtn = document.getElementById('save-all-btn');
   let dirty = false;
@@ -170,6 +172,17 @@
   let saveError = null;
   const rowTimers = new Map();
   function toast(msg, level='info'){ if(window.showToast){ window.showToast(msg, level); } else { alert(msg); } }
+  function updateGroupActionStates(){
+    if(createGrupoBtn && membrosPicker){
+      const hasAvailable = membrosPicker.options.length > 0;
+      createGrupoBtn.disabled = !hasAvailable || saving;
+      if(!hasAvailable){
+        createGrupoBtn.title = 'Sem alunos disponíveis para criar grupo';
+      } else {
+        createGrupoBtn.title = '';
+      }
+    }
+  }
   function renderSaveState(){
     if(!saveStatus) return;
     saveStatus.className = 'badge';
@@ -190,12 +203,14 @@
       saveAllBtn.disabled = saving || (!dirty && !saveError);
       saveAllBtn.textContent = saving ? 'A guardar…' : 'Guardar tudo';
     }
+    updateGroupActionStates();
   }
   function markDirty(){ dirty = true; saveError = null; renderSaveState(); }
   function markSaving(){ saving = true; saveError = null; renderSaveState(); }
   function markSaved(){ dirty = false; saving = false; saveError = null; renderSaveState(); }
   function markError(msg){ saving = false; saveError = msg || 'Erro ao guardar'; renderSaveState(); }
   renderSaveState();
+  updateGroupActionStates();
 
   async function saveRow(tr){
     if(!tr) return true;
