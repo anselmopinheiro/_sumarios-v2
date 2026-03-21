@@ -144,6 +144,7 @@ from models import (
     EV2Domain,
     EV2Rubric,
     EV2SubjectConfig,
+    EV2SubjectRubric,
     EV2Event,
     EV2EventStudent,
     EV2Assessment,
@@ -8792,6 +8793,35 @@ def create_app():
 
         return parametros, rows[:30]
 
+    def _listar_dominios_obrigatorios_turma(turma_id):
+        subject_config = (
+            EV2SubjectConfig.query
+            .filter_by(turma_id=turma_id, ativo=True)
+            .order_by(EV2SubjectConfig.id.desc())
+            .first()
+        )
+        if not subject_config:
+            return []
+        dominios = (
+            EV2Domain.query
+            .join(EV2Rubric, EV2Rubric.domain_id == EV2Domain.id)
+            .join(EV2SubjectRubric, EV2SubjectRubric.rubric_id == EV2Rubric.id)
+            .filter(
+                EV2SubjectRubric.subject_config_id == subject_config.id,
+                EV2SubjectRubric.ativo.is_(True),
+                EV2Domain.ativo.is_(True),
+                EV2Rubric.ativo.is_(True),
+            )
+            .order_by(EV2Domain.nome.asc(), EV2Rubric.nome.asc())
+            .all()
+        )
+        view = []
+        for idx, dominio in enumerate(dominios):
+            letra = getattr(dominio, "letra", None) or chr(ord("A") + idx)
+            rubricas = sorted([r for r in (dominio.rubricas or []) if getattr(r, "ativo", True)], key=lambda r: (r.nome or "").lower())
+            view.append({"id": dominio.id, "nome": dominio.nome, "letra": letra, "rubricas": rubricas})
+        return view
+
     @app.route("/turmas/<int:turma_id>/grupos", methods=["GET", "POST"])
     def turma_grupos_catalogo(turma_id):
         turma = Turma.query.get_or_404(turma_id)
@@ -9063,6 +9093,30 @@ def create_app():
             db.session.commit()
 
         parametros, rows = _build_trabalho_grid(trabalho)
+        dominios_obrigatorios = _listar_dominios_obrigatorios_turma(turma_id)
+        blocks_map = {}
+        for row in rows:
+            gid = row["grupo"].id if row.get("grupo") else f"solo-{row['aluno'].id}"
+            if gid not in blocks_map:
+                blocks_map[gid] = {
+                    "grupo": row.get("grupo"),
+                    "members": [],
+                    "entrega_grupo": row.get("entrega_grupo"),
+                    "media_base": 0.0,
+                    "fator_estado": 0.0,
+                    "nota_final": 0.0,
+                    "estado": row.get("estado"),
+                    "estado_css": row.get("estado_css"),
+                }
+            blocks_map[gid]["members"].append(row)
+        group_blocks = []
+        for _, block in blocks_map.items():
+            membros = block["members"]
+            if membros:
+                block["media_base"] = sum(m["media_base"] for m in membros) / len(membros)
+                block["fator_estado"] = sum(m["fator_estado"] for m in membros) / len(membros)
+                block["nota_final"] = sum(m["nota_final"] for m in membros) / len(membros)
+            group_blocks.append(block)
         alunos = _listar_alunos_turma(turma_id)
         usados = {
             m.aluno_id
@@ -9077,6 +9131,8 @@ def create_app():
             turma=trabalho.turma,
             parametros=parametros,
             rows=rows,
+            group_blocks=group_blocks,
+            dominios_obrigatorios=dominios_obrigatorios,
             alunos=alunos,
             alunos_disponiveis=alunos_disponiveis,
         )
