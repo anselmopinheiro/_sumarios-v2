@@ -9,7 +9,7 @@
       <select id="atividade-existente" class="form-select form-select-sm">
         <option value="">— Selecionar —</option>
         {% for t in trabalhos %}
-          <option value="{{ t.id }}">{{ t.titulo }}</option>
+          <option value="{{ t.id }}" {% if selected_trabalho_id == t.id %}selected{% endif %}>{{ t.titulo }}</option>
         {% endfor %}
       </select>
     </div>

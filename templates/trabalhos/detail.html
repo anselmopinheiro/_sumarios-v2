@@ -75,7 +75,7 @@
           <div class="col-md-5"><input class="form-control" name="nome" placeholder="Nome grupo" required></div>
           <div class="col-md-5">
             <select id="membros-picker" class="form-select membros-picker" name="aluno_ids" multiple size="{{ [alunos_disponiveis|length, 30]|min }}" aria-label="Selecionar membros do grupo">
-              {% for a in alunos %}
+              {% for a in alunos_disponiveis %}
               <option value="{{ a.id }}">{{ a.numero or '—' }} {{ a.nome_curto_exibicao }}</option>
               {% endfor %}
             </select>
@@ -147,9 +147,19 @@
       </tr>
     </thead>
     <tbody>
+      {% set ns = namespace(prev_gid=None) %}
       {% for row in rows %}
       {% set entrega = row.entrega_aluno %}
       {% set entrega_grupo = row.entrega_grupo %}
+      {% if trabalho.modo == 'grupo' and row.grupo and ns.prev_gid != row.grupo.id %}
+      <tr class="table-light">
+        <td colspan="{{ 11 + (parametros|length) + 6 }}">
+          <strong>{{ row.grupo.nome }}</strong>
+          <span class="text-muted ms-2">({{ row.grupo.membros|length }} membro(s))</span>
+        </td>
+      </tr>
+      {% set ns.prev_gid = row.grupo.id %}
+      {% endif %}
       <tr data-grupo-id="{{ row.grupo.id if row.grupo else 0 }}" data-aluno-id="{{ row.aluno.id }}">
         <td>{{ row.aluno_label }}</td>
         {% if trabalho.modo == 'grupo' %}
@@ -170,13 +180,13 @@
           <div class="mt-1">
             <select class="form-select form-select-sm field-add-member">
               <option value="">Adicionar aluno...</option>
-              {% for a in alunos %}
+              {% for a in alunos_disponiveis %}
               <option value="{{ a.id }}">{{ a.numero or '—' }} {{ a.nome_curto_exibicao }}</option>
               {% endfor %}
             </select>
           </div>
         </td>
-        <td><input class="form-control form-control-sm field-tema-grupo" value="{{ row.grupo.tema if row.grupo else '' }}" {% if not row.grupo %}disabled{% endif %}></td>
+        <td><input class="form-control form-control-sm field-tema-grupo" value="{{ (row.grupo.tema if trabalho.usar_tema_por_grupo else (trabalho.tema_global or row.grupo.tema)) if row.grupo else '' }}" {% if not row.grupo or not trabalho.usar_tema_por_grupo %}disabled{% endif %}></td>
         <td><input type="date" class="form-control form-control-sm field-data-entrega-grupo" value="{{ (row.grupo.data_entrega or (entrega_grupo.data_entrega if entrega_grupo else None)).strftime('%Y-%m-%d') if row.grupo and (row.grupo.data_entrega or (entrega_grupo and entrega_grupo.data_entrega)) else '' }}" {% if not row.grupo %}disabled{% endif %}></td>
         <td><input class="form-control form-control-sm field-observacoes-grupo" value="{{ row.grupo.observacoes if row.grupo else '' }}" {% if not row.grupo %}disabled{% endif %}></td>
         <td><input type="checkbox" class="form-check-input field-entregue-grupo" {% if entrega_grupo and entrega_grupo.entregue %}checked{% endif %} {% if not row.grupo %}disabled{% endif %}></td>
@@ -364,14 +374,18 @@
 
       const item = rmBtn.closest('.lista-membro-item');
       if(item) item.remove();
-      if(membrosPicker && data.aluno && data.aluno.id){
-        const exists = Array.from(membrosPicker.options).some((opt)=>opt.value === String(data.aluno.id));
-        if(!exists){
+      if(data.aluno && data.aluno.id){
+        const addOptionIfMissing = (selectEl)=>{
+          if(!selectEl) return;
+          const exists = Array.from(selectEl.options).some((opt)=>opt.value === String(data.aluno.id));
+          if(exists) return;
           const opt = document.createElement('option');
           opt.value = String(data.aluno.id);
           opt.textContent = data.aluno.label || String(data.aluno.id);
-          membrosPicker.appendChild(opt);
-        }
+          selectEl.appendChild(opt);
+        };
+        addOptionIfMissing(membrosPicker);
+        grid.querySelectorAll('.field-add-member').forEach(addOptionIfMissing);
       }
 
       const groupDeleted = (typeof data.group_deleted !== 'undefined') ? Boolean(data.group_deleted) : Boolean(data.deleted);
@@ -409,8 +423,22 @@
       toast(data.error || 'Erro ao adicionar membro', 'error');
       return;
     }
+    const rowMembers = tr.querySelector('.lista-membros');
+    if(rowMembers && data.aluno){
+      const tag = document.createElement('span');
+      tag.className = 'lista-membro-item';
+      tag.dataset.alunoId = String(data.aluno.id);
+      tag.innerHTML = `${data.aluno.label} <button type="button" class="btn btn-link btn-sm p-0 text-danger btn-remove-member" data-grupo-id="${grupoId}" data-aluno-id="${data.aluno.id}" title="Remover membro">remover</button>`;
+      rowMembers.appendChild(tag);
+    }
+    const removeOptionById = (selectEl, id)=>{
+      if(!selectEl) return;
+      Array.from(selectEl.options).forEach((opt)=>{ if(opt.value === String(id)) opt.remove(); });
+    };
+    removeOptionById(membrosPicker, data.aluno?.id);
+    grid.querySelectorAll('.field-add-member').forEach((sel)=>removeOptionById(sel, data.aluno?.id));
+    addMemberSelect.value = '';
     toast('Membro adicionado', 'success');
-    window.location.reload();
   });
 })();
 </script>

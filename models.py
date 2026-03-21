@@ -1243,6 +1243,23 @@ class Trabalho(db.Model):
     turma = db.relationship("Turma", backref=db.backref("trabalhos", cascade="all, delete-orphan"))
 
 
+class AulaTrabalhoLink(db.Model):
+    __tablename__ = "aula_trabalho_links"
+
+    id = db.Column(db.Integer, primary_key=True)
+    aula_id = db.Column(db.Integer, db.ForeignKey("calendario_aulas.id"), nullable=False, index=True)
+    tipo = db.Column(db.String(20), nullable=False, default="trabalho")
+    trabalho_id = db.Column(db.Integer, db.ForeignKey("trabalhos.id"), nullable=False, index=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, server_default=db.text("now()"))
+
+    aula = db.relationship("CalendarioAula")
+    trabalho = db.relationship("Trabalho")
+
+    __table_args__ = (
+        db.UniqueConstraint("aula_id", "tipo", name="uq_aula_trabalho_link"),
+    )
+
+
 class TrabalhoGrupo(db.Model):
     __tablename__ = "trabalho_grupos"
 

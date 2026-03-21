@@ -133,6 +133,7 @@ from models import (
     DTOcorrencia,
     DTOcorrenciaAluno,
     Trabalho,
+    AulaTrabalhoLink,
     GrupoTurma,
     GrupoTurmaMembro,
     TrabalhoGrupo,
@@ -2100,6 +2101,7 @@ def create_app():
             "entregas",
             "parametro_definicoes",
             "entrega_parametros",
+            "aula_trabalho_links",
             "grupos_turma",
             "grupo_turma_membros",
         }
@@ -2119,6 +2121,7 @@ def create_app():
                 Entrega.__table__,
                 ParametroDefinicao.__table__,
                 EntregaParametro.__table__,
+                AulaTrabalhoLink.__table__,
                 GrupoTurma.__table__,
                 GrupoTurmaMembro.__table__,
             ],
@@ -4108,6 +4111,8 @@ def create_app():
         if tipo in {"projeto", "trabalho"}:
             turma = Turma.query.get(aula.turma_id)
             trabalhos = Trabalho.query.filter_by(turma_id=aula.turma_id).order_by(Trabalho.created_at.desc(), Trabalho.id.desc()).all()
+            link = AulaTrabalhoLink.query.filter_by(aula_id=aula.id, tipo=tipo).first()
+            selected_trabalho_id = link.trabalho_id if link else None
             if request.method == "POST":
                 action = (request.form.get("action") or "").strip().lower()
                 next_url = url_for("aula_avaliacao_shell", aula_id=aula.id, tipo=tipo)
@@ -4116,6 +4121,12 @@ def create_app():
                     trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=aula.turma_id).first()
                     if not trabalho:
                         return jsonify({"ok": False, "error": "Atividade não encontrada", "status": "error"}), 404
+                    if not link:
+                        link = AulaTrabalhoLink(aula_id=aula.id, tipo=tipo, trabalho_id=trabalho.id)
+                        db.session.add(link)
+                    else:
+                        link.trabalho_id = trabalho.id
+                    db.session.commit()
                     return jsonify({"ok": True, "redirect_url": url_for("trabalho_detail", turma_id=aula.turma_id, trabalho_id=trabalho.id, next=next_url)}), 200
                 if action == "create_new":
                     numero = len(trabalhos) + 1
@@ -4127,6 +4138,12 @@ def create_app():
                         data_limite=aula.data,
                     )
                     db.session.add(novo)
+                    db.session.flush()
+                    if not link:
+                        link = AulaTrabalhoLink(aula_id=aula.id, tipo=tipo, trabalho_id=novo.id)
+                        db.session.add(link)
+                    else:
+                        link.trabalho_id = novo.id
                     db.session.commit()
                     return jsonify({"ok": True, "redirect_url": url_for("trabalho_detail", turma_id=aula.turma_id, trabalho_id=novo.id, next=next_url)}), 200
             return render_template(
@@ -4135,6 +4152,7 @@ def create_app():
                 turma=turma,
                 tipo=tipo,
                 trabalhos=trabalhos,
+                selected_trabalho_id=selected_trabalho_id,
                 embed_mode=True,
             )
 
@@ -8735,7 +8753,17 @@ def create_app():
             if e.aluno_id is not None
         }
         rows = []
-        for aluno in alunos:
+        ordered = sorted(
+            alunos,
+            key=lambda a: (
+                (grupo_por_aluno.get(a.id) is None),
+                (grupo_por_aluno.get(a.id).nome.lower() if grupo_por_aluno.get(a.id) and grupo_por_aluno.get(a.id).nome else ""),
+                (a.numero is None),
+                (a.numero if a.numero is not None else 0),
+                (a.nome or "").lower(),
+            ),
+        )
+        for aluno in ordered:
             grupo = grupo_por_aluno.get(aluno.id)
             entrega_grupo = entregas_grupo.get(grupo.id) if grupo else None
             entrega_aluno = entregas_aluno.get((grupo.id, aluno.id)) if grupo else None
@@ -8938,12 +8966,6 @@ def create_app():
                 after = sum(len(g.membros) for g in trabalho.grupos)
                 if after != before:
                     houve_alteracao = True
-            elif trabalho.modo == "grupo":
-                before = sum(len(g.membros) for g in trabalho.grupos)
-                _ensure_unassigned_students_as_individual_groups(trabalho)
-                after = sum(len(g.membros) for g in trabalho.grupos)
-                if after != before:
-                    houve_alteracao = True
         if houve_alteracao:
             db.session.commit()
             trabalhos = Trabalho.query.filter_by(turma_id=turma.id).order_by(Trabalho.created_at.asc(), Trabalho.id.asc()).all()
@@ -9038,9 +9060,6 @@ def create_app():
         trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
         if trabalho.modo == "individual":
             _ensure_individual_groups(trabalho)
-            db.session.commit()
-        elif trabalho.modo == "grupo":
-            _ensure_unassigned_students_as_individual_groups(trabalho)
             db.session.commit()
 
         parametros, rows = _build_trabalho_grid(trabalho)
@@ -9277,8 +9296,7 @@ def create_app():
             TrabalhoGrupo, TrabalhoGrupoMembro.trabalho_grupo_id == TrabalhoGrupo.id
         ).filter(TrabalhoGrupo.trabalho_id == trabalho.id).first()
         if atual and atual.trabalho_grupo_id != grupo.id:
-            db.session.delete(atual)
-            db.session.flush()
+            return jsonify({"ok": False, "error": "Aluno já pertence a outro grupo desta atividade."}), 400
         exists = TrabalhoGrupoMembro.query.filter_by(trabalho_grupo_id=grupo.id, aluno_id=aluno_id).first()
         if not exists:
             db.session.add(TrabalhoGrupoMembro(trabalho_grupo_id=grupo.id, aluno_id=aluno_id))
@@ -9356,7 +9374,10 @@ def create_app():
             entrega_grupo.data_entrega = data_entrega_grupo
         entrega_grupo.updated_at = datetime.utcnow()
 
-        grupo.tema = tema_grupo
+        if trabalho.usar_tema_por_grupo:
+            grupo.tema = tema_grupo
+        elif not grupo.tema:
+            grupo.tema = trabalho.tema_global
         if data_entrega_grupo is not None:
             grupo.data_entrega = data_entrega_grupo
         grupo.observacoes = observacoes_grupo
