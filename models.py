@@ -1233,6 +1233,10 @@ class Trabalho(db.Model):
     titulo = db.Column(db.String(255), nullable=False)
     descricao = db.Column(db.Text)
     modo = db.Column(db.String(20), nullable=False, default="individual")
+    tema_global = db.Column(db.Text)
+    usar_tema_por_grupo = db.Column(db.Boolean, nullable=False, default=False, server_default=db.text("0"))
+    peso_dominios = db.Column(db.Float, nullable=False, default=1.0, server_default="1.0")
+    peso_criterios_extra = db.Column(db.Float, nullable=False, default=0.0, server_default="0.0")
     data_limite = db.Column(db.Date)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, server_default=db.text("now()"))
 
@@ -1245,6 +1249,9 @@ class TrabalhoGrupo(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     trabalho_id = db.Column(db.Integer, db.ForeignKey("trabalhos.id"), nullable=False, index=True)
     nome = db.Column(db.String(255), nullable=False)
+    tema = db.Column(db.Text)
+    data_entrega = db.Column(db.Date)
+    observacoes = db.Column(db.Text)
 
     trabalho = db.relationship("Trabalho", backref=db.backref("grupos", cascade="all, delete-orphan"))
 
@@ -1274,6 +1281,7 @@ class Entrega(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     trabalho_id = db.Column(db.Integer, db.ForeignKey("trabalhos.id"), nullable=False, index=True)
     trabalho_grupo_id = db.Column(db.Integer, db.ForeignKey("trabalho_grupos.id"), nullable=False, index=True)
+    aluno_id = db.Column(db.Integer, db.ForeignKey("alunos.id"), nullable=True, index=True)
 
     entregue = db.Column(db.Boolean, nullable=False, default=False)
     data_entrega = db.Column(db.Date)
@@ -1284,9 +1292,10 @@ class Entrega(db.Model):
 
     trabalho = db.relationship("Trabalho", backref=db.backref("entregas", cascade="all, delete-orphan"))
     grupo = db.relationship("TrabalhoGrupo", backref=db.backref("entrega", uselist=False, cascade="all, delete-orphan"))
+    aluno = db.relationship("Aluno")
 
     __table_args__ = (
-        db.UniqueConstraint("trabalho_id", "trabalho_grupo_id", name="uq_entrega_trabalho_grupo"),
+        db.UniqueConstraint("trabalho_id", "trabalho_grupo_id", "aluno_id", name="uq_entrega_trabalho_grupo_aluno"),
         db.CheckConstraint("consecucao IS NULL OR (consecucao >= 1 AND consecucao <= 5)", name="ck_entrega_consecucao_1_5"),
         db.CheckConstraint("qualidade IS NULL OR (qualidade >= 1 AND qualidade <= 5)", name="ck_entrega_qualidade_1_5"),
     )
@@ -1299,6 +1308,8 @@ class ParametroDefinicao(db.Model):
     trabalho_id = db.Column(db.Integer, db.ForeignKey("trabalhos.id"), nullable=False, index=True)
     nome = db.Column(db.String(120), nullable=False)
     tipo = db.Column(db.String(20), nullable=False, default="numerico")
+    escala = db.Column(db.String(80))
+    peso = db.Column(db.Float, nullable=False, default=1.0, server_default="1.0")
     ordem = db.Column(db.Integer, nullable=False, default=0, server_default="0")
 
     trabalho = db.relationship("Trabalho", backref=db.backref("parametros", cascade="all, delete-orphan"))

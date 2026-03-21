@@ -15,6 +15,37 @@
 </div>
 
 <div class="row g-3 mb-3">
+  <div class="col-md-12">
+    <div class="card">
+      <div class="card-header">Configuração de tema e ponderações</div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('trabalho_update_config', turma_id=turma.id, trabalho_id=trabalho.id) }}" class="row g-2">
+          <div class="col-md-5">
+            <label class="form-label form-label-sm">Tema global (compatibilidade)</label>
+            <input class="form-control form-control-sm" name="tema_global" value="{{ trabalho.tema_global or '' }}">
+          </div>
+          <div class="col-md-2">
+            <label class="form-label form-label-sm">Tema por grupo</label>
+            <select class="form-select form-select-sm" name="usar_tema_por_grupo">
+              <option value="0" {% if not trabalho.usar_tema_por_grupo %}selected{% endif %}>Não</option>
+              <option value="1" {% if trabalho.usar_tema_por_grupo %}selected{% endif %}>Sim</option>
+            </select>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label form-label-sm">Peso domínios</label>
+            <input class="form-control form-control-sm" type="number" step="0.1" min="0" name="peso_dominios" value="{{ trabalho.peso_dominios }}">
+          </div>
+          <div class="col-md-2">
+            <label class="form-label form-label-sm">Peso critérios extra</label>
+            <input class="form-control form-control-sm" type="number" step="0.1" min="0" name="peso_criterios_extra" value="{{ trabalho.peso_criterios_extra }}">
+          </div>
+          <div class="col-md-1 d-flex align-items-end">
+            <button class="btn btn-outline-primary btn-sm w-100" type="submit">Guardar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
   <div class="col-md-6">
     <div class="card">
       <div class="card-header">Adicionar parâmetro</div>
@@ -27,6 +58,8 @@
               <option value="texto">Texto</option>
             </select>
           </div>
+          <div class="col-md-2"><input class="form-control" name="escala" placeholder="Escala"></div>
+          <div class="col-md-2"><input class="form-control" type="number" step="0.1" min="0" name="peso" value="1"></div>
           <div class="col-md-2"><button class="btn btn-primary w-100" type="submit">Adicionar</button></div>
         </form>
       </div>
@@ -42,7 +75,7 @@
           <div class="col-md-5"><input class="form-control" name="nome" placeholder="Nome grupo" required></div>
           <div class="col-md-5">
             <select id="membros-picker" class="form-select membros-picker" name="aluno_ids" multiple size="{{ [alunos_disponiveis|length, 30]|min }}" aria-label="Selecionar membros do grupo">
-              {% for a in alunos_disponiveis %}
+              {% for a in alunos %}
               <option value="{{ a.id }}">{{ a.numero or '—' }} {{ a.nome_curto_exibicao }}</option>
               {% endfor %}
             </select>
@@ -97,8 +130,9 @@
   <table class="table table-sm align-middle" id="trabalhos-grid">
     <thead>
       <tr>
-        <th>{{ 'Grupo' if trabalho.modo == 'grupo' else 'Aluno' }}</th>
-        {% if trabalho.modo == 'grupo' %}<th>Membros</th>{% endif %}
+        <th>Aluno</th>
+        {% if trabalho.modo == 'grupo' %}<th>Grupo</th><th>Membros</th>{% endif %}
+        {% if trabalho.modo == 'grupo' %}<th>Tema grupo</th><th>Data entrega grupo</th><th>Obs. grupo</th><th>Entregue grupo</th>{% endif %}
         <th>Estado</th>
         <th>Média</th>
         <th>Fator</th>
@@ -108,28 +142,44 @@
         <th>Consec.</th>
         <th>Qualidade</th>
         <th>Observações</th>
-        {% for p in parametros %}<th>{{ p.nome }}</th>{% endfor %}
+        {% for p in parametros %}<th>{{ p.nome }}{% if p.escala %} <small class="text-muted">({{ p.escala }})</small>{% endif %}</th>{% endfor %}
         <th></th>
       </tr>
     </thead>
     <tbody>
       {% for row in rows %}
-      {% set entrega = row.entrega %}
-      <tr data-grupo-id="{{ row.grupo.id }}">
+      {% set entrega = row.entrega_aluno %}
+      {% set entrega_grupo = row.entrega_grupo %}
+      <tr data-grupo-id="{{ row.grupo.id if row.grupo else 0 }}" data-aluno-id="{{ row.aluno.id }}">
+        <td>{{ row.aluno_label }}</td>
         {% if trabalho.modo == 'grupo' %}
-        <td>{{ row.grupo.nome }}</td>
+        <td>{{ row.grupo.nome if row.grupo else '—' }}</td>
         <td>
           <div class="lista-membros">
-            {% for m in row.membros %}
-              <span class="lista-membro-item" data-aluno-id="{{ m.id }}">
-                {{ m.numero or '—' }} {{ m.nome_curto_exibicao }}
-                <button type="button" class="btn btn-link btn-sm p-0 text-danger btn-remove-member" data-grupo-id="{{ row.grupo.id }}" data-aluno-id="{{ m.id }}" title="Remover membro">remover</button>
-              </span>
-            {% endfor %}
+            {% if row.grupo %}
+              {% for membro in row.grupo.membros %}
+                {% if membro.aluno %}
+                <span class="lista-membro-item" data-aluno-id="{{ membro.aluno.id }}">
+                  {{ membro.aluno.numero or '—' }} {{ membro.aluno.nome_curto_exibicao }}
+                  <button type="button" class="btn btn-link btn-sm p-0 text-danger btn-remove-member" data-grupo-id="{{ row.grupo.id }}" data-aluno-id="{{ membro.aluno.id }}" title="Remover membro">remover</button>
+                </span>
+                {% endif %}
+              {% endfor %}
+            {% endif %}
+          </div>
+          <div class="mt-1">
+            <select class="form-select form-select-sm field-add-member">
+              <option value="">Adicionar aluno...</option>
+              {% for a in alunos %}
+              <option value="{{ a.id }}">{{ a.numero or '—' }} {{ a.nome_curto_exibicao }}</option>
+              {% endfor %}
+            </select>
           </div>
         </td>
-        {% else %}
-        <td>{{ row.aluno_label }}</td>
+        <td><input class="form-control form-control-sm field-tema-grupo" value="{{ row.grupo.tema if row.grupo else '' }}" {% if not row.grupo %}disabled{% endif %}></td>
+        <td><input type="date" class="form-control form-control-sm field-data-entrega-grupo" value="{{ (row.grupo.data_entrega or (entrega_grupo.data_entrega if entrega_grupo else None)).strftime('%Y-%m-%d') if row.grupo and (row.grupo.data_entrega or (entrega_grupo and entrega_grupo.data_entrega)) else '' }}" {% if not row.grupo %}disabled{% endif %}></td>
+        <td><input class="form-control form-control-sm field-observacoes-grupo" value="{{ row.grupo.observacoes if row.grupo else '' }}" {% if not row.grupo %}disabled{% endif %}></td>
+        <td><input type="checkbox" class="form-check-input field-entregue-grupo" {% if entrega_grupo and entrega_grupo.entregue %}checked{% endif %} {% if not row.grupo %}disabled{% endif %}></td>
         {% endif %}
         <td class="field-estado"><span class="badge-estado {{ row.estado_css }}">{{ row.estado }}</span></td>
         <td class="field-media-base">{{ '%.2f'|format(row.media_base) }}</td>
@@ -189,9 +239,15 @@
 
   async function saveRow(tr){
     const grupoId = tr.dataset.grupoId;
+    const alunoId = tr.dataset.alunoId;
     const payload = {
+      aluno_id: Number(alunoId),
       entregue: tr.querySelector('.field-entregue')?.checked || false,
       data_entrega: tr.querySelector('.field-data-entrega')?.value || null,
+      entregue_grupo: tr.querySelector('.field-entregue-grupo')?.checked || false,
+      data_entrega_grupo: tr.querySelector('.field-data-entrega-grupo')?.value || null,
+      tema_grupo: tr.querySelector('.field-tema-grupo')?.value || null,
+      observacoes_grupo: tr.querySelector('.field-observacoes-grupo')?.value || null,
       consecucao: tr.querySelector('.field-consecucao')?.value || null,
       qualidade: tr.querySelector('.field-qualidade')?.value || null,
       observacoes: tr.querySelector('.field-observacoes')?.value || null,
@@ -211,6 +267,13 @@
     if(!resp.ok || !data.ok){
       toast(data.error || 'Falha ao guardar', 'error');
       return;
+    }
+
+    if(data.data_entrega_grupo){
+      const dtg = tr.querySelector('.field-data-entrega-grupo');
+      if(dtg && !dtg.value){
+        dtg.value = data.data_entrega_grupo;
+      }
     }
     if(data.estado){
       const el = tr.querySelector('.field-estado');
@@ -327,6 +390,27 @@
     ev.preventDefault();
     const tr = btn.closest('tr[data-grupo-id]');
     if(tr) saveRow(tr);
+  });
+
+  grid.addEventListener('change', async (ev)=>{
+    const addMemberSelect = ev.target.closest('.field-add-member');
+    if(!addMemberSelect || !addMemberSelect.value) return;
+    const tr = addMemberSelect.closest('tr[data-grupo-id]');
+    const grupoId = tr?.dataset?.grupoId;
+    if(!grupoId) return;
+    const url = "{{ url_for('trabalho_add_membro_grupo', turma_id=turma.id, trabalho_id=trabalho.id, grupo_id=0) }}".replace('/0/membros/add', `/${grupoId}/membros/add`);
+    const resp = await fetch(url, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Accept':'application/json'},
+      body: JSON.stringify({aluno_id: Number(addMemberSelect.value)})
+    });
+    const data = await resp.json().catch(()=>({ok:false,error:'Erro inesperado'}));
+    if(!resp.ok || !data.ok){
+      toast(data.error || 'Erro ao adicionar membro', 'error');
+      return;
+    }
+    toast('Membro adicionado', 'success');
+    window.location.reload();
   });
 })();
 </script>

@@ -2131,13 +2131,34 @@ def create_app():
         trabalho_cols = {c["name"] for c in insp.get_columns("trabalhos")} if "trabalhos" in insp.get_table_names() else set()
         if "data_limite" not in trabalho_cols:
             db.session.execute(text("ALTER TABLE trabalhos ADD COLUMN data_limite DATE"))
-            db.session.commit()
+        if "tema_global" not in trabalho_cols:
+            db.session.execute(text("ALTER TABLE trabalhos ADD COLUMN tema_global TEXT"))
+        if "usar_tema_por_grupo" not in trabalho_cols:
+            db.session.execute(text("ALTER TABLE trabalhos ADD COLUMN usar_tema_por_grupo BOOLEAN DEFAULT 0"))
+        if "peso_dominios" not in trabalho_cols:
+            db.session.execute(text("ALTER TABLE trabalhos ADD COLUMN peso_dominios FLOAT DEFAULT 1.0"))
+        if "peso_criterios_extra" not in trabalho_cols:
+            db.session.execute(text("ALTER TABLE trabalhos ADD COLUMN peso_criterios_extra FLOAT DEFAULT 0.0"))
+        grupo_cols = {c["name"] for c in insp.get_columns("trabalho_grupos")} if "trabalho_grupos" in insp.get_table_names() else set()
+        if "tema" not in grupo_cols:
+            db.session.execute(text("ALTER TABLE trabalho_grupos ADD COLUMN tema TEXT"))
+        if "data_entrega" not in grupo_cols:
+            db.session.execute(text("ALTER TABLE trabalho_grupos ADD COLUMN data_entrega DATE"))
+        if "observacoes" not in grupo_cols:
+            db.session.execute(text("ALTER TABLE trabalho_grupos ADD COLUMN observacoes TEXT"))
+        parametro_cols = {c["name"] for c in insp.get_columns("parametro_definicoes")} if "parametro_definicoes" in insp.get_table_names() else set()
+        if "escala" not in parametro_cols:
+            db.session.execute(text("ALTER TABLE parametro_definicoes ADD COLUMN escala VARCHAR(80)"))
+        if "peso" not in parametro_cols:
+            db.session.execute(text("ALTER TABLE parametro_definicoes ADD COLUMN peso FLOAT DEFAULT 1.0"))
 
         entrega_cols = {c["name"] for c in insp.get_columns("entregas")} if "entregas" in insp.get_table_names() else set()
         if "data_entrega" not in entrega_cols:
             db.session.execute(text("ALTER TABLE entregas ADD COLUMN data_entrega DATE"))
         if "observacoes" not in entrega_cols:
             db.session.execute(text("ALTER TABLE entregas ADD COLUMN observacoes TEXT"))
+        if "aluno_id" not in entrega_cols:
+            db.session.execute(text("ALTER TABLE entregas ADD COLUMN aluno_id INTEGER"))
         db.session.commit()
 
     def _ensure_columns():
@@ -8608,31 +8629,41 @@ def create_app():
                     continue
         return None
 
-    def _estado_info(trabalho, entrega):
-        if not entrega or not entrega.entregue:
+    def _estado_info(trabalho, entrega_grupo):
+        if not entrega_grupo or not entrega_grupo.entregue:
             return "Por entregar", "badge-por-entregar", 0.0
-        if trabalho.data_limite and entrega.data_entrega and entrega.data_entrega > trabalho.data_limite:
+        data_entrega = entrega_grupo.data_entrega
+        if trabalho.data_limite and data_entrega and data_entrega > trabalho.data_limite:
             return "Atrasado", "badge-atrasado", 0.5
         return "No prazo", "badge-no-prazo", 1.0
 
-    def _calcular_metricas_entrega(trabalho, entrega, params_map, parametros):
-        estado, estado_css, fator_estado = _estado_info(trabalho, entrega)
+    def _calcular_metricas_entrega(trabalho, entrega_grupo, entrega_aluno, params_map, parametros):
+        estado, estado_css, fator_estado = _estado_info(trabalho, entrega_grupo)
 
-        valores = []
-        if entrega:
-            if entrega.consecucao is not None:
-                valores.append(float(entrega.consecucao))
-            if entrega.qualidade is not None:
-                valores.append(float(entrega.qualidade))
+        valores_dominios = []
+        valores_extra = []
+        if entrega_aluno:
+            if entrega_aluno.consecucao is not None:
+                valores_dominios.append(float(entrega_aluno.consecucao))
+            if entrega_aluno.qualidade is not None:
+                valores_dominios.append(float(entrega_aluno.qualidade))
 
             for p in parametros:
                 if p.tipo != "numerico":
                     continue
                 ep = params_map.get(p.id)
                 if ep and ep.valor_numerico is not None:
-                    valores.append(float(ep.valor_numerico))
+                    valores_extra.append(float(ep.valor_numerico) * float(p.peso or 1.0))
 
-        media_base = (sum(valores) / len(valores)) if valores else 0.0
+        media_dominios = (sum(valores_dominios) / len(valores_dominios)) if valores_dominios else 0.0
+        media_extra = (sum(valores_extra) / len(valores_extra)) if valores_extra else 0.0
+        peso_dominios = float(trabalho.peso_dominios or 1.0)
+        peso_extra = float(trabalho.peso_criterios_extra or 0.0)
+        total_pesos = peso_dominios + peso_extra
+        if total_pesos <= 0:
+            media_base = 0.0
+        else:
+            media_base = ((media_dominios * peso_dominios) + (media_extra * peso_extra)) / total_pesos
         nota_final = media_base * fator_estado
 
         return {
@@ -8646,10 +8677,38 @@ def create_app():
     def _ensure_individual_groups(trabalho):
         alunos = _listar_alunos_turma(trabalho.turma_id)
         existing_members = {m.aluno_id for g in trabalho.grupos for m in g.membros}
+        nomes_usados = {((g.nome or "").strip().lower()) for g in trabalho.grupos}
         for aluno in alunos:
             if aluno.id in existing_members:
                 continue
-            nome = (aluno.nome_curto or aluno.nome or f"Aluno {aluno.id}").strip()
+            base = (aluno.nome_curto or aluno.nome or f"Aluno {aluno.id}").strip()
+            nome = base
+            idx = 2
+            while nome.strip().lower() in nomes_usados:
+                nome = f"{base} ({idx})"
+                idx += 1
+            nomes_usados.add(nome.strip().lower())
+            grupo = TrabalhoGrupo(trabalho_id=trabalho.id, nome=nome)
+            db.session.add(grupo)
+            db.session.flush()
+            db.session.add(TrabalhoGrupoMembro(trabalho_grupo_id=grupo.id, aluno_id=aluno.id))
+
+    def _ensure_unassigned_students_as_individual_groups(trabalho):
+        if trabalho.modo != "grupo":
+            return
+        alunos = _listar_alunos_turma(trabalho.turma_id)
+        existing_members = {m.aluno_id for g in trabalho.grupos for m in g.membros if m.aluno_id is not None}
+        nomes_usados = {((g.nome or "").strip().lower()) for g in trabalho.grupos}
+        for aluno in alunos:
+            if aluno.id in existing_members:
+                continue
+            base = f"Individual — {(aluno.nome_curto or aluno.nome or f'Aluno {aluno.id}').strip()}"
+            nome = base
+            idx = 2
+            while nome.strip().lower() in nomes_usados:
+                nome = f"{base} ({idx})"
+                idx += 1
+            nomes_usados.add(nome.strip().lower())
             grupo = TrabalhoGrupo(trabalho_id=trabalho.id, nome=nome)
             db.session.add(grupo)
             db.session.flush()
@@ -8657,32 +8716,44 @@ def create_app():
 
     def _build_trabalho_grid(trabalho):
         parametros = sorted(trabalho.parametros, key=lambda p: (p.ordem, p.id))
-        entregas = {e.trabalho_grupo_id: e for e in trabalho.entregas}
+        alunos = _listar_alunos_turma(trabalho.turma_id)
+        aluno_por_id = {a.id: a for a in alunos}
+        grupo_por_aluno = {}
+        for g in trabalho.grupos:
+            for m in g.membros:
+                if m.aluno_id is not None:
+                    grupo_por_aluno[m.aluno_id] = g
+
+        entregas_grupo = {
+            e.trabalho_grupo_id: e
+            for e in trabalho.entregas
+            if e.aluno_id is None
+        }
+        entregas_aluno = {
+            (e.trabalho_grupo_id, e.aluno_id): e
+            for e in trabalho.entregas
+            if e.aluno_id is not None
+        }
         rows = []
-        for grupo in sorted(trabalho.grupos, key=lambda g: g.nome.lower() if g.nome else ""):
-            entrega = entregas.get(grupo.id)
+        for aluno in alunos:
+            grupo = grupo_por_aluno.get(aluno.id)
+            entrega_grupo = entregas_grupo.get(grupo.id) if grupo else None
+            entrega_aluno = entregas_aluno.get((grupo.id, aluno.id)) if grupo else None
             params_map = {}
-            if entrega:
-                for ep in entrega.parametros:
+            if entrega_aluno:
+                for ep in entrega_aluno.parametros:
                     params_map[ep.parametro_definicao_id] = ep
 
-            metrics = _calcular_metricas_entrega(trabalho, entrega, params_map, parametros)
-
-            membros = sorted(
-                [m.aluno for m in grupo.membros if m.aluno],
-                key=lambda a: ((a.numero is None), a.numero if a.numero is not None else 0, (a.nome or "").lower()),
-            )
-            aluno_principal = membros[0] if membros else None
-            aluno_label = ""
-            if aluno_principal:
-                numero = aluno_principal.numero if aluno_principal.numero is not None else "—"
-                aluno_label = f"{numero} {aluno_principal.nome_curto_exibicao}".strip()
+            metrics = _calcular_metricas_entrega(trabalho, entrega_grupo, entrega_aluno, params_map, parametros)
+            numero = aluno.numero if aluno.numero is not None else "—"
+            aluno_label = f"{numero} {aluno.nome_curto_exibicao}".strip()
 
             rows.append({
                 "grupo": grupo,
-                "entrega": entrega,
+                "entrega_grupo": entrega_grupo,
+                "entrega_aluno": entrega_aluno,
                 "params": params_map,
-                "membros": membros,
+                "aluno": aluno_por_id.get(aluno.id) or aluno,
                 "aluno_label": aluno_label,
                 "estado": metrics["estado"],
                 "estado_css": metrics["estado_css"],
@@ -8867,6 +8938,12 @@ def create_app():
                 after = sum(len(g.membros) for g in trabalho.grupos)
                 if after != before:
                     houve_alteracao = True
+            elif trabalho.modo == "grupo":
+                before = sum(len(g.membros) for g in trabalho.grupos)
+                _ensure_unassigned_students_as_individual_groups(trabalho)
+                after = sum(len(g.membros) for g in trabalho.grupos)
+                if after != before:
+                    houve_alteracao = True
         if houve_alteracao:
             db.session.commit()
             trabalhos = Trabalho.query.filter_by(turma_id=turma.id).order_by(Trabalho.created_at.asc(), Trabalho.id.asc()).all()
@@ -8885,21 +8962,28 @@ def create_app():
                     mapping[m.aluno_id] = g
             grupo_por_aluno_trabalho[t.id] = mapping
 
-        entregas_por_chave = {}
-        for t in trabalhos:
-            for e in t.entregas:
-                entregas_por_chave[(t.id, e.trabalho_grupo_id)] = e
-
         mapa_rows = []
         for aluno in alunos:
             cells = []
             notas = []
             for t in trabalhos:
                 grupo = grupo_por_aluno_trabalho.get(t.id, {}).get(aluno.id)
-                entrega = entregas_por_chave.get((t.id, grupo.id)) if grupo else None
-                params_map = {ep.parametro_definicao_id: ep for ep in (entrega.parametros if entrega else [])}
-                metrics = _calcular_metricas_entrega(t, entrega, params_map, parametros_por_trabalho.get(t.id, []))
-                nota = metrics["nota_final"] if entrega else 0.0
+                entrega_grupo = None
+                entrega_aluno = None
+                if grupo:
+                    entrega_grupo = Entrega.query.filter_by(
+                        trabalho_id=t.id,
+                        trabalho_grupo_id=grupo.id,
+                        aluno_id=None,
+                    ).first()
+                    entrega_aluno = Entrega.query.filter_by(
+                        trabalho_id=t.id,
+                        trabalho_grupo_id=grupo.id,
+                        aluno_id=aluno.id,
+                    ).first()
+                params_map = {ep.parametro_definicao_id: ep for ep in (entrega_aluno.parametros if entrega_aluno else [])}
+                metrics = _calcular_metricas_entrega(t, entrega_grupo, entrega_aluno, params_map, parametros_por_trabalho.get(t.id, []))
+                nota = metrics["nota_final"] if entrega_aluno else 0.0
                 cells.append({"nota_final": nota})
                 notas.append(nota)
 
@@ -8954,6 +9038,9 @@ def create_app():
         trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
         if trabalho.modo == "individual":
             _ensure_individual_groups(trabalho)
+            db.session.commit()
+        elif trabalho.modo == "grupo":
+            _ensure_unassigned_students_as_individual_groups(trabalho)
             db.session.commit()
 
         parametros, rows = _build_trabalho_grid(trabalho)
@@ -9020,6 +9107,13 @@ def create_app():
         trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
         nome = (request.form.get("nome") or "").strip()
         tipo = (request.form.get("tipo") or "numerico").strip().lower()
+        escala = (request.form.get("escala") or "").strip() or None
+        try:
+            peso = float(request.form.get("peso") or 1.0)
+        except Exception:
+            peso = 1.0
+        if peso < 0:
+            peso = 0.0
         if tipo not in {"numerico", "texto"}:
             tipo = "numerico"
         if not nome:
@@ -9032,9 +9126,26 @@ def create_app():
             return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
 
         ordem = (db.session.query(func.max(ParametroDefinicao.ordem)).filter_by(trabalho_id=trabalho.id).scalar() or 0) + 1
-        db.session.add(ParametroDefinicao(trabalho_id=trabalho.id, nome=nome, tipo=tipo, ordem=ordem))
+        db.session.add(ParametroDefinicao(trabalho_id=trabalho.id, nome=nome, tipo=tipo, escala=escala, peso=peso, ordem=ordem))
         db.session.commit()
         flash("Parâmetro adicionado.", "success")
+        return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
+
+    @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/config", methods=["POST"])
+    def trabalho_update_config(turma_id, trabalho_id):
+        trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
+        trabalho.tema_global = (request.form.get("tema_global") or "").strip() or None
+        trabalho.usar_tema_por_grupo = (request.form.get("usar_tema_por_grupo") == "1")
+        try:
+            trabalho.peso_dominios = max(0.0, float(request.form.get("peso_dominios") or 1.0))
+        except Exception:
+            trabalho.peso_dominios = 1.0
+        try:
+            trabalho.peso_criterios_extra = max(0.0, float(request.form.get("peso_criterios_extra") or 0.0))
+        except Exception:
+            trabalho.peso_criterios_extra = 0.0
+        db.session.commit()
+        flash("Configuração do trabalho atualizada.", "success")
         return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
 
     @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/grupos", methods=["POST"])
@@ -9147,13 +9258,60 @@ def create_app():
             },
         })
 
+    @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/grupos/<int:grupo_id>/membros/add", methods=["POST"])
+    def trabalho_add_membro_grupo(turma_id, trabalho_id, grupo_id):
+        trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
+        grupo = TrabalhoGrupo.query.filter_by(id=grupo_id, trabalho_id=trabalho.id).first_or_404()
+        payload = request.get_json(silent=True) or request.form
+        try:
+            aluno_id = int(payload.get("aluno_id") or 0)
+        except Exception:
+            aluno_id = 0
+        if not aluno_id:
+            return jsonify({"ok": False, "error": "Aluno é obrigatório."}), 400
+        aluno = Aluno.query.filter_by(id=aluno_id, turma_id=turma_id).first()
+        if not aluno:
+            return jsonify({"ok": False, "error": "Aluno inválido."}), 404
+
+        atual = TrabalhoGrupoMembro.query.filter_by(aluno_id=aluno_id).join(
+            TrabalhoGrupo, TrabalhoGrupoMembro.trabalho_grupo_id == TrabalhoGrupo.id
+        ).filter(TrabalhoGrupo.trabalho_id == trabalho.id).first()
+        if atual and atual.trabalho_grupo_id != grupo.id:
+            db.session.delete(atual)
+            db.session.flush()
+        exists = TrabalhoGrupoMembro.query.filter_by(trabalho_grupo_id=grupo.id, aluno_id=aluno_id).first()
+        if not exists:
+            db.session.add(TrabalhoGrupoMembro(trabalho_grupo_id=grupo.id, aluno_id=aluno_id))
+        db.session.commit()
+        numero = aluno.numero if aluno.numero is not None else "—"
+        return jsonify({"ok": True, "aluno": {"id": aluno.id, "label": f"{numero} {aluno.nome_curto_exibicao}".strip()}})
+
     @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/entregas/<int:grupo_id>/save", methods=["POST"])
     def trabalho_save_entrega(turma_id, trabalho_id, grupo_id):
         trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
-        grupo = TrabalhoGrupo.query.filter_by(id=grupo_id, trabalho_id=trabalho.id).first_or_404()
-
         payload = request.get_json(silent=True) or request.form
+        try:
+            aluno_id = payload.get("aluno_id", type=int) if not isinstance(payload, dict) else int(payload.get("aluno_id") or 0)
+        except Exception:
+            aluno_id = 0
+        if not aluno_id:
+            return jsonify({"ok": False, "error": "Aluno é obrigatório."}), 400
+        aluno = Aluno.query.filter_by(id=aluno_id, turma_id=turma_id).first()
+        if not aluno:
+            return jsonify({"ok": False, "error": "Aluno inválido."}), 404
+
+        grupo = TrabalhoGrupo.query.filter_by(id=grupo_id, trabalho_id=trabalho.id).first()
+        if not grupo:
+            return jsonify({"ok": False, "error": "Grupo inválido."}), 404
+        pertence = TrabalhoGrupoMembro.query.filter_by(trabalho_grupo_id=grupo.id, aluno_id=aluno_id).first()
+        if not pertence:
+            return jsonify({"ok": False, "error": "Aluno não pertence ao grupo indicado."}), 400
+
         entregue = bool(payload.get("entregue"))
+        entregue_grupo = bool(payload.get("entregue_grupo"))
+        observacoes_grupo = (payload.get("observacoes_grupo") or "").strip() or None
+        tema_grupo = (payload.get("tema_grupo") or "").strip() or None
+        data_entrega_grupo = _parse_date_local(payload.get("data_entrega_grupo"))
 
         def _score(name):
             raw = payload.get(name)
@@ -9170,23 +9328,50 @@ def create_app():
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
 
-        entrega = Entrega.query.filter_by(trabalho_id=trabalho.id, trabalho_grupo_id=grupo.id).first()
-        if not entrega:
-            entrega = Entrega(trabalho_id=trabalho.id, trabalho_grupo_id=grupo.id)
-            db.session.add(entrega)
+        entrega_grupo = Entrega.query.filter_by(
+            trabalho_id=trabalho.id,
+            trabalho_grupo_id=grupo.id,
+            aluno_id=None,
+        ).first()
+        if not entrega_grupo:
+            entrega_grupo = Entrega(trabalho_id=trabalho.id, trabalho_grupo_id=grupo.id, aluno_id=None)
+            db.session.add(entrega_grupo)
             db.session.flush()
 
-        entrega.entregue = entregue
-        entrega.consecucao = consecucao
-        entrega.qualidade = qualidade
-        entrega.observacoes = (payload.get("observacoes") or "").strip() or None
+        entrega_aluno = Entrega.query.filter_by(
+            trabalho_id=trabalho.id,
+            trabalho_grupo_id=grupo.id,
+            aluno_id=aluno_id,
+        ).first()
+        if not entrega_aluno:
+            entrega_aluno = Entrega(trabalho_id=trabalho.id, trabalho_grupo_id=grupo.id, aluno_id=aluno_id)
+            db.session.add(entrega_aluno)
+            db.session.flush()
+
+        entrega_grupo.entregue = entregue_grupo
+        entrega_grupo.observacoes = observacoes_grupo
+        if entregue_grupo:
+            entrega_grupo.data_entrega = data_entrega_grupo or date.today()
+        else:
+            entrega_grupo.data_entrega = data_entrega_grupo
+        entrega_grupo.updated_at = datetime.utcnow()
+
+        grupo.tema = tema_grupo
+        if data_entrega_grupo is not None:
+            grupo.data_entrega = data_entrega_grupo
+        grupo.observacoes = observacoes_grupo
+
+        entrega_aluno.entregue = entregue
+        entrega_aluno.consecucao = consecucao
+        entrega_aluno.qualidade = qualidade
+        entrega_aluno.observacoes = (payload.get("observacoes") or "").strip() or None
 
         parsed_data_entrega = _parse_date_local(payload.get("data_entrega"))
         if entregue:
-            entrega.data_entrega = parsed_data_entrega or date.today()
+            entrega_aluno.data_entrega = parsed_data_entrega or date.today()
         else:
-            entrega.data_entrega = None
-        entrega.updated_at = datetime.utcnow()
+            entrega_aluno.data_entrega = parsed_data_entrega
+        entrega_aluno.updated_at = datetime.utcnow()
 
         parametros = ParametroDefinicao.query.filter_by(trabalho_id=trabalho.id).all()
         defs_by_id = {p.id: p for p in parametros}
@@ -9203,9 +9388,9 @@ def create_app():
             if not definicao:
                 continue
 
-            ep = EntregaParametro.query.filter_by(entrega_id=entrega.id, parametro_definicao_id=pid).first()
+            ep = EntregaParametro.query.filter_by(entrega_id=entrega_aluno.id, parametro_definicao_id=pid).first()
             if not ep:
-                ep = EntregaParametro(entrega_id=entrega.id, parametro_definicao_id=pid)
+                ep = EntregaParametro(entrega_id=entrega_aluno.id, parametro_definicao_id=pid)
                 db.session.add(ep)
 
             if definicao.tipo == "numerico":
@@ -9224,13 +9409,14 @@ def create_app():
 
         db.session.commit()
 
-        params_map = {ep.parametro_definicao_id: ep for ep in entrega.parametros}
-        metrics = _calcular_metricas_entrega(trabalho, entrega, params_map, parametros)
+        params_map = {ep.parametro_definicao_id: ep for ep in entrega_aluno.parametros}
+        metrics = _calcular_metricas_entrega(trabalho, entrega_grupo, entrega_aluno, params_map, parametros)
 
         return jsonify({
             "ok": True,
-            "updated_at": entrega.updated_at.isoformat(timespec="seconds"),
-            "data_entrega": entrega.data_entrega.isoformat() if entrega.data_entrega else None,
+            "updated_at": entrega_aluno.updated_at.isoformat(timespec="seconds"),
+            "data_entrega": entrega_aluno.data_entrega.isoformat() if entrega_aluno.data_entrega else None,
+            "data_entrega_grupo": entrega_grupo.data_entrega.isoformat() if entrega_grupo.data_entrega else None,
             "estado": metrics["estado"],
             "estado_css": metrics["estado_css"],
             "media_base": round(metrics["media_base"], 2),
