@@ -8842,6 +8842,21 @@ def create_app():
             )
         if not subject_config:
             return []
+        if subject_config.domains:
+            view = []
+            for idx, sd in enumerate(sorted(subject_config.domains, key=lambda x: (x.ordem, x.id))):
+                dominio = sd.domain
+                if not dominio or not dominio.ativo:
+                    continue
+                rubricas_linkadas = [
+                    sr for sr in sorted(subject_config.rubrics, key=lambda x: (getattr(x, "ordem", 0), x.id))
+                    if sr.rubrica and sr.rubrica.domain_id == dominio.id and sr.ativo
+                ]
+                rubricas = [sr.rubrica for sr in rubricas_linkadas if sr.rubrica and sr.rubrica.ativo]
+                letra = getattr(dominio, "letra", None) or chr(ord("A") + idx)
+                view.append({"id": dominio.id, "nome": dominio.nome, "letra": letra, "rubricas": rubricas})
+            if view:
+                return view
         dominios = (
             EV2Domain.query
             .join(EV2Rubric, EV2Rubric.domain_id == EV2Domain.id)

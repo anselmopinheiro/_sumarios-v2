@@ -9,6 +9,7 @@ from models import (
     EV2Domain,
     EV2Rubric,
     EV2SubjectConfig,
+    EV2SubjectDomain,
     EV2SubjectRubric,
     Turma,
     db,
@@ -102,6 +103,18 @@ def _subject_profile_to_dict(profile: EV2SubjectConfig) -> dict:
         "ativo": bool(profile.ativo),
         "usar_ev2": bool(profile.usar_ev2),
         "rubricas_count": EV2SubjectRubric.query.filter_by(subject_config_id=profile.id).count(),
+    }
+
+
+def _subject_domain_to_dict(item: EV2SubjectDomain) -> dict:
+    return {
+        "id": item.id,
+        "subject_config_id": item.subject_config_id,
+        "domain_id": item.domain_id,
+        "domain_nome": item.domain.nome if item.domain else None,
+        "ordem": int(item.ordem or 0),
+        "weight": float(item.weight or 0),
+        "ativo": bool(item.ativo),
     }
 
 
@@ -222,6 +235,186 @@ def ev2_profile_activate(profile_id: int):
         return jsonify(_subject_profile_to_dict(profile))
     flash("Perfil ativado para a turma/disciplina.", "success")
     return redirect(url_for("ev2_config.ev2_profiles_collection"))
+
+
+@ev2_config_bp.route("/profiles/<int:profile_id>", methods=["GET"])
+def ev2_profile_detail(profile_id: int):
+    profile = EV2SubjectConfig.query.get(profile_id)
+    if not profile:
+        return _error("Perfil não encontrado.", 404, "ev2_config.ev2_profiles_collection")
+
+    profile_domains = (
+        EV2SubjectDomain.query
+        .filter_by(subject_config_id=profile.id)
+        .order_by(EV2SubjectDomain.ordem.asc(), EV2SubjectDomain.id.asc())
+        .all()
+    )
+    domain_ids = [d.domain_id for d in profile_domains]
+    rubrics_by_domain_id = {}
+    if domain_ids:
+        linked = (
+            EV2SubjectRubric.query
+            .join(EV2Rubric, EV2Rubric.id == EV2SubjectRubric.rubric_id)
+            .filter(
+                EV2SubjectRubric.subject_config_id == profile.id,
+                EV2Rubric.domain_id.in_(domain_ids),
+            )
+            .order_by(EV2Rubric.domain_id.asc(), EV2SubjectRubric.ordem.asc(), EV2SubjectRubric.id.asc())
+            .all()
+        )
+        for sr in linked:
+            rubrics_by_domain_id.setdefault(sr.rubrica.domain_id, []).append(sr)
+
+    all_domains = EV2Domain.query.order_by(EV2Domain.nome.asc()).all()
+    all_rubrics = EV2Rubric.query.filter_by(ativo=True).order_by(EV2Rubric.codigo.asc()).all()
+
+    if _wants_json():
+        return jsonify({
+            "profile": _subject_profile_to_dict(profile),
+            "domains": [_subject_domain_to_dict(item) for item in profile_domains],
+        })
+    return render_template(
+        "ev2/config/profile_detail.html",
+        profile=profile,
+        profile_domains=profile_domains,
+        rubrics_by_domain_id=rubrics_by_domain_id,
+        all_domains=all_domains,
+        all_rubrics=all_rubrics,
+    )
+
+
+@ev2_config_bp.post("/profiles/<int:profile_id>/domains")
+def ev2_profile_add_domain(profile_id: int):
+    profile = EV2SubjectConfig.query.get(profile_id)
+    if not profile:
+        return _error("Perfil não encontrado.", 404, "ev2_config.ev2_profiles_collection")
+    data = _payload()
+    domain_id = _as_int(data.get("domain_id"))
+    ordem = _as_int(data.get("ordem")) or 0
+    weight = float(data.get("weight") or 0)
+    if not domain_id:
+        return _error("Campo obrigatório: domain_id", 400)
+    if EV2SubjectDomain.query.filter_by(subject_config_id=profile.id, domain_id=domain_id).first():
+        return _error("Domínio já associado ao perfil.", 409)
+    domain = EV2Domain.query.get(domain_id)
+    if not domain:
+        return _error("Domínio não encontrado.", 404)
+    item = EV2SubjectDomain(
+        subject_config_id=profile.id,
+        domain_id=domain_id,
+        ordem=ordem,
+        weight=weight,
+        ativo=True,
+    )
+    db.session.add(item)
+    db.session.commit()
+    if _wants_json():
+        return jsonify(_subject_domain_to_dict(item)), 201
+    flash("Domínio associado ao perfil.", "success")
+    return redirect(url_for("ev2_config.ev2_profile_detail", profile_id=profile.id))
+
+
+@ev2_config_bp.post("/profiles/<int:profile_id>/domains/<int:subject_domain_id>/update")
+def ev2_profile_update_domain(profile_id: int, subject_domain_id: int):
+    item = EV2SubjectDomain.query.get(subject_domain_id)
+    if not item or item.subject_config_id != profile_id:
+        return _error("Associação de domínio não encontrada.", 404, "ev2_config.ev2_profiles_collection")
+    data = _payload()
+    item.ordem = _as_int(data.get("ordem")) or 0
+    item.weight = float(data.get("weight") or 0)
+    item.ativo = _to_bool(data.get("ativo"), default=True)
+    db.session.commit()
+    if _wants_json():
+        return jsonify(_subject_domain_to_dict(item))
+    flash("Domínio do perfil atualizado.", "success")
+    return redirect(url_for("ev2_config.ev2_profile_detail", profile_id=profile_id))
+
+
+@ev2_config_bp.post("/profiles/<int:profile_id>/domains/<int:subject_domain_id>/delete")
+def ev2_profile_remove_domain(profile_id: int, subject_domain_id: int):
+    item = EV2SubjectDomain.query.get(subject_domain_id)
+    if not item or item.subject_config_id != profile_id:
+        return _error("Associação de domínio não encontrada.", 404, "ev2_config.ev2_profiles_collection")
+    domain_id = item.domain_id
+    EV2SubjectRubric.query.join(EV2Rubric, EV2Rubric.id == EV2SubjectRubric.rubric_id).filter(
+        EV2SubjectRubric.subject_config_id == profile_id,
+        EV2Rubric.domain_id == domain_id,
+    ).delete(synchronize_session=False)
+    db.session.delete(item)
+    db.session.commit()
+    if _wants_json():
+        return jsonify({"status": "ok"})
+    flash("Domínio removido do perfil.", "success")
+    return redirect(url_for("ev2_config.ev2_profile_detail", profile_id=profile_id))
+
+
+@ev2_config_bp.post("/profiles/<int:profile_id>/rubrics")
+def ev2_profile_add_rubric(profile_id: int):
+    profile = EV2SubjectConfig.query.get(profile_id)
+    if not profile:
+        return _error("Perfil não encontrado.", 404, "ev2_config.ev2_profiles_collection")
+    data = _payload()
+    rubric_id = _as_int(data.get("rubric_id"))
+    if not rubric_id:
+        return _error("Campo obrigatório: rubric_id", 400)
+    rubrica = EV2Rubric.query.get(rubric_id)
+    if not rubrica:
+        return _error("Rubrica não encontrada.", 404)
+    subject_domain = EV2SubjectDomain.query.filter_by(
+        subject_config_id=profile.id,
+        domain_id=rubrica.domain_id,
+    ).first()
+    if not subject_domain:
+        return _error("Associe primeiro o domínio desta rubrica ao perfil.", 400)
+    if EV2SubjectRubric.query.filter_by(subject_config_id=profile.id, rubric_id=rubric_id).first():
+        return _error("Rubrica já associada ao perfil.", 409)
+    item = EV2SubjectRubric(
+        subject_config_id=profile.id,
+        rubric_id=rubric_id,
+        subject_domain_id=subject_domain.id,
+        ordem=_as_int(data.get("ordem")) or 0,
+        weight=float(data.get("weight") or 0),
+        scale_min=_as_int(data.get("scale_min")) or 1,
+        scale_max=_as_int(data.get("scale_max")) or 5,
+        ativo=_to_bool(data.get("ativo"), default=True),
+    )
+    db.session.add(item)
+    db.session.commit()
+    if _wants_json():
+        return jsonify({"id": item.id})
+    flash("Rubrica associada ao perfil.", "success")
+    return redirect(url_for("ev2_config.ev2_profile_detail", profile_id=profile.id))
+
+
+@ev2_config_bp.post("/profiles/<int:profile_id>/rubrics/<int:subject_rubric_id>/update")
+def ev2_profile_update_rubric(profile_id: int, subject_rubric_id: int):
+    item = EV2SubjectRubric.query.get(subject_rubric_id)
+    if not item or item.subject_config_id != profile_id:
+        return _error("Associação de rubrica não encontrada.", 404, "ev2_config.ev2_profiles_collection")
+    data = _payload()
+    item.ordem = _as_int(data.get("ordem")) or 0
+    item.weight = float(data.get("weight") or 0)
+    item.scale_min = _as_int(data.get("scale_min")) or 1
+    item.scale_max = _as_int(data.get("scale_max")) or 5
+    item.ativo = _to_bool(data.get("ativo"), default=True)
+    db.session.commit()
+    if _wants_json():
+        return jsonify({"status": "ok"})
+    flash("Rubrica do perfil atualizada.", "success")
+    return redirect(url_for("ev2_config.ev2_profile_detail", profile_id=profile_id))
+
+
+@ev2_config_bp.post("/profiles/<int:profile_id>/rubrics/<int:subject_rubric_id>/delete")
+def ev2_profile_remove_rubric(profile_id: int, subject_rubric_id: int):
+    item = EV2SubjectRubric.query.get(subject_rubric_id)
+    if not item or item.subject_config_id != profile_id:
+        return _error("Associação de rubrica não encontrada.", 404, "ev2_config.ev2_profiles_collection")
+    db.session.delete(item)
+    db.session.commit()
+    if _wants_json():
+        return jsonify({"status": "ok"})
+    flash("Rubrica removida do perfil.", "success")
+    return redirect(url_for("ev2_config.ev2_profile_detail", profile_id=profile_id))
 
 
 @ev2_config_bp.route("/domains", methods=["GET", "POST"])

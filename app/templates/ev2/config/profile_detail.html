@@ -1,0 +1,110 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>EV2 · Detalhe do perfil</title>
+  <link rel="stylesheet" href="{{ url_for('ev2_config.static', filename='ev2/ev2.css') }}">
+</head>
+<body>
+  <h1>Perfil #{{ profile.id }} · {{ profile.nome }}</h1>
+  <p>
+    Turma: <strong>{{ profile.turma.nome if profile.turma else '—' }}</strong> ·
+    Disciplina: <strong>{{ profile.disciplina.nome if profile.disciplina else '—' }}</strong> ·
+    <a href="/ev2/config/profiles">Voltar à lista</a>
+  </p>
+
+  <div class="ev2-panel">
+    <h3>Adicionar domínio ao perfil</h3>
+    <form method="post" action="/ev2/config/profiles/{{ profile.id }}/domains" class="ev2-form-grid">
+      <div>
+        <label class="required">Domínio</label>
+        <select name="domain_id" required>
+          <option value="">— selecionar —</option>
+          {% for d in all_domains %}
+          <option value="{{ d.id }}">{{ d.nome }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>Ponderação (0-100)</label>
+        <input type="number" step="0.01" name="weight" value="0">
+      </div>
+      <div>
+        <label>Ordem</label>
+        <input type="number" name="ordem" value="0">
+      </div>
+      <div class="ev2-actions"><button type="submit">Adicionar domínio</button></div>
+    </form>
+  </div>
+
+  {% for sd in profile_domains %}
+  <div class="ev2-panel">
+    <h3>Domínio: {{ sd.domain.nome if sd.domain else '—' }}</h3>
+    <form method="post" action="/ev2/config/profiles/{{ profile.id }}/domains/{{ sd.id }}/update" class="ev2-form-grid">
+      <div><label>Ponderação (0-100)</label><input type="number" step="0.01" name="weight" value="{{ sd.weight }}"></div>
+      <div><label>Ordem</label><input type="number" name="ordem" value="{{ sd.ordem }}"></div>
+      <div><label><input type="checkbox" name="ativo" value="1" {% if sd.ativo %}checked{% endif %}> Ativo</label></div>
+      <div class="ev2-actions">
+        <button type="submit">Guardar domínio</button>
+      </div>
+    </form>
+    <form method="post" action="/ev2/config/profiles/{{ profile.id }}/domains/{{ sd.id }}/delete" onsubmit="return confirm('Remover domínio e rubricas deste domínio no perfil?');">
+      <button type="submit" class="secondary">Remover domínio</button>
+    </form>
+
+    <h4>Rubricas associadas</h4>
+    <table class="ev2-table">
+      <thead>
+        <tr><th>ID</th><th>Código</th><th>Nome</th><th>Peso</th><th>Ordem</th><th>Escala</th><th>Ativo</th><th>Ações</th></tr>
+      </thead>
+      <tbody>
+        {% for sr in rubrics_by_domain_id.get(sd.domain_id, []) %}
+        <tr>
+          <td>{{ sr.id }}</td>
+          <td>{{ sr.rubrica.codigo if sr.rubrica else '—' }}</td>
+          <td>{{ sr.rubrica.nome if sr.rubrica else '—' }}</td>
+          <td>
+            <form method="post" action="/ev2/config/profiles/{{ profile.id }}/rubrics/{{ sr.id }}/update" class="ev2-form-grid">
+              <input type="number" step="0.01" name="weight" value="{{ sr.weight }}">
+          </td>
+          <td><input type="number" name="ordem" value="{{ sr.ordem }}"></td>
+          <td>
+            <input type="number" name="scale_min" value="{{ sr.scale_min }}" style="width:70px"> -
+            <input type="number" name="scale_max" value="{{ sr.scale_max }}" style="width:70px">
+          </td>
+          <td><input type="checkbox" name="ativo" value="1" {% if sr.ativo %}checked{% endif %}></td>
+          <td>
+              <button type="submit" class="secondary">Guardar</button>
+            </form>
+            <form method="post" action="/ev2/config/profiles/{{ profile.id }}/rubrics/{{ sr.id }}/delete" style="display:inline;" onsubmit="return confirm('Remover rubrica do perfil?');">
+              <button type="submit" class="secondary">Remover</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="col-left">Sem rubricas neste domínio.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <h4>Adicionar rubrica deste domínio</h4>
+    <form method="post" action="/ev2/config/profiles/{{ profile.id }}/rubrics" class="ev2-form-grid">
+      <div>
+        <label class="required">Rubrica</label>
+        <select name="rubric_id" required>
+          <option value="">— selecionar —</option>
+          {% for r in all_rubrics if r.domain_id == sd.domain_id %}
+          <option value="{{ r.id }}">{{ r.codigo }} — {{ r.nome }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div><label>Peso</label><input type="number" step="0.01" name="weight" value="0"></div>
+      <div><label>Ordem</label><input type="number" name="ordem" value="0"></div>
+      <div><label>Escala min</label><input type="number" name="scale_min" value="1"></div>
+      <div><label>Escala max</label><input type="number" name="scale_max" value="5"></div>
+      <div class="ev2-actions"><button type="submit">Adicionar rubrica</button></div>
+    </form>
+  </div>
+  {% endfor %}
+</body>
+</html>

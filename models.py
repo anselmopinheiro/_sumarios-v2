@@ -859,6 +859,11 @@ class EV2SubjectConfig(db.Model):
         back_populates="subject_config",
         cascade="all, delete-orphan",
     )
+    domains = db.relationship(
+        "EV2SubjectDomain",
+        back_populates="subject_config",
+        cascade="all, delete-orphan",
+    )
     rubrics = db.relationship(
         "EV2SubjectRubric",
         back_populates="subject_config",
@@ -909,6 +914,10 @@ class EV2SubjectRubric(db.Model):
         db.Integer, db.ForeignKey("ev2_subject_configs.id"), nullable=False
     )
     rubric_id = db.Column(db.Integer, db.ForeignKey("ev2_rubrics.id"), nullable=False)
+    subject_domain_id = db.Column(
+        db.Integer, db.ForeignKey("ev2_subject_domains.id"), nullable=True
+    )
+    ordem = db.Column(db.Integer, nullable=False, default=0, server_default="0")
     weight = db.Column(db.Numeric(5, 2), nullable=False, default=0)
     scale_min = db.Column(db.Integer, nullable=False, default=1)
     scale_max = db.Column(db.Integer, nullable=False, default=5)
@@ -916,6 +925,7 @@ class EV2SubjectRubric(db.Model):
 
     subject_config = db.relationship("EV2SubjectConfig", back_populates="rubrics")
     rubrica = db.relationship("EV2Rubric", back_populates="subject_rubrics")
+    subject_domain = db.relationship("EV2SubjectDomain", back_populates="rubrics")
 
     __table_args__ = (
         db.UniqueConstraint(
@@ -924,6 +934,35 @@ class EV2SubjectRubric(db.Model):
         db.CheckConstraint("weight >= 0 AND weight <= 100", name="ck_ev2_subject_rubric_weight"),
         db.CheckConstraint("scale_min < scale_max", name="ck_ev2_subject_rubric_scale"),
         db.Index("ix_ev2_subject_rubric_config", "subject_config_id"),
+    )
+
+
+class EV2SubjectDomain(db.Model):
+    __tablename__ = "ev2_subject_domains"
+
+    id = db.Column(db.Integer, primary_key=True)
+    subject_config_id = db.Column(
+        db.Integer, db.ForeignKey("ev2_subject_configs.id"), nullable=False
+    )
+    domain_id = db.Column(db.Integer, db.ForeignKey("ev2_domains.id"), nullable=False)
+    ordem = db.Column(db.Integer, nullable=False, default=0, server_default="0")
+    weight = db.Column(db.Numeric(5, 2), nullable=False, default=0, server_default="0")
+    ativo = db.Column(db.Boolean, nullable=False, default=True, server_default=db.text("true"))
+
+    subject_config = db.relationship("EV2SubjectConfig", back_populates="domains")
+    domain = db.relationship("EV2Domain")
+    rubrics = db.relationship(
+        "EV2SubjectRubric",
+        back_populates="subject_domain",
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "subject_config_id", "domain_id", name="uq_ev2_subject_domain_once"
+        ),
+        db.CheckConstraint("weight >= 0 AND weight <= 100", name="ck_ev2_subject_domain_weight"),
+        db.Index("ix_ev2_subject_domain_config", "subject_config_id"),
+        db.Index("ix_ev2_subject_domain_domain", "domain_id"),
     )
 
 

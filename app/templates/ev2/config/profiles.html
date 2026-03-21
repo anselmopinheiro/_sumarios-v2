@@ -72,6 +72,7 @@
           <td class="col-center">{{ 'Sim' if p.usar_ev2 else 'Não' }}</td>
           <td class="col-center">{{ p.rubrics|length }}</td>
           <td class="col-left">
+            <a href="/ev2/config/profiles/{{ p.id }}" class="secondary">Abrir</a>
             <form method="post" action="/ev2/config/profiles/{{ p.id }}/activate" style="display:inline;">
               <button type="submit" class="secondary">Ativar este perfil</button>
             </form>
