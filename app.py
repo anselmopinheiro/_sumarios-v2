@@ -8812,10 +8812,7 @@ def create_app():
             .first()
         )
         if not subject_config:
-            return [
-                {"id": "consecucao", "nome": "Consec.", "letra": "A", "rubricas": []},
-                {"id": "qualidade", "nome": "Qualidade", "letra": "B", "rubricas": []},
-            ]
+            return []
         dominios = (
             EV2Domain.query
             .join(EV2Rubric, EV2Rubric.domain_id == EV2Domain.id)
@@ -8834,11 +8831,6 @@ def create_app():
             letra = getattr(dominio, "letra", None) or chr(ord("A") + idx)
             rubricas = sorted([r for r in (dominio.rubricas or []) if getattr(r, "ativo", True)], key=lambda r: (r.nome or "").lower())
             view.append({"id": dominio.id, "nome": dominio.nome, "letra": letra, "rubricas": rubricas})
-        if not view:
-            return [
-                {"id": "consecucao", "nome": "Consec.", "letra": "A", "rubricas": []},
-                {"id": "qualidade", "nome": "Qualidade", "letra": "B", "rubricas": []},
-            ]
         return view
 
     def _build_trabalho_detail_viewmodel(trabalho):

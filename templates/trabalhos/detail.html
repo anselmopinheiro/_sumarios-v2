@@ -61,12 +61,6 @@
           <div class="col-md-2"><button class="btn btn-sm btn-primary w-100" type="submit">Criar grupo</button></div>
         </form>
       </div>
-      <div class="col-md-4">
-        <div class="small text-muted mb-1">Alunos disponíveis (sem grupo)</div>
-        <div id="pool-disponiveis" class="border rounded p-2" style="min-height:120px; max-height:220px; overflow:auto;">
-          {% for a in alunos_disponiveis %}<div data-aluno-id="{{ a.id }}">{{ a.numero or '—' }} {{ a.nome_curto_exibicao }}</div>{% else %}<div class="text-muted">Sem alunos disponíveis.</div>{% endfor %}
-        </div>
-      </div>
     </div>
   </div>
 </div>
@@ -84,14 +78,14 @@
             <input class="form-control form-control-sm field-grupo-nome" style="max-width:280px" value="{{ gnome }}" {% if gvirtual %}disabled{% endif %}>
             {% if not gvirtual %}<button class="btn btn-sm btn-outline-secondary btn-rename-grupo" type="button" data-grupo-id="{{ gid }}">Renomear</button>{% endif %}
       </div>
-      <span class="badge text-bg-light">Média grupo: {{ '%.2f'|format(bloco.media_grupo or 0) }}</span>
+      <span class="badge text-bg-light">{{ bloco.members|length }} membro(s)</span>
     </div>
     <div class="card-body">
       <div class="row g-2 mb-3">
         <div class="col-md-3"><input class="form-control form-control-sm field-tema-grupo" placeholder="Tema do grupo" value="{{ g.tema if g.tema is defined else g['tema'] or '' }}" {% if gvirtual %}disabled{% endif %}></div>
-        <div class="col-md-2"><input type="date" class="form-control form-control-sm field-data-entrega-grupo" value="{{ (g.data_entrega if g.data_entrega is defined else g['data_entrega']).strftime('%Y-%m-%d') if (g.data_entrega if g.data_entrega is defined else g['data_entrega']) else '' }}" {% if gvirtual %}disabled{% endif %}></div>
-        <div class="col-md-4"><input class="form-control form-control-sm field-observacoes-grupo" placeholder="Observações do grupo" value="{{ g.observacoes if g.observacoes is defined else g['observacoes'] or '' }}" {% if gvirtual %}disabled{% endif %}></div>
         <div class="col-md-1 d-flex align-items-center"><input type="checkbox" class="form-check-input field-entregue-grupo" {% if bloco.entrega_grupo and bloco.entrega_grupo.entregue %}checked{% endif %} {% if gvirtual %}disabled{% endif %}></div>
+        <div class="col-md-2"><input type="date" class="form-control form-control-sm field-data-entrega-grupo" value="{{ (g.data_entrega if g.data_entrega is defined else g['data_entrega']).strftime('%Y-%m-%d') if (g.data_entrega if g.data_entrega is defined else g['data_entrega']) else '' }}" {% if gvirtual %}disabled{% endif %}></div>
+        <div class="col-md-4"><textarea class="form-control form-control-sm field-observacoes-grupo" rows="2" placeholder="Observações do grupo" {% if gvirtual %}disabled{% endif %}>{{ g.observacoes if g.observacoes is defined else g['observacoes'] or '' }}</textarea></div>
         <div class="col-md-2">
           {% if trabalho.modo == 'grupo' and not gvirtual %}
           <select class="form-select form-select-sm field-add-member">
@@ -110,8 +104,6 @@
               {% for d in dominios_obrigatorios %}
                 {% if d.rubricas %}
                   {% for r in d.rubricas %}<th>{{ d.letra }} · {{ r.nome }}</th>{% endfor %}
-                {% else %}
-                  <th>{{ d.letra }} · {{ d.nome }}</th>
                 {% endif %}
               {% endfor %}
               {% for dom in dominios_opcionais %}
@@ -130,13 +122,14 @@
                 <button type="button" class="btn btn-link btn-sm text-danger btn-remove-member p-0" data-grupo-id="{{ gid }}" data-aluno-id="{{ m.aluno.id }}">remover</button>
                 {% endif %}
               </td>
+              {% if not dominios_obrigatorios %}
+                <td class="text-muted">Sem domínios obrigatórios configurados para esta turma/disciplina.</td>
+              {% endif %}
               {% for d in dominios_obrigatorios %}
                 {% if d.rubricas %}
                   {% for r in d.rubricas %}
                   <td><select class="form-select form-select-sm field-dominio"><option value=""></option>{% for i in range(1,6) %}<option value="{{ i }}" {% if loop.parent.loop.index0 == 0 and e and e.consecucao==i %}selected{% endif %}>{{ i }}</option>{% endfor %}</select></td>
                   {% endfor %}
-                {% else %}
-                <td><select class="form-select form-select-sm field-dominio"><option value=""></option>{% for i in range(1,6) %}<option value="{{ i }}" {% if loop.index0 == 0 and e and e.consecucao==i %}selected{% endif %}>{{ i }}</option>{% endfor %}</select></td>
                 {% endif %}
               {% endfor %}
               {% for dom in dominios_opcionais %}
@@ -231,6 +224,19 @@
   });
 
   grid.addEventListener('change', async (ev)=>{
+    const entregueChk = ev.target.closest('.field-entregue-grupo');
+    if(entregueChk){
+      const card = entregueChk.closest('.grupo-card');
+      const dataField = card?.querySelector('.field-data-entrega-grupo');
+      if(entregueChk.checked && dataField && !dataField.value){
+        const d = new Date();
+        const mm = String(d.getMonth()+1).padStart(2,'0');
+        const dd = String(d.getDate()).padStart(2,'0');
+        dataField.value = `${d.getFullYear()}-${mm}-${dd}`;
+      }
+      return;
+    }
+
     const addSel = ev.target.closest('.field-add-member');
     if(!addSel || !addSel.value) return;
     const card = addSel.closest('.grupo-card');
