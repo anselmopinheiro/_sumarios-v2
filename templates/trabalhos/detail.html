@@ -2,492 +2,245 @@
 {% block content %}
 <h2>{{ trabalho.titulo }} <small class="text-muted">({{ trabalho.tipo_atividade }} · {{ trabalho.modo }})</small></h2>
 <p class="text-muted">{{ trabalho.descricao or '' }}</p>
-<p class="text-muted">Data limite: <strong>{{ trabalho.data_limite.strftime('%d/%m/%Y') if trabalho.data_limite else '—' }}</strong></p>
+<p class="text-muted">Prazo global: <strong>{{ trabalho.data_limite.strftime('%d/%m/%Y') if trabalho.data_limite else '—' }}</strong></p>
 <div class="mb-3 d-flex gap-2 flex-wrap">
   {% set next_url = request.args.get('next') %}
   <a class="btn btn-outline-secondary" href="{{ next_url if next_url else url_for('turma_trabalhos', turma_id=turma.id) }}">Voltar</a>
-  <a class="btn btn-outline-primary" href="{{ url_for('trabalho_edit', turma_id=turma.id, trabalho_id=trabalho.id) }}">Editar trabalho</a>
+  <a class="btn btn-outline-primary" href="{{ url_for('trabalho_edit', turma_id=turma.id, trabalho_id=trabalho.id) }}">Editar atividade</a>
   {% if trabalho.modo == 'grupo' %}
   <form method="post" action="{{ url_for('trabalho_importar_grupos_turma', turma_id=turma.id, trabalho_id=trabalho.id) }}">
-    <button class="btn btn-outline-dark" type="submit">Importar grupos da turma</button>
+    <button class="btn btn-outline-dark" type="submit">Importar grupos pré-definidos</button>
   </form>
   {% endif %}
 </div>
 
-<div class="row g-3 mb-3">
-  <div class="col-md-12">
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
     <div class="card">
-      <div class="card-header">Configuração de tema e ponderações</div>
+      <div class="card-header">Configuração da atividade</div>
       <div class="card-body">
         <form method="post" action="{{ url_for('trabalho_update_config', turma_id=turma.id, trabalho_id=trabalho.id) }}" class="row g-2">
-          <div class="col-md-5">
-            <label class="form-label form-label-sm">Tema global (compatibilidade)</label>
-            <input class="form-control form-control-sm" name="tema_global" value="{{ trabalho.tema_global or '' }}">
-          </div>
-          <div class="col-md-2">
-            <label class="form-label form-label-sm">Tema por grupo</label>
-            <select class="form-select form-select-sm" name="usar_tema_por_grupo">
-              <option value="0" {% if not trabalho.usar_tema_por_grupo %}selected{% endif %}>Não</option>
-              <option value="1" {% if trabalho.usar_tema_por_grupo %}selected{% endif %}>Sim</option>
-            </select>
-          </div>
-          <div class="col-md-2">
-            <label class="form-label form-label-sm">Peso domínios</label>
-            <input class="form-control form-control-sm" type="number" step="0.1" min="0" name="peso_dominios" value="{{ trabalho.peso_dominios }}">
-          </div>
-          <div class="col-md-2">
-            <label class="form-label form-label-sm">Peso critérios extra</label>
-            <input class="form-control form-control-sm" type="number" step="0.1" min="0" name="peso_criterios_extra" value="{{ trabalho.peso_criterios_extra }}">
-          </div>
-          <div class="col-md-1 d-flex align-items-end">
-            <button class="btn btn-outline-primary btn-sm w-100" type="submit">Guardar</button>
-          </div>
+          <div class="col-md-6"><input class="form-control form-control-sm" name="tema_global" value="{{ trabalho.tema_global or '' }}" placeholder="Tema global"></div>
+          <div class="col-md-3"><select class="form-select form-select-sm" name="usar_tema_por_grupo"><option value="0" {% if not trabalho.usar_tema_por_grupo %}selected{% endif %}>Tema global</option><option value="1" {% if trabalho.usar_tema_por_grupo %}selected{% endif %}>Tema por grupo</option></select></div>
+          <div class="col-md-3"><button class="btn btn-sm btn-outline-primary w-100" type="submit">Guardar</button></div>
         </form>
-        <form method="post" action="{{ url_for('trabalho_aplicar_modelo_opcional', turma_id=turma.id, trabalho_id=trabalho.id) }}" class="row g-2 mt-2">
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header">Domínios opcionais (modelo reutilizável)</div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('trabalho_aplicar_modelo_opcional', turma_id=turma.id, trabalho_id=trabalho.id) }}" class="row g-2">
           <div class="col-md-8">
             <select class="form-select form-select-sm" name="modelo_id" required>
-              <option value="">Aplicar modelo de domínios opcionais...</option>
-              {% for m in modelos_opcionais %}
-              <option value="{{ m.id }}">{{ m.nome }}</option>
-              {% endfor %}
+              <option value="">Aplicar modelo...</option>
+              {% for m in modelos_opcionais %}<option value="{{ m.id }}">{{ m.nome }}</option>{% endfor %}
             </select>
           </div>
-          <div class="col-md-4"><button class="btn btn-outline-dark btn-sm w-100" type="submit">Aplicar modelo (cópia local)</button></div>
+          <div class="col-md-4"><button class="btn btn-sm btn-outline-dark w-100" type="submit">Aplicar cópia local</button></div>
         </form>
       </div>
     </div>
   </div>
-  <div class="col-md-6">
-    <div class="card">
-      <div class="card-header">Adicionar parâmetro</div>
-      <div class="card-body">
-        <form method="post" action="{{ url_for('trabalho_add_parametro', turma_id=turma.id, trabalho_id=trabalho.id) }}" class="row g-2">
-          <div class="col-md-6"><input class="form-control" name="nome" placeholder="Nome" required></div>
-          <div class="col-md-4">
-            <select class="form-select" name="tipo">
-              <option value="numerico">Numérico 1..5</option>
-              <option value="texto">Texto</option>
-            </select>
-          </div>
-          <div class="col-md-2"><input class="form-control" name="escala" placeholder="Escala"></div>
-          <div class="col-md-2"><input class="form-control" type="number" step="0.1" min="0" name="peso" value="1"></div>
-          <div class="col-md-2"><button class="btn btn-primary w-100" type="submit">Adicionar</button></div>
-        </form>
-      </div>
-    </div>
-  </div>
-
-  {% if trabalho.modo == 'grupo' %}
-  <div class="col-md-6">
-    <div class="card">
-      <div class="card-header">Criar grupo (ajuste deste trabalho)</div>
-      <div class="card-body">
-        <form id="create-grupo-form" method="post" action="{{ url_for('trabalho_add_grupo', turma_id=turma.id, trabalho_id=trabalho.id) }}" class="row g-2">
-          <div class="col-md-5"><input class="form-control" name="nome" placeholder="Nome grupo" required></div>
-          <div class="col-md-5">
-            <select id="membros-picker" class="form-select membros-picker" name="aluno_ids" multiple size="{{ [alunos_disponiveis|length, 30]|min }}" aria-label="Selecionar membros do grupo">
-              {% for a in alunos_disponiveis %}
-              <option value="{{ a.id }}">{{ a.numero or '—' }} {{ a.nome_curto_exibicao }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="col-md-2"><button class="btn btn-primary w-100" type="submit">Criar</button></div>
-        </form>
-      </div>
-    </div>
-  </div>
-  {% endif %}
 </div>
 
-<div class="alert alert-secondary py-2">Visualização simultânea: {{ rows|length }} linha(s) (máx. 30).</div>
-<style>
-  .lista-membros {
-    max-height: 240px;
-    overflow-y: auto;
-    white-space: normal;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.25rem 0.5rem;
-    align-items: flex-start;
-  }
-
-  .lista-membro-item {
-    white-space: nowrap;
-  }
-
-  .btn-remove-member {
-    font-size: 0.75rem;
-    text-decoration: none;
-    margin-left: 0.25rem;
-  }
-
-  .membros-picker {
-    width: 100%;
-    max-height: 520px;
-    overflow-y: auto;
-    white-space: normal;
-    padding: 6px;
-    border: 1px solid #ddd;
-    border-radius: 6px;
-  }
-
-  .membros-picker option {
-    white-space: normal;
-    line-height: 1.25;
-    padding: 2px 0;
-  }
-</style>
-<div class="table-responsive">
-  <table class="table table-sm align-middle" id="trabalhos-grid">
-    <thead>
-      <tr>
-        {% if trabalho.modo == 'grupo' %}<th>Grupo</th><th>Membros</th>{% endif %}
-        {% if trabalho.modo == 'grupo' %}<th>Tema grupo</th><th>Data entrega grupo</th><th>Obs. grupo</th><th>Entregue grupo</th>{% endif %}
-        <th>Estado</th>
-        <th>Média</th>
-        <th>Fator</th>
-        <th>Nota final</th>
-        <th>Membro</th>
-        {% for d in dominios_obrigatorios %}
-          {% if d.rubricas %}
-            {% for r in d.rubricas %}<th>{{ d.letra }} · {{ r.nome }}</th>{% endfor %}
-          {% else %}
-            <th>{{ d.letra }} - {{ d.nome }}</th>
-          {% endif %}
-        {% endfor %}
-        {% for p in parametros %}<th>{{ p.nome }}{% if p.escala %} <small class="text-muted">({{ p.escala }})</small>{% endif %}</th>{% endfor %}
-        <th>Observações individuais</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for block in group_blocks %}
-      {% set grupo = block.grupo %}
-      {% set entrega_grupo = block.entrega_grupo %}
-      <tr class="table-light group-main-row" data-group-main="{{ grupo.id if grupo else 0 }}">
-        {% if trabalho.modo == 'grupo' %}
-        <td>
-          <div class="d-flex gap-1">
-            <input class="form-control form-control-sm field-grupo-nome" value="{{ grupo.nome if grupo is not mapping else grupo['nome'] }}" {% if grupo is mapping %}disabled{% endif %}>
-            {% if grupo is not mapping %}<button class="btn btn-sm btn-outline-secondary btn-rename-grupo" data-grupo-id="{{ grupo.id }}" type="button">Renomear</button>{% endif %}
-          </div>
-        </td>
-        <td>
-          <div class="lista-membros">
-            {% for membro in (grupo.membros if grupo is not mapping else grupo['membros']) %}
-                {% if membro.aluno %}
-                <span class="lista-membro-item" data-aluno-id="{{ membro.aluno.id }}">
-                  {{ membro.aluno.numero or '—' }} {{ membro.aluno.nome_curto_exibicao }}
-                  {% if grupo is not mapping %}
-                  <button type="button" class="btn btn-link btn-sm p-0 text-danger btn-remove-member" data-grupo-id="{{ grupo.id }}" data-aluno-id="{{ membro.aluno.id }}" title="Remover membro">remover</button>
-                  {% endif %}
-                </span>
-                {% endif %}
-            {% endfor %}
-          </div>
-          {% if grupo is not mapping %}
-          <div class="mt-1 d-flex gap-1">
-            <select class="form-select form-select-sm field-add-member">
-              <option value="">Adicionar aluno...</option>
-              {% for a in alunos_disponiveis %}
-              <option value="{{ a.id }}">{{ a.numero or '—' }} {{ a.nome_curto_exibicao }}</option>
-              {% endfor %}
+{% if trabalho.modo == 'grupo' %}
+<div class="card mb-4">
+  <div class="card-header">Gestão de grupos da atividade</div>
+  <div class="card-body">
+    <div class="row g-2">
+      <div class="col-md-8">
+        <form id="create-grupo-form" method="post" action="{{ url_for('trabalho_add_grupo', turma_id=turma.id, trabalho_id=trabalho.id) }}" class="row g-2">
+          <div class="col-md-5"><input class="form-control form-control-sm" name="nome" placeholder="Designação do grupo" required></div>
+          <div class="col-md-5">
+            <select id="membros-picker" class="form-select form-select-sm" name="aluno_ids" multiple size="6">
+              {% for a in alunos_disponiveis %}<option value="{{ a.id }}">{{ a.numero or '—' }} {{ a.nome_curto_exibicao }}</option>{% endfor %}
             </select>
           </div>
-          {% endif %}
-        </td>
-        <td><input class="form-control form-control-sm field-tema-grupo" value="{{ ((grupo.tema if grupo is not mapping else grupo['tema']) if trabalho.usar_tema_por_grupo else (trabalho.tema_global or (grupo.tema if grupo is not mapping else grupo['tema']))) }}" {% if grupo is mapping or not trabalho.usar_tema_por_grupo %}disabled{% endif %}></td>
-        <td><input type="date" class="form-control form-control-sm field-data-entrega-grupo" value="{{ ((grupo.data_entrega if grupo is not mapping else grupo['data_entrega']) or (entrega_grupo.data_entrega if entrega_grupo else None)).strftime('%Y-%m-%d') if ((grupo.data_entrega if grupo is not mapping else grupo['data_entrega']) or (entrega_grupo and entrega_grupo.data_entrega)) else '' }}" {% if grupo is mapping %}disabled{% endif %}></td>
-        <td><input class="form-control form-control-sm field-observacoes-grupo" value="{{ (grupo.observacoes if grupo is not mapping else grupo['observacoes']) or '' }}" {% if grupo is mapping %}disabled{% endif %}></td>
-        <td><input type="checkbox" class="form-check-input field-entregue-grupo" {% if entrega_grupo and entrega_grupo.entregue %}checked{% endif %} {% if grupo is mapping %}disabled{% endif %}></td>
-        {% endif %}
-        <td class="field-estado"><span class="badge-estado {{ block.estado_css }}">{{ block.estado }}</span></td>
-        <td class="field-media-base">{{ '%.2f'|format(block.media_base) }}</td>
-        <td class="field-fator-estado">{{ '%.2f'|format(block.fator_estado) }}</td>
-        <td class="field-nota-final">{{ '%.2f'|format(block.nota_final) }}</td>
-        <td colspan="{{ 3 + (dominios_obrigatorios|length) + (parametros|length) }}"></td>
-      </tr>
-      {% for row in block.members %}
-      {% set entrega = row.entrega_aluno %}
-      <tr data-grupo-id="{{ row.grupo.id if row.grupo else 0 }}" data-aluno-id="{{ row.aluno.id }}">
-        <td colspan="{% if trabalho.modo == 'grupo' %}10{% else %}4{% endif %}" class="text-muted small">{{ row.aluno_label }}</td>
-        {% if dominios_obrigatorios %}
-          {% for dominio in dominios_obrigatorios %}
-          {% if dominio.rubricas %}
-            {% for rubrica in dominio.rubricas %}
-          {% set dominio_idx = loop.index0 %}
-          <td>
-            <select class="form-select form-select-sm field-dominio" data-domain-id="{{ dominio.id }}" data-rubrica-id="{{ rubrica.id }}">
-              <option value=""></option>
-              {% for i in range(1,6) %}
-              <option value="{{ i }}" {% if (dominio_idx == 0 and entrega and entrega.consecucao == i) or (dominio_idx == 1 and entrega and entrega.qualidade == i) %}selected{% endif %}>{{ i }}</option>
-              {% endfor %}
-            </select>
-          </td>
-            {% endfor %}
-          {% else %}
-          {% set dominio_idx = loop.index0 %}
-          <td>
-            <select class="form-select form-select-sm field-dominio" data-domain-id="{{ dominio.id }}">
-              <option value=""></option>
-              {% for i in range(1,6) %}
-              <option value="{{ i }}" {% if (dominio_idx == 0 and entrega and entrega.consecucao == i) or (dominio_idx == 1 and entrega and entrega.qualidade == i) %}selected{% endif %}>{{ i }}</option>
-              {% endfor %}
-            </select>
-          </td>
-          {% endif %}
-          {% endfor %}
-        {% endif %}
-        {% for p in parametros %}
-        {% set ep = row.params.get(p.id) %}
-        <td>
-          {% if p.tipo == 'numerico' %}
-          <select class="form-select form-select-sm field-extra" data-param-id="{{ p.id }}">
-            <option value=""></option>
-            {% for i in range(1,6) %}<option value="{{ i }}" {% if ep and ep.valor_numerico==i %}selected{% endif %}>{{ i }}</option>{% endfor %}
+          <div class="col-md-2"><button class="btn btn-sm btn-primary w-100" type="submit">Criar grupo</button></div>
+        </form>
+      </div>
+      <div class="col-md-4">
+        <div class="small text-muted mb-1">Alunos disponíveis (sem grupo)</div>
+        <div id="pool-disponiveis" class="border rounded p-2" style="min-height:120px; max-height:220px; overflow:auto;">
+          {% for a in alunos_disponiveis %}<div data-aluno-id="{{ a.id }}">{{ a.numero or '—' }} {{ a.nome_curto_exibicao }}</div>{% else %}<div class="text-muted">Sem alunos disponíveis.</div>{% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div id="grupos-container" class="d-grid gap-3">
+  {% for bloco in grupos_vm %}
+  {% set g = bloco.grupo %}
+  {% set gid = g.id if g.id is defined else g['id'] %}
+  {% set gnome = g.nome if g.nome is defined else g['nome'] %}
+  {% set gvirtual = (g.virtual if g.virtual is defined else false) %}
+  <div class="card grupo-card" data-grupo-id="{{ gid }}">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <div class="d-flex gap-2 align-items-center">
+            <input class="form-control form-control-sm field-grupo-nome" style="max-width:280px" value="{{ gnome }}" {% if gvirtual %}disabled{% endif %}>
+            {% if not gvirtual %}<button class="btn btn-sm btn-outline-secondary btn-rename-grupo" type="button" data-grupo-id="{{ gid }}">Renomear</button>{% endif %}
+      </div>
+      <span class="badge text-bg-light">Média grupo: {{ '%.2f'|format(bloco.media_grupo or 0) }}</span>
+    </div>
+    <div class="card-body">
+      <div class="row g-2 mb-3">
+        <div class="col-md-3"><input class="form-control form-control-sm field-tema-grupo" placeholder="Tema do grupo" value="{{ g.tema if g.tema is defined else g['tema'] or '' }}" {% if gvirtual %}disabled{% endif %}></div>
+        <div class="col-md-2"><input type="date" class="form-control form-control-sm field-data-entrega-grupo" value="{{ (g.data_entrega if g.data_entrega is defined else g['data_entrega']).strftime('%Y-%m-%d') if (g.data_entrega if g.data_entrega is defined else g['data_entrega']) else '' }}" {% if gvirtual %}disabled{% endif %}></div>
+        <div class="col-md-4"><input class="form-control form-control-sm field-observacoes-grupo" placeholder="Observações do grupo" value="{{ g.observacoes if g.observacoes is defined else g['observacoes'] or '' }}" {% if gvirtual %}disabled{% endif %}></div>
+        <div class="col-md-1 d-flex align-items-center"><input type="checkbox" class="form-check-input field-entregue-grupo" {% if bloco.entrega_grupo and bloco.entrega_grupo.entregue %}checked{% endif %} {% if gvirtual %}disabled{% endif %}></div>
+        <div class="col-md-2">
+          {% if trabalho.modo == 'grupo' and not gvirtual %}
+          <select class="form-select form-select-sm field-add-member">
+            <option value="">Adicionar membro...</option>
+            {% for a in alunos_disponiveis %}<option value="{{ a.id }}">{{ a.numero or '—' }} {{ a.nome_curto_exibicao }}</option>{% endfor %}
           </select>
-          {% else %}
-          <input class="form-control form-control-sm field-extra" data-param-id="{{ p.id }}" value="{{ ep.valor_texto if ep else '' }}">
           {% endif %}
-        </td>
-        {% endfor %}
-        <td><input class="form-control form-control-sm field-observacoes" value="{{ entrega.observacoes if entrega else '' }}"></td>
-        <td><button class="btn btn-sm btn-primary btn-save-row">Guardar</button></td>
-      </tr>
-      {% endfor %}
-      {% endfor %}
-    </tbody>
-  </table>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th>Membro</th>
+              {% for d in dominios_obrigatorios %}
+                {% if d.rubricas %}
+                  {% for r in d.rubricas %}<th>{{ d.letra }} · {{ r.nome }}</th>{% endfor %}
+                {% else %}
+                  <th>{{ d.letra }} · {{ d.nome }}</th>
+                {% endif %}
+              {% endfor %}
+              {% for dom in dominios_opcionais %}
+                {% for r in dom.rubricas %}<th>{{ dom.nome }} · {{ r.nome }}</th>{% endfor %}
+              {% endfor %}
+              <th>Obs. individuais</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for m in bloco.members %}
+            {% set e = m.entrega %}
+            <tr data-grupo-id="{{ m.aluno.id and gid or gid }}" data-aluno-id="{{ m.aluno.id }}">
+              <td>
+                {{ m.aluno.numero or '—' }} {{ m.aluno.nome_curto_exibicao }}
+                {% if trabalho.modo == 'grupo' and not gvirtual %}
+                <button type="button" class="btn btn-link btn-sm text-danger btn-remove-member p-0" data-grupo-id="{{ gid }}" data-aluno-id="{{ m.aluno.id }}">remover</button>
+                {% endif %}
+              </td>
+              {% for d in dominios_obrigatorios %}
+                {% if d.rubricas %}
+                  {% for r in d.rubricas %}
+                  <td><select class="form-select form-select-sm field-dominio"><option value=""></option>{% for i in range(1,6) %}<option value="{{ i }}" {% if loop.parent.loop.index0 == 0 and e and e.consecucao==i %}selected{% endif %}>{{ i }}</option>{% endfor %}</select></td>
+                  {% endfor %}
+                {% else %}
+                <td><select class="form-select form-select-sm field-dominio"><option value=""></option>{% for i in range(1,6) %}<option value="{{ i }}" {% if loop.index0 == 0 and e and e.consecucao==i %}selected{% endif %}>{{ i }}</option>{% endfor %}</select></td>
+                {% endif %}
+              {% endfor %}
+              {% for dom in dominios_opcionais %}
+                {% for r in dom.rubricas %}
+                {% set ep = m.extra_map.get(r.id) %}
+                <td><select class="form-select form-select-sm field-extra" data-param-id="{{ r.id }}"><option value=""></option>{% for i in range(1,6) %}<option value="{{ i }}" {% if ep and ep.valor_numerico==i %}selected{% endif %}>{{ i }}</option>{% endfor %}</select></td>
+                {% endfor %}
+              {% endfor %}
+              <td><input class="form-control form-control-sm field-observacoes" value="{{ e.observacoes if e else '' }}"></td>
+              <td><button class="btn btn-sm btn-primary btn-save-row" type="button">Guardar</button></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="alert alert-info">Sem grupos criados para esta atividade.</div>
+  {% endfor %}
 </div>
 {% endblock %}
 
 {% block extra_scripts %}
 <script>
 (function(){
-  function toast(msg, level='info'){
-    if(window.showToast){ window.showToast(msg, level); return; }
-    alert(msg);
-  }
-
-  const params = new URLSearchParams(window.location.search);
-  if(params.get('toast') === 'updated'){
-    toast('Trabalho atualizado', 'success');
-  }
-
-  const grid = document.getElementById('trabalhos-grid');
+  const grid = document.getElementById('grupos-container');
   if(!grid) return;
+  const membrosPicker = document.getElementById('membros-picker');
+  function toast(msg, level='info'){ if(window.showToast){ window.showToast(msg, level); } else { alert(msg); } }
 
   async function saveRow(tr){
-    const grupoId = tr.dataset.grupoId;
-    const alunoId = tr.dataset.alunoId;
     const payload = {
-      aluno_id: Number(alunoId),
+      aluno_id: Number(tr.dataset.alunoId),
       entregue: true,
       data_entrega: null,
-      entregue_grupo: tr.querySelector('.field-entregue-grupo')?.checked || false,
-      data_entrega_grupo: tr.querySelector('.field-data-entrega-grupo')?.value || null,
-      tema_grupo: tr.querySelector('.field-tema-grupo')?.value || null,
-      observacoes_grupo: tr.querySelector('.field-observacoes-grupo')?.value || null,
-      consecucao: null,
-      qualidade: null,
+      entregue_grupo: tr.closest('.grupo-card')?.querySelector('.field-entregue-grupo')?.checked || false,
+      data_entrega_grupo: tr.closest('.grupo-card')?.querySelector('.field-data-entrega-grupo')?.value || null,
+      tema_grupo: tr.closest('.grupo-card')?.querySelector('.field-tema-grupo')?.value || null,
+      observacoes_grupo: tr.closest('.grupo-card')?.querySelector('.field-observacoes-grupo')?.value || null,
+      consecucao: tr.querySelectorAll('.field-dominio')[0]?.value || null,
+      qualidade: tr.querySelectorAll('.field-dominio')[1]?.value || null,
       observacoes: tr.querySelector('.field-observacoes')?.value || null,
       extra: {}
     };
-    const dominios = tr.querySelectorAll('.field-dominio');
-    if(dominios[0]) payload.consecucao = dominios[0].value || null;
-    if(dominios[1]) payload.qualidade = dominios[1].value || null;
-    tr.querySelectorAll('.field-extra').forEach((el)=>{
-      payload.extra[el.dataset.paramId] = el.value;
-    });
-
-    const url = "{{ url_for('trabalho_save_entrega', turma_id=turma.id, trabalho_id=trabalho.id, grupo_id=0) }}".replace('/0/save', `/${grupoId}/save`);
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json','Accept':'application/json'},
-      body: JSON.stringify(payload)
-    });
+    tr.querySelectorAll('.field-extra').forEach((el)=> payload.extra[el.dataset.paramId]=el.value);
+    const gid = tr.dataset.grupoId;
+    const url = "{{ url_for('trabalho_save_entrega', turma_id=turma.id, trabalho_id=trabalho.id, grupo_id=0) }}".replace('/0/save', `/${gid}/save`);
+    const resp = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(payload)});
     const data = await resp.json().catch(()=>({ok:false,error:'Erro inesperado'}));
-    if(!resp.ok || !data.ok){
-      toast(data.error || 'Falha ao guardar', 'error');
-      return;
-    }
-
-    if(data.data_entrega_grupo){
-      const dtg = tr.querySelector('.field-data-entrega-grupo');
-      if(dtg && !dtg.value){
-        dtg.value = data.data_entrega_grupo;
-      }
-    }
-    if(data.estado){
-      const el = tr.querySelector('.field-estado');
-      if(el){
-        const badge = el.querySelector('.badge-estado');
-        if(badge){
-          badge.textContent = data.estado;
-          badge.classList.remove('badge-por-entregar', 'badge-no-prazo', 'badge-atrasado');
-          if(data.estado_css){
-            badge.classList.add(data.estado_css);
-          }
-        } else {
-          el.innerHTML = `<span class="badge-estado ${data.estado_css || 'badge-por-entregar'}">${data.estado}</span>`;
-        }
-      }
-    }
-    if(typeof data.media_base !== 'undefined'){
-      const mediaCell = tr.querySelector('.field-media-base');
-      if(mediaCell) mediaCell.textContent = Number(data.media_base).toFixed(2);
-    }
-    if(typeof data.fator_estado !== 'undefined'){
-      const fatorCell = tr.querySelector('.field-fator-estado');
-      if(fatorCell) fatorCell.textContent = Number(data.fator_estado).toFixed(2);
-    }
-    if(typeof data.nota_final !== 'undefined'){
-      const notaCell = tr.querySelector('.field-nota-final');
-      if(notaCell) notaCell.textContent = Number(data.nota_final).toFixed(2);
-    }
-    toast('Linha guardada com sucesso', 'success');
+    if(!resp.ok || !data.ok){ toast(data.error || 'Erro ao guardar', 'error'); return; }
+    toast('Guardado', 'success');
   }
 
-  const createGroupForm = document.getElementById('create-grupo-form');
-  const membrosPicker = document.getElementById('membros-picker');
-
-  if(createGroupForm && membrosPicker){
-    createGroupForm.addEventListener('submit', async (ev)=>{
-      ev.preventDefault();
-      const formData = new FormData(createGroupForm);
-      const nome = (formData.get('nome') || '').toString().trim();
-      const alunoIds = Array.from(membrosPicker.selectedOptions).map((opt)=>Number(opt.value));
-      if(alunoIds.length === 0){
-        toast('Um grupo tem de ter, pelo menos, um aluno.', 'error');
-        return;
-      }
-
-      const resp = await fetch(createGroupForm.action, {
-        method: 'POST',
-        headers: {'Content-Type':'application/json','Accept':'application/json'},
-        body: JSON.stringify({nome, aluno_ids: alunoIds})
-      });
-      const data = await resp.json().catch(()=>({ok:false,error:'Erro inesperado'}));
-      if(!resp.ok || !data.ok){
-        toast(data.error || 'Erro ao criar grupo', 'error');
-        return;
-      }
-
-      const idsToRemove = new Set((data.membros_ids || []).map((v)=>String(v)));
-      Array.from(membrosPicker.options).forEach((opt)=>{
-        if(idsToRemove.has(opt.value)) opt.remove();
-      });
-      membrosPicker.selectedIndex = -1;
-      const nomeInput = createGroupForm.querySelector('input[name="nome"]');
-      if(nomeInput) nomeInput.value = '';
-      toast('Grupo criado', 'success');
-      window.location.reload();
-    });
-  }
+  document.getElementById('create-grupo-form')?.addEventListener('submit', async (ev)=>{
+    ev.preventDefault();
+    const nome = ev.target.querySelector('input[name="nome"]').value.trim();
+    const ids = Array.from(membrosPicker.selectedOptions).map(o=>Number(o.value));
+    const resp = await fetch(ev.target.action,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({nome:nome,aluno_ids:ids})});
+    const data = await resp.json().catch(()=>({ok:false,error:'Erro inesperado'}));
+    if(!resp.ok || !data.ok){ toast(data.error || 'Erro a criar grupo','error'); return; }
+    window.location.reload();
+  });
 
   grid.addEventListener('click', async (ev)=>{
-    const rmBtn = ev.target.closest('.btn-remove-member');
-    if(rmBtn){
+    const save = ev.target.closest('.btn-save-row');
+    if(save){ ev.preventDefault(); await saveRow(save.closest('tr[data-aluno-id]')); return; }
+
+    const rm = ev.target.closest('.btn-remove-member');
+    if(rm){
       ev.preventDefault();
-      const grupoId = rmBtn.dataset.grupoId;
-      const alunoId = rmBtn.dataset.alunoId;
-      const url = "{{ url_for('trabalho_remove_membro_grupo', turma_id=turma.id, trabalho_id=trabalho.id, grupo_id=0, aluno_id=0) }}".replace('/0/membros/0/remove', `/${grupoId}/membros/${alunoId}/remove`);
-      const resp = await fetch(url, {method:'POST', headers:{'Accept':'application/json'}});
+      const url = "{{ url_for('trabalho_remove_membro_grupo', turma_id=turma.id, trabalho_id=trabalho.id, grupo_id=0, aluno_id=0) }}".replace('/0/membros/0/remove', `/${rm.dataset.grupoId}/membros/${rm.dataset.alunoId}/remove`);
+      const resp = await fetch(url,{method:'POST',headers:{'Accept':'application/json'}});
       const data = await resp.json().catch(()=>({ok:false,error:'Erro inesperado'}));
-      if(!resp.ok || !data.ok){
-        toast(data.error || 'Erro ao remover membro', 'error');
-        return;
-      }
-
-      const item = rmBtn.closest('.lista-membro-item');
-      if(item) item.remove();
-      if(data.aluno && data.aluno.id){
-        const addOptionIfMissing = (selectEl)=>{
-          if(!selectEl) return;
-          const exists = Array.from(selectEl.options).some((opt)=>opt.value === String(data.aluno.id));
-          if(exists) return;
-          const opt = document.createElement('option');
-          opt.value = String(data.aluno.id);
-          opt.textContent = data.aluno.label || String(data.aluno.id);
-          selectEl.appendChild(opt);
-        };
-        addOptionIfMissing(membrosPicker);
-        grid.querySelectorAll('.field-add-member').forEach(addOptionIfMissing);
-      }
-
-      const groupDeleted = (typeof data.group_deleted !== 'undefined') ? Boolean(data.group_deleted) : Boolean(data.deleted);
-      if(groupDeleted){
-        const tr = rmBtn.closest('tr[data-grupo-id]');
-        if(tr) tr.remove();
-        toast('Grupo eliminado (sem membros)', 'success');
-      } else {
-        toast('Membro removido', 'success');
-      }
+      if(!resp.ok || !data.ok){ toast(data.error || 'Erro ao remover','error'); return; }
+      window.location.reload();
       return;
     }
 
-    const renameBtn = ev.target.closest('.btn-rename-grupo');
-    if(renameBtn){
+    const ren = ev.target.closest('.btn-rename-grupo');
+    if(ren){
       ev.preventDefault();
-      const grupoId = renameBtn.dataset.grupoId;
-      const tr = renameBtn.closest('tr.group-main-row');
-      const input = tr?.querySelector('.field-grupo-nome');
-      const nome = input?.value?.trim();
-      if(!nome){
-        toast('Nome do grupo é obrigatório', 'error');
-        return;
-      }
-      const url = "{{ url_for('trabalho_rename_grupo', turma_id=turma.id, trabalho_id=trabalho.id, grupo_id=0) }}".replace('/0/rename', `/${grupoId}/rename`);
-      const resp = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'}, body: JSON.stringify({nome})});
+      const card = ren.closest('.grupo-card');
+      const nome = card.querySelector('.field-grupo-nome')?.value?.trim() || '';
+      const url = "{{ url_for('trabalho_rename_grupo', turma_id=turma.id, trabalho_id=trabalho.id, grupo_id=0) }}".replace('/0/rename', `/${ren.dataset.grupoId}/rename`);
+      const resp = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({nome})});
       const data = await resp.json().catch(()=>({ok:false,error:'Erro inesperado'}));
-      if(!resp.ok || !data.ok){
-        toast(data.error || 'Erro ao renomear grupo', 'error');
-        return;
-      }
-      toast('Grupo renomeado', 'success');
+      if(!resp.ok || !data.ok){ toast(data.error || 'Erro ao renomear','error'); return; }
+      toast('Grupo renomeado','success');
       return;
     }
-
-    const btn = ev.target.closest('.btn-save-row');
-    if(!btn) return;
-    ev.preventDefault();
-    const tr = btn.closest('tr[data-grupo-id]');
-    if(tr) saveRow(tr);
   });
 
   grid.addEventListener('change', async (ev)=>{
-    const addMemberSelect = ev.target.closest('.field-add-member');
-    if(!addMemberSelect || !addMemberSelect.value) return;
-    const tr = addMemberSelect.closest('tr[data-grupo-id]');
-    const grupoId = tr?.dataset?.grupoId;
-    if(!grupoId) return;
-    const url = "{{ url_for('trabalho_add_membro_grupo', turma_id=turma.id, trabalho_id=trabalho.id, grupo_id=0) }}".replace('/0/membros/add', `/${grupoId}/membros/add`);
-    const resp = await fetch(url, {
-      method:'POST',
-      headers:{'Content-Type':'application/json','Accept':'application/json'},
-      body: JSON.stringify({aluno_id: Number(addMemberSelect.value)})
-    });
+    const addSel = ev.target.closest('.field-add-member');
+    if(!addSel || !addSel.value) return;
+    const card = addSel.closest('.grupo-card');
+    const gid = card?.dataset?.grupoId;
+    if(!gid) return;
+    const url = "{{ url_for('trabalho_add_membro_grupo', turma_id=turma.id, trabalho_id=trabalho.id, grupo_id=0) }}".replace('/0/membros/add', `/${gid}/membros/add`);
+    const resp = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({aluno_id:Number(addSel.value)})});
     const data = await resp.json().catch(()=>({ok:false,error:'Erro inesperado'}));
-    if(!resp.ok || !data.ok){
-      toast(data.error || 'Erro ao adicionar membro', 'error');
-      return;
-    }
-    const rowMembers = tr.querySelector('.lista-membros');
-    if(rowMembers && data.aluno){
-      const tag = document.createElement('span');
-      tag.className = 'lista-membro-item';
-      tag.dataset.alunoId = String(data.aluno.id);
-      tag.innerHTML = `${data.aluno.label} <button type="button" class="btn btn-link btn-sm p-0 text-danger btn-remove-member" data-grupo-id="${grupoId}" data-aluno-id="${data.aluno.id}" title="Remover membro">remover</button>`;
-      rowMembers.appendChild(tag);
-    }
-    const removeOptionById = (selectEl, id)=>{
-      if(!selectEl) return;
-      Array.from(selectEl.options).forEach((opt)=>{ if(opt.value === String(id)) opt.remove(); });
-    };
-    removeOptionById(membrosPicker, data.aluno?.id);
-    grid.querySelectorAll('.field-add-member').forEach((sel)=>removeOptionById(sel, data.aluno?.id));
-    addMemberSelect.value = '';
-    toast('Membro adicionado', 'success');
+    if(!resp.ok || !data.ok){ toast(data.error || 'Erro a adicionar','error'); return; }
+    window.location.reload();
   });
 })();
 </script>

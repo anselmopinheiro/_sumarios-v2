@@ -8841,6 +8841,71 @@ def create_app():
             ]
         return view
 
+    def _build_trabalho_detail_viewmodel(trabalho):
+        alunos = _listar_alunos_turma(trabalho.turma_id)
+        alunos_by_id = {a.id: a for a in alunos}
+        dominios_obrigatorios = _listar_dominios_obrigatorios_turma(trabalho.turma_id)
+        parametros = sorted(trabalho.parametros, key=lambda p: (p.ordem, p.id))
+        opcionais = {}
+        for p in parametros:
+            if "•" in (p.nome or ""):
+                dom, rub = [x.strip() for x in p.nome.split("•", 1)]
+            else:
+                dom, rub = "Opcional", p.nome
+            opcionais.setdefault(dom, {"nome": dom, "rubricas": []})
+            opcionais[dom]["rubricas"].append({"id": p.id, "nome": rub, "peso": p.peso, "escala": p.escala, "tipo": p.tipo})
+        dominios_opcionais = list(opcionais.values())
+
+        entregas_grupo = {(e.trabalho_grupo_id): e for e in trabalho.entregas if e.aluno_id is None}
+        entregas_aluno = {(e.trabalho_grupo_id, e.aluno_id): e for e in trabalho.entregas if e.aluno_id is not None}
+        usados = set()
+        groups_vm = []
+        for g in sorted(trabalho.grupos, key=lambda x: (x.nome or "").lower()):
+            members = []
+            for m in sorted(g.membros, key=lambda mm: ((mm.aluno.numero if mm.aluno else 9999), (mm.aluno.nome if mm.aluno else ""))):
+                if not m.aluno:
+                    continue
+                usados.add(m.aluno.id)
+                ea = entregas_aluno.get((g.id, m.aluno.id))
+                extra_map = {ep.parametro_definicao_id: ep for ep in (ea.parametros if ea else [])}
+                members.append({
+                    "aluno": m.aluno,
+                    "entrega": ea,
+                    "extra_map": extra_map,
+                })
+            eg = entregas_grupo.get(g.id)
+            metrics = []
+            for member in members:
+                mm = _calcular_metricas_entrega(trabalho, eg, member["entrega"], member["extra_map"], parametros)
+                metrics.append(mm["nota_final"])
+            groups_vm.append({
+                "grupo": g,
+                "entrega_grupo": eg,
+                "members": members,
+                "media_grupo": (sum(metrics) / len(metrics)) if metrics else 0.0,
+            })
+
+        alunos_disponiveis = [a for a in alunos if a.id not in usados]
+        if trabalho.modo == "individual":
+            groups_vm = []
+            for a in alunos:
+                ea = next((e for e in trabalho.entregas if e.aluno_id == a.id), None)
+                groups_vm.append({
+                    "grupo": {"id": f"ind-{a.id}", "nome": a.nome_curto_exibicao, "tema": None, "data_entrega": None, "observacoes": None},
+                    "entrega_grupo": None,
+                    "members": [{"aluno": a, "entrega": ea, "extra_map": {ep.parametro_definicao_id: ep for ep in (ea.parametros if ea else [])}}],
+                    "media_grupo": 0.0,
+                    "virtual": True,
+                })
+            alunos_disponiveis = []
+        return {
+            "dominios_obrigatorios": dominios_obrigatorios,
+            "dominios_opcionais": dominios_opcionais,
+            "grupos": groups_vm,
+            "alunos_disponiveis": alunos_disponiveis,
+            "alunos": alunos,
+        }
+
     @app.route("/turmas/<int:turma_id>/grupos", methods=["GET", "POST"])
     def turma_grupos_catalogo(turma_id):
         turma = Turma.query.get_or_404(turma_id)
@@ -9114,64 +9179,18 @@ def create_app():
             _ensure_individual_groups(trabalho)
             db.session.commit()
 
-        parametros, rows = _build_trabalho_grid(trabalho)
-        dominios_obrigatorios = _listar_dominios_obrigatorios_turma(turma_id)
-        blocks_map = {}
-        for row in rows:
-            grupo_obj = row.get("grupo")
-            if not grupo_obj and trabalho.modo == "grupo":
-                grupo_obj = {
-                    "id": f"solo-{row['aluno'].id}",
-                    "nome": f"Grupo individual — {row['aluno_label']}",
-                    "membros": [],
-                    "virtual": True,
-                    "tema": None,
-                    "data_entrega": None,
-                    "observacoes": None,
-                }
-            gid = grupo_obj.id if hasattr(grupo_obj, "id") else grupo_obj.get("id")
-            if gid not in blocks_map:
-                blocks_map[gid] = {
-                    "grupo": grupo_obj,
-                    "members": [],
-                    "entrega_grupo": row.get("entrega_grupo"),
-                    "media_base": 0.0,
-                    "fator_estado": 0.0,
-                    "nota_final": 0.0,
-                    "estado": row.get("estado"),
-                    "estado_css": row.get("estado_css"),
-                }
-            blocks_map[gid]["members"].append(row)
-            if isinstance(grupo_obj, dict):
-                blocks_map[gid]["grupo"]["membros"].append(type("M", (), {"aluno": row["aluno"]})())
-        group_blocks = []
-        for _, block in blocks_map.items():
-            membros = block["members"]
-            if membros:
-                block["media_base"] = sum(m["media_base"] for m in membros) / len(membros)
-                block["fator_estado"] = sum(m["fator_estado"] for m in membros) / len(membros)
-                block["nota_final"] = sum(m["nota_final"] for m in membros) / len(membros)
-            group_blocks.append(block)
-        alunos = _listar_alunos_turma(turma_id)
-        usados = {
-            m.aluno_id
-            for grupo in trabalho.grupos
-            for m in grupo.membros
-            if m.aluno_id is not None
-        }
-        alunos_disponiveis = [a for a in alunos if a.id not in usados]
+        vm = _build_trabalho_detail_viewmodel(trabalho)
         modelos_opcionais = DominioOpcionalModelo.query.order_by(DominioOpcionalModelo.nome.asc()).all()
         return render_template(
             "trabalhos/detail.html",
             trabalho=trabalho,
             turma=trabalho.turma,
-            parametros=parametros,
-            rows=rows,
-            group_blocks=group_blocks,
-            dominios_obrigatorios=dominios_obrigatorios,
+            grupos_vm=vm["grupos"],
+            dominios_obrigatorios=vm["dominios_obrigatorios"],
+            dominios_opcionais=vm["dominios_opcionais"],
             modelos_opcionais=modelos_opcionais,
-            alunos=alunos,
-            alunos_disponiveis=alunos_disponiveis,
+            alunos=vm["alunos"],
+            alunos_disponiveis=vm["alunos_disponiveis"],
         )
 
     @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/edit", methods=["GET", "POST"])
