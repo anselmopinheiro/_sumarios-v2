@@ -134,6 +134,9 @@ from models import (
     DTOcorrenciaAluno,
     Trabalho,
     AulaTrabalhoLink,
+    DominioOpcionalModelo,
+    DominioOpcionalModeloDominio,
+    DominioOpcionalModeloRubrica,
     GrupoTurma,
     GrupoTurmaMembro,
     TrabalhoGrupo,
@@ -2103,6 +2106,9 @@ def create_app():
             "parametro_definicoes",
             "entrega_parametros",
             "aula_trabalho_links",
+            "dominio_opcional_modelos",
+            "dominio_opcional_modelo_dominios",
+            "dominio_opcional_modelo_rubricas",
             "grupos_turma",
             "grupo_turma_membros",
         }
@@ -2123,6 +2129,9 @@ def create_app():
                 ParametroDefinicao.__table__,
                 EntregaParametro.__table__,
                 AulaTrabalhoLink.__table__,
+                DominioOpcionalModelo.__table__,
+                DominioOpcionalModeloDominio.__table__,
+                DominioOpcionalModeloRubrica.__table__,
                 GrupoTurma.__table__,
                 GrupoTurmaMembro.__table__,
             ],
@@ -2137,6 +2146,8 @@ def create_app():
             db.session.execute(text("ALTER TABLE trabalhos ADD COLUMN data_limite DATE"))
         if "tema_global" not in trabalho_cols:
             db.session.execute(text("ALTER TABLE trabalhos ADD COLUMN tema_global TEXT"))
+        if "tipo_atividade" not in trabalho_cols:
+            db.session.execute(text("ALTER TABLE trabalhos ADD COLUMN tipo_atividade VARCHAR(20) DEFAULT 'trabalho'"))
         if "usar_tema_por_grupo" not in trabalho_cols:
             db.session.execute(text("ALTER TABLE trabalhos ADD COLUMN usar_tema_por_grupo BOOLEAN DEFAULT 0"))
         if "peso_dominios" not in trabalho_cols:
@@ -8971,10 +8982,13 @@ def create_app():
             trabalho = Trabalho(
                 turma_id=turma.id,
                 titulo=titulo,
+                tipo_atividade=(request.form.get("tipo_atividade") or "trabalho").strip().lower(),
                 descricao=(request.form.get("descricao") or "").strip() or None,
                 modo=(request.form.get("modo") or "individual").strip().lower(),
                 data_limite=_parse_date_local(request.form.get("data_limite")),
             )
+            if trabalho.tipo_atividade not in {"trabalho", "projeto", "portfolio", "atividade"}:
+                trabalho.tipo_atividade = "trabalho"
             if trabalho.modo not in {"individual", "grupo"}:
                 trabalho.modo = "individual"
             db.session.add(trabalho)
@@ -9146,6 +9160,7 @@ def create_app():
             if m.aluno_id is not None
         }
         alunos_disponiveis = [a for a in alunos if a.id not in usados]
+        modelos_opcionais = DominioOpcionalModelo.query.order_by(DominioOpcionalModelo.nome.asc()).all()
         return render_template(
             "trabalhos/detail.html",
             trabalho=trabalho,
@@ -9154,6 +9169,7 @@ def create_app():
             rows=rows,
             group_blocks=group_blocks,
             dominios_obrigatorios=dominios_obrigatorios,
+            modelos_opcionais=modelos_opcionais,
             alunos=alunos,
             alunos_disponiveis=alunos_disponiveis,
         )
@@ -9166,6 +9182,7 @@ def create_app():
             titulo = (request.form.get("titulo") or "").strip()
             descricao = (request.form.get("descricao") or "").strip() or None
             modo = (request.form.get("modo") or trabalho.modo or "individual").strip().lower()
+            tipo_atividade = (request.form.get("tipo_atividade") or trabalho.tipo_atividade or "trabalho").strip().lower()
             data_limite_raw = request.form.get("data_limite")
 
             if not titulo:
@@ -9174,6 +9191,8 @@ def create_app():
 
             if modo not in {"individual", "grupo"}:
                 modo = trabalho.modo if trabalho.modo in {"individual", "grupo"} else "individual"
+            if tipo_atividade not in {"trabalho", "projeto", "portfolio", "atividade"}:
+                tipo_atividade = trabalho.tipo_atividade if trabalho.tipo_atividade in {"trabalho", "projeto", "portfolio", "atividade"} else "trabalho"
 
             parsed_data_limite = _parse_date_local(data_limite_raw)
             if data_limite_raw and str(data_limite_raw).strip() and parsed_data_limite is None:
@@ -9184,6 +9203,7 @@ def create_app():
                 trabalho.titulo = titulo
                 trabalho.descricao = descricao
                 trabalho.modo = modo
+                trabalho.tipo_atividade = tipo_atividade
                 trabalho.data_limite = parsed_data_limite
                 if trabalho.modo == "individual":
                     _ensure_individual_groups(trabalho)
@@ -9242,6 +9262,32 @@ def create_app():
             trabalho.peso_criterios_extra = 0.0
         db.session.commit()
         flash("Configuração do trabalho atualizada.", "success")
+        return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
+
+    @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/aplicar-modelo-opcional", methods=["POST"])
+    def trabalho_aplicar_modelo_opcional(turma_id, trabalho_id):
+        trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
+        modelo_id = request.form.get("modelo_id", type=int)
+        modelo = DominioOpcionalModelo.query.get_or_404(modelo_id)
+        ordem = (db.session.query(func.max(ParametroDefinicao.ordem)).filter_by(trabalho_id=trabalho.id).scalar() or 0) + 1
+        for dominio in sorted(modelo.dominios, key=lambda d: (d.ordem, d.id)):
+            for rubrica in sorted(dominio.rubricas, key=lambda r: (r.ordem, r.id)):
+                nome = f"{dominio.nome} • {rubrica.nome}"
+                if ParametroDefinicao.query.filter_by(trabalho_id=trabalho.id, nome=nome).first():
+                    continue
+                db.session.add(
+                    ParametroDefinicao(
+                        trabalho_id=trabalho.id,
+                        nome=nome,
+                        tipo="numerico",
+                        escala="1..5",
+                        peso=float((dominio.peso or 1.0) * (rubrica.peso or 1.0)),
+                        ordem=ordem,
+                    )
+                )
+                ordem += 1
+        db.session.commit()
+        flash("Modelo opcional aplicado (cópia local editável).", "success")
         return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
 
     @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/grupos", methods=["POST"])
@@ -9380,6 +9426,25 @@ def create_app():
         db.session.commit()
         numero = aluno.numero if aluno.numero is not None else "—"
         return jsonify({"ok": True, "aluno": {"id": aluno.id, "label": f"{numero} {aluno.nome_curto_exibicao}".strip()}})
+
+    @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/grupos/<int:grupo_id>/rename", methods=["POST"])
+    def trabalho_rename_grupo(turma_id, trabalho_id, grupo_id):
+        trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
+        grupo = TrabalhoGrupo.query.filter_by(id=grupo_id, trabalho_id=trabalho.id).first_or_404()
+        payload = request.get_json(silent=True) or request.form
+        nome = (payload.get("nome") or "").strip()
+        if not nome:
+            return jsonify({"ok": False, "error": "Nome do grupo é obrigatório."}), 400
+        exists = TrabalhoGrupo.query.filter(
+            TrabalhoGrupo.trabalho_id == trabalho.id,
+            TrabalhoGrupo.id != grupo.id,
+            func.lower(TrabalhoGrupo.nome) == nome.lower(),
+        ).first()
+        if exists:
+            return jsonify({"ok": False, "error": "Já existe outro grupo com esse nome."}), 400
+        grupo.nome = nome
+        db.session.commit()
+        return jsonify({"ok": True, "nome": grupo.nome, "grupo_id": grupo.id})
 
     @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/entregas/<int:grupo_id>/save", methods=["POST"])
     def trabalho_save_entrega(turma_id, trabalho_id, grupo_id):

@@ -1231,6 +1231,7 @@ class Trabalho(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), nullable=False, index=True)
     titulo = db.Column(db.String(255), nullable=False)
+    tipo_atividade = db.Column(db.String(20), nullable=False, default="trabalho", server_default="trabalho")
     descricao = db.Column(db.Text)
     modo = db.Column(db.String(20), nullable=False, default="individual")
     tema_global = db.Column(db.Text)
@@ -1258,6 +1259,37 @@ class AulaTrabalhoLink(db.Model):
     __table_args__ = (
         db.UniqueConstraint("aula_id", "tipo", name="uq_aula_trabalho_link"),
     )
+
+
+class DominioOpcionalModelo(db.Model):
+    __tablename__ = "dominio_opcional_modelos"
+
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(140), nullable=False, unique=True)
+    descricao = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, server_default=db.text("now()"))
+
+
+class DominioOpcionalModeloDominio(db.Model):
+    __tablename__ = "dominio_opcional_modelo_dominios"
+
+    id = db.Column(db.Integer, primary_key=True)
+    modelo_id = db.Column(db.Integer, db.ForeignKey("dominio_opcional_modelos.id"), nullable=False, index=True)
+    nome = db.Column(db.String(120), nullable=False)
+    peso = db.Column(db.Float, nullable=False, default=1.0, server_default="1.0")
+    ordem = db.Column(db.Integer, nullable=False, default=0, server_default="0")
+    modelo = db.relationship("DominioOpcionalModelo", backref=db.backref("dominios", cascade="all, delete-orphan"))
+
+
+class DominioOpcionalModeloRubrica(db.Model):
+    __tablename__ = "dominio_opcional_modelo_rubricas"
+
+    id = db.Column(db.Integer, primary_key=True)
+    dominio_modelo_id = db.Column(db.Integer, db.ForeignKey("dominio_opcional_modelo_dominios.id"), nullable=False, index=True)
+    nome = db.Column(db.String(140), nullable=False)
+    peso = db.Column(db.Float, nullable=False, default=1.0, server_default="1.0")
+    ordem = db.Column(db.Integer, nullable=False, default=0, server_default="0")
+    dominio_modelo = db.relationship("DominioOpcionalModeloDominio", backref=db.backref("rubricas", cascade="all, delete-orphan"))
 
 
 class TrabalhoGrupo(db.Model):

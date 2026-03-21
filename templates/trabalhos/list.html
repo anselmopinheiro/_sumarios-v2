@@ -33,15 +33,23 @@
         <input class="form-control" name="titulo" placeholder="Título" required>
       </div>
       <div class="col-md-3">
+        <select class="form-select" name="tipo_atividade">
+          <option value="trabalho">Trabalho</option>
+          <option value="projeto">Projeto</option>
+          <option value="portfolio">Portfólio</option>
+          <option value="atividade">Atividade</option>
+        </select>
+      </div>
+      <div class="col-md-2">
         <select class="form-select" name="modo">
           <option value="individual">Individual</option>
           <option value="grupo">Grupo</option>
         </select>
       </div>
-      <div class="col-md-3">
+      <div class="col-md-2">
         <input class="form-control" type="date" name="data_limite" title="Data limite">
       </div>
-      <div class="col-md-2">
+      <div class="col-md-1">
         <input class="form-control" name="descricao" placeholder="Descrição">
       </div>
       <div class="col-12">
@@ -53,11 +61,12 @@
 
 <div class="table-responsive">
   <table class="table table-sm align-middle">
-    <thead><tr><th>Título</th><th>Modo</th><th>Data limite</th><th>Criado</th><th></th></tr></thead>
+    <thead><tr><th>Título</th><th>Tipo</th><th>Modo</th><th>Data limite</th><th>Criado</th><th></th></tr></thead>
     <tbody>
       {% for t in trabalhos %}
       <tr>
         <td>{{ t.titulo }}</td>
+        <td>{{ t.tipo_atividade }}</td>
         <td>{{ t.modo }}</td>
         <td>{{ t.data_limite.strftime('%d/%m/%Y') if t.data_limite else '—' }}</td>
         <td>{{ t.created_at.strftime('%d/%m/%Y') if t.created_at else '—' }}</td>

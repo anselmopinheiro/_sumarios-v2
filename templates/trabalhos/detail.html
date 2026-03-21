@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>{{ trabalho.titulo }} <small class="text-muted">({{ trabalho.modo }})</small></h2>
+<h2>{{ trabalho.titulo }} <small class="text-muted">({{ trabalho.tipo_atividade }} · {{ trabalho.modo }})</small></h2>
 <p class="text-muted">{{ trabalho.descricao or '' }}</p>
 <p class="text-muted">Data limite: <strong>{{ trabalho.data_limite.strftime('%d/%m/%Y') if trabalho.data_limite else '—' }}</strong></p>
 <div class="mb-3 d-flex gap-2 flex-wrap">
@@ -42,6 +42,17 @@
           <div class="col-md-1 d-flex align-items-end">
             <button class="btn btn-outline-primary btn-sm w-100" type="submit">Guardar</button>
           </div>
+        </form>
+        <form method="post" action="{{ url_for('trabalho_aplicar_modelo_opcional', turma_id=turma.id, trabalho_id=trabalho.id) }}" class="row g-2 mt-2">
+          <div class="col-md-8">
+            <select class="form-select form-select-sm" name="modelo_id" required>
+              <option value="">Aplicar modelo de domínios opcionais...</option>
+              {% for m in modelos_opcionais %}
+              <option value="{{ m.id }}">{{ m.nome }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4"><button class="btn btn-outline-dark btn-sm w-100" type="submit">Aplicar modelo (cópia local)</button></div>
         </form>
       </div>
     </div>
@@ -137,7 +148,13 @@
         <th>Fator</th>
         <th>Nota final</th>
         <th>Membro</th>
-        {% for d in dominios_obrigatorios %}<th>{{ d.letra }} - {{ d.nome }}</th>{% endfor %}
+        {% for d in dominios_obrigatorios %}
+          {% if d.rubricas %}
+            {% for r in d.rubricas %}<th>{{ d.letra }} · {{ r.nome }}</th>{% endfor %}
+          {% else %}
+            <th>{{ d.letra }} - {{ d.nome }}</th>
+          {% endif %}
+        {% endfor %}
         {% for p in parametros %}<th>{{ p.nome }}{% if p.escala %} <small class="text-muted">({{ p.escala }})</small>{% endif %}</th>{% endfor %}
         <th>Observações individuais</th>
         <th></th>
@@ -149,7 +166,12 @@
       {% set entrega_grupo = block.entrega_grupo %}
       <tr class="table-light group-main-row" data-group-main="{{ grupo.id if grupo else 0 }}">
         {% if trabalho.modo == 'grupo' %}
-        <td>{{ grupo.nome if grupo is not mapping else grupo['nome'] }}</td>
+        <td>
+          <div class="d-flex gap-1">
+            <input class="form-control form-control-sm field-grupo-nome" value="{{ grupo.nome if grupo is not mapping else grupo['nome'] }}" {% if grupo is mapping %}disabled{% endif %}>
+            {% if grupo is not mapping %}<button class="btn btn-sm btn-outline-secondary btn-rename-grupo" data-grupo-id="{{ grupo.id }}" type="button">Renomear</button>{% endif %}
+          </div>
+        </td>
         <td>
           <div class="lista-membros">
             {% for membro in (grupo.membros if grupo is not mapping else grupo['membros']) %}
@@ -191,6 +213,19 @@
         <td colspan="{% if trabalho.modo == 'grupo' %}10{% else %}4{% endif %}" class="text-muted small">{{ row.aluno_label }}</td>
         {% if dominios_obrigatorios %}
           {% for dominio in dominios_obrigatorios %}
+          {% if dominio.rubricas %}
+            {% for rubrica in dominio.rubricas %}
+          {% set dominio_idx = loop.index0 %}
+          <td>
+            <select class="form-select form-select-sm field-dominio" data-domain-id="{{ dominio.id }}" data-rubrica-id="{{ rubrica.id }}">
+              <option value=""></option>
+              {% for i in range(1,6) %}
+              <option value="{{ i }}" {% if (dominio_idx == 0 and entrega and entrega.consecucao == i) or (dominio_idx == 1 and entrega and entrega.qualidade == i) %}selected{% endif %}>{{ i }}</option>
+              {% endfor %}
+            </select>
+          </td>
+            {% endfor %}
+          {% else %}
           {% set dominio_idx = loop.index0 %}
           <td>
             <select class="form-select form-select-sm field-dominio" data-domain-id="{{ dominio.id }}">
@@ -200,6 +235,7 @@
               {% endfor %}
             </select>
           </td>
+          {% endif %}
           {% endfor %}
         {% endif %}
         {% for p in parametros %}
@@ -387,6 +423,28 @@
       } else {
         toast('Membro removido', 'success');
       }
+      return;
+    }
+
+    const renameBtn = ev.target.closest('.btn-rename-grupo');
+    if(renameBtn){
+      ev.preventDefault();
+      const grupoId = renameBtn.dataset.grupoId;
+      const tr = renameBtn.closest('tr.group-main-row');
+      const input = tr?.querySelector('.field-grupo-nome');
+      const nome = input?.value?.trim();
+      if(!nome){
+        toast('Nome do grupo é obrigatório', 'error');
+        return;
+      }
+      const url = "{{ url_for('trabalho_rename_grupo', turma_id=turma.id, trabalho_id=trabalho.id, grupo_id=0) }}".replace('/0/rename', `/${grupoId}/rename`);
+      const resp = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'}, body: JSON.stringify({nome})});
+      const data = await resp.json().catch(()=>({ok:false,error:'Erro inesperado'}));
+      if(!resp.ok || !data.ok){
+        toast(data.error || 'Erro ao renomear grupo', 'error');
+        return;
+      }
+      toast('Grupo renomeado', 'success');
       return;
     }
 
