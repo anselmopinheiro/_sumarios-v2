@@ -12,6 +12,10 @@
     <button class="btn btn-outline-dark" type="submit">Importar grupos pré-definidos</button>
   </form>
   {% endif %}
+  <div class="ms-auto d-flex gap-2 align-items-center">
+    <span id="save-status" class="badge text-bg-success">Guardado</span>
+    <button id="save-all-btn" class="btn btn-sm btn-primary" type="button" disabled>Guardar tudo</button>
+  </div>
 </div>
 
 <div class="row g-3 mb-4">
@@ -159,9 +163,43 @@
   const grid = document.getElementById('grupos-container');
   if(!grid) return;
   const membrosPicker = document.getElementById('membros-picker');
+  const saveStatus = document.getElementById('save-status');
+  const saveAllBtn = document.getElementById('save-all-btn');
+  let dirty = false;
+  let saving = false;
+  let saveError = null;
+  const rowTimers = new Map();
   function toast(msg, level='info'){ if(window.showToast){ window.showToast(msg, level); } else { alert(msg); } }
+  function renderSaveState(){
+    if(!saveStatus) return;
+    saveStatus.className = 'badge';
+    if(saveError){
+      saveStatus.classList.add('text-bg-danger');
+      saveStatus.textContent = 'Erro ao guardar';
+    } else if(saving){
+      saveStatus.classList.add('text-bg-warning');
+      saveStatus.textContent = 'A guardar…';
+    } else if(dirty){
+      saveStatus.classList.add('text-bg-secondary');
+      saveStatus.textContent = 'Alterações por guardar';
+    } else {
+      saveStatus.classList.add('text-bg-success');
+      saveStatus.textContent = 'Guardado';
+    }
+    if(saveAllBtn){
+      saveAllBtn.disabled = saving || (!dirty && !saveError);
+      saveAllBtn.textContent = saving ? 'A guardar…' : 'Guardar tudo';
+    }
+  }
+  function markDirty(){ dirty = true; saveError = null; renderSaveState(); }
+  function markSaving(){ saving = true; saveError = null; renderSaveState(); }
+  function markSaved(){ dirty = false; saving = false; saveError = null; renderSaveState(); }
+  function markError(msg){ saving = false; saveError = msg || 'Erro ao guardar'; renderSaveState(); }
+  renderSaveState();
 
   async function saveRow(tr){
+    if(!tr) return true;
+    markSaving();
     const payload = {
       aluno_id: Number(tr.dataset.alunoId),
       entregue: true,
@@ -180,8 +218,33 @@
     const url = "{{ url_for('trabalho_save_entrega', turma_id=turma.id, trabalho_id=trabalho.id, grupo_id=0) }}".replace('/0/save', `/${gid}/save`);
     const resp = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(payload)});
     const data = await resp.json().catch(()=>({ok:false,error:'Erro inesperado'}));
-    if(!resp.ok || !data.ok){ toast(data.error || 'Erro ao guardar', 'error'); return; }
-    toast('Guardado', 'success');
+    if(!resp.ok || !data.ok){ markError(data.error || 'Erro ao guardar'); toast(data.error || 'Erro ao guardar', 'error'); return false; }
+    markSaved();
+    return true;
+  }
+
+  function scheduleRowSave(tr, delay=700){
+    if(!tr) return;
+    const key = `${tr.dataset.grupoId}:${tr.dataset.alunoId}`;
+    if(rowTimers.has(key)) clearTimeout(rowTimers.get(key));
+    rowTimers.set(key, setTimeout(async ()=>{
+      rowTimers.delete(key);
+      await saveRow(tr);
+    }, delay));
+  }
+
+  async function saveAllPending(){
+    const rows = Array.from(grid.querySelectorAll('tr[data-aluno-id]'));
+    if(!rows.length){ markSaved(); return true; }
+    markSaving();
+    for(const tr of rows){
+      const ok = await saveRow(tr);
+      if(!ok){
+        return false;
+      }
+    }
+    markSaved();
+    return true;
   }
 
   document.getElementById('create-grupo-form')?.addEventListener('submit', async (ev)=>{
@@ -190,7 +253,8 @@
     const ids = Array.from(membrosPicker.selectedOptions).map(o=>Number(o.value));
     const resp = await fetch(ev.target.action,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({nome:nome,aluno_ids:ids})});
     const data = await resp.json().catch(()=>({ok:false,error:'Erro inesperado'}));
-    if(!resp.ok || !data.ok){ toast(data.error || 'Erro a criar grupo','error'); return; }
+    if(!resp.ok || !data.ok){ markError(data.error || 'Erro a criar grupo'); toast(data.error || 'Erro a criar grupo','error'); return; }
+    markSaved();
     window.location.reload();
   });
 
@@ -204,7 +268,8 @@
       const url = "{{ url_for('trabalho_remove_membro_grupo', turma_id=turma.id, trabalho_id=trabalho.id, grupo_id=0, aluno_id=0) }}".replace('/0/membros/0/remove', `/${rm.dataset.grupoId}/membros/${rm.dataset.alunoId}/remove`);
       const resp = await fetch(url,{method:'POST',headers:{'Accept':'application/json'}});
       const data = await resp.json().catch(()=>({ok:false,error:'Erro inesperado'}));
-      if(!resp.ok || !data.ok){ toast(data.error || 'Erro ao remover','error'); return; }
+      if(!resp.ok || !data.ok){ markError(data.error || 'Erro ao remover'); toast(data.error || 'Erro ao remover','error'); return; }
+      markSaved();
       window.location.reload();
       return;
     }
@@ -217,9 +282,26 @@
       const url = "{{ url_for('trabalho_rename_grupo', turma_id=turma.id, trabalho_id=trabalho.id, grupo_id=0) }}".replace('/0/rename', `/${ren.dataset.grupoId}/rename`);
       const resp = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({nome})});
       const data = await resp.json().catch(()=>({ok:false,error:'Erro inesperado'}));
-      if(!resp.ok || !data.ok){ toast(data.error || 'Erro ao renomear','error'); return; }
+      if(!resp.ok || !data.ok){ markError(data.error || 'Erro ao renomear'); toast(data.error || 'Erro ao renomear','error'); return; }
+      markSaved();
       toast('Grupo renomeado','success');
       return;
+    }
+  });
+
+  grid.addEventListener('input', (ev)=>{
+    const tr = ev.target.closest('tr[data-aluno-id]');
+    if(tr){
+      markDirty();
+      scheduleRowSave(tr, 800);
+      return;
+    }
+    const groupField = ev.target.closest('.field-tema-grupo, .field-data-entrega-grupo, .field-observacoes-grupo');
+    if(groupField){
+      const card = ev.target.closest('.grupo-card');
+      const firstRow = card?.querySelector('tr[data-aluno-id]');
+      markDirty();
+      scheduleRowSave(firstRow, 900);
     }
   });
 
@@ -234,6 +316,8 @@
         const dd = String(d.getDate()).padStart(2,'0');
         dataField.value = `${d.getFullYear()}-${mm}-${dd}`;
       }
+      markDirty();
+      scheduleRowSave(card?.querySelector('tr[data-aluno-id]'), 200);
       return;
     }
 
@@ -245,8 +329,29 @@
     const url = "{{ url_for('trabalho_add_membro_grupo', turma_id=turma.id, trabalho_id=trabalho.id, grupo_id=0) }}".replace('/0/membros/add', `/${gid}/membros/add`);
     const resp = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({aluno_id:Number(addSel.value)})});
     const data = await resp.json().catch(()=>({ok:false,error:'Erro inesperado'}));
-    if(!resp.ok || !data.ok){ toast(data.error || 'Erro a adicionar','error'); return; }
+    if(!resp.ok || !data.ok){ markError(data.error || 'Erro a adicionar'); toast(data.error || 'Erro a adicionar','error'); return; }
+    markSaved();
     window.location.reload();
+  });
+
+  saveAllBtn?.addEventListener('click', async ()=>{
+    await saveAllPending();
+  });
+
+  window.addEventListener('beforeunload', (ev)=>{
+    if(dirty || saving){
+      ev.preventDefault();
+      ev.returnValue = '';
+    }
+  });
+
+  document.querySelectorAll('a[href]').forEach((a)=>{
+    a.addEventListener('click', async (ev)=>{
+      if(!(dirty || saveError)) return;
+      ev.preventDefault();
+      const ok = await saveAllPending();
+      if(ok) window.location.href = a.href;
+    });
   });
 })();
 </script>
