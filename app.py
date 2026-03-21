@@ -4084,6 +4084,38 @@ def create_app():
             return redirect(url_for("aula_avaliar", aula_id=aula.id, embed=1))
         if tipo not in {"obser", "portfolio", "projeto", "trabalho"}:
             abort(404)
+        if tipo in {"projeto", "trabalho"}:
+            turma = Turma.query.get(aula.turma_id)
+            trabalhos = Trabalho.query.filter_by(turma_id=aula.turma_id).order_by(Trabalho.created_at.desc(), Trabalho.id.desc()).all()
+            if request.method == "POST":
+                action = (request.form.get("action") or "").strip().lower()
+                next_url = url_for("aula_avaliacao_shell", aula_id=aula.id, tipo=tipo)
+                if action == "open_existing":
+                    trabalho_id = request.form.get("trabalho_id", type=int)
+                    trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=aula.turma_id).first()
+                    if not trabalho:
+                        return jsonify({"ok": False, "error": "Atividade não encontrada", "status": "error"}), 404
+                    return jsonify({"ok": True, "redirect_url": url_for("trabalho_detail", turma_id=aula.turma_id, trabalho_id=trabalho.id, next=next_url)}), 200
+                if action == "create_new":
+                    numero = len(trabalhos) + 1
+                    prefixo = "Projeto" if tipo == "projeto" else "Trabalho"
+                    novo = Trabalho(
+                        turma_id=aula.turma_id,
+                        titulo=f"{prefixo} {numero}",
+                        modo="grupo",
+                        data_limite=aula.data,
+                    )
+                    db.session.add(novo)
+                    db.session.commit()
+                    return jsonify({"ok": True, "redirect_url": url_for("trabalho_detail", turma_id=aula.turma_id, trabalho_id=novo.id, next=next_url)}), 200
+            return render_template(
+                "avaliacao_link_atividade.html",
+                aula=aula,
+                turma=turma,
+                tipo=tipo,
+                trabalhos=trabalhos,
+                embed_mode=True,
+            )
 
         eventos_relevantes = _listar_eventos_relevantes_aula(aula, tipo) if tipo in {"portfolio", "projeto", "trabalho"} else []
         event_id_escolhido = request.values.get("event_id", type=int)

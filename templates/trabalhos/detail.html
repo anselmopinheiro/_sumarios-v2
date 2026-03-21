@@ -4,7 +4,8 @@
 <p class="text-muted">{{ trabalho.descricao or '' }}</p>
 <p class="text-muted">Data limite: <strong>{{ trabalho.data_limite.strftime('%d/%m/%Y') if trabalho.data_limite else '—' }}</strong></p>
 <div class="mb-3 d-flex gap-2 flex-wrap">
-  <a class="btn btn-outline-secondary" href="{{ url_for('turma_trabalhos', turma_id=turma.id) }}">Voltar</a>
+  {% set next_url = request.args.get('next') %}
+  <a class="btn btn-outline-secondary" href="{{ next_url if next_url else url_for('turma_trabalhos', turma_id=turma.id) }}">Voltar</a>
   <a class="btn btn-outline-primary" href="{{ url_for('trabalho_edit', turma_id=turma.id, trabalho_id=trabalho.id) }}">Editar trabalho</a>
   {% if trabalho.modo == 'grupo' %}
   <form method="post" action="{{ url_for('trabalho_importar_grupos_turma', turma_id=turma.id, trabalho_id=trabalho.id) }}">
