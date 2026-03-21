@@ -3588,10 +3588,21 @@ def create_app():
                 turma_id=aula.turma_id,
                 disciplina_id=disciplina.id,
                 ativo=True,
+                usar_ev2=True,
             )
             .order_by(EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
             .first()
         )
+        if not subject_config:
+            subject_config = (
+                EV2SubjectConfig.query.filter_by(
+                    turma_id=aula.turma_id,
+                    disciplina_id=disciplina.id,
+                    ativo=True,
+                )
+                .order_by(EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
+                .first()
+            )
         if not subject_config:
             subject_config = EV2SubjectConfig(
                 turma_id=aula.turma_id,
@@ -4226,10 +4237,21 @@ def create_app():
                         turma_id=aula.turma_id,
                         disciplina_id=disciplina.id,
                         ativo=True,
+                        usar_ev2=True,
                     )
                     .order_by(EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
                     .first()
                 )
+                if not subject_config:
+                    subject_config = (
+                        EV2SubjectConfig.query.filter_by(
+                            turma_id=aula.turma_id,
+                            disciplina_id=disciplina.id,
+                            ativo=True,
+                        )
+                        .order_by(EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
+                        .first()
+                    )
                 if not subject_config:
                     subject_config = EV2SubjectConfig(
                         turma_id=aula.turma_id,
@@ -8807,10 +8829,17 @@ def create_app():
     def _listar_dominios_obrigatorios_turma(turma_id):
         subject_config = (
             EV2SubjectConfig.query
-            .filter_by(turma_id=turma_id, ativo=True)
+            .filter_by(turma_id=turma_id, ativo=True, usar_ev2=True)
             .order_by(EV2SubjectConfig.id.desc())
             .first()
         )
+        if not subject_config:
+            subject_config = (
+                EV2SubjectConfig.query
+                .filter_by(turma_id=turma_id, ativo=True)
+                .order_by(EV2SubjectConfig.id.desc())
+                .first()
+            )
         if not subject_config:
             return []
         dominios = (

@@ -101,10 +101,17 @@ def _domain_signature(domain_meta: Dict[int, Dict[str, Any]]) -> Tuple:
 def _fallback_domain_meta_from_active_config(turma_id: int, disciplina_id: int) -> Dict[int, Dict[str, Any]]:
     cfg = (
         EV2SubjectConfig.query
-        .filter_by(turma_id=turma_id, disciplina_id=disciplina_id, ativo=True)
+        .filter_by(turma_id=turma_id, disciplina_id=disciplina_id, ativo=True, usar_ev2=True)
         .order_by(EV2SubjectConfig.id.desc())
         .first()
     )
+    if not cfg:
+        cfg = (
+            EV2SubjectConfig.query
+            .filter_by(turma_id=turma_id, disciplina_id=disciplina_id, ativo=True)
+            .order_by(EV2SubjectConfig.id.desc())
+            .first()
+        )
     if not cfg:
         return {}
 

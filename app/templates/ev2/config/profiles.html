@@ -1,0 +1,85 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>EV2 · Perfis turma/disciplina</title>
+  <link rel="stylesheet" href="{{ url_for('ev2_config.static', filename='ev2/ev2.css') }}">
+</head>
+<body>
+  <h1>EV2 · Perfis por Turma + Disciplina</h1>
+  <p><a href="/ev2/config/domains">Gerir domínios</a> · <a href="/ev2/config/rubricas">Gerir rubricas</a></p>
+
+  <div class="ev2-panel">
+    <h3>Novo perfil</h3>
+    <form method="post" action="/ev2/config/profiles" class="ev2-form-grid">
+      <div>
+        <label class="required">Turma</label>
+        <select name="turma_id" required>
+          <option value="">— selecionar —</option>
+          {% for t in turmas %}
+          <option value="{{ t.id }}">{{ t.nome }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="required">Disciplina</label>
+        <select name="disciplina_id" required>
+          <option value="">— selecionar —</option>
+          {% for d in disciplinas %}
+          <option value="{{ d.id }}">{{ d.nome }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="required">Nome do perfil</label>
+        <input name="nome" required placeholder="Ex.: Perfil padrão 2025/26">
+      </div>
+      <div>
+        <label><input type="checkbox" name="ativo" value="1" checked> Ativo</label>
+      </div>
+      <div>
+        <label><input type="checkbox" name="usar_ev2" value="1" checked> Usar EV2</label>
+      </div>
+      <div class="ev2-actions">
+        <button type="submit">Criar perfil</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="ev2-panel">
+    <h3>Perfis existentes</h3>
+    <table class="ev2-table">
+      <thead>
+        <tr>
+          <th class="col-id">ID</th>
+          <th class="col-left">Turma</th>
+          <th class="col-left">Disciplina</th>
+          <th class="col-left">Nome</th>
+          <th class="col-center">Ativo</th>
+          <th class="col-center">Usar EV2</th>
+          <th class="col-center">Rubricas</th>
+          <th class="col-left">Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in profiles %}
+        <tr>
+          <td class="col-id">{{ p.id }}</td>
+          <td class="col-left">{{ p.turma.nome if p.turma else '—' }}</td>
+          <td class="col-left">{{ p.disciplina.nome if p.disciplina else '—' }}</td>
+          <td class="col-left">{{ p.nome }}</td>
+          <td class="col-center">{{ 'Sim' if p.ativo else 'Não' }}</td>
+          <td class="col-center">{{ 'Sim' if p.usar_ev2 else 'Não' }}</td>
+          <td class="col-center">{{ p.rubrics|length }}</td>
+          <td class="col-left">
+            <form method="post" action="/ev2/config/profiles/{{ p.id }}/activate" style="display:inline;">
+              <button type="submit" class="secondary">Ativar este perfil</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>

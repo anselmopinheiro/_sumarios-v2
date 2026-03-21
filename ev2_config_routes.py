@@ -3,7 +3,16 @@ from __future__ import annotations
 from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 from sqlalchemy.exc import IntegrityError
 
-from models import EV2Assessment, EV2Domain, EV2Rubric, db
+from models import (
+    Disciplina,
+    EV2Assessment,
+    EV2Domain,
+    EV2Rubric,
+    EV2SubjectConfig,
+    EV2SubjectRubric,
+    Turma,
+    db,
+)
 
 
 ev2_config_bp = Blueprint(
@@ -82,6 +91,20 @@ def _rubric_to_dict(rubric: EV2Rubric) -> dict:
     }
 
 
+def _subject_profile_to_dict(profile: EV2SubjectConfig) -> dict:
+    return {
+        "id": profile.id,
+        "turma_id": profile.turma_id,
+        "turma_nome": profile.turma.nome if profile.turma else None,
+        "disciplina_id": profile.disciplina_id,
+        "disciplina_nome": profile.disciplina.nome if profile.disciplina else None,
+        "nome": profile.nome,
+        "ativo": bool(profile.ativo),
+        "usar_ev2": bool(profile.usar_ev2),
+        "rubricas_count": EV2SubjectRubric.query.filter_by(subject_config_id=profile.id).count(),
+    }
+
+
 def _unique_rubric_code(target_domain_id: int, candidate: str, exclude_id: int | None = None) -> str:
     base = (candidate or "").strip() or "RUB"
     base = base[:80]
@@ -107,6 +130,98 @@ def _unique_rubric_code(target_domain_id: int, candidate: str, exclude_id: int |
             return code
         idx += 1
     return f"{base[:76]}-dup"
+
+
+@ev2_config_bp.route("/profiles", methods=["GET", "POST"])
+def ev2_profiles_collection():
+    if request.method == "GET":
+        profiles = (
+            EV2SubjectConfig.query
+            .order_by(
+                EV2SubjectConfig.turma_id.asc(),
+                EV2SubjectConfig.disciplina_id.asc(),
+                EV2SubjectConfig.updated_at.desc(),
+                EV2SubjectConfig.id.desc(),
+            )
+            .all()
+        )
+        turmas = Turma.query.order_by(Turma.nome.asc()).all()
+        disciplinas = Disciplina.query.order_by(Disciplina.nome.asc()).all()
+        if _wants_json():
+            return jsonify([_subject_profile_to_dict(item) for item in profiles])
+        return render_template(
+            "ev2/config/profiles.html",
+            profiles=profiles,
+            turmas=turmas,
+            disciplinas=disciplinas,
+        )
+
+    data = _payload()
+    turma_id = _as_int(data.get("turma_id"))
+    disciplina_id = _as_int(data.get("disciplina_id"))
+    nome = (data.get("nome") or "").strip()
+    ativo = _to_bool(data.get("ativo"), default=True)
+    usar_ev2 = _to_bool(data.get("usar_ev2"), default=True)
+
+    if not turma_id or not disciplina_id or not nome:
+        return _error(
+            "Campos obrigatórios: turma_id, disciplina_id, nome",
+            400,
+            "ev2_config.ev2_profiles_collection",
+        )
+
+    turma = Turma.query.get(turma_id)
+    disciplina = Disciplina.query.get(disciplina_id)
+    if not turma or not disciplina:
+        return _error("Turma ou disciplina não encontrada.", 404, "ev2_config.ev2_profiles_collection")
+
+    profile = EV2SubjectConfig(
+        turma_id=turma_id,
+        disciplina_id=disciplina_id,
+        nome=nome,
+        ativo=ativo,
+        usar_ev2=usar_ev2,
+    )
+    db.session.add(profile)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return _error(
+            "Já existe perfil com o mesmo nome para esta turma/disciplina.",
+            409,
+            "ev2_config.ev2_profiles_collection",
+        )
+
+    if _wants_json():
+        return jsonify(_subject_profile_to_dict(profile)), 201
+    flash("Perfil EV2 criado com sucesso.", "success")
+    return redirect(url_for("ev2_config.ev2_profiles_collection"))
+
+
+@ev2_config_bp.post("/profiles/<int:profile_id>/activate")
+def ev2_profile_activate(profile_id: int):
+    profile = EV2SubjectConfig.query.get(profile_id)
+    if not profile:
+        return _error("Perfil não encontrado.", 404, "ev2_config.ev2_profiles_collection")
+
+    (
+        EV2SubjectConfig.query
+        .filter(
+            EV2SubjectConfig.turma_id == profile.turma_id,
+            EV2SubjectConfig.disciplina_id == profile.disciplina_id,
+            EV2SubjectConfig.id != profile.id,
+        )
+        .update({"ativo": False}, synchronize_session=False)
+    )
+    profile.ativo = True
+    profile.usar_ev2 = True
+    db.session.commit()
+
+    if _wants_json():
+        return jsonify(_subject_profile_to_dict(profile))
+    flash("Perfil ativado para a turma/disciplina.", "success")
+    return redirect(url_for("ev2_config.ev2_profiles_collection"))
 
 
 @ev2_config_bp.route("/domains", methods=["GET", "POST"])
