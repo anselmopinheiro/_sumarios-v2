@@ -1,6 +1,10 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>{{ trabalho.titulo }} <small class="text-muted">({{ trabalho.tipo_atividade }} · {{ trabalho.modo }})</small></h2>
+<h2>{{ trabalho.titulo }}</h2>
+<p class="text-muted mb-1">
+  Turma: <strong>{{ turma.nome if turma else '—' }}</strong> ·
+  Tipo de avaliação: <strong>{{ trabalho.tipo_atividade or 'trabalho' }}</strong>
+</p>
 <p class="text-muted">{{ trabalho.descricao or '' }}</p>
 <p class="text-muted">Prazo global: <strong>{{ trabalho.data_limite.strftime('%d/%m/%Y') if trabalho.data_limite else '—' }}</strong></p>
 <div class="mb-3 d-flex gap-2 flex-wrap">
@@ -13,10 +17,6 @@
     <button class="btn btn-outline-dark" type="submit" {% if grupos_count > 0 %}disabled title="Já existem grupos nesta atividade"{% endif %}>Importar grupos pré-definidos</button>
   </form>
   {% endif %}
-  <div class="ms-auto d-flex gap-2 align-items-center">
-    <span id="save-status" class="badge text-bg-success">Guardado</span>
-    <button id="save-all-btn" class="btn btn-sm btn-primary" type="button" disabled>Guardar tudo</button>
-  </div>
 </div>
 <div class="position-sticky top-0 z-3 bg-body border rounded px-3 py-2 mb-3 d-flex justify-content-end gap-2 align-items-center shadow-sm">
   <span id="save-status-sticky" class="badge text-bg-success">Guardado</span>
@@ -90,12 +90,27 @@
       <span class="badge text-bg-light">{{ bloco.members|length }} membro(s)</span>
     </div>
     <div class="card-body">
-      <div class="row g-2 mb-3">
-        <div class="col-md-3"><input class="form-control form-control-sm field-tema-grupo" placeholder="Tema do grupo" value="{{ g.tema if g.tema is defined else g['tema'] or '' }}" {% if gvirtual %}disabled{% endif %}></div>
-        <div class="col-md-1 d-flex align-items-center"><input type="checkbox" class="form-check-input field-entregue-grupo" {% if bloco.entrega_grupo and bloco.entrega_grupo.entregue %}checked{% endif %} {% if gvirtual %}disabled{% endif %}></div>
-        <div class="col-md-2"><input type="date" class="form-control form-control-sm field-data-entrega-grupo" value="{{ (g.data_entrega if g.data_entrega is defined else g['data_entrega']).strftime('%Y-%m-%d') if (g.data_entrega if g.data_entrega is defined else g['data_entrega']) else '' }}" {% if gvirtual %}disabled{% endif %}></div>
-        <div class="col-md-4"><textarea class="form-control form-control-sm field-observacoes-grupo" rows="2" placeholder="Observações do grupo" {% if gvirtual %}disabled{% endif %}>{{ g.observacoes if g.observacoes is defined else g['observacoes'] or '' }}</textarea></div>
+      <div class="row g-2 mb-3 align-items-end">
+        <div class="col-md-3">
+          <label class="form-label form-label-sm mb-1">Tema do grupo</label>
+          <input class="form-control form-control-sm field-tema-grupo" placeholder="Tema do grupo" value="{{ g.tema if g.tema is defined else g['tema'] or '' }}" {% if gvirtual %}disabled{% endif %}>
+        </div>
+        <div class="col-md-1">
+          <label class="form-label form-label-sm mb-1 d-block">Entregue</label>
+          <div class="form-check mt-1">
+            <input type="checkbox" class="form-check-input field-entregue-grupo" {% if bloco.entrega_grupo and bloco.entrega_grupo.entregue %}checked{% endif %} {% if gvirtual %}disabled{% endif %}>
+          </div>
+        </div>
         <div class="col-md-2">
+          <label class="form-label form-label-sm mb-1">Data</label>
+          <input type="date" class="form-control form-control-sm field-data-entrega-grupo" value="{{ (g.data_entrega if g.data_entrega is defined else g['data_entrega']).strftime('%Y-%m-%d') if (g.data_entrega if g.data_entrega is defined else g['data_entrega']) else '' }}" {% if gvirtual %}disabled{% endif %}>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label form-label-sm mb-1">Observações</label>
+          <textarea class="form-control form-control-sm field-observacoes-grupo" rows="2" placeholder="Observações do grupo" {% if gvirtual %}disabled{% endif %}>{{ g.observacoes if g.observacoes is defined else g['observacoes'] or '' }}</textarea>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label form-label-sm mb-1 d-block">Adicionar membro</label>
           {% if trabalho.modo == 'grupo' and not gvirtual %}
           <select class="form-select form-select-sm field-add-member">
             <option value="">Adicionar membro...</option>
@@ -121,11 +136,11 @@
             <tr>
               {% for d in dominios_obrigatorios if d.rubricas %}
                 {% for r in d.rubricas %}<th>{{ r.nome }}</th>{% endfor %}
-                <th class="text-nowrap">Média {{ d.letra }}</th>
+                <th class="text-nowrap">{{ d.letra }}</th>
               {% endfor %}
               {% for dom in dominios_opcionais if dom.rubricas %}
                 {% for r in dom.rubricas %}<th>{{ r.nome }}</th>{% endfor %}
-                <th class="text-nowrap">Média</th>
+                <th class="text-nowrap">{{ dom.nome }}</th>
               {% endfor %}
             </tr>
           </thead>
