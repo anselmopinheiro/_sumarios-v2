@@ -8882,6 +8882,13 @@ def create_app():
         alunos_by_id = {a.id: a for a in alunos}
         dominios_obrigatorios = _listar_dominios_obrigatorios_turma(trabalho.turma_id)
         parametros = sorted(trabalho.parametros, key=lambda p: (p.ordem, p.id))
+        rubric_param_id_map = {}
+        for p in parametros:
+            nome = (p.nome or "").strip()
+            if nome.startswith("EV2R:"):
+                raw = nome.split(":", 1)[1].strip()
+                if raw.isdigit():
+                    rubric_param_id_map[int(raw)] = p.id
         opcionais = {}
         for p in parametros:
             if "•" in (p.nome or ""):
@@ -8904,10 +8911,16 @@ def create_app():
                 usados.add(m.aluno.id)
                 ea = entregas_aluno.get((g.id, m.aluno.id))
                 extra_map = {ep.parametro_definicao_id: ep for ep in (ea.parametros if ea else [])}
+                rubric_values = {}
+                for rid, pid in rubric_param_id_map.items():
+                    ep = extra_map.get(pid)
+                    if ep and ep.valor_numerico is not None:
+                        rubric_values[rid] = int(ep.valor_numerico)
                 members.append({
                     "aluno": m.aluno,
                     "entrega": ea,
                     "extra_map": extra_map,
+                    "rubric_values": rubric_values,
                 })
             eg = entregas_grupo.get(g.id)
             metrics = []
@@ -8926,10 +8939,21 @@ def create_app():
             groups_vm = []
             for a in alunos:
                 ea = next((e for e in trabalho.entregas if e.aluno_id == a.id), None)
+                extra_map = {ep.parametro_definicao_id: ep for ep in (ea.parametros if ea else [])}
+                rubric_values = {}
+                for rid, pid in rubric_param_id_map.items():
+                    ep = extra_map.get(pid)
+                    if ep and ep.valor_numerico is not None:
+                        rubric_values[rid] = int(ep.valor_numerico)
                 groups_vm.append({
                     "grupo": {"id": f"ind-{a.id}", "nome": a.nome_curto_exibicao, "tema": None, "data_entrega": None, "observacoes": None},
                     "entrega_grupo": None,
-                    "members": [{"aluno": a, "entrega": ea, "extra_map": {ep.parametro_definicao_id: ep for ep in (ea.parametros if ea else [])}}],
+                    "members": [{
+                        "aluno": a,
+                        "entrega": ea,
+                        "extra_map": extra_map,
+                        "rubric_values": rubric_values,
+                    }],
                     "media_grupo": 0.0,
                     "virtual": True,
                 })
@@ -9626,6 +9650,18 @@ def create_app():
         extra = payload.get("extra") or {}
         if isinstance(extra, str):
             extra = {}
+        rubricas_payload = payload.get("rubricas") or {}
+        if isinstance(rubricas_payload, str):
+            rubricas_payload = {}
+        app.logger.info(
+            "[trabalho] autosave detail turma=%s trabalho=%s grupo=%s aluno=%s rubricas_in=%s extra_in=%s",
+            turma_id,
+            trabalho_id,
+            grupo.id,
+            aluno_id,
+            list(rubricas_payload.keys()) if isinstance(rubricas_payload, dict) else [],
+            list(extra.keys()) if isinstance(extra, dict) else [],
+        )
 
         for param_id, value in extra.items():
             try:
@@ -9655,6 +9691,68 @@ def create_app():
                 ep.valor_texto = (str(value).strip() if value is not None else None) or None
                 ep.valor_numerico = None
 
+        rubricas_saved = []
+        rubricas_ignored = []
+        if isinstance(rubricas_payload, dict):
+            max_ordem = max([p.ordem or 0 for p in parametros], default=0)
+            defs_by_name = {(p.nome or "").strip(): p for p in parametros}
+            for rubric_id_raw, value in rubricas_payload.items():
+                try:
+                    rid = int(rubric_id_raw)
+                except Exception:
+                    rubricas_ignored.append({"rubric_id": rubric_id_raw, "reason": "invalid_id"})
+                    continue
+                rubrica = EV2Rubric.query.get(rid)
+                if not rubrica:
+                    rubricas_ignored.append({"rubric_id": rid, "reason": "not_found"})
+                    continue
+
+                key_name = f"EV2R:{rid}"
+                definicao = defs_by_name.get(key_name)
+                if not definicao:
+                    max_ordem += 1
+                    definicao = ParametroDefinicao(
+                        trabalho_id=trabalho.id,
+                        nome=key_name,
+                        tipo="numerico",
+                        ordem=max_ordem,
+                        escala="1-5",
+                        peso=1.0,
+                    )
+                    db.session.add(definicao)
+                    db.session.flush()
+                    defs_by_name[key_name] = definicao
+                    defs_by_id[definicao.id] = definicao
+                    parametros.append(definicao)
+
+                ep = EntregaParametro.query.filter_by(
+                    entrega_id=entrega_aluno.id,
+                    parametro_definicao_id=definicao.id,
+                ).first()
+                if not ep:
+                    ep = EntregaParametro(
+                        entrega_id=entrega_aluno.id,
+                        parametro_definicao_id=definicao.id,
+                    )
+                    db.session.add(ep)
+
+                if value in (None, ""):
+                    ep.valor_numerico = None
+                    ep.valor_texto = None
+                    rubricas_saved.append({"rubric_id": rid, "value": None, "param_id": definicao.id})
+                    continue
+                try:
+                    iv = int(value)
+                except Exception:
+                    rubricas_ignored.append({"rubric_id": rid, "reason": "invalid_value", "value": value})
+                    continue
+                if iv < 1 or iv > 5:
+                    rubricas_ignored.append({"rubric_id": rid, "reason": "out_of_range", "value": iv})
+                    continue
+                ep.valor_numerico = iv
+                ep.valor_texto = None
+                rubricas_saved.append({"rubric_id": rid, "value": iv, "param_id": definicao.id})
+
         db.session.commit()
         app.logger.info(
             "[trabalho] autosave commit ok turma=%s trabalho=%s grupo=%s aluno=%s entrega_aluno=%s entrega_grupo=%s",
@@ -9680,6 +9778,8 @@ def create_app():
                 "entregue_grupo": bool(entrega_grupo.entregue),
                 "data_entrega_grupo": entrega_grupo.data_entrega.isoformat() if entrega_grupo.data_entrega else None,
                 "tema_grupo": grupo.tema,
+                "rubricas_saved": rubricas_saved,
+                "rubricas_ignored": rubricas_ignored,
             },
             "updated_at": entrega_aluno.updated_at.isoformat(timespec="seconds"),
             "data_entrega": entrega_aluno.data_entrega.isoformat() if entrega_aluno.data_entrega else None,
