@@ -214,6 +214,7 @@
   let saving = false;
   let saveError = null;
   const rowTimers = new Map();
+  const pendingRows = new Set();
   function toast(msg, level='info'){ if(window.showToast){ window.showToast(msg, level); } else { alert(msg); } }
   function updateGroupActionStates(){
     if(createGrupoBtn && membrosPicker){
@@ -245,9 +246,25 @@
     });
     updateGroupActionStates();
   }
-  function markDirty(){ dirty = true; saveError = null; renderSaveState(); }
+  function rowKey(tr){ return tr ? `${tr.dataset.grupoId}:${tr.dataset.alunoId}` : ''; }
+  function markDirty(tr){
+    if(tr){
+      const key = rowKey(tr);
+      if(key) pendingRows.add(key);
+    }
+    dirty = pendingRows.size > 0;
+    saveError = null;
+    renderSaveState();
+  }
   function markSaving(){ saving = true; saveError = null; renderSaveState(); }
-  function markSaved(){ dirty = false; saving = false; saveError = null; renderSaveState(); }
+  function markSaved(tr){
+    const key = rowKey(tr);
+    if(key) pendingRows.delete(key);
+    dirty = pendingRows.size > 0 || rowTimers.size > 0;
+    saving = false;
+    saveError = null;
+    renderSaveState();
+  }
   function markError(msg){ saving = false; saveError = msg || 'Erro ao guardar'; renderSaveState(); }
   renderSaveState();
   updateGroupActionStates();
@@ -274,6 +291,7 @@
   async function saveRow(tr){
     if(!tr) return true;
     markSaving();
+    const key = rowKey(tr);
     const payload = {
       aluno_id: Number(tr.dataset.alunoId),
       entregue: true,
@@ -291,11 +309,18 @@
     });
     tr.querySelectorAll('.field-extra').forEach((el)=> payload.extra[el.dataset.paramId]=el.value);
     const gid = tr.dataset.grupoId;
+    console.debug('[trabalho-autosave] sending', { key, gid, aluno_id: payload.aluno_id, has_extra: Object.keys(payload.extra || {}).length });
     const url = "{{ url_for('trabalho_save_entrega', turma_id=turma.id, trabalho_id=trabalho.id, grupo_id=0) }}".replace('/0/save', `/${gid}/save`);
     const resp = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(payload)});
     const data = await resp.json().catch(()=>({ok:false,error:'Erro inesperado'}));
-    if(!resp.ok || !data.ok){ markError(data.error || 'Erro ao guardar'); toast(data.error || 'Erro ao guardar', 'error'); return false; }
-    markSaved();
+    if(!resp.ok || !data.ok){
+      console.error('[trabalho-autosave] error', { key, status: resp.status, data });
+      markError(data.error || 'Erro ao guardar');
+      toast(data.error || 'Erro ao guardar', 'error');
+      return false;
+    }
+    console.debug('[trabalho-autosave] saved', { key, persisted: data.persisted || null, updated_at: data.updated_at });
+    markSaved(tr);
     return true;
   }
 
@@ -310,16 +335,20 @@
   }
 
   async function saveAllPending(){
-    const rows = Array.from(grid.querySelectorAll('tr[data-aluno-id]'));
-    if(!rows.length){ markSaved(); return true; }
+    const allRows = Array.from(grid.querySelectorAll('tr[data-aluno-id]'));
+    const rows = allRows.filter((tr)=> pendingRows.has(rowKey(tr)));
+    const targets = rows.length ? rows : allRows;
+    if(!targets.length){ dirty = false; renderSaveState(); return true; }
     markSaving();
-    for(const tr of rows){
+    for(const tr of targets){
       const ok = await saveRow(tr);
       if(!ok){
         return false;
       }
     }
-    markSaved();
+    dirty = pendingRows.size > 0;
+    saving = false;
+    renderSaveState();
     return true;
   }
 
@@ -366,7 +395,7 @@
     const tr = ev.target.closest('tr[data-aluno-id]');
     if(tr){
       recalcRowDomainAverages(tr);
-      markDirty();
+      markDirty(tr);
       scheduleRowSave(tr, 800);
       return;
     }
@@ -374,7 +403,7 @@
     if(groupField){
       const card = ev.target.closest('.grupo-card');
       const firstRow = card?.querySelector('tr[data-aluno-id]');
-      markDirty();
+      markDirty(firstRow);
       scheduleRowSave(firstRow, 900);
     }
   });
@@ -384,7 +413,7 @@
     const tr = ev.target.closest('tr[data-aluno-id]');
     if(tr){
       recalcRowDomainAverages(tr);
-      markDirty();
+      markDirty(tr);
       scheduleRowSave(tr, 600);
     }
     const entregueChk = ev.target.closest('.field-entregue-grupo');
@@ -397,7 +426,7 @@
         const dd = String(d.getDate()).padStart(2,'0');
         dataField.value = `${d.getFullYear()}-${mm}-${dd}`;
       }
-      markDirty();
+      markDirty(card?.querySelector('tr[data-aluno-id]'));
       scheduleRowSave(card?.querySelector('tr[data-aluno-id]'), 200);
       return;
     }

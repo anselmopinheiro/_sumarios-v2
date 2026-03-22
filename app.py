@@ -9045,6 +9045,10 @@ def create_app():
             gid = grupo.id
             db.session.delete(grupo)
             db.session.commit()
+            app.logger.info(
+                "[trabalho] remove_membro ok+grupo_deleted turma=%s trabalho=%s grupo=%s aluno=%s",
+                turma_id, trabalho_id, grupo_id_deleted, aluno_id,
+            )
             return jsonify({
                 "ok": True,
                 "deleted": True,
@@ -9055,6 +9059,10 @@ def create_app():
             })
 
         db.session.commit()
+        app.logger.info(
+            "[trabalho] remove_membro ok turma=%s trabalho=%s grupo=%s aluno=%s restantes=%s",
+            turma_id, trabalho_id, grupo.id, aluno_id, restantes,
+        )
         return jsonify({
             "ok": True,
             "deleted": False,
@@ -9479,6 +9487,10 @@ def create_app():
         if not exists:
             db.session.add(TrabalhoGrupoMembro(trabalho_grupo_id=grupo.id, aluno_id=aluno_id))
         db.session.commit()
+        app.logger.info(
+            "[trabalho] add_membro ok turma=%s trabalho=%s grupo=%s aluno=%s",
+            turma_id, trabalho_id, grupo_id, aluno_id,
+        )
         numero = aluno.numero if aluno.numero is not None else "—"
         return jsonify({"ok": True, "aluno": {"id": aluno.id, "label": f"{numero} {aluno.nome_curto_exibicao}".strip()}})
 
@@ -9499,12 +9511,23 @@ def create_app():
             return jsonify({"ok": False, "error": "Já existe outro grupo com esse nome."}), 400
         grupo.nome = nome
         db.session.commit()
+        app.logger.info(
+            "[trabalho] rename_grupo ok turma=%s trabalho=%s grupo=%s nome=%s",
+            turma_id, trabalho_id, grupo_id, nome,
+        )
         return jsonify({"ok": True, "nome": grupo.nome, "grupo_id": grupo.id})
 
     @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/entregas/<int:grupo_id>/save", methods=["POST"])
     def trabalho_save_entrega(turma_id, trabalho_id, grupo_id):
         trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
         payload = request.get_json(silent=True) or request.form
+        app.logger.info(
+            "[trabalho] autosave recv turma=%s trabalho=%s grupo=%s keys=%s",
+            turma_id,
+            trabalho_id,
+            grupo_id,
+            sorted(list(payload.keys())) if isinstance(payload, dict) else "form",
+        )
         try:
             aluno_id = payload.get("aluno_id", type=int) if not isinstance(payload, dict) else int(payload.get("aluno_id") or 0)
         except Exception:
@@ -9633,12 +9656,31 @@ def create_app():
                 ep.valor_numerico = None
 
         db.session.commit()
+        app.logger.info(
+            "[trabalho] autosave commit ok turma=%s trabalho=%s grupo=%s aluno=%s entrega_aluno=%s entrega_grupo=%s",
+            turma_id,
+            trabalho_id,
+            grupo.id,
+            aluno_id,
+            entrega_aluno.id,
+            entrega_grupo.id,
+        )
 
         params_map = {ep.parametro_definicao_id: ep for ep in entrega_aluno.parametros}
         metrics = _calcular_metricas_entrega(trabalho, entrega_grupo, entrega_aluno, params_map, parametros)
 
         return jsonify({
             "ok": True,
+            "persisted": {
+                "grupo_id": grupo.id,
+                "aluno_id": aluno_id,
+                "consecucao": entrega_aluno.consecucao,
+                "qualidade": entrega_aluno.qualidade,
+                "observacoes": entrega_aluno.observacoes,
+                "entregue_grupo": bool(entrega_grupo.entregue),
+                "data_entrega_grupo": entrega_grupo.data_entrega.isoformat() if entrega_grupo.data_entrega else None,
+                "tema_grupo": grupo.tema,
+            },
             "updated_at": entrega_aluno.updated_at.isoformat(timespec="seconds"),
             "data_entrega": entrega_aluno.data_entrega.isoformat() if entrega_aluno.data_entrega else None,
             "data_entrega_grupo": entrega_grupo.data_entrega.isoformat() if entrega_grupo.data_entrega else None,
