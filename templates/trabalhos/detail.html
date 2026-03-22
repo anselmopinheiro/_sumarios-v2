@@ -18,6 +18,10 @@
     <button id="save-all-btn" class="btn btn-sm btn-primary" type="button" disabled>Guardar tudo</button>
   </div>
 </div>
+<div class="position-sticky top-0 z-3 bg-body border rounded px-3 py-2 mb-3 d-flex justify-content-end gap-2 align-items-center shadow-sm">
+  <span id="save-status-sticky" class="badge text-bg-success">Guardado</span>
+  <button id="save-all-btn-sticky" class="btn btn-sm btn-primary" type="button" disabled>Guardar tudo</button>
+</div>
 
 <div class="row g-3 mb-4">
   <div class="col-md-6">
@@ -105,16 +109,24 @@
         <table class="table table-sm align-middle mb-0">
           <thead>
             <tr>
-              <th>Membro</th>
-              {% for d in dominios_obrigatorios %}
-                {% if d.rubricas %}
-                  {% for r in d.rubricas %}<th>{{ d.letra }} · {{ r.nome }}</th>{% endfor %}
-                {% endif %}
+              <th rowspan="2">Membro</th>
+              {% for d in dominios_obrigatorios if d.rubricas %}
+                <th colspan="{{ d.rubricas|length + 1 }}" class="text-center">{{ d.letra }} · {{ d.nome }}</th>
               {% endfor %}
-              {% for dom in dominios_opcionais %}
-                {% for r in dom.rubricas %}<th>{{ dom.nome }} · {{ r.nome }}</th>{% endfor %}
+              {% for dom in dominios_opcionais if dom.rubricas %}
+                <th colspan="{{ dom.rubricas|length + 1 }}" class="text-center">{{ dom.nome }}</th>
               {% endfor %}
-              <th>Obs. individuais</th><th></th>
+              <th rowspan="2">Obs. individuais</th>
+            </tr>
+            <tr>
+              {% for d in dominios_obrigatorios if d.rubricas %}
+                {% for r in d.rubricas %}<th>{{ r.nome }}</th>{% endfor %}
+                <th class="text-nowrap">Média {{ d.letra }}</th>
+              {% endfor %}
+              {% for dom in dominios_opcionais if dom.rubricas %}
+                {% for r in dom.rubricas %}<th>{{ r.nome }}</th>{% endfor %}
+                <th class="text-nowrap">Média</th>
+              {% endfor %}
             </tr>
           </thead>
           <tbody>
@@ -138,7 +150,7 @@
                   {% set rubrica_idx = loop.index0 %}
                   {% set score_key = 'consecucao' if ns.mandatory_idx == 0 else ('qualidade' if ns.mandatory_idx == 1 else '') %}
                   <td>
-                    <select class="form-select form-select-sm field-dominio" data-dominio-idx="{{ dominio_idx }}" data-rubrica-idx="{{ rubrica_idx }}" data-score-key="{{ score_key }}">
+                    <select class="form-select form-select-sm field-dominio field-domain-score" data-domain-key="req-{{ d.id }}" data-dominio-idx="{{ dominio_idx }}" data-rubrica-idx="{{ rubrica_idx }}" data-score-key="{{ score_key }}">
                       <option value=""></option>
                       {% for i in range(1,6) %}
                       <option value="{{ i }}" {% if score_key and e and (e|attr(score_key)) == i %}selected{% endif %}>{{ i }}</option>
@@ -147,16 +159,18 @@
                   </td>
                   {% set ns.mandatory_idx = ns.mandatory_idx + 1 %}
                   {% endfor %}
+                  <td class="text-center fw-semibold field-domain-average" data-domain-key="req-{{ d.id }}">—</td>
                 {% endif %}
               {% endfor %}
               {% for dom in dominios_opcionais %}
+                {% set dom_key = "opt-" ~ loop.index0 %}
                 {% for r in dom.rubricas %}
                 {% set ep = m.extra_map.get(r.id) %}
-                <td><select class="form-select form-select-sm field-extra" data-param-id="{{ r.id }}"><option value=""></option>{% for i in range(1,6) %}<option value="{{ i }}" {% if ep and ep.valor_numerico==i %}selected{% endif %}>{{ i }}</option>{% endfor %}</select></td>
+                <td><select class="form-select form-select-sm field-extra field-domain-score" data-domain-key="{{ dom_key }}" data-param-id="{{ r.id }}"><option value=""></option>{% for i in range(1,6) %}<option value="{{ i }}" {% if ep and ep.valor_numerico==i %}selected{% endif %}>{{ i }}</option>{% endfor %}</select></td>
                 {% endfor %}
+                {% if dom.rubricas %}<td class="text-center fw-semibold field-domain-average" data-domain-key="{{ dom_key }}">—</td>{% endif %}
               {% endfor %}
               <td><input class="form-control form-control-sm field-observacoes" value="{{ e.observacoes if e else '' }}"></td>
-              <td><button class="btn btn-sm btn-primary btn-save-row" type="button">Guardar</button></td>
             </tr>
             {% endfor %}
           </tbody>
@@ -178,7 +192,9 @@
   const membrosPicker = document.getElementById('membros-picker');
   const createGrupoBtn = document.getElementById('create-grupo-btn');
   const saveStatus = document.getElementById('save-status');
+  const saveStatusSticky = document.getElementById('save-status-sticky');
   const saveAllBtn = document.getElementById('save-all-btn');
+  const saveAllBtnSticky = document.getElementById('save-all-btn-sticky');
   let dirty = false;
   let saving = false;
   let saveError = null;
@@ -196,25 +212,22 @@
     }
   }
   function renderSaveState(){
-    if(!saveStatus) return;
-    saveStatus.className = 'badge';
+    const statusBadges = [saveStatus, saveStatusSticky].filter(Boolean);
+    if(!statusBadges.length) return;
+    statusBadges.forEach((badge)=>{ badge.className = 'badge'; });
     if(saveError){
-      saveStatus.classList.add('text-bg-danger');
-      saveStatus.textContent = 'Erro ao guardar';
+      statusBadges.forEach((badge)=>{ badge.classList.add('text-bg-danger'); badge.textContent = 'Erro ao guardar'; });
     } else if(saving){
-      saveStatus.classList.add('text-bg-warning');
-      saveStatus.textContent = 'A guardar…';
+      statusBadges.forEach((badge)=>{ badge.classList.add('text-bg-warning'); badge.textContent = 'A guardar…'; });
     } else if(dirty){
-      saveStatus.classList.add('text-bg-secondary');
-      saveStatus.textContent = 'Alterações por guardar';
+      statusBadges.forEach((badge)=>{ badge.classList.add('text-bg-secondary'); badge.textContent = 'Alterações por guardar'; });
     } else {
-      saveStatus.classList.add('text-bg-success');
-      saveStatus.textContent = 'Guardado';
+      statusBadges.forEach((badge)=>{ badge.classList.add('text-bg-success'); badge.textContent = 'Guardado'; });
     }
-    if(saveAllBtn){
-      saveAllBtn.disabled = saving || (!dirty && !saveError);
-      saveAllBtn.textContent = saving ? 'A guardar…' : 'Guardar tudo';
-    }
+    [saveAllBtn, saveAllBtnSticky].filter(Boolean).forEach((btn)=>{
+      btn.disabled = saving || (!dirty && !saveError);
+      btn.textContent = saving ? 'A guardar…' : 'Guardar tudo';
+    });
     updateGroupActionStates();
   }
   function markDirty(){ dirty = true; saveError = null; renderSaveState(); }
@@ -223,6 +236,25 @@
   function markError(msg){ saving = false; saveError = msg || 'Erro ao guardar'; renderSaveState(); }
   renderSaveState();
   updateGroupActionStates();
+
+  function recalcRowDomainAverages(tr){
+    if(!tr) return;
+    const sums = {};
+    const counts = {};
+    tr.querySelectorAll('.field-domain-score').forEach((el)=>{
+      const key = el.dataset.domainKey;
+      if(!key) return;
+      const num = Number(el.value);
+      if(!Number.isFinite(num) || num <= 0) return;
+      sums[key] = (sums[key] || 0) + num;
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    tr.querySelectorAll('.field-domain-average').forEach((cell)=>{
+      const key = cell.dataset.domainKey;
+      const c = counts[key] || 0;
+      cell.textContent = c ? (sums[key] / c).toFixed(2) : '—';
+    });
+  }
 
   async function saveRow(tr){
     if(!tr) return true;
@@ -288,9 +320,6 @@
   });
 
   grid.addEventListener('click', async (ev)=>{
-    const save = ev.target.closest('.btn-save-row');
-    if(save){ ev.preventDefault(); await saveRow(save.closest('tr[data-aluno-id]')); return; }
-
     const rm = ev.target.closest('.btn-remove-member');
     if(rm){
       ev.preventDefault();
@@ -321,6 +350,7 @@
   grid.addEventListener('input', (ev)=>{
     const tr = ev.target.closest('tr[data-aluno-id]');
     if(tr){
+      recalcRowDomainAverages(tr);
       markDirty();
       scheduleRowSave(tr, 800);
       return;
@@ -333,8 +363,15 @@
       scheduleRowSave(firstRow, 900);
     }
   });
+  grid.querySelectorAll('tr[data-aluno-id]').forEach((tr)=> recalcRowDomainAverages(tr));
 
   grid.addEventListener('change', async (ev)=>{
+    const tr = ev.target.closest('tr[data-aluno-id]');
+    if(tr){
+      recalcRowDomainAverages(tr);
+      markDirty();
+      scheduleRowSave(tr, 600);
+    }
     const entregueChk = ev.target.closest('.field-entregue-grupo');
     if(entregueChk){
       const card = entregueChk.closest('.grupo-card');
@@ -363,9 +400,9 @@
     window.location.reload();
   });
 
-  saveAllBtn?.addEventListener('click', async ()=>{
-    await saveAllPending();
-  });
+  async function onSaveAllClick(){ await saveAllPending(); }
+  saveAllBtn?.addEventListener('click', onSaveAllClick);
+  saveAllBtnSticky?.addEventListener('click', onSaveAllClick);
 
   window.addEventListener('beforeunload', (ev)=>{
     if(dirty || saving){
