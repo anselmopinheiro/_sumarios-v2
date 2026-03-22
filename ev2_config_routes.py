@@ -307,10 +307,54 @@ def ev2_profile_add_domain(profile_id: int):
         ativo=True,
     )
     db.session.add(item)
+    db.session.flush()
+
+    # Automação pedida: ao associar domínio ao perfil, importar rubricas base ativas
+    # desse domínio (apenas neste momento, sem reimportações em updates do domínio).
+    imported_count = 0
+    base_rubrics = (
+        EV2Rubric.query
+        .filter_by(domain_id=domain_id, ativo=True)
+        .order_by(EV2Rubric.codigo.asc(), EV2Rubric.id.asc())
+        .all()
+    )
+    existing_rubric_ids = {
+        rid for (rid,) in (
+            db.session.query(EV2SubjectRubric.rubric_id)
+            .filter(EV2SubjectRubric.subject_config_id == profile.id)
+            .all()
+        )
+    }
+    next_ordem = (
+        db.session.query(db.func.max(EV2SubjectRubric.ordem))
+        .filter(EV2SubjectRubric.subject_config_id == profile.id)
+        .scalar()
+        or 0
+    )
+    for idx, rubrica in enumerate(base_rubrics, start=1):
+        if rubrica.id in existing_rubric_ids:
+            continue
+        db.session.add(
+            EV2SubjectRubric(
+                subject_config_id=profile.id,
+                rubric_id=rubrica.id,
+                subject_domain_id=item.id,
+                ordem=int(next_ordem + idx),
+                weight=0,
+                scale_min=1,
+                scale_max=5,
+                ativo=True,
+            )
+        )
+        imported_count += 1
+
     db.session.commit()
     if _wants_json():
-        return jsonify(_subject_domain_to_dict(item)), 201
-    flash("Domínio associado ao perfil.", "success")
+        return jsonify({
+            "domain": _subject_domain_to_dict(item),
+            "rubrics_imported": imported_count,
+        }), 201
+    flash(f"Domínio associado ao perfil ({imported_count} rubricas importadas automaticamente).", "success")
     return redirect(url_for("ev2_config.ev2_profile_detail", profile_id=profile.id))
 
 
