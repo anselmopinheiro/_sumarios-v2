@@ -8883,14 +8883,17 @@ def create_app():
         dominios_obrigatorios = _listar_dominios_obrigatorios_turma(trabalho.turma_id)
         parametros = sorted(trabalho.parametros, key=lambda p: (p.ordem, p.id))
         rubric_param_id_map = {}
+        parametros_opcionais_locais = []
         for p in parametros:
             nome = (p.nome or "").strip()
             if nome.startswith("EV2R:"):
                 raw = nome.split(":", 1)[1].strip()
                 if raw.isdigit():
                     rubric_param_id_map[int(raw)] = p.id
+                continue
+            parametros_opcionais_locais.append(p)
         opcionais = {}
-        for p in parametros:
+        for p in parametros_opcionais_locais:
             if "•" in (p.nome or ""):
                 dom, rub = [x.strip() for x in p.nome.split("•", 1)]
             else:
@@ -8898,6 +8901,18 @@ def create_app():
             opcionais.setdefault(dom, {"nome": dom, "rubricas": []})
             opcionais[dom]["rubricas"].append({"id": p.id, "nome": rub, "peso": p.peso, "escala": p.escala, "tipo": p.tipo})
         dominios_opcionais = list(opcionais.values())
+        app.logger.info(
+            "[trabalho] detail vm trabalho=%s mandatory_domains=%s optional_domains_local=%s optional_params_local=%s",
+            trabalho.id,
+            len(dominios_obrigatorios),
+            len(dominios_opcionais),
+            len(parametros_opcionais_locais),
+        )
+        if not dominios_opcionais:
+            app.logger.info(
+                "[trabalho] detail vm trabalho=%s optional domains skipped (no local optional model copy applied).",
+                trabalho.id,
+            )
 
         entregas_grupo = {(e.trabalho_grupo_id): e for e in trabalho.entregas if e.aluno_id is None}
         entregas_aluno = {(e.trabalho_grupo_id, e.aluno_id): e for e in trabalho.entregas if e.aluno_id is not None}
