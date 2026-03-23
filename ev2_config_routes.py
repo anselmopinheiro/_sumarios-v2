@@ -148,9 +148,18 @@ def _unique_rubric_code(target_domain_id: int, candidate: str, exclude_id: int |
 @ev2_config_bp.route("/profiles", methods=["GET", "POST"])
 def ev2_profiles_collection():
     if request.method == "GET":
+        turma_id = request.args.get("turma_id", type=int)
+        disciplina_id = request.args.get("disciplina_id", type=int)
+        prefill_nome = (request.args.get("prefill_nome") or "").strip()
+
+        query = EV2SubjectConfig.query
+        if turma_id:
+            query = query.filter(EV2SubjectConfig.turma_id == turma_id)
+        if disciplina_id:
+            query = query.filter(EV2SubjectConfig.disciplina_id == disciplina_id)
+
         profiles = (
-            EV2SubjectConfig.query
-            .order_by(
+            query.order_by(
                 EV2SubjectConfig.turma_id.asc(),
                 EV2SubjectConfig.disciplina_id.asc(),
                 EV2SubjectConfig.updated_at.desc(),
@@ -167,6 +176,9 @@ def ev2_profiles_collection():
             profiles=profiles,
             turmas=turmas,
             disciplinas=disciplinas,
+            selected_turma_id=turma_id,
+            selected_disciplina_id=disciplina_id,
+            prefill_nome=prefill_nome,
         )
 
     data = _payload()

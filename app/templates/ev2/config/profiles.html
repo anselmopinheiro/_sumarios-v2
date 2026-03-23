@@ -10,6 +10,34 @@
   <p><a href="/ev2/config/domains">Gerir domínios</a> · <a href="/ev2/config/rubricas">Gerir rubricas</a></p>
 
   <div class="ev2-panel">
+    <h3>Filtro rápido</h3>
+    <form method="get" action="/ev2/config/profiles" class="ev2-form-grid">
+      <div>
+        <label>Turma</label>
+        <select name="turma_id">
+          <option value="">(todas)</option>
+          {% for t in turmas %}
+          <option value="{{ t.id }}" {% if selected_turma_id == t.id %}selected{% endif %}>{{ t.nome }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>Disciplina</label>
+        <select name="disciplina_id">
+          <option value="">(todas)</option>
+          {% for d in disciplinas %}
+          <option value="{{ d.id }}" {% if selected_disciplina_id == d.id %}selected{% endif %}>{{ d.nome }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="ev2-actions">
+        <button type="submit">Filtrar</button>
+        <a href="/ev2/config/profiles" class="secondary">Limpar</a>
+      </div>
+    </form>
+  </div>
+
+  <div class="ev2-panel">
     <h3>Novo perfil</h3>
     <form method="post" action="/ev2/config/profiles" class="ev2-form-grid">
       <div>
@@ -17,7 +45,7 @@
         <select name="turma_id" required>
           <option value="">— selecionar —</option>
           {% for t in turmas %}
-          <option value="{{ t.id }}">{{ t.nome }}</option>
+          <option value="{{ t.id }}" {% if selected_turma_id == t.id %}selected{% endif %}>{{ t.nome }}</option>
           {% endfor %}
         </select>
       </div>
@@ -26,13 +54,13 @@
         <select name="disciplina_id" required>
           <option value="">— selecionar —</option>
           {% for d in disciplinas %}
-          <option value="{{ d.id }}">{{ d.nome }}</option>
+          <option value="{{ d.id }}" {% if selected_disciplina_id == d.id %}selected{% endif %}>{{ d.nome }}</option>
           {% endfor %}
         </select>
       </div>
       <div>
         <label class="required">Nome do perfil</label>
-        <input name="nome" required placeholder="Ex.: Perfil padrão 2025/26">
+        <input name="nome" required placeholder="Ex.: Perfil padrão 2025/26" value="{{ prefill_nome or '' }}">
       </div>
       <div>
         <label><input type="checkbox" name="ativo" value="1" checked> Ativo</label>
@@ -62,6 +90,11 @@
         </tr>
       </thead>
       <tbody>
+        {% if not profiles %}
+        <tr>
+          <td colspan="8" class="col-left">Sem perfis para o filtro atual.</td>
+        </tr>
+        {% endif %}
         {% for p in profiles %}
         <tr>
           <td class="col-id">{{ p.id }}</td>

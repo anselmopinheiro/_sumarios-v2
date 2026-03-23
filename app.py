@@ -5748,7 +5748,10 @@ def create_app():
     @app.route("/turmas")
     def turmas_list():
         turmas = (
-            Turma.query.options(joinedload(Turma.ano_letivo))
+            Turma.query.options(
+                joinedload(Turma.ano_letivo),
+                joinedload(Turma.turmas_disciplinas).joinedload(TurmaDisciplina.disciplina),
+            )
             .outerjoin(AnoLetivo)
             .order_by(AnoLetivo.ativo.desc(), AnoLetivo.fechado.asc(), AnoLetivo.data_inicio_ano.desc(), Turma.nome)
             .all()
@@ -5759,6 +5762,35 @@ def create_app():
         anos_letivos = (
             AnoLetivo.query.order_by(AnoLetivo.data_inicio_ano.desc()).all()
         )
+        turmas_ids = [t.id for t in turmas]
+        profile_status_map = {}
+        if turmas_ids:
+            profile_rows = (
+                EV2SubjectConfig.query
+                .filter(EV2SubjectConfig.turma_id.in_(turmas_ids))
+                .with_entities(
+                    EV2SubjectConfig.turma_id,
+                    EV2SubjectConfig.disciplina_id,
+                    EV2SubjectConfig.id,
+                    EV2SubjectConfig.ativo,
+                )
+                .order_by(EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
+                .all()
+            )
+            for turma_id, disciplina_id, profile_id, ativo in profile_rows:
+                key = (turma_id, disciplina_id)
+                entry = profile_status_map.get(key)
+                if entry is None:
+                    profile_status_map[key] = {
+                        "status": "ativo" if ativo else "configurado",
+                        "active_profile_id": profile_id if ativo else None,
+                        "profiles_count": 1,
+                    }
+                    continue
+                entry["profiles_count"] += 1
+                if ativo and not entry.get("active_profile_id"):
+                    entry["status"] = "ativo"
+                    entry["active_profile_id"] = profile_id
 
         return render_template(
             "turmas/list.html",
@@ -5767,6 +5799,7 @@ def create_app():
             csv_dest_dir=app.config.get("CSV_EXPORT_DIR"),
             backup_json_dir=app.config.get("BACKUP_JSON_DIR"),
             anos_letivos=anos_letivos,
+            profile_status_map=profile_status_map,
         )
 
     @app.route("/turmas/<int:turma_id>/clone", methods=["POST"])
