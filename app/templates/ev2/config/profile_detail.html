@@ -25,6 +25,13 @@
   <li class="nav-item"><a class="nav-link" href="/ev2/config/rubricas">Rubricas</a></li>
 </ul>
 
+{% if profile.disciplina and ((profile.disciplina.nome or '').strip().lower() == 'disciplina automática (avaliação)' or (profile.disciplina.sigla or '').strip().upper() == 'AUTO') %}
+<div class="alert alert-warning">
+  Este perfil está em modo de <strong>mapeamento avançado</strong> (disciplina automática/override).
+  Use apenas para compatibilidade quando a resolução normal por turma + disciplina não for suficiente.
+</div>
+{% endif %}
+
 <div class="card shadow-sm mb-4">
   <div class="card-header fw-semibold">Adicionar domínio ao perfil</div>
   <div class="card-body">

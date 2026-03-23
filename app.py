@@ -3540,9 +3540,33 @@ def create_app():
         turma = getattr(aula, "turma", None)
         if not turma:
             return None
-        disciplina = (turma.disciplinas or [None])[0]
-        if disciplina:
-            return disciplina
+        disciplinas = list(turma.disciplinas or [])
+        if disciplinas:
+            disciplina_auto = next(
+                (
+                    d for d in disciplinas
+                    if (d.nome or "").strip().lower() == "disciplina automática (avaliação)"
+                    or (d.sigla or "").strip().upper() == "AUTO"
+                ),
+                None,
+            )
+            disciplina_normal = next(
+                (
+                    d for d in disciplinas
+                    if d and d.id != (disciplina_auto.id if disciplina_auto else None)
+                ),
+                None,
+            )
+            if disciplina_normal:
+                return disciplina_normal
+            if disciplina_auto:
+                current_app.logger.info(
+                    "[avaliacao] disciplina fallback AUTO turma=%s aula=%s disciplina_id=%s",
+                    turma.id,
+                    getattr(aula, "id", None),
+                    disciplina_auto.id,
+                )
+                return disciplina_auto
 
         ano_letivo_id = getattr(turma, "ano_letivo_id", None)
         if not ano_letivo_id:
@@ -3562,7 +3586,112 @@ def create_app():
         db.session.flush()
         db.session.add(TurmaDisciplina(turma_id=turma.id, disciplina_id=disciplina.id))
         db.session.flush()
+        current_app.logger.warning(
+            "[avaliacao] disciplina AUTO criada turma=%s aula=%s disciplina_id=%s",
+            turma.id,
+            getattr(aula, "id", None),
+            disciplina.id,
+        )
         return disciplina
+
+    def _resolver_subject_config_com_fallback(turma_id, disciplina_id, contexto="avaliacao"):
+        subject_config = (
+            EV2SubjectConfig.query.filter_by(
+                turma_id=turma_id,
+                disciplina_id=disciplina_id,
+                ativo=True,
+                usar_ev2=True,
+            )
+            .order_by(EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
+            .first()
+        )
+        if subject_config:
+            current_app.logger.info(
+                "[%s] perfil resolvido via turma+disciplina turma=%s disciplina=%s profile_id=%s modo=ativo_usar_ev2",
+                contexto,
+                turma_id,
+                disciplina_id,
+                subject_config.id,
+            )
+            return subject_config, "normal_ativo_usar_ev2"
+
+        subject_config = (
+            EV2SubjectConfig.query.filter_by(
+                turma_id=turma_id,
+                disciplina_id=disciplina_id,
+                ativo=True,
+            )
+            .order_by(EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
+            .first()
+        )
+        if subject_config:
+            current_app.logger.info(
+                "[%s] perfil resolvido via turma+disciplina turma=%s disciplina=%s profile_id=%s modo=ativo",
+                contexto,
+                turma_id,
+                disciplina_id,
+                subject_config.id,
+            )
+            return subject_config, "normal_ativo"
+
+        disciplina_auto = (
+            Disciplina.query
+            .join(TurmaDisciplina, TurmaDisciplina.disciplina_id == Disciplina.id)
+            .filter(TurmaDisciplina.turma_id == turma_id)
+            .filter(
+                or_(
+                    func.lower(func.trim(Disciplina.nome)) == "disciplina automática (avaliação)",
+                    func.upper(func.trim(func.coalesce(Disciplina.sigla, ""))) == "AUTO",
+                )
+            )
+            .order_by(Disciplina.id.desc())
+            .first()
+        )
+        if not disciplina_auto:
+            current_app.logger.info(
+                "[%s] sem perfil por turma+disciplina e sem override AUTO turma=%s disciplina=%s",
+                contexto,
+                turma_id,
+                disciplina_id,
+            )
+            return None, "none"
+
+        subject_config = (
+            EV2SubjectConfig.query.filter_by(
+                turma_id=turma_id,
+                disciplina_id=disciplina_auto.id,
+                ativo=True,
+                usar_ev2=True,
+            )
+            .order_by(EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
+            .first()
+        ) or (
+            EV2SubjectConfig.query.filter_by(
+                turma_id=turma_id,
+                disciplina_id=disciplina_auto.id,
+                ativo=True,
+            )
+            .order_by(EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
+            .first()
+        )
+        if subject_config:
+            current_app.logger.warning(
+                "[%s] override AUTO usado turma=%s disciplina_real=%s disciplina_override=%s profile_id=%s",
+                contexto,
+                turma_id,
+                disciplina_id,
+                disciplina_auto.id,
+                subject_config.id,
+            )
+            return subject_config, "fallback_auto_override"
+
+        current_app.logger.info(
+            "[%s] sem perfil na resolução normal e sem perfil de override AUTO turma=%s disciplina=%s",
+            contexto,
+            turma_id,
+            disciplina_id,
+        )
+        return None, "none"
 
     def _obter_ou_criar_evento_avaliacao(aula, tipo):
         tipo_map = {
@@ -3583,26 +3712,11 @@ def create_app():
         if not disciplina:
             return None
 
-        subject_config = (
-            EV2SubjectConfig.query.filter_by(
-                turma_id=aula.turma_id,
-                disciplina_id=disciplina.id,
-                ativo=True,
-                usar_ev2=True,
-            )
-            .order_by(EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
-            .first()
+        subject_config, _source = _resolver_subject_config_com_fallback(
+            aula.turma_id,
+            disciplina.id,
+            contexto="avaliacao_evento",
         )
-        if not subject_config:
-            subject_config = (
-                EV2SubjectConfig.query.filter_by(
-                    turma_id=aula.turma_id,
-                    disciplina_id=disciplina.id,
-                    ativo=True,
-                )
-                .order_by(EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
-                .first()
-            )
         if not subject_config:
             subject_config = EV2SubjectConfig(
                 turma_id=aula.turma_id,
@@ -3875,26 +3989,16 @@ def create_app():
 
     def _load_mandatory_domains_from_profile_or_global(turma_id, disciplina_id):
         """Fonte primária: perfil EV2 ativo turma+disciplina. Fallback: global."""
-        profile = (
-            EV2SubjectConfig.query
-            .filter_by(turma_id=turma_id, disciplina_id=disciplina_id, ativo=True, usar_ev2=True)
-            .order_by(EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
-            .first()
+        profile, source = _resolver_subject_config_com_fallback(
+            turma_id,
+            disciplina_id,
+            contexto="mandatory_domains",
         )
-        if not profile:
-            profile = (
-                EV2SubjectConfig.query
-                .filter_by(turma_id=turma_id, disciplina_id=disciplina_id, ativo=True)
-                .order_by(EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
-                .first()
-            )
 
         dominios_view = []
-        source = "fallback_global"
         profile_id = None
         if profile:
             profile_id = profile.id
-            source = "profile"
             if profile.domains:
                 for idx, sd in enumerate(sorted(profile.domains, key=lambda x: (x.ordem, x.id))):
                     dominio = sd.domain
@@ -3935,7 +4039,7 @@ def create_app():
                     })
 
         if not dominios_view:
-            source = "fallback_global"
+            source = f"{source}_global" if source != "none" else "fallback_global"
             dominios = (
                 EV2Domain.query.options(joinedload(EV2Domain.rubricas))
                 .filter_by(ativo=True)

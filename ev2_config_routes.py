@@ -169,24 +169,41 @@ def ev2_profiles_collection():
         )
         turmas = Turma.query.order_by(Turma.nome.asc()).all()
         disciplinas = Disciplina.query.order_by(Disciplina.nome.asc()).all()
+        disciplinas_auto = [
+            d for d in disciplinas
+            if (d.nome or "").strip().lower() == "disciplina automática (avaliação)"
+            or (d.sigla or "").strip().upper() == "AUTO"
+        ]
+        disciplinas_regulares = [d for d in disciplinas if d not in disciplinas_auto]
+        selected_auto_disciplina_id = (
+            disciplina_id
+            if disciplina_id and any(d.id == disciplina_id for d in disciplinas_auto)
+            else None
+        )
         if _wants_json():
             return jsonify([_subject_profile_to_dict(item) for item in profiles])
         return render_template(
             "ev2/config/profiles.html",
             profiles=profiles,
             turmas=turmas,
-            disciplinas=disciplinas,
+            disciplinas=disciplinas_regulares,
+            disciplinas_auto=disciplinas_auto,
             selected_turma_id=turma_id,
             selected_disciplina_id=disciplina_id,
+            selected_auto_disciplina_id=selected_auto_disciplina_id,
             prefill_nome=prefill_nome,
         )
 
     data = _payload()
     turma_id = _as_int(data.get("turma_id"))
     disciplina_id = _as_int(data.get("disciplina_id"))
+    disciplina_auto_override_id = _as_int(data.get("disciplina_auto_override_id"))
     nome = (data.get("nome") or "").strip()
     ativo = _to_bool(data.get("ativo"), default=True)
     usar_ev2 = _to_bool(data.get("usar_ev2"), default=True)
+
+    if disciplina_auto_override_id:
+        disciplina_id = disciplina_auto_override_id
 
     if not turma_id or not disciplina_id or not nome:
         return _error(
