@@ -1,71 +1,119 @@
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>EV2 · Domínios</title>
-  <link rel="stylesheet" href="{{ url_for('ev2_config.static', filename='ev2/ev2.css') }}">
-</head>
-<body>
-  <h1>EV2 · Domínios</h1>
-  <p><a href="/ev2/config/profiles">Gerir perfis turma/disciplina</a> · <a href="/ev2/config/rubricas">Gerir rubricas</a></p>
-  <div id="js-domain-msg" class="msg-box"></div>
+{% extends "base.html" %}
+{% block content %}
 
-  <div class="ev2-panel">
-    <h3>{{ 'Editar domínio' if edit_domain else 'Novo domínio' }}</h3>
-    <form method="post" action="{{ '/ev2/config/domains/' ~ edit_domain.id if edit_domain else '/ev2/config/domains' }}" class="ev2-form-grid">
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+  <div>
+    <h2 class="mb-1">Domínios EV2</h2>
+    <p class="text-muted mb-0">Gestão da estrutura base de domínios para avaliação.</p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="/ev2/config/profiles" class="btn btn-outline-secondary btn-sm">Perfis</a>
+    <a href="/ev2/config/rubricas" class="btn btn-outline-secondary btn-sm">Rubricas</a>
+  </div>
+</div>
+
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item"><a class="nav-link" href="/ev2/config/profiles">Perfis</a></li>
+  <li class="nav-item"><a class="nav-link active" aria-current="page" href="/ev2/config/domains">Domínios</a></li>
+  <li class="nav-item"><a class="nav-link" href="/ev2/config/rubricas">Rubricas</a></li>
+</ul>
+
+<div id="js-domain-msg" class="alert alert-info d-none mb-3"></div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-semibold">{{ 'Editar domínio' if edit_domain else 'Novo domínio' }}</div>
+  <div class="card-body">
+    <form method="post" action="{{ '/ev2/config/domains/' ~ edit_domain.id if edit_domain else '/ev2/config/domains' }}" class="row g-3 align-items-end">
       {% if edit_domain %}<input type="hidden" name="_method" value="PUT">{% endif %}
-      <div>
-        <label class="required">Nome</label>
-        <input name="nome" required value="{{ edit_domain.nome if edit_domain else '' }}">
+      <div class="col-12 col-md-4">
+        <label class="form-label">Nome</label>
+        <input name="nome" class="form-control" required value="{{ edit_domain.nome if edit_domain else '' }}">
       </div>
-      <div>
-        <label>Letra</label>
-        <input name="letra" value="{{ edit_domain.letra if edit_domain and edit_domain.letra else '' }}" placeholder="D1">
+      <div class="col-6 col-md-2">
+        <label class="form-label">Letra</label>
+        <input name="letra" class="form-control" value="{{ edit_domain.letra if edit_domain and edit_domain.letra else '' }}" placeholder="D1">
       </div>
-      <div>
-        <label>Código</label>
-        <input name="codigo" value="{{ edit_domain.codigo if edit_domain and edit_domain.codigo else '' }}" placeholder="DOM-01">
+      <div class="col-6 col-md-2">
+        <label class="form-label">Código</label>
+        <input name="codigo" class="form-control" value="{{ edit_domain.codigo if edit_domain and edit_domain.codigo else '' }}" placeholder="DOM-01">
       </div>
-      <div>
-        <label>Descrição</label>
-        <textarea name="descricao">{{ edit_domain.descricao if edit_domain and edit_domain.descricao else '' }}</textarea>
+      <div class="col-12 col-md-4">
+        <label class="form-label">Descrição</label>
+        <textarea name="descricao" class="form-control">{{ edit_domain.descricao if edit_domain and edit_domain.descricao else '' }}</textarea>
       </div>
-      <div>
-        <label><input type="checkbox" name="ativo" value="1" {% if not edit_domain or edit_domain.ativo %}checked{% endif %}> Ativo</label>
+      <div class="col-12 col-md-3">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="ativo_domain" name="ativo" value="1" {% if not edit_domain or edit_domain.ativo %}checked{% endif %}>
+          <label class="form-check-label" for="ativo_domain">Ativo</label>
+        </div>
       </div>
-      <div class="ev2-actions">
-        <button type="submit">{{ 'Guardar alterações' if edit_domain else 'Criar domínio' }}</button>
-        {% if edit_domain %}<a href="/ev2/config/domains">Cancelar</a>{% endif %}
+      <div class="col-12 col-md-9 d-flex gap-2 justify-content-md-end">
+        <button type="submit" class="btn btn-success">{{ 'Guardar alterações' if edit_domain else 'Criar domínio' }}</button>
+        {% if edit_domain %}<a href="/ev2/config/domains" class="btn btn-outline-secondary">Cancelar</a>{% endif %}
       </div>
     </form>
   </div>
+</div>
 
-  <div class="ev2-panel">
-    <h3>Lista</h3>
-    <table class="ev2-table">
-      <thead>
-        <tr><th class="col-id">ID</th><th class="col-left">Nome</th><th class="col-left">Letra</th><th class="col-left">Código</th><th class="col-left">Descrição</th><th class="col-center">Ativo</th><th class="col-center">Rubricas</th><th class="col-left">Ações</th></tr>
-      </thead>
-      <tbody>
-        {% for d in domains %}
-        <tr>
-          <td class="col-id">{{ d.id }}</td>
-          <td class="js-domain-name col-left">{{ d.nome }}</td>
-          <td class="col-left">{{ d.letra or '' }}</td>
-          <td class="col-left">{{ d.codigo or '' }}</td>
-          <td class="col-left">{{ d.descricao or '' }}</td>
-          <td class="col-center">{{ 'Sim' if d.ativo else 'Não' }}</td>
-          <td class="col-center">{{ d.rubricas|length }}</td>
-          <td class="col-left ev2-actions">
-            <a href="/ev2/config/domains?edit={{ d.id }}">Editar</a>
-            <button type="button" class="js-domain-delete secondary" data-domain-id="{{ d.id }}">Eliminar domínio</button>
-            <button type="button" class="js-domain-duplicate secondary" data-domain-id="{{ d.id }}">Duplicar domínio</button>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-semibold">Lista de domínios</div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-striped align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th style="width: 80px;">ID</th>
+            <th>Nome</th>
+            <th>Letra</th>
+            <th>Código</th>
+            <th>Descrição</th>
+            <th class="text-center">Ativo</th>
+            <th class="text-center">Rubricas</th>
+            <th style="width: 260px;">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if not domains %}
+          <tr>
+            <td colspan="8" class="text-muted">Sem domínios registados.</td>
+          </tr>
+          {% endif %}
+          {% for d in domains %}
+          <tr>
+            <td>{{ d.id }}</td>
+            <td class="js-domain-name">{{ d.nome }}</td>
+            <td>{{ d.letra or '' }}</td>
+            <td>{{ d.codigo or '' }}</td>
+            <td>{{ d.descricao or '' }}</td>
+            <td class="text-center">
+              {% if d.ativo %}<span class="badge text-bg-success">Sim</span>{% else %}<span class="badge text-bg-secondary">Não</span>{% endif %}
+            </td>
+            <td class="text-center">{{ d.rubricas|length }}</td>
+            <td>
+              <div class="d-flex gap-2 flex-wrap">
+                <a href="/ev2/config/domains?edit={{ d.id }}" class="btn btn-sm btn-outline-primary">Editar</a>
+                <button type="button" class="js-domain-delete btn btn-sm btn-outline-danger" data-domain-id="{{ d.id }}">Eliminar</button>
+                <button type="button" class="js-domain-duplicate btn btn-sm btn-outline-secondary" data-domain-id="{{ d.id }}">Duplicar</button>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
-  <script src="{{ url_for('ev2_config.static', filename='ev2/ev2_config_crud.js') }}"></script>
-</body>
-</html>
+</div>
+
+<script src="{{ url_for('ev2_config.static', filename='ev2/ev2_config_crud.js') }}"></script>
+<script>
+  (() => {
+    const box = document.getElementById('js-domain-msg');
+    if (!box) return;
+    const observer = new MutationObserver(() => {
+      box.classList.remove('d-none', 'alert-info', 'alert-danger');
+      box.classList.add(box.style.color === 'rgb(176, 0, 32)' ? 'alert-danger' : 'alert-info');
+    });
+    observer.observe(box, { childList: true, characterData: true, subtree: true });
+  })();
+</script>
+{% endblock %}

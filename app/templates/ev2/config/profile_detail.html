@@ -1,110 +1,174 @@
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>EV2 · Detalhe do perfil</title>
-  <link rel="stylesheet" href="{{ url_for('ev2_config.static', filename='ev2/ev2.css') }}">
-</head>
-<body>
-  <h1>Perfil #{{ profile.id }} · {{ profile.nome }}</h1>
-  <p>
-    Turma: <strong>{{ profile.turma.nome if profile.turma else '—' }}</strong> ·
-    Disciplina: <strong>{{ profile.disciplina.nome if profile.disciplina else '—' }}</strong> ·
-    <a href="/ev2/config/profiles">Voltar à lista</a>
-  </p>
+{% extends "base.html" %}
+{% block content %}
 
-  <div class="ev2-panel">
-    <h3>Adicionar domínio ao perfil</h3>
-    <form method="post" action="/ev2/config/profiles/{{ profile.id }}/domains" class="ev2-form-grid">
-      <div>
-        <label class="required">Domínio</label>
-        <select name="domain_id" required>
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+  <div>
+    <h2 class="mb-1">Perfil EV2 — {{ profile.nome }}</h2>
+    <p class="text-muted mb-0">
+      Turma: <strong>{{ profile.turma.nome if profile.turma else '—' }}</strong> ·
+      Disciplina: <strong>{{ profile.disciplina.nome if profile.disciplina else '—' }}</strong> ·
+      Estado:
+      {% if profile.ativo %}<span class="badge text-bg-success">Ativo</span>{% else %}<span class="badge text-bg-secondary">Inativo</span>{% endif %}
+    </p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="/ev2/config/profiles" class="btn btn-outline-secondary btn-sm">Voltar a perfis</a>
+    <a href="/ev2/config/domains" class="btn btn-outline-secondary btn-sm">Domínios</a>
+    <a href="/ev2/config/rubricas" class="btn btn-outline-secondary btn-sm">Rubricas</a>
+  </div>
+</div>
+
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item"><a class="nav-link active" aria-current="page" href="/ev2/config/profiles/{{ profile.id }}">Detalhe do perfil</a></li>
+  <li class="nav-item"><a class="nav-link" href="/ev2/config/profiles">Lista de perfis</a></li>
+  <li class="nav-item"><a class="nav-link" href="/ev2/config/domains">Domínios</a></li>
+  <li class="nav-item"><a class="nav-link" href="/ev2/config/rubricas">Rubricas</a></li>
+</ul>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-semibold">Adicionar domínio ao perfil</div>
+  <div class="card-body">
+    <form method="post" action="/ev2/config/profiles/{{ profile.id }}/domains" class="row g-3 align-items-end">
+      <div class="col-12 col-md-5">
+        <label class="form-label">Domínio</label>
+        <select name="domain_id" class="form-select" required>
           <option value="">— selecionar —</option>
           {% for d in all_domains %}
           <option value="{{ d.id }}">{{ d.nome }}</option>
           {% endfor %}
         </select>
       </div>
-      <div>
-        <label>Ponderação (0-100)</label>
-        <input type="number" step="0.01" name="weight" value="0">
+      <div class="col-6 col-md-2">
+        <label class="form-label">Ponderação (0-100)</label>
+        <input type="number" step="0.01" name="weight" class="form-control" value="0">
       </div>
-      <div>
-        <label>Ordem</label>
-        <input type="number" name="ordem" value="0">
+      <div class="col-6 col-md-2">
+        <label class="form-label">Ordem</label>
+        <input type="number" name="ordem" class="form-control" value="0">
       </div>
-      <div class="ev2-actions"><button type="submit">Adicionar domínio</button></div>
+      <div class="col-12 col-md-3 d-flex justify-content-md-end">
+        <button type="submit" class="btn btn-primary">Adicionar domínio</button>
+      </div>
     </form>
   </div>
+</div>
 
-  {% for sd in profile_domains %}
-  <div class="ev2-panel">
-    <h3>Domínio: {{ sd.domain.nome if sd.domain else '—' }}</h3>
-    <form method="post" action="/ev2/config/profiles/{{ profile.id }}/domains/{{ sd.id }}/update" class="ev2-form-grid">
-      <div><label>Ponderação (0-100)</label><input type="number" step="0.01" name="weight" value="{{ sd.weight }}"></div>
-      <div><label>Ordem</label><input type="number" name="ordem" value="{{ sd.ordem }}"></div>
-      <div><label><input type="checkbox" name="ativo" value="1" {% if sd.ativo %}checked{% endif %}> Ativo</label></div>
-      <div class="ev2-actions">
-        <button type="submit">Guardar domínio</button>
+{% if not profile_domains %}
+<div class="alert alert-secondary">Este perfil ainda não tem domínios associados.</div>
+{% endif %}
+
+{% for sd in profile_domains %}
+<div class="card shadow-sm mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <span class="fw-semibold">Domínio: {{ sd.domain.nome if sd.domain else '—' }}</span>
+    {% if sd.ativo %}<span class="badge text-bg-success">Ativo</span>{% else %}<span class="badge text-bg-secondary">Inativo</span>{% endif %}
+  </div>
+  <div class="card-body">
+    <form method="post" action="/ev2/config/profiles/{{ profile.id }}/domains/{{ sd.id }}/update" class="row g-3 align-items-end mb-3">
+      <div class="col-6 col-md-2">
+        <label class="form-label">Ponderação (0-100)</label>
+        <input type="number" step="0.01" name="weight" class="form-control" value="{{ sd.weight }}">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label">Ordem</label>
+        <input type="number" name="ordem" class="form-control" value="{{ sd.ordem }}">
+      </div>
+      <div class="col-12 col-md-2">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="ativo_sd_{{ sd.id }}" name="ativo" value="1" {% if sd.ativo %}checked{% endif %}>
+          <label class="form-check-label" for="ativo_sd_{{ sd.id }}">Ativo</label>
+        </div>
+      </div>
+      <div class="col-12 col-md-6 d-flex gap-2 justify-content-md-end">
+        <button type="submit" class="btn btn-success">Guardar domínio</button>
       </div>
     </form>
     <form method="post" action="/ev2/config/profiles/{{ profile.id }}/domains/{{ sd.id }}/delete" onsubmit="return confirm('Remover domínio e rubricas deste domínio no perfil?');">
-      <button type="submit" class="secondary">Remover domínio</button>
+      <button type="submit" class="btn btn-outline-danger btn-sm">Remover domínio</button>
     </form>
 
-    <h4>Rubricas associadas</h4>
-    <table class="ev2-table">
-      <thead>
-        <tr><th>ID</th><th>Código</th><th>Nome</th><th>Peso</th><th>Ordem</th><th>Escala</th><th>Ativo</th><th>Ações</th></tr>
-      </thead>
-      <tbody>
-        {% for sr in rubrics_by_domain_id.get(sd.domain_id, []) %}
-        <tr>
-          <td>{{ sr.id }}</td>
-          <td>{{ sr.rubrica.codigo if sr.rubrica else '—' }}</td>
-          <td>{{ sr.rubrica.nome if sr.rubrica else '—' }}</td>
-          <td>
-            <form method="post" action="/ev2/config/profiles/{{ profile.id }}/rubrics/{{ sr.id }}/update" class="ev2-form-grid">
-              <input type="number" step="0.01" name="weight" value="{{ sr.weight }}">
-          </td>
-          <td><input type="number" name="ordem" value="{{ sr.ordem }}"></td>
-          <td>
-            <input type="number" name="scale_min" value="{{ sr.scale_min }}" style="width:70px"> -
-            <input type="number" name="scale_max" value="{{ sr.scale_max }}" style="width:70px">
-          </td>
-          <td><input type="checkbox" name="ativo" value="1" {% if sr.ativo %}checked{% endif %}></td>
-          <td>
-              <button type="submit" class="secondary">Guardar</button>
-            </form>
-            <form method="post" action="/ev2/config/profiles/{{ profile.id }}/rubrics/{{ sr.id }}/delete" style="display:inline;" onsubmit="return confirm('Remover rubrica do perfil?');">
-              <button type="submit" class="secondary">Remover</button>
-            </form>
-          </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="8" class="col-left">Sem rubricas neste domínio.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <hr>
+    <h5 class="mb-3">Rubricas associadas</h5>
+    <div class="table-responsive mb-3">
+      <table class="table table-sm table-striped align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>ID</th>
+            <th>Código</th>
+            <th>Nome</th>
+            <th>Peso</th>
+            <th>Ordem</th>
+            <th>Escala</th>
+            <th>Ativo</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for sr in rubrics_by_domain_id.get(sd.domain_id, []) %}
+          <tr>
+            <td>{{ sr.id }}</td>
+            <td>{{ sr.rubrica.codigo if sr.rubrica else '—' }}</td>
+            <td>{{ sr.rubrica.nome if sr.rubrica else '—' }}</td>
+            <td colspan="5">
+              <form method="post" action="/ev2/config/profiles/{{ profile.id }}/rubrics/{{ sr.id }}/update" class="row g-2 align-items-end">
+                <div class="col-6 col-md-2">
+                  <label class="form-label small mb-0">Peso</label>
+                  <input type="number" step="0.01" name="weight" class="form-control form-control-sm" value="{{ sr.weight }}">
+                </div>
+                <div class="col-6 col-md-2">
+                  <label class="form-label small mb-0">Ordem</label>
+                  <input type="number" name="ordem" class="form-control form-control-sm" value="{{ sr.ordem }}">
+                </div>
+                <div class="col-6 col-md-2">
+                  <label class="form-label small mb-0">Escala min</label>
+                  <input type="number" name="scale_min" class="form-control form-control-sm" value="{{ sr.scale_min }}">
+                </div>
+                <div class="col-6 col-md-2">
+                  <label class="form-label small mb-0">Escala max</label>
+                  <input type="number" name="scale_max" class="form-control form-control-sm" value="{{ sr.scale_max }}">
+                </div>
+                <div class="col-6 col-md-2">
+                  <div class="form-check mt-2">
+                    <input class="form-check-input" type="checkbox" id="ativo_sr_{{ sr.id }}" name="ativo" value="1" {% if sr.ativo %}checked{% endif %}>
+                    <label class="form-check-label small" for="ativo_sr_{{ sr.id }}">Ativo</label>
+                  </div>
+                </div>
+                <div class="col-12 col-md-2 d-flex gap-2 justify-content-md-end">
+                  <button type="submit" class="btn btn-sm btn-outline-success">Guardar</button>
+                  <button type="submit" form="delete_sr_{{ sr.id }}" class="btn btn-sm btn-outline-danger">Remover</button>
+                </div>
+              </form>
+              <form id="delete_sr_{{ sr.id }}" method="post" action="/ev2/config/profiles/{{ profile.id }}/rubrics/{{ sr.id }}/delete" onsubmit="return confirm('Remover rubrica do perfil?');"></form>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="8" class="text-muted">Sem rubricas neste domínio.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
 
-    <h4>Adicionar rubrica deste domínio</h4>
-    <form method="post" action="/ev2/config/profiles/{{ profile.id }}/rubrics" class="ev2-form-grid">
-      <div>
-        <label class="required">Rubrica</label>
-        <select name="rubric_id" required>
+    <h6 class="mb-3">Adicionar rubrica deste domínio</h6>
+    <form method="post" action="/ev2/config/profiles/{{ profile.id }}/rubrics" class="row g-3 align-items-end">
+      <div class="col-12 col-md-5">
+        <label class="form-label">Rubrica</label>
+        <select name="rubric_id" class="form-select" required>
           <option value="">— selecionar —</option>
           {% for r in all_rubrics if r.domain_id == sd.domain_id %}
           <option value="{{ r.id }}">{{ r.codigo }} — {{ r.nome }}</option>
           {% endfor %}
         </select>
       </div>
-      <div><label>Peso</label><input type="number" step="0.01" name="weight" value="0"></div>
-      <div><label>Ordem</label><input type="number" name="ordem" value="0"></div>
-      <div><label>Escala min</label><input type="number" name="scale_min" value="1"></div>
-      <div><label>Escala max</label><input type="number" name="scale_max" value="5"></div>
-      <div class="ev2-actions"><button type="submit">Adicionar rubrica</button></div>
+      <div class="col-6 col-md-2"><label class="form-label">Peso</label><input type="number" step="0.01" name="weight" class="form-control" value="0"></div>
+      <div class="col-6 col-md-1"><label class="form-label">Ordem</label><input type="number" name="ordem" class="form-control" value="0"></div>
+      <div class="col-6 col-md-1"><label class="form-label">Escala min</label><input type="number" name="scale_min" class="form-control" value="1"></div>
+      <div class="col-6 col-md-1"><label class="form-label">Escala max</label><input type="number" name="scale_max" class="form-control" value="5"></div>
+      <div class="col-12 col-md-2 d-flex justify-content-md-end">
+        <button type="submit" class="btn btn-outline-primary">Adicionar rubrica</button>
+      </div>
     </form>
   </div>
-  {% endfor %}
-</body>
-</html>
+</div>
+{% endfor %}
+
+{% endblock %}
