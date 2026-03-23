@@ -3,18 +3,13 @@
 
 <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
   <div>
-    <h2 class="mb-1">Perfil EV2 — {{ profile.nome }}</h2>
+    <h2 class="mb-1">Perfil EV2 — {{ profile.turma.nome if profile.turma else profile.nome }}</h2>
     <p class="text-muted mb-0">
       Turma: <strong>{{ profile.turma.nome if profile.turma else '—' }}</strong> ·
       Disciplina: <strong>{{ profile.disciplina.nome if profile.disciplina else '—' }}</strong> ·
       Estado:
       {% if profile.ativo %}<span class="badge text-bg-success">Ativo</span>{% else %}<span class="badge text-bg-secondary">Inativo</span>{% endif %}
     </p>
-  </div>
-  <div class="d-flex gap-2 flex-wrap">
-    <a href="/ev2/config/profiles" class="btn btn-outline-secondary btn-sm">Voltar a perfis</a>
-    <a href="/ev2/config/domains" class="btn btn-outline-secondary btn-sm">Domínios</a>
-    <a href="/ev2/config/rubricas" class="btn btn-outline-secondary btn-sm">Rubricas</a>
   </div>
 </div>
 
