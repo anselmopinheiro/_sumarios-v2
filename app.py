@@ -3873,6 +3873,96 @@ def create_app():
                 membros_por_grupo[grupo.id].append(membro.aluno_id)
         return grupos, membros_por_grupo, aluno_para_grupo
 
+    def _load_mandatory_domains_from_profile_or_global(turma_id, disciplina_id):
+        """Fonte primária: perfil EV2 ativo turma+disciplina. Fallback: global."""
+        profile = (
+            EV2SubjectConfig.query
+            .filter_by(turma_id=turma_id, disciplina_id=disciplina_id, ativo=True, usar_ev2=True)
+            .order_by(EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
+            .first()
+        )
+        if not profile:
+            profile = (
+                EV2SubjectConfig.query
+                .filter_by(turma_id=turma_id, disciplina_id=disciplina_id, ativo=True)
+                .order_by(EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
+                .first()
+            )
+
+        dominios_view = []
+        source = "fallback_global"
+        profile_id = None
+        if profile:
+            profile_id = profile.id
+            source = "profile"
+            if profile.domains:
+                for idx, sd in enumerate(sorted(profile.domains, key=lambda x: (x.ordem, x.id))):
+                    dominio = sd.domain
+                    if not dominio or not dominio.ativo or not sd.ativo:
+                        continue
+                    rubricas_linkadas = [
+                        sr for sr in sorted(profile.rubrics, key=lambda x: (getattr(x, "ordem", 0), x.id))
+                        if sr.ativo and sr.rubrica and sr.rubrica.ativo and sr.rubrica.domain_id == dominio.id
+                    ]
+                    rubricas = [sr.rubrica for sr in rubricas_linkadas]
+                    dominios_view.append({
+                        "id": dominio.id,
+                        "nome": dominio.nome,
+                        "letra": getattr(dominio, "letra", None) or chr(ord("A") + idx),
+                        "codigo": getattr(dominio, "codigo", None),
+                        "weight": float(sd.weight or 0),
+                        "rubricas": rubricas,
+                    })
+            elif profile.rubrics:
+                grouped = defaultdict(list)
+                for sr in sorted(profile.rubrics, key=lambda x: (getattr(x, "ordem", 0), x.id)):
+                    if sr.ativo and sr.rubrica and sr.rubrica.ativo:
+                        grouped[sr.rubrica.domain_id].append(sr.rubrica)
+                dids = sorted(grouped.keys())
+                domains = EV2Domain.query.filter(EV2Domain.id.in_(dids)).all() if dids else []
+                dmap = {d.id: d for d in domains}
+                for idx, did in enumerate(dids):
+                    dom = dmap.get(did)
+                    if not dom or not dom.ativo:
+                        continue
+                    dominios_view.append({
+                        "id": dom.id,
+                        "nome": dom.nome,
+                        "letra": getattr(dom, "letra", None) or chr(ord("A") + idx),
+                        "codigo": getattr(dom, "codigo", None),
+                        "weight": None,
+                        "rubricas": grouped[did],
+                    })
+
+        if not dominios_view:
+            source = "fallback_global"
+            dominios = (
+                EV2Domain.query.options(joinedload(EV2Domain.rubricas))
+                .filter_by(ativo=True)
+                .order_by(EV2Domain.letra.asc(), EV2Domain.nome.asc())
+                .all()
+            )
+            for idx, dominio in enumerate(dominios):
+                letra = getattr(dominio, "letra", None) or chr(ord("A") + idx)
+                rubricas_dominio = sorted(
+                    [r for r in (dominio.rubricas or []) if getattr(r, "ativo", True)],
+                    key=lambda r: ((r.codigo or ""), (r.nome or "")),
+                )
+                dominios_view.append({
+                    "id": dominio.id,
+                    "nome": dominio.nome,
+                    "letra": letra,
+                    "codigo": getattr(dominio, "codigo", None),
+                    "weight": None,
+                    "rubricas": rubricas_dominio,
+                })
+
+        app.logger.info(
+            "[avaliacao] mandatory domains source=%s turma=%s disciplina=%s profile_id=%s domains=%s",
+            source, turma_id, disciplina_id, profile_id, len(dominios_view),
+        )
+        return dominios_view, {"source": source, "profile_id": profile_id}
+
     def build_avaliacao_context_for_aula(aula, tipo, event_override=None):
         alunos = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
         total_tempos = _resolver_total_tempos_aula(aula)
@@ -3890,20 +3980,35 @@ def create_app():
                     "Bloqueado: falta disciplinar (FDis)." if fdis else "Bloqueado: aluno em falta no total dos tempos da aula."
                 )
 
-        dominios = (
-            EV2Domain.query.options(joinedload(EV2Domain.rubricas))
-            .filter_by(ativo=True)
-            .order_by(EV2Domain.letra.asc(), EV2Domain.nome.asc())
-            .all()
-        )
-        dominios_view = []
-        for idx, dominio in enumerate(dominios):
-            letra = getattr(dominio, "letra", None) or chr(ord("A") + idx)
-            rubricas_dominio = sorted(
-                [r for r in (dominio.rubricas or []) if getattr(r, "ativo", True)],
-                key=lambda r: ((r.codigo or ""), (r.nome or "")),
+        disciplina = _resolver_disciplina_aula(aula)
+        disciplina_id = disciplina.id if disciplina else None
+        if disciplina_id:
+            dominios_view, dom_meta = _load_mandatory_domains_from_profile_or_global(
+                aula.turma_id,
+                disciplina_id,
             )
-            dominios_view.append({"id": dominio.id, "nome": dominio.nome, "letra": letra, "rubricas": rubricas_dominio})
+        else:
+            dominios = (
+                EV2Domain.query.options(joinedload(EV2Domain.rubricas))
+                .filter_by(ativo=True)
+                .order_by(EV2Domain.letra.asc(), EV2Domain.nome.asc())
+                .all()
+            )
+            dominios_view = []
+            for idx, dominio in enumerate(dominios):
+                rubricas_dominio = sorted(
+                    [r for r in (dominio.rubricas or []) if getattr(r, "ativo", True)],
+                    key=lambda r: ((r.codigo or ""), (r.nome or "")),
+                )
+                dominios_view.append({
+                    "id": dominio.id,
+                    "nome": dominio.nome,
+                    "letra": getattr(dominio, "letra", None) or chr(ord("A") + idx),
+                    "codigo": getattr(dominio, "codigo", None),
+                    "weight": None,
+                    "rubricas": rubricas_dominio,
+                })
+            dom_meta = {"source": "fallback_global", "profile_id": None}
 
         event = event_override or _obter_evento_avaliacao_existente(aula, tipo)
         event_students = []
@@ -3938,6 +4043,8 @@ def create_app():
             "event_students": event_students,
             "grupos": grupos,
             "grupo_por_aluno": grupo_por_aluno,
+            "dominios_source": dom_meta.get("source"),
+            "dominios_profile_id": dom_meta.get("profile_id"),
         }
 
     @app.route('/aula/<int:aula_id>/avaliar', methods=['GET', 'POST'])
@@ -3959,30 +4066,36 @@ def create_app():
             )
         alunos_faltosos_ids = {aluno_id for aluno_id, avaliavel in avaliavel_por_aluno.items() if not avaliavel}
         aluno_ids_avaliaveis = {aluno_id for aluno_id, avaliavel in avaliavel_por_aluno.items() if avaliavel}
-        dominios = (
-            EV2Domain.query.options(joinedload(EV2Domain.rubricas))
-            .filter_by(ativo=True)
-            .order_by(EV2Domain.letra.asc(), EV2Domain.nome.asc())
-            .all()
-        )
-        dominios_view = []
-        for idx, dominio in enumerate(dominios):
-            letra = getattr(dominio, "letra", None)
-            if not letra:
-                letra = chr(ord("A") + idx)
-            rubricas_dominio = sorted(
-                [r for r in (dominio.rubricas or []) if getattr(r, "ativo", True)],
-                key=lambda r: ((r.codigo or ""), (r.nome or "")),
+        disciplina = _resolver_disciplina_aula(aula)
+        disciplina_id = disciplina.id if disciplina else None
+        if disciplina_id:
+            dominios_view, _dom_meta = _load_mandatory_domains_from_profile_or_global(
+                aula.turma_id,
+                disciplina_id,
             )
-            dominios_view.append(
-                {
-                    "id": dominio.id,
-                    "nome": dominio.nome,
-                    "letra": letra,
-                    "codigo": getattr(dominio, "codigo", None),
-                    "rubricas": rubricas_dominio,
-                }
+        else:
+            dominios = (
+                EV2Domain.query.options(joinedload(EV2Domain.rubricas))
+                .filter_by(ativo=True)
+                .order_by(EV2Domain.letra.asc(), EV2Domain.nome.asc())
+                .all()
             )
+            dominios_view = []
+            for idx, dominio in enumerate(dominios):
+                letra = getattr(dominio, "letra", None) or chr(ord("A") + idx)
+                rubricas_dominio = sorted(
+                    [r for r in (dominio.rubricas or []) if getattr(r, "ativo", True)],
+                    key=lambda r: ((r.codigo or ""), (r.nome or "")),
+                )
+                dominios_view.append(
+                    {
+                        "id": dominio.id,
+                        "nome": dominio.nome,
+                        "letra": letra,
+                        "codigo": getattr(dominio, "codigo", None),
+                        "rubricas": rubricas_dominio,
+                    }
+                )
 
         rubricas = [rubrica for dominio in dominios_view for rubrica in dominio["rubricas"]]
         rubricas_por_dominio = {dominio["id"]: dominio["rubricas"] for dominio in dominios_view}
@@ -4811,20 +4924,27 @@ def create_app():
             .all()
         )
 
-        dominios = (
-            EV2Domain.query.options(joinedload(EV2Domain.rubricas))
-            .filter_by(ativo=True)
-            .order_by(EV2Domain.letra.asc(), EV2Domain.nome.asc())
-            .all()
-        )
-        dominios_view = []
-        for idx, dominio in enumerate(dominios):
-            letra = getattr(dominio, "letra", None) or chr(ord("A") + idx)
-            rubricas_dominio = sorted(
-                [r for r in (dominio.rubricas or []) if getattr(r, "ativo", True)],
-                key=lambda r: ((r.codigo or ""), (r.nome or "")),
+        turma_id_ctx = event.subject_config.turma_id if event.subject_config else None
+        disciplina_id_ctx = event.disciplina_id
+        if turma_id_ctx and disciplina_id_ctx:
+            dominios_view, _dom_meta = _load_mandatory_domains_from_profile_or_global(
+                turma_id_ctx, disciplina_id_ctx
             )
-            dominios_view.append({"id": dominio.id, "nome": dominio.nome, "letra": letra, "rubricas": rubricas_dominio})
+        else:
+            dominios = (
+                EV2Domain.query.options(joinedload(EV2Domain.rubricas))
+                .filter_by(ativo=True)
+                .order_by(EV2Domain.letra.asc(), EV2Domain.nome.asc())
+                .all()
+            )
+            dominios_view = []
+            for idx, dominio in enumerate(dominios):
+                letra = getattr(dominio, "letra", None) or chr(ord("A") + idx)
+                rubricas_dominio = sorted(
+                    [r for r in (dominio.rubricas or []) if getattr(r, "ativo", True)],
+                    key=lambda r: ((r.codigo or ""), (r.nome or "")),
+                )
+                dominios_view.append({"id": dominio.id, "nome": dominio.nome, "letra": letra, "rubricas": rubricas_dominio})
         rubricas = [rubrica for dominio in dominios_view for rubrica in dominio["rubricas"]]
 
         registros_faltas = {}
