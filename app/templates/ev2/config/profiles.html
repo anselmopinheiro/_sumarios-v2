@@ -56,6 +56,14 @@
         <label class="form-label">Nome do perfil</label>
         <input name="nome" class="form-control" required placeholder="Ex.: Perfil padrão 2025/26" value="{{ prefill_nome or '' }}">
       </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label">Escala mínima</label>
+        <input type="number" name="escala_min" class="form-control" value="1" required>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label">Escala máxima</label>
+        <input type="number" name="escala_max" class="form-control" value="5" required>
+      </div>
       <div class="col-12 col-md-3">
         <div class="form-check">
           <input class="form-check-input" type="checkbox" id="ativo" name="ativo" value="1" checked>
@@ -85,6 +93,7 @@
             <th style="width: 80px;">ID</th>
             <th>Turma</th>
             <th>Nome</th>
+            <th class="text-center">Escala</th>
             <th class="text-center">Ativo</th>
             <th class="text-center">Usar EV2</th>
             <th class="text-center">Rubricas</th>
@@ -94,7 +103,7 @@
         <tbody>
           {% if not profiles %}
           <tr>
-            <td colspan="7" class="text-muted">Sem perfis para o filtro atual.</td>
+            <td colspan="8" class="text-muted">Sem perfis para o filtro atual.</td>
           </tr>
           {% endif %}
           {% for p in profiles %}
@@ -102,6 +111,7 @@
             <td>{{ p.id }}</td>
             <td>{{ p.turma.nome if p.turma else '—' }}</td>
             <td>{{ p.nome }}</td>
+            <td class="text-center">{{ p.escala_min or 1 }}–{{ p.escala_max or 5 }}</td>
             <td class="text-center">
               {% if p.ativo %}<span class="badge text-bg-success">Sim</span>{% else %}<span class="badge text-bg-secondary">Não</span>{% endif %}
             </td>

@@ -840,6 +840,8 @@ class EV2SubjectConfig(db.Model):
     nome = db.Column(db.String(140), nullable=False)
     ativo = db.Column(db.Boolean, nullable=False, default=True, server_default=db.text("true"))
     usar_ev2 = db.Column(db.Boolean, nullable=False, default=False, server_default=db.text("false"))
+    escala_min = db.Column(db.Integer, nullable=False, default=1, server_default="1")
+    escala_max = db.Column(db.Integer, nullable=False, default=5, server_default="5")
     created_at = db.Column(
         db.DateTime,
         nullable=False,
@@ -880,6 +882,7 @@ class EV2SubjectConfig(db.Model):
     __table_args__ = (
         db.UniqueConstraint("turma_id", "nome", name="uq_ev2_subject_cfg_turma_nome"),
         db.Index("ix_ev2_subject_cfg_turma", "turma_id"),
+        db.CheckConstraint("escala_min < escala_max", name="ck_ev2_subject_cfg_scale"),
     )
 
 

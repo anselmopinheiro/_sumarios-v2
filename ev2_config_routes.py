@@ -102,6 +102,8 @@ def _subject_profile_to_dict(profile: EV2SubjectConfig) -> dict:
         "nome": profile.nome,
         "ativo": bool(profile.ativo),
         "usar_ev2": bool(profile.usar_ev2),
+        "escala_min": int(profile.escala_min or 1),
+        "escala_max": int(profile.escala_max or 5),
         "rubricas_count": EV2SubjectRubric.query.filter_by(subject_config_id=profile.id).count(),
     }
 
@@ -180,6 +182,10 @@ def ev2_profiles_collection():
     nome = (data.get("nome") or "").strip()
     ativo = _to_bool(data.get("ativo"), default=True)
     usar_ev2 = _to_bool(data.get("usar_ev2"), default=True)
+    escala_min = _as_int(data.get("escala_min")) or 1
+    escala_max = _as_int(data.get("escala_max")) or 5
+    if escala_min >= escala_max:
+        return _error("Escala inválida: o mínimo deve ser inferior ao máximo.", 400, "ev2_config.ev2_profiles_collection")
 
     if not turma_id or not nome:
         return _error(
@@ -207,6 +213,8 @@ def ev2_profiles_collection():
         nome=nome,
         ativo=ativo,
         usar_ev2=usar_ev2,
+        escala_min=escala_min,
+        escala_max=escala_max,
     )
     db.session.add(profile)
     try:
@@ -293,6 +301,24 @@ def ev2_profile_detail(profile_id: int):
         all_domains=all_domains,
         all_rubrics=all_rubrics,
     )
+
+
+@ev2_config_bp.post("/profiles/<int:profile_id>/update")
+def ev2_profile_update(profile_id: int):
+    profile = EV2SubjectConfig.query.get(profile_id)
+    if not profile:
+        return _error("Perfil não encontrado.", 404, "ev2_config.ev2_profiles_collection")
+    data = _payload()
+    profile.nome = (data.get("nome") or profile.nome or "").strip() or profile.nome
+    profile.escala_min = _as_int(data.get("escala_min")) or profile.escala_min or 1
+    profile.escala_max = _as_int(data.get("escala_max")) or profile.escala_max or 5
+    if profile.escala_min >= profile.escala_max:
+        return _error("Escala inválida: o mínimo deve ser inferior ao máximo.", 400)
+    db.session.commit()
+    if _wants_json():
+        return jsonify(_subject_profile_to_dict(profile))
+    flash("Perfil atualizado.", "success")
+    return redirect(url_for("ev2_config.ev2_profile_detail", profile_id=profile.id))
 
 
 @ev2_config_bp.post("/profiles/<int:profile_id>/domains")
@@ -430,8 +456,8 @@ def ev2_profile_add_rubric(profile_id: int):
         subject_domain_id=subject_domain.id,
         ordem=_as_int(data.get("ordem")) or 0,
         weight=float(data.get("weight") or 0),
-        scale_min=_as_int(data.get("scale_min")) or 1,
-        scale_max=_as_int(data.get("scale_max")) or 5,
+        scale_min=int(profile.escala_min or 1),
+        scale_max=int(profile.escala_max or 5),
         ativo=_to_bool(data.get("ativo"), default=True),
     )
     db.session.add(item)
@@ -450,8 +476,9 @@ def ev2_profile_update_rubric(profile_id: int, subject_rubric_id: int):
     data = _payload()
     item.ordem = _as_int(data.get("ordem")) or 0
     item.weight = float(data.get("weight") or 0)
-    item.scale_min = _as_int(data.get("scale_min")) or 1
-    item.scale_max = _as_int(data.get("scale_max")) or 5
+    profile = EV2SubjectConfig.query.get(profile_id)
+    item.scale_min = int(profile.escala_min or 1) if profile else 1
+    item.scale_max = int(profile.escala_max or 5) if profile else 5
     item.ativo = _to_bool(data.get("ativo"), default=True)
     db.session.commit()
     if _wants_json():
