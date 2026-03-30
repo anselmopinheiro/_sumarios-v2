@@ -4,7 +4,7 @@
 <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
   <div>
     <h2 class="mb-1">Perfis EV2</h2>
-    <p class="text-muted mb-0">Configuração por turma.</p>
+    <p class="text-muted mb-0">Perfis-modelo reutilizáveis e cópias locais por turma.</p>
   </div>
   <div class="d-flex gap-2 flex-wrap">
     <a href="/ev2/config/domains" class="btn btn-outline-secondary btn-sm">Domínios</a>
@@ -40,19 +40,10 @@
 </div>
 
 <div class="card shadow-sm mb-4">
-  <div class="card-header fw-semibold">Novo perfil</div>
+  <div class="card-header fw-semibold">Novo perfil-modelo</div>
   <div class="card-body">
     <form method="post" action="/ev2/config/profiles" class="row g-3 align-items-end">
-      <div class="col-12 col-md-4">
-        <label class="form-label">Turma</label>
-        <select name="turma_id" class="form-select" required>
-          <option value="">— selecionar —</option>
-          {% for t in turmas %}
-          <option value="{{ t.id }}" {% if selected_turma_id == t.id %}selected{% endif %}>{{ t.nome }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-12 col-md-8">
+      <div class="col-12 col-md-6">
         <label class="form-label">Nome do perfil</label>
         <input name="nome" class="form-control" required placeholder="Ex.: Perfil padrão 2025/26" value="{{ prefill_nome or '' }}">
       </div>
@@ -64,66 +55,115 @@
         <label class="form-label">Escala máxima</label>
         <input type="number" name="escala_max" class="form-control" value="5" required>
       </div>
-      <div class="col-12 col-md-3">
+      <div class="col-12 col-md-2">
         <div class="form-check">
           <input class="form-check-input" type="checkbox" id="ativo" name="ativo" value="1" checked>
           <label class="form-check-label" for="ativo">Ativo</label>
         </div>
       </div>
-      <div class="col-12 col-md-3">
+      <div class="col-12 col-md-2">
         <div class="form-check">
           <input class="form-check-input" type="checkbox" id="usar_ev2" name="usar_ev2" value="1" checked>
           <label class="form-check-label" for="usar_ev2">Usar EV2</label>
         </div>
       </div>
       <div class="col-12 col-md-6 d-flex justify-content-md-end">
-        <button type="submit" class="btn btn-success">Criar perfil</button>
+        <button type="submit" class="btn btn-success">Criar perfil-modelo</button>
       </div>
     </form>
   </div>
 </div>
 
 <div class="card shadow-sm mb-4">
-  <div class="card-header fw-semibold">Perfis existentes</div>
+  <div class="card-header fw-semibold">Perfis-modelo</div>
   <div class="card-body p-0">
     <div class="table-responsive">
       <table class="table table-striped align-middle mb-0">
         <thead class="table-light">
           <tr>
             <th style="width: 80px;">ID</th>
-            <th>Turma</th>
+            <th>Modelo</th>
             <th>Nome</th>
             <th class="text-center">Escala</th>
             <th class="text-center">Ativo</th>
-            <th class="text-center">Usar EV2</th>
             <th class="text-center">Rubricas</th>
-            <th style="width: 230px;">Ações</th>
+            <th style="width: 320px;">Aplicar a turma</th>
+            <th style="width: 180px;">Ações</th>
           </tr>
         </thead>
         <tbody>
-          {% if not profiles %}
+          {% if not models %}
           <tr>
-            <td colspan="8" class="text-muted">Sem perfis para o filtro atual.</td>
+            <td colspan="8" class="text-muted">Sem perfis-modelo.</td>
           </tr>
           {% endif %}
-          {% for p in profiles %}
+          {% for p in models %}
           <tr>
             <td>{{ p.id }}</td>
-            <td>{{ p.turma.nome if p.turma else '—' }}</td>
+            <td><span class="badge text-bg-info">Modelo</span></td>
             <td>{{ p.nome }}</td>
             <td class="text-center">{{ p.escala_min or 1 }}–{{ p.escala_max or 5 }}</td>
             <td class="text-center">
               {% if p.ativo %}<span class="badge text-bg-success">Sim</span>{% else %}<span class="badge text-bg-secondary">Não</span>{% endif %}
             </td>
-            <td class="text-center">
-              {% if p.usar_ev2 %}<span class="badge text-bg-success">Sim</span>{% else %}<span class="badge text-bg-secondary">Não</span>{% endif %}
-            </td>
             <td class="text-center">{{ p.rubrics|length }}</td>
+            <td>
+              <form method="post" action="/ev2/config/profiles/{{ p.id }}/apply" class="d-flex gap-2">
+                <select name="turma_id" class="form-select form-select-sm" required>
+                  <option value="">Selecionar turma…</option>
+                  {% for t in turmas %}
+                  <option value="{{ t.id }}">{{ t.nome }}</option>
+                  {% endfor %}
+                </select>
+                <button type="submit" class="btn btn-sm btn-outline-primary">Aplicar</button>
+              </form>
+            </td>
             <td>
               <div class="d-flex gap-2 flex-wrap">
                 <a href="/ev2/config/profiles/{{ p.id }}" class="btn btn-sm btn-outline-primary">Abrir</a>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-semibold">Cópias locais por turma</div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-striped align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>ID</th>
+            <th>Turma</th>
+            <th>Nome local</th>
+            <th>Modelo origem</th>
+            <th class="text-center">Escala</th>
+            <th class="text-center">Ativo</th>
+            <th style="width: 220px;">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if not locals %}
+          <tr><td colspan="7" class="text-muted">Sem cópias locais.</td></tr>
+          {% endif %}
+          {% for p in locals %}
+          <tr>
+            <td>{{ p.id }}</td>
+            <td>{{ p.turma.nome if p.turma else '—' }}</td>
+            <td>{{ p.nome }}</td>
+            <td>{{ p.profile_model.nome if p.profile_model else '—' }}</td>
+            <td class="text-center">{{ p.escala_min or 1 }}–{{ p.escala_max or 5 }}</td>
+            <td class="text-center">{% if p.ativo %}<span class="badge text-bg-success">Sim</span>{% else %}<span class="badge text-bg-secondary">Não</span>{% endif %}</td>
+            <td>
+              <div class="d-flex gap-2">
+                <a href="/ev2/config/profiles/{{ p.id }}" class="btn btn-sm btn-outline-primary">Abrir</a>
                 <form method="post" action="/ev2/config/profiles/{{ p.id }}/activate" class="d-inline">
-                  <button type="submit" class="btn btn-sm btn-outline-success">Ativar este perfil</button>
+                  <button type="submit" class="btn btn-sm btn-outline-success">Ativar</button>
                 </form>
               </div>
             </td>

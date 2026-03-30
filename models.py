@@ -833,11 +833,13 @@ class EV2SubjectConfig(db.Model):
     __tablename__ = "ev2_subject_configs"
 
     id = db.Column(db.Integer, primary_key=True)
-    turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), nullable=False)
+    turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), nullable=True)
     # legado de transição: EV2 passa a resolver perfis por turma.
     # Mantemos a FK para compatibilidade, mas já não é eixo funcional principal.
     disciplina_id = db.Column(db.Integer, db.ForeignKey("disciplinas.id"), nullable=True)
     nome = db.Column(db.String(140), nullable=False)
+    tipo = db.Column(db.String(16), nullable=False, default="local", server_default="local")
+    profile_model_id = db.Column(db.Integer, db.ForeignKey("ev2_subject_configs.id"), nullable=True)
     ativo = db.Column(db.Boolean, nullable=False, default=True, server_default=db.text("true"))
     usar_ev2 = db.Column(db.Boolean, nullable=False, default=False, server_default=db.text("false"))
     escala_min = db.Column(db.Integer, nullable=False, default=1, server_default="1")
@@ -858,6 +860,7 @@ class EV2SubjectConfig(db.Model):
 
     turma = db.relationship("Turma", backref="ev2_subject_configs")
     disciplina = db.relationship("Disciplina", back_populates="ev2_subject_configs")
+    profile_model = db.relationship("EV2SubjectConfig", remote_side=[id], backref="local_copies")
     type_weights = db.relationship(
         "EV2SubjectTypeWeight",
         back_populates="subject_config",
@@ -880,9 +883,12 @@ class EV2SubjectConfig(db.Model):
     )
 
     __table_args__ = (
-        db.UniqueConstraint("turma_id", "nome", name="uq_ev2_subject_cfg_turma_nome"),
+        db.UniqueConstraint("turma_id", "nome", "tipo", name="uq_ev2_subject_cfg_turma_nome_tipo"),
         db.Index("ix_ev2_subject_cfg_turma", "turma_id"),
+        db.Index("ix_ev2_subject_cfg_tipo", "tipo"),
+        db.Index("ix_ev2_subject_cfg_profile_model_id", "profile_model_id"),
         db.CheckConstraint("escala_min < escala_max", name="ck_ev2_subject_cfg_scale"),
+        db.CheckConstraint("tipo IN ('modelo','local')", name="ck_ev2_subject_cfg_tipo"),
     )
 
 

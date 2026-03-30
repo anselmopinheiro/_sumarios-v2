@@ -100,6 +100,9 @@ def _subject_profile_to_dict(profile: EV2SubjectConfig) -> dict:
         "disciplina_id": profile.disciplina_id,
         "disciplina_nome": profile.disciplina.nome if profile.disciplina else None,
         "nome": profile.nome,
+        "tipo": profile.tipo,
+        "profile_model_id": profile.profile_model_id,
+        "profile_model_nome": profile.profile_model.nome if profile.profile_model else None,
         "ativo": bool(profile.ativo),
         "usar_ev2": bool(profile.usar_ev2),
         "escala_min": int(profile.escala_min or 1),
@@ -155,10 +158,11 @@ def ev2_profiles_collection():
 
         query = EV2SubjectConfig.query
         if turma_id:
-            query = query.filter(EV2SubjectConfig.turma_id == turma_id)
+            query = query.filter(EV2SubjectConfig.turma_id == turma_id, EV2SubjectConfig.tipo == "local")
 
         profiles = (
             query.order_by(
+                EV2SubjectConfig.tipo.asc(),
                 EV2SubjectConfig.turma_id.asc(),
                 EV2SubjectConfig.updated_at.desc(),
                 EV2SubjectConfig.id.desc(),
@@ -166,11 +170,15 @@ def ev2_profiles_collection():
             .all()
         )
         turmas = Turma.query.order_by(Turma.nome.asc()).all()
+        modelos = [p for p in profiles if (p.tipo or "local") == "modelo"]
+        locais = [p for p in profiles if (p.tipo or "local") == "local"]
         if _wants_json():
             return jsonify([_subject_profile_to_dict(item) for item in profiles])
         return render_template(
             "ev2/config/profiles.html",
             profiles=profiles,
+            models=modelos,
+            locals=locais,
             turmas=turmas,
             selected_turma_id=turma_id,
             prefill_nome=prefill_nome,
@@ -187,30 +195,21 @@ def ev2_profiles_collection():
     if escala_min >= escala_max:
         return _error("Escala inválida: o mínimo deve ser inferior ao máximo.", 400, "ev2_config.ev2_profiles_collection")
 
-    if not turma_id or not nome:
+    if not nome:
         return _error(
-            "Campos obrigatórios: turma_id, nome",
+            "Campos obrigatórios: nome",
             400,
             "ev2_config.ev2_profiles_collection",
         )
-
-    turma = Turma.query.get(turma_id)
-    if not turma:
-        return _error("Turma não encontrada.", 404, "ev2_config.ev2_profiles_collection")
-    if not disciplina_id:
+    turma = Turma.query.get(turma_id) if turma_id else None
+    if turma and not disciplina_id:
         disciplina_id = (turma.disciplinas[0].id if turma.disciplinas else None)
-    disciplina = Disciplina.query.get(disciplina_id) if disciplina_id else None
-    if not disciplina:
-        return _error(
-            "Sem disciplina associada à turma. Associa uma disciplina para criar o perfil EV2.",
-            400,
-            "ev2_config.ev2_profiles_collection",
-        )
 
     profile = EV2SubjectConfig(
         turma_id=turma_id,
         disciplina_id=disciplina_id,
         nome=nome,
+        tipo="modelo" if not turma_id else "local",
         ativo=ativo,
         usar_ev2=usar_ev2,
         escala_min=escala_min,
@@ -238,11 +237,14 @@ def ev2_profile_activate(profile_id: int):
     profile = EV2SubjectConfig.query.get(profile_id)
     if not profile:
         return _error("Perfil não encontrado.", 404, "ev2_config.ev2_profiles_collection")
+    if (profile.tipo or "local") != "local":
+        return _error("Apenas cópias locais podem ser ativadas.", 400, "ev2_config.ev2_profiles_collection")
 
     (
         EV2SubjectConfig.query
         .filter(
             EV2SubjectConfig.turma_id == profile.turma_id,
+            EV2SubjectConfig.tipo == "local",
             EV2SubjectConfig.id != profile.id,
         )
         .update({"ativo": False}, synchronize_session=False)
@@ -255,6 +257,71 @@ def ev2_profile_activate(profile_id: int):
         return jsonify(_subject_profile_to_dict(profile))
     flash("Perfil ativado para a turma.", "success")
     return redirect(url_for("ev2_config.ev2_profiles_collection"))
+
+
+@ev2_config_bp.post("/profiles/<int:model_id>/apply")
+def ev2_profile_apply_to_turma(model_id: int):
+    model = EV2SubjectConfig.query.get(model_id)
+    if not model or (model.tipo or "local") != "modelo":
+        return _error("Perfil-modelo não encontrado.", 404, "ev2_config.ev2_profiles_collection")
+
+    turma_id = _as_int(_payload().get("turma_id"))
+    turma = Turma.query.get(turma_id) if turma_id else None
+    if not turma:
+        return _error("Turma inválida.", 400, "ev2_config.ev2_profiles_collection")
+
+    disciplina_id = (turma.disciplinas[0].id if turma.disciplinas else model.disciplina_id)
+    local_name = model.nome
+    idx = 2
+    while EV2SubjectConfig.query.filter_by(turma_id=turma.id, tipo="local", nome=local_name).first():
+        local_name = f"{model.nome} [{idx}]"
+        idx += 1
+    local = EV2SubjectConfig(
+        turma_id=turma.id,
+        disciplina_id=disciplina_id,
+        nome=local_name,
+        tipo="local",
+        profile_model_id=model.id,
+        ativo=True,
+        usar_ev2=True,
+        escala_min=model.escala_min,
+        escala_max=model.escala_max,
+    )
+    db.session.add(local)
+    db.session.flush()
+
+    domain_map = {}
+    for sd in sorted(model.domains or [], key=lambda x: (x.ordem, x.id)):
+        novo_sd = EV2SubjectDomain(
+            subject_config_id=local.id,
+            domain_id=sd.domain_id,
+            ordem=sd.ordem,
+            weight=sd.weight,
+            ativo=sd.ativo,
+        )
+        db.session.add(novo_sd)
+        db.session.flush()
+        domain_map[sd.id] = novo_sd.id
+
+    for sr in sorted(model.rubrics or [], key=lambda x: (getattr(x, "ordem", 0), x.id)):
+        db.session.add(
+            EV2SubjectRubric(
+                subject_config_id=local.id,
+                rubric_id=sr.rubric_id,
+                subject_domain_id=domain_map.get(sr.subject_domain_id),
+                ordem=sr.ordem,
+                weight=sr.weight,
+                scale_min=local.escala_min,
+                scale_max=local.escala_max,
+                ativo=sr.ativo,
+            )
+        )
+
+    db.session.commit()
+    if _wants_json():
+        return jsonify(_subject_profile_to_dict(local)), 201
+    flash("Perfil-modelo aplicado à turma (cópia local criada).", "success")
+    return redirect(url_for("ev2_config.ev2_profile_detail", profile_id=local.id))
 
 
 @ev2_config_bp.route("/profiles/<int:profile_id>", methods=["GET"])
