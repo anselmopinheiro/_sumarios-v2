@@ -834,7 +834,9 @@ class EV2SubjectConfig(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), nullable=False)
-    disciplina_id = db.Column(db.Integer, db.ForeignKey("disciplinas.id"), nullable=False)
+    # legado de transição: EV2 passa a resolver perfis por turma.
+    # Mantemos a FK para compatibilidade, mas já não é eixo funcional principal.
+    disciplina_id = db.Column(db.Integer, db.ForeignKey("disciplinas.id"), nullable=True)
     nome = db.Column(db.String(140), nullable=False)
     ativo = db.Column(db.Boolean, nullable=False, default=True, server_default=db.text("true"))
     usar_ev2 = db.Column(db.Boolean, nullable=False, default=False, server_default=db.text("false"))
@@ -876,8 +878,8 @@ class EV2SubjectConfig(db.Model):
     )
 
     __table_args__ = (
-        db.UniqueConstraint("turma_id", "disciplina_id", "nome", name="uq_ev2_subject_cfg_nome"),
-        db.Index("ix_ev2_subject_cfg_turma_disciplina", "turma_id", "disciplina_id"),
+        db.UniqueConstraint("turma_id", "nome", name="uq_ev2_subject_cfg_turma_nome"),
+        db.Index("ix_ev2_subject_cfg_turma", "turma_id"),
     )
 
 
