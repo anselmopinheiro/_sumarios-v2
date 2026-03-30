@@ -47,6 +47,13 @@
         <label class="form-label">Nome do perfil</label>
         <input name="nome" class="form-control" required placeholder="Ex.: Perfil padrão 2025/26" value="{{ prefill_nome or '' }}">
       </div>
+      <div class="col-12 col-md-2">
+        <label class="form-label">Tipo de modelo</label>
+        <select name="profile_tipo" class="form-select">
+          <option value="perfil_base_turma">Perfil base turma</option>
+          <option value="modelo_atividade">Modelo atividade</option>
+        </select>
+      </div>
       <div class="col-6 col-md-2">
         <label class="form-label">Escala mínima</label>
         <input type="number" name="escala_min" class="form-control" value="1" required>
@@ -121,6 +128,9 @@
             <td>
               <div class="d-flex gap-2 flex-wrap">
                 <a href="/ev2/config/profiles/{{ p.id }}" class="btn btn-sm btn-outline-primary">Abrir</a>
+                <form method="post" action="/ev2/config/profiles/{{ p.id }}/delete" onsubmit="return confirm('Remover perfil-modelo?');">
+                  <button type="submit" class="btn btn-sm btn-outline-danger">Remover</button>
+                </form>
               </div>
             </td>
           </tr>
@@ -165,6 +175,11 @@
                 <form method="post" action="/ev2/config/profiles/{{ p.id }}/activate" class="d-inline">
                   <button type="submit" class="btn btn-sm btn-outline-success">Ativar</button>
                 </form>
+                {% if p.profile_model_id %}
+                <form method="post" action="/ev2/config/profiles/{{ p.profile_model_id }}/turmas/{{ p.id }}/remove" class="d-inline" onsubmit="return confirm('Remover associação desta turma?');">
+                  <button type="submit" class="btn btn-sm btn-outline-danger">Remover</button>
+                </form>
+                {% endif %}
               </div>
             </td>
           </tr>

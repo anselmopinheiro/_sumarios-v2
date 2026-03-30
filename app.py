@@ -3598,7 +3598,7 @@ def create_app():
         subject_config = (
             EV2SubjectConfig.query.filter_by(
                 turma_id=turma_id,
-                tipo="local",
+                tipo="local_turma",
                 ativo=True,
                 usar_ev2=True,
             )
@@ -3618,7 +3618,7 @@ def create_app():
         subject_config = (
             EV2SubjectConfig.query.filter_by(
                 turma_id=turma_id,
-                tipo="local",
+                tipo="local_turma",
                 ativo=True,
             )
             .order_by(EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
@@ -5820,7 +5820,7 @@ def create_app():
         if turmas_ids:
             profile_rows = (
                 EV2SubjectConfig.query
-                .filter(EV2SubjectConfig.turma_id.in_(turmas_ids), EV2SubjectConfig.tipo == "local")
+                .filter(EV2SubjectConfig.turma_id.in_(turmas_ids), EV2SubjectConfig.tipo == "local_turma")
                 .with_entities(
                     EV2SubjectConfig.turma_id,
                     EV2SubjectConfig.id,

@@ -24,6 +24,11 @@ ev2_config_bp = Blueprint(
     static_folder="app/static",
 )
 
+TIPO_PERFIL_BASE = "perfil_base_turma"
+TIPO_MODELO_ATIVIDADE = "modelo_atividade"
+TIPO_LOCAL_TURMA = "local_turma"
+TIPOS_MODELO = {TIPO_PERFIL_BASE, TIPO_MODELO_ATIVIDADE}
+
 
 def _wants_json() -> bool:
     if request.args.get("format") == "json":
@@ -158,11 +163,11 @@ def ev2_profiles_collection():
 
         models = (
             EV2SubjectConfig.query
-            .filter(EV2SubjectConfig.tipo == "modelo")
+            .filter(EV2SubjectConfig.tipo.in_(TIPOS_MODELO))
             .order_by(EV2SubjectConfig.nome.asc(), EV2SubjectConfig.id.asc())
             .all()
         )
-        locals_query = EV2SubjectConfig.query.filter(EV2SubjectConfig.tipo == "local")
+        locals_query = EV2SubjectConfig.query.filter(EV2SubjectConfig.tipo == TIPO_LOCAL_TURMA)
         if turma_id:
             locals_query = locals_query.filter(EV2SubjectConfig.turma_id == turma_id)
         locals_profiles = (
@@ -170,7 +175,7 @@ def ev2_profiles_collection():
             .order_by(EV2SubjectConfig.turma_id.asc(), EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
             .all()
         )
-        turmas = Turma.query.order_by(Turma.nome.asc()).all()
+        turmas = Turma.query.filter(Turma.letiva == True).order_by(Turma.nome.asc()).all()  # noqa: E712
         profiles = [*models, *locals_profiles]
         if _wants_json():
             return jsonify([_subject_profile_to_dict(item) for item in profiles])
@@ -192,6 +197,9 @@ def ev2_profiles_collection():
     usar_ev2 = _to_bool(data.get("usar_ev2"), default=True)
     escala_min = _as_int(data.get("escala_min")) or 1
     escala_max = _as_int(data.get("escala_max")) or 5
+    profile_tipo = (data.get("profile_tipo") or TIPO_PERFIL_BASE).strip()
+    if profile_tipo not in TIPOS_MODELO:
+        profile_tipo = TIPO_PERFIL_BASE
     if escala_min >= escala_max:
         return _error("Escala inválida: o mínimo deve ser inferior ao máximo.", 400, "ev2_config.ev2_profiles_collection")
 
@@ -209,7 +217,7 @@ def ev2_profiles_collection():
         turma_id=turma_id,
         disciplina_id=disciplina_id,
         nome=nome,
-        tipo="modelo" if not turma_id else "local",
+        tipo=TIPO_LOCAL_TURMA if turma_id else profile_tipo,
         ativo=ativo,
         usar_ev2=usar_ev2,
         escala_min=escala_min,
@@ -237,14 +245,14 @@ def ev2_profile_activate(profile_id: int):
     profile = EV2SubjectConfig.query.get(profile_id)
     if not profile:
         return _error("Perfil não encontrado.", 404, "ev2_config.ev2_profiles_collection")
-    if (profile.tipo or "local") != "local":
+    if (profile.tipo or TIPO_LOCAL_TURMA) != TIPO_LOCAL_TURMA:
         return _error("Apenas cópias locais podem ser ativadas.", 400, "ev2_config.ev2_profiles_collection")
 
     (
         EV2SubjectConfig.query
         .filter(
             EV2SubjectConfig.turma_id == profile.turma_id,
-            EV2SubjectConfig.tipo == "local",
+            EV2SubjectConfig.tipo == TIPO_LOCAL_TURMA,
             EV2SubjectConfig.id != profile.id,
         )
         .update({"ativo": False}, synchronize_session=False)
@@ -262,25 +270,42 @@ def ev2_profile_activate(profile_id: int):
 @ev2_config_bp.post("/profiles/<int:model_id>/apply")
 def ev2_profile_apply_to_turma(model_id: int):
     model = EV2SubjectConfig.query.get(model_id)
-    if not model or (model.tipo or "local") != "modelo":
+    if not model or (model.tipo or TIPO_PERFIL_BASE) not in TIPOS_MODELO:
         return _error("Perfil-modelo não encontrado.", 404, "ev2_config.ev2_profiles_collection")
 
     turma_id = _as_int(_payload().get("turma_id"))
     turma = Turma.query.get(turma_id) if turma_id else None
-    if not turma:
-        return _error("Turma inválida.", 400, "ev2_config.ev2_profiles_collection")
+    if not turma or not turma.letiva:
+        return _error("Turma inválida (seleciona uma turma letiva).", 400, "ev2_config.ev2_profiles_collection")
+
+    existing_local = (
+        EV2SubjectConfig.query
+        .filter_by(turma_id=turma.id, tipo=TIPO_LOCAL_TURMA, ativo=True)
+        .order_by(EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
+        .first()
+    )
+    if existing_local:
+        has_events = EV2Event.query.filter_by(subject_config_id=existing_local.id).first() is not None
+        if has_events:
+            return _error(
+                "A turma já tem avaliação lançada. Não é possível trocar o perfil ativo.",
+                409,
+                "ev2_config.ev2_profiles_collection",
+            )
+        db.session.delete(existing_local)
+        db.session.flush()
 
     disciplina_id = (turma.disciplinas[0].id if turma.disciplinas else model.disciplina_id)
     local_name = model.nome
     idx = 2
-    while EV2SubjectConfig.query.filter_by(turma_id=turma.id, tipo="local", nome=local_name).first():
+    while EV2SubjectConfig.query.filter_by(turma_id=turma.id, tipo=TIPO_LOCAL_TURMA, nome=local_name).first():
         local_name = f"{model.nome} [{idx}]"
         idx += 1
     local = EV2SubjectConfig(
         turma_id=turma.id,
         disciplina_id=disciplina_id,
         nome=local_name,
-        tipo="local",
+        tipo=TIPO_LOCAL_TURMA,
         profile_model_id=model.id,
         ativo=True,
         usar_ev2=True,
@@ -324,6 +349,37 @@ def ev2_profile_apply_to_turma(model_id: int):
     return redirect(url_for("ev2_config.ev2_profile_detail", profile_id=local.id))
 
 
+@ev2_config_bp.post("/profiles/<int:model_id>/turmas/<int:local_profile_id>/remove")
+def ev2_profile_remove_turma(model_id: int, local_profile_id: int):
+    model = EV2SubjectConfig.query.get(model_id)
+    local = EV2SubjectConfig.query.get(local_profile_id)
+    if not model or not local:
+        return _error("Perfil não encontrado.", 404, "ev2_config.ev2_profiles_collection")
+    if (model.tipo or "") not in TIPOS_MODELO or (local.tipo or "") != TIPO_LOCAL_TURMA:
+        return _error("Associação inválida.", 400, "ev2_config.ev2_profiles_collection")
+    if local.profile_model_id != model.id:
+        return _error("A cópia local não pertence a este perfil-modelo.", 400, "ev2_config.ev2_profiles_collection")
+    if EV2Event.query.filter_by(subject_config_id=local.id).first():
+        return _error("Não é possível remover: já existem avaliações lançadas para esta turma.", 409, "ev2_config.ev2_profiles_collection")
+    db.session.delete(local)
+    db.session.commit()
+    flash("Turma desassociada do perfil-modelo.", "success")
+    return redirect(url_for("ev2_config.ev2_profile_detail", profile_id=model.id))
+
+
+@ev2_config_bp.post("/profiles/<int:model_id>/delete")
+def ev2_profile_delete_model(model_id: int):
+    model = EV2SubjectConfig.query.get(model_id)
+    if not model or (model.tipo or "") not in TIPOS_MODELO:
+        return _error("Perfil-modelo não encontrado.", 404, "ev2_config.ev2_profiles_collection")
+    if model.local_copies:
+        return _error("Não é possível remover o perfil-modelo com turmas atribuídas.", 409, "ev2_config.ev2_profiles_collection")
+    db.session.delete(model)
+    db.session.commit()
+    flash("Perfil-modelo removido.", "success")
+    return redirect(url_for("ev2_config.ev2_profiles_collection"))
+
+
 @ev2_config_bp.route("/profiles/<int:profile_id>", methods=["GET"])
 def ev2_profile_detail(profile_id: int):
     profile = EV2SubjectConfig.query.get(profile_id)
@@ -354,7 +410,7 @@ def ev2_profile_detail(profile_id: int):
 
     all_domains = EV2Domain.query.order_by(EV2Domain.nome.asc()).all()
     all_rubrics = EV2Rubric.query.filter_by(ativo=True).order_by(EV2Rubric.codigo.asc()).all()
-    turmas = Turma.query.order_by(Turma.nome.asc()).all()
+    turmas = Turma.query.filter(Turma.letiva == True).order_by(Turma.nome.asc()).all()  # noqa: E712
 
     if _wants_json():
         return jsonify({
@@ -398,7 +454,7 @@ def ev2_profile_add_domain(profile_id: int):
     data = _payload()
     domain_id = _as_int(data.get("domain_id"))
     ordem = _as_int(data.get("ordem")) or 0
-    weight = float(data.get("weight") or 0)
+    weight = float(data.get("weight") or 25)
     if not domain_id:
         return _error("Campo obrigatório: domain_id", 400)
     if EV2SubjectDomain.query.filter_by(subject_config_id=profile.id, domain_id=domain_id).first():
@@ -447,7 +503,7 @@ def ev2_profile_add_domain(profile_id: int):
                 rubric_id=rubrica.id,
                 subject_domain_id=item.id,
                 ordem=int(next_ordem + idx),
-                weight=0,
+                weight=25,
                 scale_min=1,
                 scale_max=5,
                 ativo=True,
@@ -524,7 +580,7 @@ def ev2_profile_add_rubric(profile_id: int):
         rubric_id=rubric_id,
         subject_domain_id=subject_domain.id,
         ordem=_as_int(data.get("ordem")) or 0,
-        weight=float(data.get("weight") or 0),
+        weight=float(data.get("weight") or 25),
         scale_min=int(profile.escala_min or 1),
         scale_max=int(profile.escala_max or 5),
         ativo=_to_bool(data.get("ativo"), default=True),
