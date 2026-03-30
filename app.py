@@ -2513,6 +2513,15 @@ def create_app():
                 db.session.execute(text("ALTER TABLE ev2_events ADD COLUMN tema_multiplo BOOLEAN NOT NULL DEFAULT 0"))
                 db.session.commit()
 
+        if "ev2_rubrics" in tabelas:
+            ev2_rubric_cols = {col["name"] for col in insp.get_columns("ev2_rubrics")}
+            if "ordem" not in ev2_rubric_cols:
+                db.session.execute(text("ALTER TABLE ev2_rubrics ADD COLUMN ordem INTEGER NOT NULL DEFAULT 0"))
+                db.session.commit()
+            if "peso" not in ev2_rubric_cols:
+                db.session.execute(text("ALTER TABLE ev2_rubrics ADD COLUMN peso NUMERIC(5,2) NOT NULL DEFAULT 0"))
+                db.session.commit()
+
         EV2EvaluationGroup.__table__.create(db.engine, checkfirst=True)
         EV2EvaluationGroupMember.__table__.create(db.engine, checkfirst=True)
         EV2EventTheme.__table__.create(db.engine, checkfirst=True)
