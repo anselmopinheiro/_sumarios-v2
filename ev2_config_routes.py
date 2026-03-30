@@ -394,7 +394,9 @@ def ev2_profile_detail(profile_id: int):
         .all()
     )
     domain_ids = [d.domain_id for d in profile_domains]
+    associated_domain_ids = set(domain_ids)
     rubrics_by_domain_id = {}
+    associated_rubric_ids_by_domain = {}
     if domain_ids:
         linked = (
             EV2SubjectRubric.query
@@ -408,9 +410,25 @@ def ev2_profile_detail(profile_id: int):
         )
         for sr in linked:
             rubrics_by_domain_id.setdefault(sr.rubrica.domain_id, []).append(sr)
+            associated_rubric_ids_by_domain.setdefault(sr.rubrica.domain_id, set()).add(sr.rubric_id)
 
-    all_domains = EV2Domain.query.order_by(EV2Domain.nome.asc()).all()
-    all_rubrics = EV2Rubric.query.filter_by(ativo=True).order_by(EV2Rubric.codigo.asc()).all()
+    available_domains_query = EV2Domain.query
+    if associated_domain_ids:
+        available_domains_query = available_domains_query.filter(~EV2Domain.id.in_(associated_domain_ids))
+    available_domains = available_domains_query.order_by(EV2Domain.nome.asc()).all()
+
+    available_rubrics_by_domain = {}
+    if associated_domain_ids:
+        candidate_rubrics = (
+            EV2Rubric.query
+            .filter(EV2Rubric.ativo == True, EV2Rubric.domain_id.in_(associated_domain_ids))  # noqa: E712
+            .order_by(EV2Rubric.domain_id.asc(), EV2Rubric.codigo.asc())
+            .all()
+        )
+        for rubric in candidate_rubrics:
+            if rubric.id in associated_rubric_ids_by_domain.get(rubric.domain_id, set()):
+                continue
+            available_rubrics_by_domain.setdefault(rubric.domain_id, []).append(rubric)
     turmas = Turma.query.filter(Turma.letiva == True).order_by(Turma.nome.asc()).all()  # noqa: E712
 
     if _wants_json():
@@ -423,8 +441,8 @@ def ev2_profile_detail(profile_id: int):
         profile=profile,
         profile_domains=profile_domains,
         rubrics_by_domain_id=rubrics_by_domain_id,
-        all_domains=all_domains,
-        all_rubrics=all_rubrics,
+        available_domains=available_domains,
+        available_rubrics_by_domain=available_rubrics_by_domain,
         turmas=turmas,
     )
 
