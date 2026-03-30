@@ -156,29 +156,29 @@ def ev2_profiles_collection():
         turma_id = request.args.get("turma_id", type=int)
         prefill_nome = (request.args.get("prefill_nome") or "").strip()
 
-        query = EV2SubjectConfig.query
+        models = (
+            EV2SubjectConfig.query
+            .filter(EV2SubjectConfig.tipo == "modelo")
+            .order_by(EV2SubjectConfig.nome.asc(), EV2SubjectConfig.id.asc())
+            .all()
+        )
+        locals_query = EV2SubjectConfig.query.filter(EV2SubjectConfig.tipo == "local")
         if turma_id:
-            query = query.filter(EV2SubjectConfig.turma_id == turma_id, EV2SubjectConfig.tipo == "local")
-
-        profiles = (
-            query.order_by(
-                EV2SubjectConfig.tipo.asc(),
-                EV2SubjectConfig.turma_id.asc(),
-                EV2SubjectConfig.updated_at.desc(),
-                EV2SubjectConfig.id.desc(),
-            )
+            locals_query = locals_query.filter(EV2SubjectConfig.turma_id == turma_id)
+        locals_profiles = (
+            locals_query
+            .order_by(EV2SubjectConfig.turma_id.asc(), EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
             .all()
         )
         turmas = Turma.query.order_by(Turma.nome.asc()).all()
-        modelos = [p for p in profiles if (p.tipo or "local") == "modelo"]
-        locais = [p for p in profiles if (p.tipo or "local") == "local"]
+        profiles = [*models, *locals_profiles]
         if _wants_json():
             return jsonify([_subject_profile_to_dict(item) for item in profiles])
         return render_template(
             "ev2/config/profiles.html",
             profiles=profiles,
-            models=modelos,
-            locals=locais,
+            models=models,
+            locals=locals_profiles,
             turmas=turmas,
             selected_turma_id=turma_id,
             prefill_nome=prefill_nome,
@@ -354,6 +354,7 @@ def ev2_profile_detail(profile_id: int):
 
     all_domains = EV2Domain.query.order_by(EV2Domain.nome.asc()).all()
     all_rubrics = EV2Rubric.query.filter_by(ativo=True).order_by(EV2Rubric.codigo.asc()).all()
+    turmas = Turma.query.order_by(Turma.nome.asc()).all()
 
     if _wants_json():
         return jsonify({
@@ -367,6 +368,7 @@ def ev2_profile_detail(profile_id: int):
         rubrics_by_domain_id=rubrics_by_domain_id,
         all_domains=all_domains,
         all_rubrics=all_rubrics,
+        turmas=turmas,
     )
 
 

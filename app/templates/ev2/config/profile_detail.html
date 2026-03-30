@@ -25,6 +25,28 @@
   <li class="nav-item"><a class="nav-link" href="/ev2/config/rubricas">Rubricas</a></li>
 </ul>
 
+{% if (profile.tipo or 'local') == 'modelo' %}
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-semibold">Aplicar perfil-modelo a turma</div>
+  <div class="card-body">
+    <form method="post" action="/ev2/config/profiles/{{ profile.id }}/apply" class="row g-3 align-items-end">
+      <div class="col-12 col-md-8">
+        <label class="form-label">Turma</label>
+        <select name="turma_id" class="form-select" required>
+          <option value="">— selecionar turma —</option>
+          {% for t in turmas %}
+          <option value="{{ t.id }}">{{ t.nome }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-md-4 d-flex justify-content-md-end">
+        <button type="submit" class="btn btn-primary">Aplicar e criar cópia local</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
 {% if profile.disciplina and ((profile.disciplina.nome or '').strip().lower() == 'disciplina automática (avaliação)' or (profile.disciplina.sigla or '').strip().upper() == 'AUTO') %}
 <div class="alert alert-warning">
   Este perfil está em modo de <strong>mapeamento avançado</strong> (disciplina automática/override).
