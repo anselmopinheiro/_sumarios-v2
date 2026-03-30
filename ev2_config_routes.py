@@ -7,6 +7,7 @@ from models import (
     Disciplina,
     EV2Assessment,
     EV2Domain,
+    EV2Event,
     EV2Rubric,
     EV2SubjectConfig,
     EV2SubjectDomain,
