@@ -134,121 +134,144 @@
 <div class="alert alert-secondary">Este perfil ainda não tem domínios associados.</div>
 {% endif %}
 
-{% for sd in profile_domains %}
-<div class="card shadow-sm mb-4">
-  <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-    <span class="fw-semibold">Domínio: {{ sd.domain.nome if sd.domain else '—' }}</span>
-    {% if sd.ativo %}<span class="badge text-bg-success">Ativo</span>{% else %}<span class="badge text-bg-secondary">Inativo</span>{% endif %}
-  </div>
-  <div class="card-body">
-    <form method="post" action="/ev2/config/profiles/{{ profile.id }}/domains/{{ sd.id }}/update" class="row g-3 align-items-end mb-3">
-      <div class="col-6 col-md-2">
-        <label class="form-label">Ponderação (0-100)</label>
-        <input type="number" step="0.01" name="weight" class="form-control" value="{{ sd.weight }}">
-      </div>
-      <div class="col-6 col-md-2">
-        <label class="form-label">Ordem</label>
-        <input type="number" name="ordem" class="form-control" value="{{ sd.ordem }}">
-      </div>
-      <div class="col-12 col-md-2">
-        <div class="form-check">
-          <input class="form-check-input" type="checkbox" id="ativo_sd_{{ sd.id }}" name="ativo" value="1" {% if sd.ativo %}checked{% endif %}>
-          <label class="form-check-label" for="ativo_sd_{{ sd.id }}">Ativo</label>
+{% if profile_domains %}
+<div class="accordion mb-4" id="profileDomainsAccordion">
+  {% for sd in profile_domains %}
+  {% set open_item = loop.first %}
+  <div class="accordion-item">
+    <h2 class="accordion-header" id="heading_domain_{{ sd.id }}">
+      <button
+        class="accordion-button {% if not open_item %}collapsed{% endif %}"
+        type="button"
+        data-bs-toggle="collapse"
+        data-bs-target="#collapse_domain_{{ sd.id }}"
+        aria-expanded="{{ 'true' if open_item else 'false' }}"
+        aria-controls="collapse_domain_{{ sd.id }}"
+      >
+        <span class="fw-semibold me-3">{{ sd.domain.nome if sd.domain else '—' }}</span>
+        <span class="badge text-bg-light border text-dark me-2">Peso: {{ sd.weight }}</span>
+        <span class="badge text-bg-light border text-dark me-2">Ordem: {{ sd.ordem }}</span>
+        {% if sd.ativo %}<span class="badge text-bg-success">Ativo</span>{% else %}<span class="badge text-bg-secondary">Inativo</span>{% endif %}
+      </button>
+    </h2>
+    <div
+      id="collapse_domain_{{ sd.id }}"
+      class="accordion-collapse collapse {% if open_item %}show{% endif %}"
+      aria-labelledby="heading_domain_{{ sd.id }}"
+      data-bs-parent="#profileDomainsAccordion"
+    >
+      <div class="accordion-body">
+        <form method="post" action="/ev2/config/profiles/{{ profile.id }}/domains/{{ sd.id }}/update" class="row g-3 align-items-end mb-3">
+          <div class="col-6 col-md-2">
+            <label class="form-label">Ponderação (0-100)</label>
+            <input type="number" step="0.01" name="weight" class="form-control" value="{{ sd.weight }}">
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label">Ordem</label>
+            <input type="number" name="ordem" class="form-control" value="{{ sd.ordem }}">
+          </div>
+          <div class="col-12 col-md-2">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="ativo_sd_{{ sd.id }}" name="ativo" value="1" {% if sd.ativo %}checked{% endif %}>
+              <label class="form-check-label" for="ativo_sd_{{ sd.id }}">Ativo</label>
+            </div>
+          </div>
+          <div class="col-12 col-md-6 d-flex gap-2 justify-content-md-end">
+            <button type="submit" class="btn btn-success">Guardar domínio</button>
+          </div>
+        </form>
+        <form method="post" action="/ev2/config/profiles/{{ profile.id }}/domains/{{ sd.id }}/delete" onsubmit="return confirm('Remover domínio e rubricas deste domínio no perfil?');">
+          <button type="submit" class="btn btn-outline-danger btn-sm">Remover domínio</button>
+        </form>
+
+        <hr>
+        <h5 class="mb-3">Rubricas associadas</h5>
+        <div class="table-responsive mb-3">
+          <table class="table table-sm table-striped align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>ID</th>
+                <th>Código</th>
+                <th>Nome</th>
+                <th>Peso</th>
+                <th>Ordem</th>
+                <th>Escala</th>
+                <th>Ativo</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for sr in rubrics_by_domain_id.get(sd.domain_id, []) %}
+              <tr>
+                <td>{{ sr.id }}</td>
+                <td>{{ sr.rubrica.codigo if sr.rubrica else '—' }}</td>
+                <td>{{ sr.rubrica.nome if sr.rubrica else '—' }}</td>
+                <td colspan="5">
+                  <form method="post" action="/ev2/config/profiles/{{ profile.id }}/rubrics/{{ sr.id }}/update" class="row g-2 align-items-end">
+                    <div class="col-6 col-md-2">
+                      <label class="form-label small mb-0">Peso</label>
+                      <input type="number" step="0.01" name="weight" class="form-control form-control-sm" value="{{ sr.weight }}">
+                    </div>
+                    <div class="col-6 col-md-2">
+                      <label class="form-label small mb-0">Ordem</label>
+                      <input type="number" name="ordem" class="form-control form-control-sm" value="{{ sr.ordem }}">
+                    </div>
+                    <div class="col-6 col-md-2">
+                      <label class="form-label small mb-0">Escala do perfil</label>
+                      <input type="text" class="form-control form-control-sm" value="{{ profile.escala_min or 1 }}–{{ profile.escala_max or 5 }}" disabled>
+                    </div>
+                    <div class="col-6 col-md-2">
+                      <div class="form-check mt-2">
+                        <input class="form-check-input" type="checkbox" id="ativo_sr_{{ sr.id }}" name="ativo" value="1" {% if sr.ativo %}checked{% endif %}>
+                        <label class="form-check-label small" for="ativo_sr_{{ sr.id }}">Ativo</label>
+                      </div>
+                    </div>
+                    <div class="col-12 col-md-2 d-flex gap-2 justify-content-md-end">
+                      <button type="submit" class="btn btn-sm btn-outline-success">Guardar</button>
+                      <button type="submit" form="delete_sr_{{ sr.id }}" class="btn btn-sm btn-outline-danger">Remover</button>
+                    </div>
+                  </form>
+                  <form id="delete_sr_{{ sr.id }}" method="post" action="/ev2/config/profiles/{{ profile.id }}/rubrics/{{ sr.id }}/delete" onsubmit="return confirm('Remover rubrica do perfil?');"></form>
+                </td>
+              </tr>
+              {% else %}
+              <tr><td colspan="8" class="text-muted">Sem rubricas neste domínio.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
         </div>
-      </div>
-      <div class="col-12 col-md-6 d-flex gap-2 justify-content-md-end">
-        <button type="submit" class="btn btn-success">Guardar domínio</button>
-      </div>
-    </form>
-    <form method="post" action="/ev2/config/profiles/{{ profile.id }}/domains/{{ sd.id }}/delete" onsubmit="return confirm('Remover domínio e rubricas deste domínio no perfil?');">
-      <button type="submit" class="btn btn-outline-danger btn-sm">Remover domínio</button>
-    </form>
 
-    <hr>
-    <h5 class="mb-3">Rubricas associadas</h5>
-    <div class="table-responsive mb-3">
-      <table class="table table-sm table-striped align-middle">
-        <thead class="table-light">
-          <tr>
-            <th>ID</th>
-            <th>Código</th>
-            <th>Nome</th>
-            <th>Peso</th>
-            <th>Ordem</th>
-            <th>Escala</th>
-            <th>Ativo</th>
-            <th>Ações</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for sr in rubrics_by_domain_id.get(sd.domain_id, []) %}
-          <tr>
-            <td>{{ sr.id }}</td>
-            <td>{{ sr.rubrica.codigo if sr.rubrica else '—' }}</td>
-            <td>{{ sr.rubrica.nome if sr.rubrica else '—' }}</td>
-            <td colspan="5">
-              <form method="post" action="/ev2/config/profiles/{{ profile.id }}/rubrics/{{ sr.id }}/update" class="row g-2 align-items-end">
-                <div class="col-6 col-md-2">
-                  <label class="form-label small mb-0">Peso</label>
-                  <input type="number" step="0.01" name="weight" class="form-control form-control-sm" value="{{ sr.weight }}">
-                </div>
-                <div class="col-6 col-md-2">
-                  <label class="form-label small mb-0">Ordem</label>
-                  <input type="number" name="ordem" class="form-control form-control-sm" value="{{ sr.ordem }}">
-                </div>
-                <div class="col-6 col-md-2">
-                  <label class="form-label small mb-0">Escala do perfil</label>
-                  <input type="text" class="form-control form-control-sm" value="{{ profile.escala_min or 1 }}–{{ profile.escala_max or 5 }}" disabled>
-                </div>
-                <div class="col-6 col-md-2">
-                  <div class="form-check mt-2">
-                    <input class="form-check-input" type="checkbox" id="ativo_sr_{{ sr.id }}" name="ativo" value="1" {% if sr.ativo %}checked{% endif %}>
-                    <label class="form-check-label small" for="ativo_sr_{{ sr.id }}">Ativo</label>
-                  </div>
-                </div>
-                <div class="col-12 col-md-2 d-flex gap-2 justify-content-md-end">
-                  <button type="submit" class="btn btn-sm btn-outline-success">Guardar</button>
-                  <button type="submit" form="delete_sr_{{ sr.id }}" class="btn btn-sm btn-outline-danger">Remover</button>
-                </div>
-              </form>
-              <form id="delete_sr_{{ sr.id }}" method="post" action="/ev2/config/profiles/{{ profile.id }}/rubrics/{{ sr.id }}/delete" onsubmit="return confirm('Remover rubrica do perfil?');"></form>
-            </td>
-          </tr>
-          {% else %}
-          <tr><td colspan="8" class="text-muted">Sem rubricas neste domínio.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
+        <h6 class="mb-3">Adicionar rubrica deste domínio</h6>
+        <form method="post" action="/ev2/config/profiles/{{ profile.id }}/rubrics" class="row g-3 align-items-end">
+          <div class="col-12 col-md-5">
+            <label class="form-label">Rubrica</label>
+            <select name="rubric_id" class="form-select" required>
+              {% set available_rubrics = available_rubrics_by_domain.get(sd.domain_id, []) %}
+              {% if available_rubrics %}
+              <option value="">— selecionar —</option>
+              {% for r in available_rubrics %}
+              <option value="{{ r.id }}">{{ r.codigo }} — {{ r.nome }}</option>
+              {% endfor %}
+              {% else %}
+              <option value="">Sem rubricas disponíveis</option>
+              {% endif %}
+            </select>
+          </div>
+          <div class="col-6 col-md-2"><label class="form-label">Peso</label><input type="number" step="0.01" name="weight" class="form-control" value="0"></div>
+          <div class="col-6 col-md-1"><label class="form-label">Ordem</label><input type="number" name="ordem" class="form-control" value="0"></div>
+          <div class="col-12 col-md-2">
+            <label class="form-label">Escala</label>
+            <input type="text" class="form-control" value="{{ profile.escala_min or 1 }}–{{ profile.escala_max or 5 }}" disabled>
+          </div>
+          <div class="col-12 col-md-2 d-flex justify-content-md-end">
+            <button type="submit" class="btn btn-outline-primary" {% if not available_rubrics_by_domain.get(sd.domain_id, []) %}disabled{% endif %}>Adicionar rubrica</button>
+          </div>
+        </form>
+      </div>
     </div>
-
-    <h6 class="mb-3">Adicionar rubrica deste domínio</h6>
-    <form method="post" action="/ev2/config/profiles/{{ profile.id }}/rubrics" class="row g-3 align-items-end">
-      <div class="col-12 col-md-5">
-        <label class="form-label">Rubrica</label>
-        <select name="rubric_id" class="form-select" required>
-          {% set available_rubrics = available_rubrics_by_domain.get(sd.domain_id, []) %}
-          {% if available_rubrics %}
-          <option value="">— selecionar —</option>
-          {% for r in available_rubrics %}
-          <option value="{{ r.id }}">{{ r.codigo }} — {{ r.nome }}</option>
-          {% endfor %}
-          {% else %}
-          <option value="">Sem rubricas disponíveis</option>
-          {% endif %}
-        </select>
-      </div>
-      <div class="col-6 col-md-2"><label class="form-label">Peso</label><input type="number" step="0.01" name="weight" class="form-control" value="0"></div>
-      <div class="col-6 col-md-1"><label class="form-label">Ordem</label><input type="number" name="ordem" class="form-control" value="0"></div>
-      <div class="col-12 col-md-2">
-        <label class="form-label">Escala</label>
-        <input type="text" class="form-control" value="{{ profile.escala_min or 1 }}–{{ profile.escala_max or 5 }}" disabled>
-      </div>
-      <div class="col-12 col-md-2 d-flex justify-content-md-end">
-        <button type="submit" class="btn btn-outline-primary" {% if not available_rubrics_by_domain.get(sd.domain_id, []) %}disabled{% endif %}>Adicionar rubrica</button>
-      </div>
-    </form>
   </div>
+  {% endfor %}
 </div>
-{% endfor %}
+{% endif %}
 
 {% endblock %}
