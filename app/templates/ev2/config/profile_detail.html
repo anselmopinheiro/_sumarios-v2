@@ -195,7 +195,6 @@
                 <th>Nome</th>
                 <th>Peso</th>
                 <th>Ordem</th>
-                <th>Escala</th>
                 <th>Ativo</th>
                 <th>Ações</th>
               </tr>
@@ -206,7 +205,7 @@
                 <td>{{ sr.id }}</td>
                 <td>{{ sr.rubrica.codigo if sr.rubrica else '—' }}</td>
                 <td>{{ sr.rubrica.nome if sr.rubrica else '—' }}</td>
-                <td colspan="5">
+                <td colspan="4">
                   <form method="post" action="/ev2/config/profiles/{{ profile.id }}/rubrics/{{ sr.id }}/update" class="row g-2 align-items-end">
                     <div class="col-6 col-md-2">
                       <label class="form-label small mb-0">Peso</label>
@@ -215,10 +214,6 @@
                     <div class="col-6 col-md-2">
                       <label class="form-label small mb-0">Ordem</label>
                       <input type="number" name="ordem" class="form-control form-control-sm" value="{{ sr.ordem }}">
-                    </div>
-                    <div class="col-6 col-md-2">
-                      <label class="form-label small mb-0">Escala do perfil</label>
-                      <input type="text" class="form-control form-control-sm" value="{{ profile.escala_min or 1 }}–{{ profile.escala_max or 5 }}" disabled>
                     </div>
                     <div class="col-6 col-md-2">
                       <div class="form-check mt-2">
@@ -258,11 +253,7 @@
             </select>
           </div>
           <div class="col-6 col-md-2"><label class="form-label">Peso</label><input type="number" step="0.01" name="weight" class="form-control" value="0"></div>
-          <div class="col-6 col-md-1"><label class="form-label">Ordem</label><input type="number" name="ordem" class="form-control" value="0"></div>
-          <div class="col-12 col-md-2">
-            <label class="form-label">Escala</label>
-            <input type="text" class="form-control" value="{{ profile.escala_min or 1 }}–{{ profile.escala_max or 5 }}" disabled>
-          </div>
+          <div class="col-6 col-md-2"><label class="form-label">Ordem</label><input type="number" name="ordem" class="form-control" value="0"></div>
           <div class="col-12 col-md-2 d-flex justify-content-md-end">
             <button type="submit" class="btn btn-outline-primary" {% if not available_rubrics_by_domain.get(sd.domain_id, []) %}disabled{% endif %}>Adicionar rubrica</button>
           </div>

@@ -337,8 +337,6 @@ def ev2_profile_apply_to_turma(model_id: int):
                 subject_domain_id=domain_map.get(sr.subject_domain_id),
                 ordem=sr.ordem,
                 weight=sr.weight,
-                scale_min=local.escala_min,
-                scale_max=local.escala_max,
                 ativo=sr.ativo,
             )
         )
@@ -523,8 +521,6 @@ def ev2_profile_add_domain(profile_id: int):
                 subject_domain_id=item.id,
                 ordem=int(next_ordem + idx),
                 weight=25,
-                scale_min=1,
-                scale_max=5,
                 ativo=True,
             )
         )
@@ -600,8 +596,6 @@ def ev2_profile_add_rubric(profile_id: int):
         subject_domain_id=subject_domain.id,
         ordem=_as_int(data.get("ordem")) or 0,
         weight=float(data.get("weight") or 25),
-        scale_min=int(profile.escala_min or 1),
-        scale_max=int(profile.escala_max or 5),
         ativo=_to_bool(data.get("ativo"), default=True),
     )
     db.session.add(item)
@@ -620,9 +614,6 @@ def ev2_profile_update_rubric(profile_id: int, subject_rubric_id: int):
     data = _payload()
     item.ordem = _as_int(data.get("ordem")) or 0
     item.weight = float(data.get("weight") or 0)
-    profile = EV2SubjectConfig.query.get(profile_id)
-    item.scale_min = int(profile.escala_min or 1) if profile else 1
-    item.scale_max = int(profile.escala_max or 5) if profile else 5
     item.ativo = _to_bool(data.get("ativo"), default=True)
     db.session.commit()
     if _wants_json():

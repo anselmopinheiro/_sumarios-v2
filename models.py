@@ -930,8 +930,6 @@ class EV2SubjectRubric(db.Model):
     )
     ordem = db.Column(db.Integer, nullable=False, default=0, server_default="0")
     weight = db.Column(db.Numeric(5, 2), nullable=False, default=0)
-    scale_min = db.Column(db.Integer, nullable=False, default=1)
-    scale_max = db.Column(db.Integer, nullable=False, default=5)
     ativo = db.Column(db.Boolean, nullable=False, default=True, server_default=db.text("true"))
 
     subject_config = db.relationship("EV2SubjectConfig", back_populates="rubrics")
@@ -943,7 +941,6 @@ class EV2SubjectRubric(db.Model):
             "subject_config_id", "rubric_id", name="uq_ev2_subject_rubric_once"
         ),
         db.CheckConstraint("weight >= 0 AND weight <= 100", name="ck_ev2_subject_rubric_weight"),
-        db.CheckConstraint("scale_min < scale_max", name="ck_ev2_subject_rubric_scale"),
         db.Index("ix_ev2_subject_rubric_config", "subject_config_id"),
     )
 
