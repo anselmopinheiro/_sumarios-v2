@@ -4,7 +4,7 @@
 <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
   <div>
     <h2 class="mb-1">Perfis EV2</h2>
-    <p class="text-muted mb-0">Configuração por turma e disciplina.</p>
+    <p class="text-muted mb-0">Configuração por turma.</p>
   </div>
   <div class="d-flex gap-2 flex-wrap">
     <a href="/ev2/config/domains" class="btn btn-outline-secondary btn-sm">Domínios</a>
@@ -31,23 +31,7 @@
           {% endfor %}
         </select>
       </div>
-      <div class="col-12 col-md-4">
-        <label class="form-label">Disciplina</label>
-        <select name="disciplina_id" class="form-select">
-          <option value="">(todas)</option>
-          {% for d in disciplinas %}
-          <option value="{{ d.id }}" {% if selected_disciplina_id == d.id %}selected{% endif %}>{{ d.nome }}</option>
-          {% endfor %}
-          {% if disciplinas_auto %}
-          <optgroup label="Mapeamento avançado">
-            {% for d in disciplinas_auto %}
-            <option value="{{ d.id }}" {% if selected_disciplina_id == d.id %}selected{% endif %}>{{ d.nome }}</option>
-            {% endfor %}
-          </optgroup>
-          {% endif %}
-        </select>
-      </div>
-      <div class="col-12 col-md-4 d-flex gap-2">
+      <div class="col-12 col-md-8 d-flex gap-2">
         <button type="submit" class="btn btn-primary">Filtrar</button>
         <a href="/ev2/config/profiles" class="btn btn-outline-secondary">Limpar</a>
       </div>
@@ -68,37 +52,9 @@
           {% endfor %}
         </select>
       </div>
-      <div class="col-12 col-md-4">
-        <label class="form-label">Disciplina</label>
-        <select name="disciplina_id" class="form-select" required>
-          <option value="">— selecionar —</option>
-          {% for d in disciplinas %}
-          <option value="{{ d.id }}" {% if selected_disciplina_id == d.id %}selected{% endif %}>{{ d.nome }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-12 col-md-4">
+      <div class="col-12 col-md-8">
         <label class="form-label">Nome do perfil</label>
         <input name="nome" class="form-control" required placeholder="Ex.: Perfil padrão 2025/26" value="{{ prefill_nome or '' }}">
-      </div>
-      <div class="col-12">
-        <details class="border rounded p-3 bg-light">
-          <summary class="fw-semibold">Mapeamento avançado (override manual)</summary>
-          <p class="text-muted small mt-2 mb-2">
-            Usar apenas se a avaliação não estiver a identificar corretamente a disciplina deste perfil.
-          </p>
-          <div class="row g-3 align-items-end">
-            <div class="col-12 col-md-6">
-              <label class="form-label">Disciplina automática (avaliação)</label>
-              <select name="disciplina_auto_override_id" class="form-select">
-                <option value="">(não usar override)</option>
-                {% for d in disciplinas_auto %}
-                <option value="{{ d.id }}" {% if selected_auto_disciplina_id == d.id %}selected{% endif %}>{{ d.nome }}</option>
-                {% endfor %}
-              </select>
-            </div>
-          </div>
-        </details>
       </div>
       <div class="col-12 col-md-3">
         <div class="form-check">
@@ -128,7 +84,6 @@
           <tr>
             <th style="width: 80px;">ID</th>
             <th>Turma</th>
-            <th>Disciplina</th>
             <th>Nome</th>
             <th class="text-center">Ativo</th>
             <th class="text-center">Usar EV2</th>
@@ -139,19 +94,13 @@
         <tbody>
           {% if not profiles %}
           <tr>
-            <td colspan="8" class="text-muted">Sem perfis para o filtro atual.</td>
+            <td colspan="7" class="text-muted">Sem perfis para o filtro atual.</td>
           </tr>
           {% endif %}
           {% for p in profiles %}
           <tr>
             <td>{{ p.id }}</td>
             <td>{{ p.turma.nome if p.turma else '—' }}</td>
-            <td>
-              {{ p.disciplina.nome if p.disciplina else '—' }}
-              {% if p.disciplina and ((p.disciplina.nome or '').strip().lower() == 'disciplina automática (avaliação)' or (p.disciplina.sigla or '').strip().upper() == 'AUTO') %}
-              <span class="badge text-bg-warning">Override</span>
-              {% endif %}
-            </td>
             <td>{{ p.nome }}</td>
             <td class="text-center">
               {% if p.ativo %}<span class="badge text-bg-success">Sim</span>{% else %}<span class="badge text-bg-secondary">Não</span>{% endif %}

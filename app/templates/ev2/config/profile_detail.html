@@ -6,7 +6,6 @@
     <h2 class="mb-1">Perfil EV2 — {{ profile.turma.nome if profile.turma else profile.nome }}</h2>
     <p class="text-muted mb-0">
       Turma: <strong>{{ profile.turma.nome if profile.turma else '—' }}</strong> ·
-      Disciplina: <strong>{{ profile.disciplina.nome if profile.disciplina else '—' }}</strong> ·
       Estado:
       {% if profile.ativo %}<span class="badge text-bg-success">Ativo</span>{% else %}<span class="badge text-bg-secondary">Inativo</span>{% endif %}
     </p>

@@ -149,73 +149,57 @@ def _unique_rubric_code(target_domain_id: int, candidate: str, exclude_id: int |
 def ev2_profiles_collection():
     if request.method == "GET":
         turma_id = request.args.get("turma_id", type=int)
-        disciplina_id = request.args.get("disciplina_id", type=int)
         prefill_nome = (request.args.get("prefill_nome") or "").strip()
 
         query = EV2SubjectConfig.query
         if turma_id:
             query = query.filter(EV2SubjectConfig.turma_id == turma_id)
-        if disciplina_id:
-            query = query.filter(EV2SubjectConfig.disciplina_id == disciplina_id)
 
         profiles = (
             query.order_by(
                 EV2SubjectConfig.turma_id.asc(),
-                EV2SubjectConfig.disciplina_id.asc(),
                 EV2SubjectConfig.updated_at.desc(),
                 EV2SubjectConfig.id.desc(),
             )
             .all()
         )
         turmas = Turma.query.order_by(Turma.nome.asc()).all()
-        disciplinas = Disciplina.query.order_by(Disciplina.nome.asc()).all()
-        disciplinas_auto = [
-            d for d in disciplinas
-            if (d.nome or "").strip().lower() == "disciplina automática (avaliação)"
-            or (d.sigla or "").strip().upper() == "AUTO"
-        ]
-        disciplinas_regulares = [d for d in disciplinas if d not in disciplinas_auto]
-        selected_auto_disciplina_id = (
-            disciplina_id
-            if disciplina_id and any(d.id == disciplina_id for d in disciplinas_auto)
-            else None
-        )
         if _wants_json():
             return jsonify([_subject_profile_to_dict(item) for item in profiles])
         return render_template(
             "ev2/config/profiles.html",
             profiles=profiles,
             turmas=turmas,
-            disciplinas=disciplinas_regulares,
-            disciplinas_auto=disciplinas_auto,
             selected_turma_id=turma_id,
-            selected_disciplina_id=disciplina_id,
-            selected_auto_disciplina_id=selected_auto_disciplina_id,
             prefill_nome=prefill_nome,
         )
 
     data = _payload()
     turma_id = _as_int(data.get("turma_id"))
     disciplina_id = _as_int(data.get("disciplina_id"))
-    disciplina_auto_override_id = _as_int(data.get("disciplina_auto_override_id"))
     nome = (data.get("nome") or "").strip()
     ativo = _to_bool(data.get("ativo"), default=True)
     usar_ev2 = _to_bool(data.get("usar_ev2"), default=True)
 
-    if disciplina_auto_override_id:
-        disciplina_id = disciplina_auto_override_id
-
-    if not turma_id or not disciplina_id or not nome:
+    if not turma_id or not nome:
         return _error(
-            "Campos obrigatórios: turma_id, disciplina_id, nome",
+            "Campos obrigatórios: turma_id, nome",
             400,
             "ev2_config.ev2_profiles_collection",
         )
 
     turma = Turma.query.get(turma_id)
-    disciplina = Disciplina.query.get(disciplina_id)
-    if not turma or not disciplina:
-        return _error("Turma ou disciplina não encontrada.", 404, "ev2_config.ev2_profiles_collection")
+    if not turma:
+        return _error("Turma não encontrada.", 404, "ev2_config.ev2_profiles_collection")
+    if not disciplina_id:
+        disciplina_id = (turma.disciplinas[0].id if turma.disciplinas else None)
+    disciplina = Disciplina.query.get(disciplina_id) if disciplina_id else None
+    if not disciplina:
+        return _error(
+            "Sem disciplina associada à turma. Associa uma disciplina para criar o perfil EV2.",
+            400,
+            "ev2_config.ev2_profiles_collection",
+        )
 
     profile = EV2SubjectConfig(
         turma_id=turma_id,
@@ -251,7 +235,6 @@ def ev2_profile_activate(profile_id: int):
         EV2SubjectConfig.query
         .filter(
             EV2SubjectConfig.turma_id == profile.turma_id,
-            EV2SubjectConfig.disciplina_id == profile.disciplina_id,
             EV2SubjectConfig.id != profile.id,
         )
         .update({"ativo": False}, synchronize_session=False)
@@ -262,7 +245,7 @@ def ev2_profile_activate(profile_id: int):
 
     if _wants_json():
         return jsonify(_subject_profile_to_dict(profile))
-    flash("Perfil ativado para a turma/disciplina.", "success")
+    flash("Perfil ativado para a turma.", "success")
     return redirect(url_for("ev2_config.ev2_profiles_collection"))
 
 

@@ -3594,11 +3594,10 @@ def create_app():
         )
         return disciplina
 
-    def _resolver_subject_config_com_fallback(turma_id, disciplina_id, contexto="avaliacao"):
+    def _resolver_subject_config_com_fallback(turma_id, disciplina_id=None, contexto="avaliacao"):
         subject_config = (
             EV2SubjectConfig.query.filter_by(
                 turma_id=turma_id,
-                disciplina_id=disciplina_id,
                 ativo=True,
                 usar_ev2=True,
             )
@@ -3607,18 +3606,17 @@ def create_app():
         )
         if subject_config:
             current_app.logger.info(
-                "[%s] perfil resolvido via turma+disciplina turma=%s disciplina=%s profile_id=%s modo=ativo_usar_ev2",
+                "[%s] perfil resolvido via turma turma=%s disciplina_ctx=%s profile_id=%s modo=ativo_usar_ev2",
                 contexto,
                 turma_id,
                 disciplina_id,
                 subject_config.id,
             )
-            return subject_config, "normal_ativo_usar_ev2"
+            return subject_config, "turma_ativo_usar_ev2"
 
         subject_config = (
             EV2SubjectConfig.query.filter_by(
                 turma_id=turma_id,
-                disciplina_id=disciplina_id,
                 ativo=True,
             )
             .order_by(EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
@@ -3626,67 +3624,16 @@ def create_app():
         )
         if subject_config:
             current_app.logger.info(
-                "[%s] perfil resolvido via turma+disciplina turma=%s disciplina=%s profile_id=%s modo=ativo",
+                "[%s] perfil resolvido via turma turma=%s disciplina_ctx=%s profile_id=%s modo=ativo",
                 contexto,
                 turma_id,
                 disciplina_id,
                 subject_config.id,
             )
-            return subject_config, "normal_ativo"
-
-        disciplina_auto = (
-            Disciplina.query
-            .join(TurmaDisciplina, TurmaDisciplina.disciplina_id == Disciplina.id)
-            .filter(TurmaDisciplina.turma_id == turma_id)
-            .filter(
-                or_(
-                    func.lower(func.trim(Disciplina.nome)) == "disciplina automática (avaliação)",
-                    func.upper(func.trim(func.coalesce(Disciplina.sigla, ""))) == "AUTO",
-                )
-            )
-            .order_by(Disciplina.id.desc())
-            .first()
-        )
-        if not disciplina_auto:
-            current_app.logger.info(
-                "[%s] sem perfil por turma+disciplina e sem override AUTO turma=%s disciplina=%s",
-                contexto,
-                turma_id,
-                disciplina_id,
-            )
-            return None, "none"
-
-        subject_config = (
-            EV2SubjectConfig.query.filter_by(
-                turma_id=turma_id,
-                disciplina_id=disciplina_auto.id,
-                ativo=True,
-                usar_ev2=True,
-            )
-            .order_by(EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
-            .first()
-        ) or (
-            EV2SubjectConfig.query.filter_by(
-                turma_id=turma_id,
-                disciplina_id=disciplina_auto.id,
-                ativo=True,
-            )
-            .order_by(EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
-            .first()
-        )
-        if subject_config:
-            current_app.logger.warning(
-                "[%s] override AUTO usado turma=%s disciplina_real=%s disciplina_override=%s profile_id=%s",
-                contexto,
-                turma_id,
-                disciplina_id,
-                disciplina_auto.id,
-                subject_config.id,
-            )
-            return subject_config, "fallback_auto_override"
+            return subject_config, "turma_ativo"
 
         current_app.logger.info(
-            "[%s] sem perfil na resolução normal e sem perfil de override AUTO turma=%s disciplina=%s",
+            "[%s] sem perfil ativo por turma turma=%s disciplina_ctx=%s",
             contexto,
             turma_id,
             disciplina_id,
@@ -5874,15 +5821,14 @@ def create_app():
                 .filter(EV2SubjectConfig.turma_id.in_(turmas_ids))
                 .with_entities(
                     EV2SubjectConfig.turma_id,
-                    EV2SubjectConfig.disciplina_id,
                     EV2SubjectConfig.id,
                     EV2SubjectConfig.ativo,
                 )
                 .order_by(EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
                 .all()
             )
-            for turma_id, disciplina_id, profile_id, ativo in profile_rows:
-                key = (turma_id, disciplina_id)
+            for turma_id, profile_id, ativo in profile_rows:
+                key = turma_id
                 entry = profile_status_map.get(key)
                 if entry is None:
                     profile_status_map[key] = {
