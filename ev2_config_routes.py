@@ -926,7 +926,11 @@ def ev2_rubricas_import():
     source = EV2Domain.query.get(source_domain_id)
     target = EV2Domain.query.get(target_domain_id)
     if not source or not target:
-        return _error("Domínio origem/destino não encontrado.", 404, "ev2_config.ev2_rubricas_collection")
+        return _error(
+            "Domínio origem/destino não encontrado.",
+            404,
+            "ev2_config.ev2_rubricas_collection",
+        )
 
     warnings = []
     created = []
