@@ -675,13 +675,6 @@ def ev2_domains_collection():
     letra = (data.get("letra") or "").strip() or None
     codigo = (data.get("codigo") or "").strip() or None
     descricao = (data.get("descricao") or "").strip() or None
-    descritores = {
-        "descritor_nivel_1": (data.get("descritor_nivel_1") or "").strip() or None,
-        "descritor_nivel_2": (data.get("descritor_nivel_2") or "").strip() or None,
-        "descritor_nivel_3": (data.get("descritor_nivel_3") or "").strip() or None,
-        "descritor_nivel_4": (data.get("descritor_nivel_4") or "").strip() or None,
-        "descritor_nivel_5": (data.get("descritor_nivel_5") or "").strip() or None,
-    }
     ativo = _to_bool(data.get("ativo"), default=True)
 
     if not nome:
@@ -865,6 +858,13 @@ def ev2_rubricas_collection():
     codigo = (data.get("codigo") or "").strip()
     nome = (data.get("nome") or "").strip()
     descricao = (data.get("descricao") or "").strip() or None
+    descritores = {
+        "descritor_nivel_1": (data.get("descritor_nivel_1") or "").strip() or None,
+        "descritor_nivel_2": (data.get("descritor_nivel_2") or "").strip() or None,
+        "descritor_nivel_3": (data.get("descritor_nivel_3") or "").strip() or None,
+        "descritor_nivel_4": (data.get("descritor_nivel_4") or "").strip() or None,
+        "descritor_nivel_5": (data.get("descritor_nivel_5") or "").strip() or None,
+    }
     ativo = _to_bool(data.get("ativo"), default=True)
 
     if not domain_id or not codigo or not nome:
