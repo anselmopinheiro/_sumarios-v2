@@ -960,19 +960,18 @@ def ev2_rubricas_import():
                     rubrica_id=new_rubrica.id,
                     nome=comp.nome,
                     ordem=comp.ordem,
-                    peso=comp.peso,
-                    descritor_nivel_1=comp.descritor_nivel_1,
-                    descritor_nivel_2=comp.descritor_nivel_2,
-                    descritor_nivel_3=comp.descritor_nivel_3,
-                    descritor_nivel_4=comp.descritor_nivel_4,
-                    descritor_nivel_5=comp.descritor_nivel_5,
-                    ativo=comp.ativo,
-                )
-            )
-        created.append(_rubric_to_dict(new_rubrica))
-
-    db.session.commit()
-
+            cloned_component = EV2RubricComponent(
+                rubrica_id=new_rubrica.id,
+                nome=comp.nome,
+                ordem=comp.ordem,
+                peso=comp.peso,
+                descritor_nivel_1=comp.descritor_nivel_1,
+                descritor_nivel_2=comp.descritor_nivel_2,
+                descritor_nivel_3=comp.descritor_nivel_3,
+                descritor_nivel_4=comp.descritor_nivel_4,
+                descritor_nivel_5=comp.descritor_nivel_5,
+                ativo=comp.ativo,
+            db.session.add(cloned_component)
     payload = {
         "source_domain_id": source.id,
         "target_domain_id": target.id,
