@@ -3,7 +3,19 @@ from __future__ import annotations
 from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 from sqlalchemy.exc import IntegrityError
 
-from models import EV2Assessment, EV2Domain, EV2Rubric, db
+from models import (
+    Disciplina,
+    EV2Assessment,
+    EV2Domain,
+    EV2Event,
+    EV2Rubric,
+    EV2RubricComponent,
+    EV2SubjectConfig,
+    EV2SubjectDomain,
+    EV2SubjectRubric,
+    Turma,
+    db,
+)
 
 
 ev2_config_bp = Blueprint(
@@ -13,6 +25,11 @@ ev2_config_bp = Blueprint(
     template_folder="app/templates",
     static_folder="app/static",
 )
+
+TIPO_PERFIL_BASE = "perfil_base_turma"
+TIPO_MODELO_ATIVIDADE = "modelo_atividade"
+TIPO_LOCAL_TURMA = "local_turma"
+TIPOS_MODELO = {TIPO_PERFIL_BASE, TIPO_MODELO_ATIVIDADE}
 
 
 def _wants_json() -> bool:
@@ -50,6 +67,15 @@ def _as_int(value):
         return None
 
 
+def _as_float(value):
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _error(message: str, status: int, redirect_endpoint: str | None = None):
     if _wants_json() or not redirect_endpoint:
         return jsonify({"error": message}), status
@@ -70,6 +96,7 @@ def _domain_to_dict(domain: EV2Domain) -> dict:
 
 
 def _rubric_to_dict(rubric: EV2Rubric) -> dict:
+    components = sorted(rubric.components or [], key=lambda c: (c.ordem, c.id))
     return {
         "id": rubric.id,
         "domain_id": rubric.domain_id,
@@ -77,8 +104,62 @@ def _rubric_to_dict(rubric: EV2Rubric) -> dict:
         "codigo": rubric.codigo,
         "nome": rubric.nome,
         "descricao": rubric.descricao,
+        "descritor_nivel_1": rubric.descritor_nivel_1,
+        "descritor_nivel_2": rubric.descritor_nivel_2,
+        "descritor_nivel_3": rubric.descritor_nivel_3,
+        "descritor_nivel_4": rubric.descritor_nivel_4,
+        "descritor_nivel_5": rubric.descritor_nivel_5,
+        "ordem": int(getattr(rubric, "ordem", 0) or 0),
+        "peso": float(getattr(rubric, "peso", 0) or 0),
+        "components_count": len(components),
+        "components": [
+            {
+                "id": c.id,
+                "nome": c.nome,
+                "ordem": int(c.ordem or 0),
+                "peso": float(c.peso or 0),
+                "ativo": bool(c.ativo),
+                "descritor_nivel_1": c.descritor_nivel_1,
+                "descritor_nivel_2": c.descritor_nivel_2,
+                "descritor_nivel_3": c.descritor_nivel_3,
+                "descritor_nivel_4": c.descritor_nivel_4,
+                "descritor_nivel_5": c.descritor_nivel_5,
+            }
+            for c in components
+        ],
         "ativo": bool(rubric.ativo),
         "in_use_count": EV2Assessment.query.filter_by(rubric_id=rubric.id).count(),
+    }
+
+
+def _subject_profile_to_dict(profile: EV2SubjectConfig) -> dict:
+    return {
+        "id": profile.id,
+        "turma_id": profile.turma_id,
+        "turma_nome": profile.turma.nome if profile.turma else None,
+        "disciplina_id": profile.disciplina_id,
+        "disciplina_nome": profile.disciplina.nome if profile.disciplina else None,
+        "nome": profile.nome,
+        "tipo": profile.tipo,
+        "profile_model_id": profile.profile_model_id,
+        "profile_model_nome": profile.profile_model.nome if profile.profile_model else None,
+        "ativo": bool(profile.ativo),
+        "usar_ev2": bool(profile.usar_ev2),
+        "escala_min": int(profile.escala_min or 1),
+        "escala_max": int(profile.escala_max or 5),
+        "rubricas_count": EV2SubjectRubric.query.filter_by(subject_config_id=profile.id).count(),
+    }
+
+
+def _subject_domain_to_dict(item: EV2SubjectDomain) -> dict:
+    return {
+        "id": item.id,
+        "subject_config_id": item.subject_config_id,
+        "domain_id": item.domain_id,
+        "domain_nome": item.domain.nome if item.domain else None,
+        "ordem": int(item.ordem or 0),
+        "weight": float(item.weight or 0),
+        "ativo": bool(item.ativo),
     }
 
 
@@ -107,6 +188,485 @@ def _unique_rubric_code(target_domain_id: int, candidate: str, exclude_id: int |
             return code
         idx += 1
     return f"{base[:76]}-dup"
+
+
+@ev2_config_bp.route("/profiles", methods=["GET", "POST"])
+def ev2_profiles_collection():
+    if request.method == "GET":
+        turma_id = request.args.get("turma_id", type=int)
+        prefill_nome = (request.args.get("prefill_nome") or "").strip()
+
+        models = (
+            EV2SubjectConfig.query
+            .filter(EV2SubjectConfig.tipo.in_(TIPOS_MODELO))
+            .order_by(EV2SubjectConfig.nome.asc(), EV2SubjectConfig.id.asc())
+            .all()
+        )
+        locals_query = EV2SubjectConfig.query.filter(EV2SubjectConfig.tipo == TIPO_LOCAL_TURMA)
+        if turma_id:
+            locals_query = locals_query.filter(EV2SubjectConfig.turma_id == turma_id)
+        locals_profiles = (
+            locals_query
+            .order_by(EV2SubjectConfig.turma_id.asc(), EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
+            .all()
+        )
+        turmas = Turma.query.filter(Turma.letiva == True).order_by(Turma.nome.asc()).all()  # noqa: E712
+        profiles = [*models, *locals_profiles]
+        if _wants_json():
+            return jsonify([_subject_profile_to_dict(item) for item in profiles])
+        return render_template(
+            "ev2/config/profiles.html",
+            profiles=profiles,
+            models=models,
+            locals=locals_profiles,
+            turmas=turmas,
+            selected_turma_id=turma_id,
+            prefill_nome=prefill_nome,
+        )
+
+    data = _payload()
+    turma_id = _as_int(data.get("turma_id"))
+    disciplina_id = _as_int(data.get("disciplina_id"))
+    nome = (data.get("nome") or "").strip()
+    ativo = _to_bool(data.get("ativo"), default=True)
+    usar_ev2 = _to_bool(data.get("usar_ev2"), default=True)
+    escala_min = _as_int(data.get("escala_min")) or 1
+    escala_max = _as_int(data.get("escala_max")) or 5
+    profile_tipo = (data.get("profile_tipo") or TIPO_PERFIL_BASE).strip()
+    if profile_tipo not in TIPOS_MODELO:
+        profile_tipo = TIPO_PERFIL_BASE
+    if escala_min >= escala_max:
+        return _error("Escala inválida: o mínimo deve ser inferior ao máximo.", 400, "ev2_config.ev2_profiles_collection")
+
+    if not nome:
+        return _error(
+            "Campos obrigatórios: nome",
+            400,
+            "ev2_config.ev2_profiles_collection",
+        )
+    turma = Turma.query.get(turma_id) if turma_id else None
+    if turma and not disciplina_id:
+        disciplina_id = (turma.disciplinas[0].id if turma.disciplinas else None)
+
+    profile = EV2SubjectConfig(
+        turma_id=turma_id,
+        disciplina_id=disciplina_id,
+        nome=nome,
+        tipo=TIPO_LOCAL_TURMA if turma_id else profile_tipo,
+        ativo=ativo,
+        usar_ev2=usar_ev2,
+        escala_min=escala_min,
+        escala_max=escala_max,
+    )
+    db.session.add(profile)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return _error(
+            "Já existe perfil com o mesmo nome para esta turma/disciplina.",
+            409,
+            "ev2_config.ev2_profiles_collection",
+        )
+
+    if _wants_json():
+        return jsonify(_subject_profile_to_dict(profile)), 201
+    flash("Perfil EV2 criado com sucesso.", "success")
+    return redirect(url_for("ev2_config.ev2_profiles_collection"))
+
+
+@ev2_config_bp.post("/profiles/<int:profile_id>/activate")
+def ev2_profile_activate(profile_id: int):
+    profile = EV2SubjectConfig.query.get(profile_id)
+    if not profile:
+        return _error("Perfil não encontrado.", 404, "ev2_config.ev2_profiles_collection")
+    if (profile.tipo or TIPO_LOCAL_TURMA) != TIPO_LOCAL_TURMA:
+        return _error("Apenas cópias locais podem ser ativadas.", 400, "ev2_config.ev2_profiles_collection")
+
+    (
+        EV2SubjectConfig.query
+        .filter(
+            EV2SubjectConfig.turma_id == profile.turma_id,
+            EV2SubjectConfig.tipo == TIPO_LOCAL_TURMA,
+            EV2SubjectConfig.id != profile.id,
+        )
+        .update({"ativo": False}, synchronize_session=False)
+    )
+    profile.ativo = True
+    profile.usar_ev2 = True
+    db.session.commit()
+
+    if _wants_json():
+        return jsonify(_subject_profile_to_dict(profile))
+    flash("Perfil ativado para a turma.", "success")
+    return redirect(url_for("ev2_config.ev2_profiles_collection"))
+
+
+@ev2_config_bp.post("/profiles/<int:model_id>/apply")
+def ev2_profile_apply_to_turma(model_id: int):
+    model = EV2SubjectConfig.query.get(model_id)
+    if not model or (model.tipo or TIPO_PERFIL_BASE) not in TIPOS_MODELO:
+        return _error("Perfil-modelo não encontrado.", 404, "ev2_config.ev2_profiles_collection")
+
+    turma_id = _as_int(_payload().get("turma_id"))
+    turma = Turma.query.get(turma_id) if turma_id else None
+    if not turma or not turma.letiva:
+        return _error("Turma inválida (seleciona uma turma letiva).", 400, "ev2_config.ev2_profiles_collection")
+
+    existing_local = (
+        EV2SubjectConfig.query
+        .filter_by(turma_id=turma.id, tipo=TIPO_LOCAL_TURMA, ativo=True)
+        .order_by(EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
+        .first()
+    )
+    if existing_local:
+        has_events = EV2Event.query.filter_by(subject_config_id=existing_local.id).first() is not None
+        if has_events:
+            return _error(
+                "A turma já tem avaliação lançada. Não é possível trocar o perfil ativo.",
+                409,
+                "ev2_config.ev2_profiles_collection",
+            )
+        db.session.delete(existing_local)
+        db.session.flush()
+
+    disciplina_id = (turma.disciplinas[0].id if turma.disciplinas else model.disciplina_id)
+    local_name = model.nome
+    idx = 2
+    while EV2SubjectConfig.query.filter_by(turma_id=turma.id, tipo=TIPO_LOCAL_TURMA, nome=local_name).first():
+        local_name = f"{model.nome} [{idx}]"
+        idx += 1
+    local = EV2SubjectConfig(
+        turma_id=turma.id,
+        disciplina_id=disciplina_id,
+        nome=local_name,
+        tipo=TIPO_LOCAL_TURMA,
+        profile_model_id=model.id,
+        ativo=True,
+        usar_ev2=True,
+        escala_min=model.escala_min,
+        escala_max=model.escala_max,
+    )
+    db.session.add(local)
+    db.session.flush()
+
+    domain_map = {}
+    for sd in sorted(model.domains or [], key=lambda x: (x.ordem, x.id)):
+        novo_sd = EV2SubjectDomain(
+            subject_config_id=local.id,
+            domain_id=sd.domain_id,
+            ordem=sd.ordem,
+            weight=sd.weight,
+            ativo=sd.ativo,
+        )
+        db.session.add(novo_sd)
+        db.session.flush()
+        domain_map[sd.id] = novo_sd.id
+
+    for sr in sorted(model.rubrics or [], key=lambda x: (getattr(x, "ordem", 0), x.id)):
+        db.session.add(
+            EV2SubjectRubric(
+                subject_config_id=local.id,
+                rubric_id=sr.rubric_id,
+                subject_domain_id=domain_map.get(sr.subject_domain_id),
+                ordem=sr.ordem,
+                weight=sr.weight,
+                ativo=sr.ativo,
+            )
+        )
+
+    db.session.commit()
+    if _wants_json():
+        return jsonify(_subject_profile_to_dict(local)), 201
+    flash("Perfil-modelo aplicado à turma (cópia local criada).", "success")
+    return redirect(url_for("ev2_config.ev2_profile_detail", profile_id=local.id))
+
+
+@ev2_config_bp.post("/profiles/<int:model_id>/turmas/<int:local_profile_id>/remove")
+def ev2_profile_remove_turma(model_id: int, local_profile_id: int):
+    model = EV2SubjectConfig.query.get(model_id)
+    local = EV2SubjectConfig.query.get(local_profile_id)
+    if not model or not local:
+        return _error("Perfil não encontrado.", 404, "ev2_config.ev2_profiles_collection")
+    if (model.tipo or "") not in TIPOS_MODELO or (local.tipo or "") != TIPO_LOCAL_TURMA:
+        return _error("Associação inválida.", 400, "ev2_config.ev2_profiles_collection")
+    if local.profile_model_id != model.id:
+        return _error("A cópia local não pertence a este perfil-modelo.", 400, "ev2_config.ev2_profiles_collection")
+    if EV2Event.query.filter_by(subject_config_id=local.id).first():
+        return _error("Não é possível remover: já existem avaliações lançadas para esta turma.", 409, "ev2_config.ev2_profiles_collection")
+    db.session.delete(local)
+    db.session.commit()
+    flash("Turma desassociada do perfil-modelo.", "success")
+    return redirect(url_for("ev2_config.ev2_profile_detail", profile_id=model.id))
+
+
+@ev2_config_bp.post("/profiles/<int:model_id>/delete")
+def ev2_profile_delete_model(model_id: int):
+    model = EV2SubjectConfig.query.get(model_id)
+    if not model or (model.tipo or "") not in TIPOS_MODELO:
+        return _error("Perfil-modelo não encontrado.", 404, "ev2_config.ev2_profiles_collection")
+    if model.local_copies:
+        return _error("Não é possível remover o perfil-modelo com turmas atribuídas.", 409, "ev2_config.ev2_profiles_collection")
+    db.session.delete(model)
+    db.session.commit()
+    flash("Perfil-modelo removido.", "success")
+    return redirect(url_for("ev2_config.ev2_profiles_collection"))
+
+
+@ev2_config_bp.route("/profiles/<int:profile_id>", methods=["GET"])
+def ev2_profile_detail(profile_id: int):
+    profile = EV2SubjectConfig.query.get(profile_id)
+    if not profile:
+        return _error("Perfil não encontrado.", 404, "ev2_config.ev2_profiles_collection")
+
+    profile_domains = (
+        EV2SubjectDomain.query
+        .filter_by(subject_config_id=profile.id)
+        .order_by(EV2SubjectDomain.ordem.asc(), EV2SubjectDomain.id.asc())
+        .all()
+    )
+    domain_ids = [d.domain_id for d in profile_domains]
+    associated_domain_ids = set(domain_ids)
+    rubrics_by_domain_id = {}
+    associated_rubric_ids_by_domain = {}
+    if domain_ids:
+        linked = (
+            EV2SubjectRubric.query
+            .join(EV2Rubric, EV2Rubric.id == EV2SubjectRubric.rubric_id)
+            .filter(
+                EV2SubjectRubric.subject_config_id == profile.id,
+                EV2Rubric.domain_id.in_(domain_ids),
+            )
+            .order_by(EV2Rubric.domain_id.asc(), EV2SubjectRubric.ordem.asc(), EV2SubjectRubric.id.asc())
+            .all()
+        )
+        for sr in linked:
+            rubrics_by_domain_id.setdefault(sr.rubrica.domain_id, []).append(sr)
+            associated_rubric_ids_by_domain.setdefault(sr.rubrica.domain_id, set()).add(sr.rubric_id)
+
+    available_domains_query = EV2Domain.query
+    if associated_domain_ids:
+        available_domains_query = available_domains_query.filter(~EV2Domain.id.in_(associated_domain_ids))
+    available_domains = available_domains_query.order_by(EV2Domain.nome.asc()).all()
+
+    available_rubrics_by_domain = {}
+    if associated_domain_ids:
+        candidate_rubrics = (
+            EV2Rubric.query
+            .filter(EV2Rubric.ativo == True, EV2Rubric.domain_id.in_(associated_domain_ids))  # noqa: E712
+            .order_by(EV2Rubric.domain_id.asc(), EV2Rubric.codigo.asc())
+            .all()
+        )
+        for rubric in candidate_rubrics:
+            if rubric.id in associated_rubric_ids_by_domain.get(rubric.domain_id, set()):
+                continue
+            available_rubrics_by_domain.setdefault(rubric.domain_id, []).append(rubric)
+    turmas = Turma.query.filter(Turma.letiva == True).order_by(Turma.nome.asc()).all()  # noqa: E712
+
+    if _wants_json():
+        return jsonify({
+            "profile": _subject_profile_to_dict(profile),
+            "domains": [_subject_domain_to_dict(item) for item in profile_domains],
+        })
+    return render_template(
+        "ev2/config/profile_detail.html",
+        profile=profile,
+        profile_domains=profile_domains,
+        rubrics_by_domain_id=rubrics_by_domain_id,
+        available_domains=available_domains,
+        available_rubrics_by_domain=available_rubrics_by_domain,
+        turmas=turmas,
+    )
+
+
+@ev2_config_bp.post("/profiles/<int:profile_id>/update")
+def ev2_profile_update(profile_id: int):
+    profile = EV2SubjectConfig.query.get(profile_id)
+    if not profile:
+        return _error("Perfil não encontrado.", 404, "ev2_config.ev2_profiles_collection")
+    data = _payload()
+    profile.nome = (data.get("nome") or profile.nome or "").strip() or profile.nome
+    profile.escala_min = _as_int(data.get("escala_min")) or profile.escala_min or 1
+    profile.escala_max = _as_int(data.get("escala_max")) or profile.escala_max or 5
+    if profile.escala_min >= profile.escala_max:
+        return _error("Escala inválida: o mínimo deve ser inferior ao máximo.", 400)
+    db.session.commit()
+    if _wants_json():
+        return jsonify(_subject_profile_to_dict(profile))
+    flash("Perfil atualizado.", "success")
+    return redirect(url_for("ev2_config.ev2_profile_detail", profile_id=profile.id))
+
+
+@ev2_config_bp.post("/profiles/<int:profile_id>/domains")
+def ev2_profile_add_domain(profile_id: int):
+    profile = EV2SubjectConfig.query.get(profile_id)
+    if not profile:
+        return _error("Perfil não encontrado.", 404, "ev2_config.ev2_profiles_collection")
+    data = _payload()
+    domain_id = _as_int(data.get("domain_id"))
+    ordem = _as_int(data.get("ordem")) or 0
+    weight = float(data.get("weight") or 25)
+    if not domain_id:
+        return _error("Campo obrigatório: domain_id", 400)
+    if EV2SubjectDomain.query.filter_by(subject_config_id=profile.id, domain_id=domain_id).first():
+        return _error("Domínio já associado ao perfil.", 409)
+    domain = EV2Domain.query.get(domain_id)
+    if not domain:
+        return _error("Domínio não encontrado.", 404)
+    item = EV2SubjectDomain(
+        subject_config_id=profile.id,
+        domain_id=domain_id,
+        ordem=ordem,
+        weight=weight,
+        ativo=True,
+    )
+    db.session.add(item)
+    db.session.flush()
+
+    # Automação pedida: ao associar domínio ao perfil, importar rubricas base ativas
+    # desse domínio (apenas neste momento, sem reimportações em updates do domínio).
+    imported_count = 0
+    base_rubrics = (
+        EV2Rubric.query
+        .filter_by(domain_id=domain_id, ativo=True)
+        .order_by(EV2Rubric.codigo.asc(), EV2Rubric.id.asc())
+        .all()
+    )
+    existing_rubric_ids = {
+        rid for (rid,) in (
+            db.session.query(EV2SubjectRubric.rubric_id)
+            .filter(EV2SubjectRubric.subject_config_id == profile.id)
+            .all()
+        )
+    }
+    next_ordem = (
+        db.session.query(db.func.max(EV2SubjectRubric.ordem))
+        .filter(EV2SubjectRubric.subject_config_id == profile.id)
+        .scalar()
+        or 0
+    )
+    for idx, rubrica in enumerate(base_rubrics, start=1):
+        if rubrica.id in existing_rubric_ids:
+            continue
+        db.session.add(
+            EV2SubjectRubric(
+                subject_config_id=profile.id,
+                rubric_id=rubrica.id,
+                subject_domain_id=item.id,
+                ordem=int(next_ordem + idx),
+                weight=25,
+                ativo=True,
+            )
+        )
+        imported_count += 1
+
+    db.session.commit()
+    if _wants_json():
+        return jsonify({
+            "domain": _subject_domain_to_dict(item),
+            "rubrics_imported": imported_count,
+        }), 201
+    flash(f"Domínio associado ao perfil ({imported_count} rubricas importadas automaticamente).", "success")
+    return redirect(url_for("ev2_config.ev2_profile_detail", profile_id=profile.id))
+
+
+@ev2_config_bp.post("/profiles/<int:profile_id>/domains/<int:subject_domain_id>/update")
+def ev2_profile_update_domain(profile_id: int, subject_domain_id: int):
+    item = EV2SubjectDomain.query.get(subject_domain_id)
+    if not item or item.subject_config_id != profile_id:
+        return _error("Associação de domínio não encontrada.", 404, "ev2_config.ev2_profiles_collection")
+    data = _payload()
+    item.ordem = _as_int(data.get("ordem")) or 0
+    item.weight = float(data.get("weight") or 0)
+    item.ativo = _to_bool(data.get("ativo"), default=True)
+    db.session.commit()
+    if _wants_json():
+        return jsonify(_subject_domain_to_dict(item))
+    flash("Domínio do perfil atualizado.", "success")
+    return redirect(url_for("ev2_config.ev2_profile_detail", profile_id=profile_id))
+
+
+@ev2_config_bp.post("/profiles/<int:profile_id>/domains/<int:subject_domain_id>/delete")
+def ev2_profile_remove_domain(profile_id: int, subject_domain_id: int):
+    item = EV2SubjectDomain.query.get(subject_domain_id)
+    if not item or item.subject_config_id != profile_id:
+        return _error("Associação de domínio não encontrada.", 404, "ev2_config.ev2_profiles_collection")
+    domain_id = item.domain_id
+    EV2SubjectRubric.query.join(EV2Rubric, EV2Rubric.id == EV2SubjectRubric.rubric_id).filter(
+        EV2SubjectRubric.subject_config_id == profile_id,
+        EV2Rubric.domain_id == domain_id,
+    ).delete(synchronize_session=False)
+    db.session.delete(item)
+    db.session.commit()
+    if _wants_json():
+        return jsonify({"status": "ok"})
+    flash("Domínio removido do perfil.", "success")
+    return redirect(url_for("ev2_config.ev2_profile_detail", profile_id=profile_id))
+
+
+@ev2_config_bp.post("/profiles/<int:profile_id>/rubrics")
+def ev2_profile_add_rubric(profile_id: int):
+    profile = EV2SubjectConfig.query.get(profile_id)
+    if not profile:
+        return _error("Perfil não encontrado.", 404, "ev2_config.ev2_profiles_collection")
+    data = _payload()
+    rubric_id = _as_int(data.get("rubric_id"))
+    if not rubric_id:
+        return _error("Campo obrigatório: rubric_id", 400)
+    rubrica = EV2Rubric.query.get(rubric_id)
+    if not rubrica:
+        return _error("Rubrica não encontrada.", 404)
+    subject_domain = EV2SubjectDomain.query.filter_by(
+        subject_config_id=profile.id,
+        domain_id=rubrica.domain_id,
+    ).first()
+    if not subject_domain:
+        return _error("Associe primeiro o domínio desta rubrica ao perfil.", 400)
+    if EV2SubjectRubric.query.filter_by(subject_config_id=profile.id, rubric_id=rubric_id).first():
+        return _error("Rubrica já associada ao perfil.", 409)
+    item = EV2SubjectRubric(
+        subject_config_id=profile.id,
+        rubric_id=rubric_id,
+        subject_domain_id=subject_domain.id,
+        ordem=_as_int(data.get("ordem")) or 0,
+        weight=float(data.get("weight") or 25),
+        ativo=_to_bool(data.get("ativo"), default=True),
+    )
+    db.session.add(item)
+    db.session.commit()
+    if _wants_json():
+        return jsonify({"id": item.id})
+    flash("Rubrica associada ao perfil.", "success")
+    return redirect(url_for("ev2_config.ev2_profile_detail", profile_id=profile.id))
+
+
+@ev2_config_bp.post("/profiles/<int:profile_id>/rubrics/<int:subject_rubric_id>/update")
+def ev2_profile_update_rubric(profile_id: int, subject_rubric_id: int):
+    item = EV2SubjectRubric.query.get(subject_rubric_id)
+    if not item or item.subject_config_id != profile_id:
+        return _error("Associação de rubrica não encontrada.", 404, "ev2_config.ev2_profiles_collection")
+    data = _payload()
+    item.ordem = _as_int(data.get("ordem")) or 0
+    item.weight = float(data.get("weight") or 0)
+    item.ativo = _to_bool(data.get("ativo"), default=True)
+    db.session.commit()
+    if _wants_json():
+        return jsonify({"status": "ok"})
+    flash("Rubrica do perfil atualizada.", "success")
+    return redirect(url_for("ev2_config.ev2_profile_detail", profile_id=profile_id))
+
+
+@ev2_config_bp.post("/profiles/<int:profile_id>/rubrics/<int:subject_rubric_id>/delete")
+def ev2_profile_remove_rubric(profile_id: int, subject_rubric_id: int):
+    item = EV2SubjectRubric.query.get(subject_rubric_id)
+    if not item or item.subject_config_id != profile_id:
+        return _error("Associação de rubrica não encontrada.", 404, "ev2_config.ev2_profiles_collection")
+    db.session.delete(item)
+    db.session.commit()
+    if _wants_json():
+        return jsonify({"status": "ok"})
+    flash("Rubrica removida do perfil.", "success")
+    return redirect(url_for("ev2_config.ev2_profile_detail", profile_id=profile_id))
 
 
 @ev2_config_bp.route("/domains", methods=["GET", "POST"])
@@ -287,7 +847,11 @@ def ev2_domain_item(domain_id: int):
 @ev2_config_bp.route("/rubricas", methods=["GET", "POST"])
 def ev2_rubricas_collection():
     if request.method == "GET":
-        rubricas = EV2Rubric.query.order_by(EV2Rubric.domain_id.asc(), EV2Rubric.codigo.asc()).all()
+        rubricas = (
+            EV2Rubric.query
+            .order_by(EV2Rubric.domain_id.asc(), EV2Rubric.ordem.asc(), EV2Rubric.codigo.asc())
+            .all()
+        )
         domains = EV2Domain.query.order_by(EV2Domain.nome.asc()).all()
         edit_rubrica = None
         edit_id = request.args.get("edit", type=int)
@@ -309,6 +873,17 @@ def ev2_rubricas_collection():
     codigo = (data.get("codigo") or "").strip()
     nome = (data.get("nome") or "").strip()
     descricao = (data.get("descricao") or "").strip() or None
+    descritores = {
+        "descritor_nivel_1": (data.get("descritor_nivel_1") or "").strip() or None,
+        "descritor_nivel_2": (data.get("descritor_nivel_2") or "").strip() or None,
+        "descritor_nivel_3": (data.get("descritor_nivel_3") or "").strip() or None,
+        "descritor_nivel_4": (data.get("descritor_nivel_4") or "").strip() or None,
+        "descritor_nivel_5": (data.get("descritor_nivel_5") or "").strip() or None,
+    }
+    ordem = _as_int(data.get("ordem")) or 0
+    peso = _as_float(data.get("peso"))
+    if peso is None:
+        peso = 0
     ativo = _to_bool(data.get("ativo"), default=True)
 
     if not domain_id or not codigo or not nome:
@@ -317,6 +892,8 @@ def ev2_rubricas_collection():
             400,
             "ev2_config.ev2_rubricas_collection",
         )
+    if peso < 0 or peso > 100:
+        return _error("Peso inválido: deve estar entre 0 e 100.", 400, "ev2_config.ev2_rubricas_collection")
 
     domain = EV2Domain.query.get(domain_id)
     if not domain:
@@ -335,6 +912,9 @@ def ev2_rubricas_collection():
         codigo=codigo,
         nome=nome,
         descricao=descricao,
+        **descritores,
+        ordem=ordem,
+        peso=peso,
         ativo=ativo,
     )
     db.session.add(rubrica)
@@ -369,29 +949,65 @@ def ev2_rubricas_import():
     source = EV2Domain.query.get(source_domain_id)
     target = EV2Domain.query.get(target_domain_id)
     if not source or not target:
-        return _error("Domínio origem/destino não encontrado.", 404, "ev2_config.ev2_rubricas_collection")
+        return _error(
+            "Domínio origem/destino não encontrado.",
+            404,
+            "ev2_config.ev2_rubricas_collection",
+        )
 
     warnings = []
     created = []
-    source_rubrics = EV2Rubric.query.filter_by(domain_id=source.id).order_by(EV2Rubric.codigo.asc()).all()
+    source_rubrics = (
+        EV2Rubric.query
+        .filter_by(domain_id=source.id)
+        .order_by(EV2Rubric.ordem.asc(), EV2Rubric.codigo.asc())
+        .all()
+    )
 
     for rubrica in source_rubrics:
         final_code = _unique_rubric_code(target.id, rubrica.codigo)
+
         if final_code != rubrica.codigo:
             warnings.append(
                 f"Código '{rubrica.codigo}' já existia no domínio de destino; usado '{final_code}'."
             )
 
-        new_rubrica = EV2Rubric(
-            domain_id=target.id,
-            codigo=final_code,
-            nome=rubrica.nome,
-            descricao=rubrica.descricao,
-            ativo=rubrica.ativo,
-        )
+        rubrica_payload = {
+            "domain_id": target.id,
+            "codigo": final_code,
+            "nome": rubrica.nome,
+            "descricao": rubrica.descricao,
+            "descritor_nivel_1": rubrica.descritor_nivel_1,
+            "descritor_nivel_2": rubrica.descritor_nivel_2,
+            "descritor_nivel_3": rubrica.descritor_nivel_3,
+            "descritor_nivel_4": rubrica.descritor_nivel_4,
+            "descritor_nivel_5": rubrica.descritor_nivel_5,
+            "ordem": rubrica.ordem,
+            "peso": rubrica.peso,
+            "ativo": rubrica.ativo,
+        }
+
+        new_rubrica = EV2Rubric(**rubrica_payload)
         db.session.add(new_rubrica)
         db.session.flush()
-        created.append(_rubric_to_dict(new_rubrica))
+
+        # clonar componentes se existirem
+        for comp in getattr(rubrica, "components", []):
+            cloned_component = EV2RubricComponent(
+                rubrica_id=new_rubrica.id,
+                nome=comp.nome,
+                ordem=comp.ordem,
+                peso=comp.peso,
+                descritor_nivel_1=comp.descritor_nivel_1,
+                descritor_nivel_2=comp.descritor_nivel_2,
+                descritor_nivel_3=comp.descritor_nivel_3,
+                descritor_nivel_4=comp.descritor_nivel_4,
+                descritor_nivel_5=comp.descritor_nivel_5,
+                ativo=comp.ativo,
+            )
+            db.session.add(cloned_component)
+
+        created.append(new_rubrica.id)
 
     db.session.commit()
 
@@ -429,7 +1045,11 @@ def ev2_rubrica_item(rubrica_id: int):
             return jsonify(_rubric_to_dict(rubrica))
         return render_template(
             "ev2/config/rubricas.html",
-            rubricas=EV2Rubric.query.order_by(EV2Rubric.domain_id.asc(), EV2Rubric.codigo.asc()).all(),
+            rubricas=(
+                EV2Rubric.query
+                .order_by(EV2Rubric.domain_id.asc(), EV2Rubric.ordem.asc(), EV2Rubric.codigo.asc())
+                .all()
+            ),
             domains=EV2Domain.query.order_by(EV2Domain.nome.asc()).all(),
             edit_rubrica=rubrica,
             selected_domain_id=rubrica.domain_id,
@@ -441,6 +1061,15 @@ def ev2_rubrica_item(rubrica_id: int):
         codigo = (data.get("codigo") or "").strip()
         nome = (data.get("nome") or "").strip()
         descricao = (data.get("descricao") or "").strip() or None
+        descritor_nivel_1 = (data.get("descritor_nivel_1") or "").strip() or None
+        descritor_nivel_2 = (data.get("descritor_nivel_2") or "").strip() or None
+        descritor_nivel_3 = (data.get("descritor_nivel_3") or "").strip() or None
+        descritor_nivel_4 = (data.get("descritor_nivel_4") or "").strip() or None
+        descritor_nivel_5 = (data.get("descritor_nivel_5") or "").strip() or None
+        ordem = _as_int(data.get("ordem")) or 0
+        peso = _as_float(data.get("peso"))
+        if peso is None:
+            peso = 0
         ativo = _to_bool(data.get("ativo"), default=True)
 
         if not domain_id or not codigo or not nome:
@@ -449,6 +1078,8 @@ def ev2_rubrica_item(rubrica_id: int):
                 400,
                 "ev2_config.ev2_rubricas_collection",
             )
+        if peso < 0 or peso > 100:
+            return _error("Peso inválido: deve estar entre 0 e 100.", 400, "ev2_config.ev2_rubricas_collection")
 
         domain = EV2Domain.query.get(domain_id)
         if not domain:
@@ -466,6 +1097,13 @@ def ev2_rubrica_item(rubrica_id: int):
         rubrica.codigo = codigo
         rubrica.nome = nome
         rubrica.descricao = descricao
+        rubrica.descritor_nivel_1 = descritor_nivel_1
+        rubrica.descritor_nivel_2 = descritor_nivel_2
+        rubrica.descritor_nivel_3 = descritor_nivel_3
+        rubrica.descritor_nivel_4 = descritor_nivel_4
+        rubrica.descritor_nivel_5 = descritor_nivel_5
+        rubrica.ordem = ordem
+        rubrica.peso = peso
         rubrica.ativo = ativo
         db.session.commit()
 
@@ -487,4 +1125,97 @@ def ev2_rubrica_item(rubrica_id: int):
     if _wants_json() or request.method != "POST":
         return jsonify({"status": "ok"})
     flash("Rubrica eliminada com sucesso.", "success")
+    return redirect(url_for("ev2_config.ev2_rubricas_collection"))
+
+
+@ev2_config_bp.post("/rubricas/<int:rubrica_id>/components")
+def ev2_rubrica_add_component(rubrica_id: int):
+    rubrica = EV2Rubric.query.get(rubrica_id)
+    if not rubrica:
+        return _error("Rubrica não encontrada", 404, "ev2_config.ev2_rubricas_collection")
+
+    data = _payload()
+    nome = (data.get("nome") or "").strip()
+    if not nome:
+        return _error("Campo obrigatório: nome", 400, "ev2_config.ev2_rubricas_collection")
+
+    peso = _as_float(data.get("peso"))
+    if peso is None:
+        peso = 0
+    if peso < 0 or peso > 100:
+        return _error("Peso inválido: deve estar entre 0 e 100.", 400, "ev2_config.ev2_rubricas_collection")
+
+    next_ordem = (
+        db.session.query(db.func.max(EV2RubricComponent.ordem))
+        .filter(EV2RubricComponent.rubrica_id == rubrica.id)
+        .scalar()
+        or 0
+    )
+    comp = EV2RubricComponent(
+        rubrica_id=rubrica.id,
+        nome=nome,
+        ordem=_as_int(data.get("ordem")) if _as_int(data.get("ordem")) is not None else int(next_ordem) + 1,
+        peso=peso,
+        descritor_nivel_1=(data.get("descritor_nivel_1") or "").strip() or None,
+        descritor_nivel_2=(data.get("descritor_nivel_2") or "").strip() or None,
+        descritor_nivel_3=(data.get("descritor_nivel_3") or "").strip() or None,
+        descritor_nivel_4=(data.get("descritor_nivel_4") or "").strip() or None,
+        descritor_nivel_5=(data.get("descritor_nivel_5") or "").strip() or None,
+        ativo=_to_bool(data.get("ativo"), default=True),
+    )
+    db.session.add(comp)
+    db.session.commit()
+
+    if _wants_json():
+        return jsonify(_rubric_to_dict(rubrica)), 201
+    flash("Componente adicionada à rubrica.", "success")
+    return redirect(url_for("ev2_config.ev2_rubricas_collection"))
+
+
+@ev2_config_bp.route("/rubricas/components/<int:component_id>", methods=["PUT", "DELETE", "POST"])
+def ev2_rubrica_component_item(component_id: int):
+    comp = EV2RubricComponent.query.get(component_id)
+    if not comp:
+        return _error("Componente não encontrada.", 404, "ev2_config.ev2_rubricas_collection")
+
+    method = request.method
+    if method == "POST":
+        override = (request.form.get("_method") or "").upper()
+        if override in {"PUT", "DELETE"}:
+            method = override
+        else:
+            return _error("Método não permitido", 405, "ev2_config.ev2_rubricas_collection")
+
+    if method == "DELETE":
+        db.session.delete(comp)
+        db.session.commit()
+        if _wants_json() or request.method != "POST":
+            return jsonify({"status": "ok"})
+        flash("Componente removida.", "success")
+        return redirect(url_for("ev2_config.ev2_rubricas_collection"))
+
+    data = _payload()
+    nome = (data.get("nome") or "").strip()
+    if not nome:
+        return _error("Campo obrigatório: nome", 400, "ev2_config.ev2_rubricas_collection")
+    peso = _as_float(data.get("peso"))
+    if peso is None:
+        peso = 0
+    if peso < 0 or peso > 100:
+        return _error("Peso inválido: deve estar entre 0 e 100.", 400, "ev2_config.ev2_rubricas_collection")
+
+    comp.nome = nome
+    comp.ordem = _as_int(data.get("ordem")) or 0
+    comp.peso = peso
+    comp.descritor_nivel_1 = (data.get("descritor_nivel_1") or "").strip() or None
+    comp.descritor_nivel_2 = (data.get("descritor_nivel_2") or "").strip() or None
+    comp.descritor_nivel_3 = (data.get("descritor_nivel_3") or "").strip() or None
+    comp.descritor_nivel_4 = (data.get("descritor_nivel_4") or "").strip() or None
+    comp.descritor_nivel_5 = (data.get("descritor_nivel_5") or "").strip() or None
+    comp.ativo = _to_bool(data.get("ativo"), default=True)
+    db.session.commit()
+
+    if _wants_json() or request.method != "POST":
+        return jsonify({"status": "ok"})
+    flash("Componente atualizada.", "success")
     return redirect(url_for("ev2_config.ev2_rubricas_collection"))

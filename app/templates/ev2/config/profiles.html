@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+  <div>
+    <h2 class="mb-1">Perfis EV2</h2>
+    <p class="text-muted mb-0">Perfis-modelo reutilizáveis e cópias locais por turma.</p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="/ev2/config/domains" class="btn btn-outline-secondary btn-sm">Domínios</a>
+    <a href="/ev2/config/rubricas" class="btn btn-outline-secondary btn-sm">Rubricas</a>
+  </div>
+</div>
+
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item"><a class="nav-link active" aria-current="page" href="/ev2/config/profiles">Perfis</a></li>
+  <li class="nav-item"><a class="nav-link" href="/ev2/config/domains">Domínios</a></li>
+  <li class="nav-item"><a class="nav-link" href="/ev2/config/rubricas">Rubricas</a></li>
+</ul>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-semibold">Filtro rápido</div>
+  <div class="card-body">
+    <form method="get" action="/ev2/config/profiles" class="row g-3 align-items-end">
+      <div class="col-12 col-md-4">
+        <label class="form-label">Turma</label>
+        <select name="turma_id" class="form-select">
+          <option value="">(todas)</option>
+          {% for t in turmas %}
+          <option value="{{ t.id }}" {% if selected_turma_id == t.id %}selected{% endif %}>{{ t.nome }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-md-8 d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Filtrar</button>
+        <a href="/ev2/config/profiles" class="btn btn-outline-secondary">Limpar</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-semibold">Novo perfil-modelo</div>
+  <div class="card-body">
+    <form method="post" action="/ev2/config/profiles" class="row g-3 align-items-end">
+      <div class="col-12 col-md-6">
+        <label class="form-label">Nome do perfil</label>
+        <input name="nome" class="form-control" required placeholder="Ex.: Perfil padrão 2025/26" value="{{ prefill_nome or '' }}">
+      </div>
+      <div class="col-12 col-md-2">
+        <label class="form-label">Tipo de modelo</label>
+        <select name="profile_tipo" class="form-select">
+          <option value="perfil_base_turma">Perfil base turma</option>
+          <option value="modelo_atividade">Modelo atividade</option>
+        </select>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label">Escala mínima</label>
+        <input type="number" name="escala_min" class="form-control" value="1" required>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label">Escala máxima</label>
+        <input type="number" name="escala_max" class="form-control" value="5" required>
+      </div>
+      <div class="col-12 col-md-2">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="ativo" name="ativo" value="1" checked>
+          <label class="form-check-label" for="ativo">Ativo</label>
+        </div>
+      </div>
+      <div class="col-12 col-md-2">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="usar_ev2" name="usar_ev2" value="1" checked>
+          <label class="form-check-label" for="usar_ev2">Usar EV2</label>
+        </div>
+      </div>
+      <div class="col-12 col-md-6 d-flex justify-content-md-end">
+        <button type="submit" class="btn btn-success">Criar perfil-modelo</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-semibold">Perfis-modelo</div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-striped align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th style="width: 80px;">ID</th>
+            <th>Modelo</th>
+            <th>Nome</th>
+            <th class="text-center">Escala</th>
+            <th class="text-center">Ativo</th>
+            <th class="text-center">Rubricas</th>
+            <th style="width: 320px;">Aplicar a turma</th>
+            <th style="width: 180px;">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if not models %}
+          <tr>
+            <td colspan="8" class="text-muted">Sem perfis-modelo.</td>
+          </tr>
+          {% endif %}
+          {% for p in models %}
+          <tr>
+            <td>{{ p.id }}</td>
+            <td><span class="badge text-bg-info">Modelo</span></td>
+            <td>{{ p.nome }}</td>
+            <td class="text-center">{{ p.escala_min or 1 }}–{{ p.escala_max or 5 }}</td>
+            <td class="text-center">
+              {% if p.ativo %}<span class="badge text-bg-success">Sim</span>{% else %}<span class="badge text-bg-secondary">Não</span>{% endif %}
+            </td>
+            <td class="text-center">{{ p.rubrics|length }}</td>
+            <td>
+              <form method="post" action="/ev2/config/profiles/{{ p.id }}/apply" class="d-flex gap-2">
+                <select name="turma_id" class="form-select form-select-sm" required>
+                  <option value="">Selecionar turma…</option>
+                  {% for t in turmas %}
+                  <option value="{{ t.id }}">{{ t.nome }}</option>
+                  {% endfor %}
+                </select>
+                <button type="submit" class="btn btn-sm btn-outline-primary">Aplicar</button>
+              </form>
+            </td>
+            <td>
+              <div class="d-flex gap-2 flex-wrap">
+                <a href="/ev2/config/profiles/{{ p.id }}" class="btn btn-sm btn-outline-primary">Abrir</a>
+                <form method="post" action="/ev2/config/profiles/{{ p.id }}/delete" onsubmit="return confirm('Remover perfil-modelo?');">
+                  <button type="submit" class="btn btn-sm btn-outline-danger">Remover</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-semibold">Cópias locais por turma</div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-striped align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>ID</th>
+            <th>Turma</th>
+            <th>Nome local</th>
+            <th>Modelo origem</th>
+            <th class="text-center">Escala</th>
+            <th class="text-center">Ativo</th>
+            <th style="width: 220px;">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if not locals %}
+          <tr><td colspan="7" class="text-muted">Sem cópias locais.</td></tr>
+          {% endif %}
+          {% for p in locals %}
+          <tr>
+            <td>{{ p.id }}</td>
+            <td>{{ p.turma.nome if p.turma else '—' }}</td>
+            <td>{{ p.nome }}</td>
+            <td>{{ p.profile_model.nome if p.profile_model else '—' }}</td>
+            <td class="text-center">{{ p.escala_min or 1 }}–{{ p.escala_max or 5 }}</td>
+            <td class="text-center">{% if p.ativo %}<span class="badge text-bg-success">Sim</span>{% else %}<span class="badge text-bg-secondary">Não</span>{% endif %}</td>
+            <td>
+              <div class="d-flex gap-2">
+                <a href="/ev2/config/profiles/{{ p.id }}" class="btn btn-sm btn-outline-primary">Abrir</a>
+                <form method="post" action="/ev2/config/profiles/{{ p.id }}/activate" class="d-inline">
+                  <button type="submit" class="btn btn-sm btn-outline-success">Ativar</button>
+                </form>
+                {% if p.profile_model_id %}
+                <form method="post" action="/ev2/config/profiles/{{ p.profile_model_id }}/turmas/{{ p.id }}/remove" class="d-inline" onsubmit="return confirm('Remover associação desta turma?');">
+                  <button type="submit" class="btn btn-sm btn-outline-danger">Remover</button>
+                </form>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,9 +1,16 @@
-{% extends 'base.html' %}
+{% extends 'embedded_base.html' if embed_mode else 'base.html' %}
 {% block content %}
-<h2>Avaliação por Aula</h2>
-<p>
-  Turma {{ aula.turma_id }} · Aula #{{ aula.id }} · Data {{ aula.data.strftime('%Y-%m-%d') if aula.data else '-' }}
-</p>
+{% if not embed_mode %}
+  <h2>Avaliação por Aula</h2>
+  <p>
+    Turma {{ aula.turma_id }} · Aula #{{ aula.id }} · Data {{ aula.data.strftime('%Y-%m-%d') if aula.data else '-' }}
+  </p>
+  <p>
+    <a href="{{ url_for('aula_faltas', aula_id=aula.id) }}" class="btn btn-outline-secondary btn-sm">
+      Painel de Faltas e Atrasos
+    </a>
+  </p>
+{% endif %}
 
 <form method="post" id="avaliacao-form">
   <div class="table-responsive">
@@ -16,7 +23,9 @@
               {{ dominio.letra }} – {{ dominio.nome }}{% if dominio.codigo %} ({{ dominio.codigo }}){% endif %}
             </th>
           {% endfor %}
-          <th rowspan="2">Médias por domínio</th>
+          {% for dominio in dominios %}
+            <th rowspan="2" data-media-dominio="{{ dominio.letra }}">{{ dominio.letra }}</th>
+          {% endfor %}
         </tr>
         <tr>
           {% for dominio in dominios %}
@@ -49,10 +58,9 @@
       </thead>
       <tbody>
         {% for aluno in alunos %}
-          <tr data-aluno-id="{{ aluno.id }}">
-            <td>
-              {{ aluno.numero or '-' }} - {{ aluno.nome }}
-            </td>
+          {% set avaliavel = avaliavel_por_aluno.get(aluno.id, True) %}
+          <tr data-aluno-id="{{ aluno.id }}" data-presente="{{ 1 if avaliavel else 0 }}">
+            <td>{{ aluno.numero or '-' }} - {{ aluno.nome }}</td>
             {% for dominio in dominios %}
               {% for rubrica in dominio.rubricas %}
                 <td>
@@ -63,29 +71,33 @@
                     name="pontuacao-{{ aluno.id }}-{{ rubrica.id }}"
                     data-aluno-id="{{ aluno.id }}"
                     data-rubrica-id="{{ rubrica.id }}"
+                    {% if not avaliavel %}disabled title="Não avaliado — aluno ausente todos os tempos ou com FDis" style="background-color:#f5f5f5"{% endif %}
                     value="{{ avaliacoes.get(aluno.id, {}).get(rubrica.id, '') }}"
                   >
                 </td>
               {% endfor %}
             {% endfor %}
-            <td class="media-cell" data-aluno-id="{{ aluno.id }}">
-              {% set medias = medias_por_aluno.get(aluno.id, {}) %}
-              {% if medias %}
-                {% for letra, media in medias.items() %}
-                  <div><strong>{{ letra }}:</strong> {{ media }}</div>
-                {% endfor %}
-              {% else %}
-                <span class="text-muted">—</span>
-              {% endif %}
-            </td>
+            {% set medias = medias_por_aluno.get(aluno.id, {}) %}
+            {% for dominio in dominios %}
+              <td class="media-cell text-center" data-aluno-id="{{ aluno.id }}" data-dominio-letra="{{ dominio.letra }}">
+                {% if not avaliavel %}
+                  <span class="text-muted">-</span>
+                {% elif medias.get(dominio.letra) is not none %}
+                  {{ medias.get(dominio.letra) }}
+                {% else %}
+                  <span class="text-muted">-</span>
+                {% endif %}
+              </td>
+            {% endfor %}
           </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 
-  <button type="submit" class="btn btn-primary">Guardar Avaliações</button>
-  <a href="{{ url_for('calendario_semana') }}" class="btn btn-outline-secondary">Voltar</a>
+  {% if not embed_mode %}
+    <a href="{{ url_for('calendario_semana') }}" class="btn btn-outline-secondary">Voltar</a>
+  {% endif %}
 </form>
 
 <script>
@@ -95,21 +107,23 @@
   if (!form || !table) return;
 
   const ciclo = table.dataset.cicloAula || "basico";
-  const alunoIds = Array.from(table.querySelectorAll("tr[data-aluno-id]"))
+  const domainLetters = Array.from(table.querySelectorAll("th[data-media-dominio]"))
+    .map((th) => th.dataset.mediaDominio)
+    .filter(Boolean);
+  const alunoIds = Array.from(table.querySelectorAll('tr[data-aluno-id][data-presente="1"]'))
     .map((tr) => tr.dataset.alunoId)
     .filter(Boolean);
 
   function renderMedias(alunoId, medias) {
-    const cell = table.querySelector(`.media-cell[data-aluno-id="${alunoId}"]`);
-    if (!cell) return;
-    const entries = Object.entries(medias || {});
-    if (!entries.length) {
-      cell.innerHTML = '<span class="text-muted">—</span>';
-      return;
-    }
-    cell.innerHTML = entries
-      .map(([letra, media]) => `<div><strong>${letra}:</strong> ${media}</div>`)
-      .join("");
+    const mediaMap = medias || {};
+    domainLetters.forEach((letra) => {
+      const cell = table.querySelector(
+        `.media-cell[data-aluno-id="${alunoId}"][data-dominio-letra="${letra}"]`
+      );
+      if (!cell) return;
+      const value = mediaMap[letra];
+      cell.innerHTML = value == null ? '<span class="text-muted">-</span>' : `${value}`;
+    });
   }
 
   async function postUpdate(payload) {
@@ -162,7 +176,7 @@
   window.confirmarLimpar = async function confirmarLimpar(rubricaId) {
     if (!window.confirm("Deseja limpar todos os valores desta rubrica?")) return;
     try {
-      await updateRubricaForAlunos(rubricaId, "0", false);
+      await updateRubricaForAlunos(rubricaId, "", false);
       table.querySelectorAll(`input[data-rubrica-id="${rubricaId}"][type="number"]`)
         .forEach((inp) => { inp.value = ""; });
     } catch (err) {
@@ -170,25 +184,31 @@
     }
   };
 
+  const debounceTimers = new Map();
   table.querySelectorAll('input[type="number"][data-rubrica-id][data-aluno-id]').forEach((input) => {
-    input.addEventListener("change", async () => {
-      const valor = input.value === "" ? "0" : input.value;
-      try {
-        const data = await postUpdate({
-          "aluno_ids[]": [input.dataset.alunoId],
-          rubrica_id: input.dataset.rubricaId,
-          valor,
-        });
-        Object.entries(data.medias_por_aluno || {}).forEach(([alunoId, medias]) => {
-          renderMedias(alunoId, medias);
-        });
-      } catch (err) {
-        console.error(err);
-      }
+    input.addEventListener("input", () => {
+      const key = `${input.dataset.alunoId}-${input.dataset.rubricaId}`;
+      if (debounceTimers.has(key)) clearTimeout(debounceTimers.get(key));
+      debounceTimers.set(key, setTimeout(async () => {
+        const valor = input.value === "" ? "" : input.value;
+        try {
+          const data = await postUpdate({
+            "aluno_ids[]": [input.dataset.alunoId],
+            rubrica_id: input.dataset.rubricaId,
+            valor,
+          });
+          Object.entries(data.medias_por_aluno || {}).forEach(([alunoId, medias]) => {
+            renderMedias(alunoId, medias);
+          });
+        } catch (err) {
+          console.error(err);
+        }
+      }, 500));
     });
   });
 
   form.addEventListener("submit", (event) => event.preventDefault());
+
 })();
 </script>
 {% endblock %}

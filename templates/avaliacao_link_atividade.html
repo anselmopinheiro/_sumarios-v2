@@ -1,0 +1,38 @@
+{% extends 'embedded_base.html' if embed_mode else 'base.html' %}
+{% block content %}
+<div class="card card-body">
+  <h6 class="mb-2">{{ 'Projetos' if tipo == 'projeto' else 'Trabalhos' }} da turma</h6>
+  <p class="text-muted small mb-3">Selecione uma atividade existente ou crie uma nova. A edição completa abre em /turmas/{{ aula.turma_id }}/trabalhos.</p>
+  <div class="d-flex gap-2 align-items-end">
+    <div class="flex-grow-1">
+      <label class="form-label form-label-sm">Atividade existente</label>
+      <select id="atividade-existente" class="form-select form-select-sm">
+        <option value="">— Selecionar —</option>
+        {% for t in trabalhos %}
+          <option value="{{ t.id }}" {% if selected_trabalho_id == t.id %}selected{% endif %}>{{ t.titulo }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button class="btn btn-outline-primary btn-sm" type="button" onclick="abrirAtividade()">Abrir atividade</button>
+    <button class="btn btn-primary btn-sm" type="button" onclick="novaAtividade()">Nova atividade</button>
+  </div>
+</div>
+<script>
+async function postAction(payload){
+  const body = new URLSearchParams(payload);
+  const resp = await fetch(`${window.location.pathname}${window.location.search}`, {method:'POST', headers:{"X-Requested-With":"XMLHttpRequest"}, body});
+  if(!resp.ok) throw new Error('Falha ao processar ação');
+  return resp.json();
+}
+async function abrirAtividade(){
+  const id = document.getElementById('atividade-existente').value;
+  if(!id) return;
+  const data = await postAction({action:'open_existing', trabalho_id:id});
+  if(data.redirect_url) window.top.location.href = data.redirect_url;
+}
+async function novaAtividade(){
+  const data = await postAction({action:'create_new'});
+  if(data.redirect_url) window.top.location.href = data.redirect_url;
+}
+</script>
+{% endblock %}

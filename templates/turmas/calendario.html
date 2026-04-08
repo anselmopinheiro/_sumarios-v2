@@ -254,6 +254,10 @@
             {% if faltas_alunos %}
               <div class="small text-danger">Em falta: {{ faltas_alunos|join('; ') }}</div>
             {% endif %}
+            {% set faltas_disciplinares = faltas_disciplinares_por_aula.get(a.id) if faltas_disciplinares_por_aula else [] %}
+            {% if faltas_disciplinares %}
+              <div class="small text-danger">Faltas disciplinares: {{ faltas_disciplinares|join('; ') }}</div>
+            {% endif %}
           </td>
           <td>
             {% if ano_fechado %}
@@ -288,6 +292,12 @@
                   <a href="{{ url_for('turma_trabalhos', turma_id=turma.id) }}"
                     class="btn btn-sm btn-outline-info">
                     Trabalhos
+                  </a>
+                  <a class="btn btn-sm btn-outline-primary" href="{{ url_for('aula_avaliacao_shell', aula_id=a.id, next=request.full_path) }}" title="Abrir página unificada de avaliação">
+                    Avaliação
+                  </a>
+                  <a href="{{ url_for('aula_faltas', aula_id=a.id, next=request.full_path) }}" class="btn btn-sm btn-outline-danger" title="Marcar Faltas">
+                    Faltas
                   </a>
                 {% endif %}
                 <a href="{{ url_for('calendario_edit', turma_id=turma.id, aula_id=a.id) }}"

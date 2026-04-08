@@ -101,17 +101,36 @@ def _domain_signature(domain_meta: Dict[int, Dict[str, Any]]) -> Tuple:
 def _fallback_domain_meta_from_active_config(turma_id: int, disciplina_id: int) -> Dict[int, Dict[str, Any]]:
     cfg = (
         EV2SubjectConfig.query
-        .filter_by(turma_id=turma_id, disciplina_id=disciplina_id, ativo=True)
+        .filter_by(turma_id=turma_id, tipo="local_turma", ativo=True, usar_ev2=True)
         .order_by(EV2SubjectConfig.id.desc())
         .first()
     )
     if not cfg:
+        cfg = (
+            EV2SubjectConfig.query
+            .filter_by(turma_id=turma_id, tipo="local_turma", ativo=True)
+            .order_by(EV2SubjectConfig.id.desc())
+            .first()
+        )
+    if not cfg:
         return {}
+
+    if cfg.domains:
+        out: Dict[int, Dict[str, Any]] = {}
+        for sd in sorted(cfg.domains, key=lambda x: (x.ordem, x.id)):
+            did = int(sd.domain_id)
+            out[did] = {
+                "domain_id": did,
+                "ordem": int(sd.ordem or 0),
+                "weight": float(sd.weight or 0),
+                "nome": getattr(sd.domain, "nome", f"Domínio {did}"),
+            }
+        return out
 
     accum = defaultdict(float)
     names: Dict[int, str] = {}
     order: Dict[int, int] = {}
-    for idx, sr in enumerate(sorted(cfg.rubrics, key=lambda x: x.id)):
+    for idx, sr in enumerate(sorted(cfg.rubrics, key=lambda x: (getattr(x, "ordem", 0), x.id))):
         did = int(sr.rubrica.domain_id)
         accum[did] += float(sr.weight or 0)
         names.setdefault(did, getattr(sr.rubrica.dominio, "nome", f"Domínio {did}"))

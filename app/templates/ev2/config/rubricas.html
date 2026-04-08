@@ -1,52 +1,63 @@
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>EV2 · Rubricas</title>
-  <link rel="stylesheet" href="{{ url_for('ev2_config.static', filename='ev2/ev2.css') }}">
-</head>
-<body>
-  <h1>EV2 · Rubricas</h1>
-  <p><a href="/ev2/config/domains">Gerir domínios</a></p>
-  <div id="js-rubrica-msg" class="msg-box"></div>
+{% extends "base.html" %}
+{% block content %}
 
-  <div class="ev2-panel">
-    <h3>Importar de outro domínio</h3>
-    <form method="post" action="/ev2/config/rubricas/import" class="js-import-rubricas ev2-form-grid" id="js-rubricas-import-form">
-      <div>
-        <label class="required">Domínio origem</label>
-        <select name="source_domain_id" required>
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+  <div>
+    <h2 class="mb-1">Rubricas EV2</h2>
+    <p class="text-muted mb-0">Gestão das rubricas por domínio EV2.</p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="/ev2/config/profiles" class="btn btn-outline-secondary btn-sm">Perfis</a>
+    <a href="/ev2/config/domains" class="btn btn-outline-secondary btn-sm">Domínios</a>
+  </div>
+</div>
+
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item"><a class="nav-link" href="/ev2/config/profiles">Perfis</a></li>
+  <li class="nav-item"><a class="nav-link" href="/ev2/config/domains">Domínios</a></li>
+  <li class="nav-item"><a class="nav-link active" aria-current="page" href="/ev2/config/rubricas">Rubricas</a></li>
+</ul>
+
+<div id="js-rubrica-msg" class="alert alert-info d-none mb-3"></div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-semibold">Importar rubricas entre domínios</div>
+  <div class="card-body">
+    <form method="post" action="/ev2/config/rubricas/import" class="js-import-rubricas row g-3 align-items-end" id="js-rubricas-import-form">
+      <div class="col-12 col-md-5">
+        <label class="form-label">Domínio origem</label>
+        <select name="source_domain_id" class="form-select" required>
           <option value="">— selecionar —</option>
           {% for d in domains %}
           <option value="{{ d.id }}">{{ d.nome }}</option>
           {% endfor %}
         </select>
       </div>
-
-      <div>
-        <label class="required">Domínio destino</label>
-        <select name="target_domain_id" required>
+      <div class="col-12 col-md-5">
+        <label class="form-label">Domínio destino</label>
+        <select name="target_domain_id" class="form-select" required>
           <option value="">— selecionar —</option>
           {% for d in domains %}
           <option value="{{ d.id }}" {% if selected_domain_id and selected_domain_id == d.id %}selected{% endif %}>{{ d.nome }}</option>
           {% endfor %}
         </select>
       </div>
-
-      <div class="ev2-actions">
-        <button type="submit">Importar rubricas</button>
+      <div class="col-12 col-md-2 d-flex justify-content-md-end">
+        <button type="submit" class="btn btn-primary">Importar</button>
       </div>
     </form>
   </div>
+</div>
 
-  <div class="ev2-panel">
-    <h3 id="js-rubrica-form-title">{{ 'Editar rubrica' if edit_rubrica else 'Nova rubrica' }}</h3>
-    <form method="post" action="{{ '/ev2/config/rubricas/' ~ edit_rubrica.id if edit_rubrica else '/ev2/config/rubricas' }}" id="js-rubrica-form" class="ev2-form-grid">
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-semibold" id="js-rubrica-form-title">{{ 'Editar rubrica' if edit_rubrica else 'Nova rubrica' }}</div>
+  <div class="card-body">
+    <form method="post" action="{{ '/ev2/config/rubricas/' ~ edit_rubrica.id if edit_rubrica else '/ev2/config/rubricas' }}" id="js-rubrica-form" class="row g-3 align-items-end">
       <input type="hidden" name="rubrica_id" id="js-rubrica-id" value="{{ edit_rubrica.id if edit_rubrica else '' }}">
 
-      <div>
-        <label class="required">Domínio</label>
-        <select name="domain_id" id="js-rubrica-domain" required>
+      <div class="col-12 col-md-4">
+        <label class="form-label">Domínio</label>
+        <select name="domain_id" id="js-rubrica-domain" class="form-select" required>
           <option value="">— selecionar —</option>
           {% for d in domains %}
           <option value="{{ d.id }}" {% if edit_rubrica and edit_rubrica.domain_id == d.id %}selected{% elif (not edit_rubrica) and selected_domain_id and selected_domain_id == d.id %}selected{% endif %}>{{ d.nome }}</option>
@@ -54,92 +65,129 @@
         </select>
       </div>
 
-      <div>
-        <label class="required">Código</label>
-        <input name="codigo" id="js-rubrica-codigo" required value="{{ edit_rubrica.codigo if edit_rubrica else '' }}">
+      <div class="col-12 col-md-2">
+        <label class="form-label">Código</label>
+        <input name="codigo" id="js-rubrica-codigo" class="form-control" required value="{{ edit_rubrica.codigo if edit_rubrica else '' }}">
       </div>
 
-      <div>
-        <label class="required">Nome / Designação</label>
-        <input name="nome" id="js-rubrica-nome" required value="{{ edit_rubrica.nome if edit_rubrica else '' }}">
+      <div class="col-12 col-md-6">
+        <label class="form-label">Nome / Designação</label>
+        <input name="nome" id="js-rubrica-nome" class="form-control" required value="{{ edit_rubrica.nome if edit_rubrica else '' }}">
       </div>
 
-      <div>
-        <label>Descrição</label>
-        <textarea name="descricao" id="js-rubrica-descricao">{{ edit_rubrica.descricao if edit_rubrica and edit_rubrica.descricao else '' }}</textarea>
+      <div class="col-12">
+        <label class="form-label">Descrição</label>
+        <textarea name="descricao" id="js-rubrica-descricao" class="form-control">{{ edit_rubrica.descricao if edit_rubrica and edit_rubrica.descricao else '' }}</textarea>
       </div>
 
-      <div>
-        <label>Ordem (placeholder)</label>
-        <input type="number" id="js-rubrica-ordem" placeholder="não persistido no modelo atual">
+      <div class="col-12"><label class="form-label">Descritores por nível (1 a 5)</label></div>
+      <div class="col-12 col-md-6"><label class="form-label">Nível 1</label><textarea name="descritor_nivel_1" id="js-rubrica-descritor-1" class="form-control">{{ edit_rubrica.descritor_nivel_1 if edit_rubrica else '' }}</textarea></div>
+      <div class="col-12 col-md-6"><label class="form-label">Nível 2</label><textarea name="descritor_nivel_2" id="js-rubrica-descritor-2" class="form-control">{{ edit_rubrica.descritor_nivel_2 if edit_rubrica else '' }}</textarea></div>
+      <div class="col-12 col-md-6"><label class="form-label">Nível 3</label><textarea name="descritor_nivel_3" id="js-rubrica-descritor-3" class="form-control">{{ edit_rubrica.descritor_nivel_3 if edit_rubrica else '' }}</textarea></div>
+      <div class="col-12 col-md-6"><label class="form-label">Nível 4</label><textarea name="descritor_nivel_4" id="js-rubrica-descritor-4" class="form-control">{{ edit_rubrica.descritor_nivel_4 if edit_rubrica else '' }}</textarea></div>
+      <div class="col-12 col-md-6"><label class="form-label">Nível 5</label><textarea name="descritor_nivel_5" id="js-rubrica-descritor-5" class="form-control">{{ edit_rubrica.descritor_nivel_5 if edit_rubrica else '' }}</textarea></div>
+
+      <div class="col-12 col-md-2">
+        <label class="form-label">Ordem</label>
+        <input type="number" name="ordem" id="js-rubrica-ordem" class="form-control" value="{{ edit_rubrica.ordem if edit_rubrica else 0 }}">
       </div>
 
-      <div>
-        <label>Peso (placeholder)</label>
-        <input type="number" step="0.01" id="js-rubrica-peso" placeholder="não persistido no modelo atual">
+      <div class="col-12 col-md-2">
+        <label class="form-label">Peso</label>
+        <input type="number" step="0.01" name="peso" id="js-rubrica-peso" class="form-control" value="{{ edit_rubrica.peso if edit_rubrica else 0 }}">
       </div>
 
-      <div>
-        <label><input type="checkbox" name="ativo" id="js-rubrica-ativo" value="1" {% if not edit_rubrica or edit_rubrica.ativo %}checked{% endif %}> Ativo</label>
+      <div class="col-12 col-md-3">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="ativo" id="js-rubrica-ativo" value="1" {% if not edit_rubrica or edit_rubrica.ativo %}checked{% endif %}>
+          <label class="form-check-label" for="js-rubrica-ativo">Ativo</label>
+        </div>
       </div>
 
-      <div class="ev2-actions">
-        <button type="submit" id="js-rubrica-save-btn">{{ 'Guardar alterações' if edit_rubrica else 'Criar rubrica' }}</button>
-        <button type="button" id="js-rubrica-cancel" class="secondary" style="display:{{ 'inline-block' if edit_rubrica else 'none' }};">Cancelar</button>
+      <div class="col-12 col-md-5 d-flex gap-2 justify-content-md-end">
+        <button type="submit" id="js-rubrica-save-btn" class="btn btn-success">{{ 'Guardar alterações' if edit_rubrica else 'Criar rubrica' }}</button>
+        <button type="button" id="js-rubrica-cancel" class="btn btn-outline-secondary" style="display:{{ 'inline-block' if edit_rubrica else 'none' }};">Cancelar</button>
       </div>
     </form>
   </div>
+</div>
 
-  <div class="ev2-panel">
-    <h3>Lista</h3>
-
-    <div class="filters-row">
-      <div>
-        <label>Filtrar por domínio</label>
-        <select id="js-rubrica-filter-domain">
+<div class="card shadow-sm mb-4">
+  <div class="card-header fw-semibold">Lista de rubricas</div>
+  <div class="card-body">
+    <div class="row g-3 mb-3">
+      <div class="col-12 col-md-5">
+        <label class="form-label">Filtrar por domínio</label>
+        <select id="js-rubrica-filter-domain" class="form-select">
           <option value="">— todos —</option>
           {% for d in domains %}
           <option value="{{ d.id }}" {% if selected_domain_id and selected_domain_id == d.id %}selected{% endif %}>{{ d.nome }}</option>
           {% endfor %}
         </select>
       </div>
-      <div>
-        <label>Pesquisar (nome/código)</label>
-        <input id="js-rubrica-search" type="search" placeholder="ex: R1, Participação...">
+      <div class="col-12 col-md-7">
+        <label class="form-label">Pesquisar (nome/código)</label>
+        <input id="js-rubrica-search" class="form-control" type="search" placeholder="ex: R1, Participação...">
       </div>
     </div>
 
-    <table class="ev2-table" id="js-rubricas-table">
-      <thead>
-        <tr>
-          <th class="col-id">ID</th>
-          <th class="col-left">Domínio</th>
-          <th class="col-left">Código</th>
-          <th class="col-left">Nome</th>
-          <th class="col-left">Descrição</th>
-          <th class="col-center">Ativo</th>
-          <th class="col-left">Ações</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for r in rubricas %}
-        <tr data-rubrica-id="{{ r.id }}" data-domain-id="{{ r.domain_id }}" data-codigo="{{ r.codigo }}" data-nome="{{ r.nome }}" data-descricao="{{ r.descricao or '' }}" data-ativo="{{ 1 if r.ativo else 0 }}">
-          <td class="col-id">{{ r.id }}</td>
-          <td class="col-left">{{ r.dominio.nome if r.dominio else '—' }}</td>
-          <td class="col-left">{{ r.codigo }}</td>
-          <td class="col-left">{{ r.nome }}</td>
-          <td class="col-left">{{ r.descricao or '' }}</td>
-          <td class="col-center">{{ 'Sim' if r.ativo else 'Não' }}</td>
-          <td class="col-left">
-            <button type="button" class="js-rubrica-edit secondary">Editar</button>
-            <button type="button" class="js-rubrica-delete secondary">Eliminar</button>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="table-responsive">
+      <table class="table table-striped align-middle mb-0" id="js-rubricas-table">
+        <thead class="table-light">
+          <tr>
+            <th style="width: 80px;">ID</th>
+            <th>Domínio</th>
+            <th>Código</th>
+            <th>Nome</th>
+            <th>Descrição</th>
+            <th class="text-end">Ordem</th>
+            <th class="text-end">Peso</th>
+            <th class="text-center">Componentes</th>
+            <th class="text-center">Ativo</th>
+            <th style="width: 180px;">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if not rubricas %}
+          <tr><td colspan="10" class="text-muted">Sem rubricas registadas.</td></tr>
+          {% endif %}
+          {% for r in rubricas %}
+          <tr id="rubrica-{{ r.id }}" data-rubrica-id="{{ r.id }}" data-domain-id="{{ r.domain_id }}" data-codigo="{{ r.codigo }}" data-nome="{{ r.nome }}" data-descricao="{{ r.descricao or '' }}" data-descritor-nivel-1="{{ r.descritor_nivel_1 or '' }}" data-descritor-nivel-2="{{ r.descritor_nivel_2 or '' }}" data-descritor-nivel-3="{{ r.descritor_nivel_3 or '' }}" data-descritor-nivel-4="{{ r.descritor_nivel_4 or '' }}" data-descritor-nivel-5="{{ r.descritor_nivel_5 or '' }}" data-ordem="{{ r.ordem or 0 }}" data-peso="{{ r.peso or 0 }}" data-ativo="{{ 1 if r.ativo else 0 }}">
+            <td>{{ r.id }}</td>
+            <td>{{ r.dominio.nome if r.dominio else '—' }}</td>
+            <td>{{ r.codigo }}</td>
+            <td>{{ r.nome }}</td>
+            <td>{{ r.descricao or '' }}</td>
+            <td class="text-end">{{ r.ordem or 0 }}</td>
+            <td class="text-end">{{ ('%.2f'|format(r.peso or 0)) }}</td>
+            <td class="text-center"><span class="badge text-bg-light border text-dark">{{ (r.components|length) if r.components is defined else 0 }}</span></td>
+            <td class="text-center">
+              {% if r.ativo %}<span class="badge text-bg-success">Sim</span>{% else %}<span class="badge text-bg-secondary">Não</span>{% endif %}
+            </td>
+            <td>
+              <div class="d-flex gap-2">
+                <button type="button" class="js-rubrica-edit btn btn-sm btn-outline-primary">Editar</button>
+                <button type="button" class="js-rubrica-delete btn btn-sm btn-outline-danger">Eliminar</button>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
+</div>
 
-  <script src="{{ url_for('ev2_config.static', filename='ev2/ev2_config_crud.js') }}"></script>
-</body>
-</html>
+<script src="{{ url_for('ev2_config.static', filename='ev2/ev2_config_crud.js') }}"></script>
+<script>
+  (() => {
+    const box = document.getElementById('js-rubrica-msg');
+    if (!box) return;
+    const observer = new MutationObserver(() => {
+      box.classList.remove('d-none', 'alert-info', 'alert-danger');
+      box.classList.add(box.style.color === 'rgb(176, 0, 32)' ? 'alert-danger' : 'alert-info');
+    });
+    observer.observe(box, { childList: true, characterData: true, subtree: true });
+  })();
+</script>
+{% endblock %}

@@ -221,6 +221,7 @@
               <th>Letiva</th>
               <th>Carga (Seg–Sex)</th>
               <th>Tempos (Seg–Sex)</th>
+              <th>Perfis EV2</th>
               <th class="text-end" style="width: 260px;">Ações</th>
             </tr>
           </thead>
@@ -246,11 +247,30 @@
                 {{ turma.tempo_quarta or '—' }} /
                 {{ turma.tempo_quinta or '—' }} /
                 {{ turma.tempo_sexta or '—' }}</td>
+              <td>
+                {% set st = profile_status_map.get(turma.id, {}) %}
+                {% set status = st.get('status', 'sem_perfil') %}
+                {% set active_profile_id = st.get('active_profile_id') %}
+                {% if status == 'ativo' and active_profile_id %}
+                  <a class="small text-decoration-none" href="/ev2/config/profiles/{{ active_profile_id }}">
+                    <span class="badge text-bg-success">Ativo</span>
+                  </a>
+                {% elif status == 'configurado' %}
+                  <a class="small text-decoration-none" href="/ev2/config/profiles?turma_id={{ turma.id }}">
+                    <span class="badge text-bg-warning">Configurado</span>
+                  </a>
+                {% else %}
+                  <a class="small text-decoration-none" href="/ev2/config/profiles?turma_id={{ turma.id }}&prefill_nome=Perfil%20{{ turma.nome|urlencode }}">
+                    <span class="badge text-bg-secondary">Sem perfil</span>
+                  </a>
+                {% endif %}
+              </td>
               <td class="text-end">
                 <div class="btn-group" role="group">
                   <a href="{{ url_for('turma_alunos', turma_id=turma.id) }}" class="btn btn-sm btn-outline-secondary">Alunos</a>
                   <a href="{{ url_for('turma_calendario', turma_id=turma.id) }}" class="btn btn-sm btn-outline-info">Calendário</a>
                   <a href="{{ url_for('turma_mapa_avaliacao_diaria', turma_id=turma.id) }}" class="btn btn-sm btn-outline-success">Mapa avaliações</a>
+                  <a href="/ev2/config/profiles?turma_id={{ turma.id }}" class="btn btn-sm btn-outline-primary">Perfis EV2</a>
                   <a href="{{ url_for('backup_export_turma', turma_id=turma.id) }}" class="btn btn-sm btn-outline-dark">Backup desta turma</a>
                   <a href="{{ url_for('turmas_edit', turma_id=turma.id) }}" class="btn btn-sm btn-outline-warning">Editar</a>
                   <form method="post"

@@ -84,6 +84,86 @@
     setRubricaFormMode(false);
   }
 
+  function closeInlineRubricaEditor() {
+    document.querySelectorAll('.js-inline-rubrica-editor').forEach((el) => el.remove());
+  }
+
+  function buildDomainOptions(selected) {
+    return Array.from(document.querySelectorAll('#js-rubrica-domain option'))
+      .filter((opt) => opt.value)
+      .map((opt) => `<option value="${opt.value}" ${String(selected) === String(opt.value) ? 'selected' : ''}>${opt.textContent || '—'}</option>`)
+      .join('');
+  }
+
+  function openInlineRubricaEditor(row) {
+    if (!row) return;
+    closeInlineRubricaEditor();
+    const editor = document.createElement('tr');
+    editor.className = 'js-inline-rubrica-editor table-warning';
+    editor.innerHTML = `
+      <td colspan="10">
+        <form class="js-inline-rubrica-form row g-2 align-items-end">
+          <div class="col-12 col-md-3">
+            <label class="form-label small mb-1">Domínio</label>
+            <select name="domain_id" class="form-select form-select-sm">${buildDomainOptions(row.dataset.domainId)}</select>
+          </div>
+          <div class="col-6 col-md-1">
+            <label class="form-label small mb-1">Código</label>
+            <input name="codigo" class="form-control form-control-sm" value="${row.dataset.codigo || ''}" required>
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">Nome</label>
+            <input name="nome" class="form-control form-control-sm" value="${row.dataset.nome || ''}" required>
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label small mb-1">Descrição</label>
+            <input name="descricao" class="form-control form-control-sm" value="${row.dataset.descricao || ''}">
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label small mb-1">Desc. N1</label>
+            <input name="descritor_nivel_1" class="form-control form-control-sm" value="${row.dataset.descritorNivel1 || ''}">
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label small mb-1">Desc. N2</label>
+            <input name="descritor_nivel_2" class="form-control form-control-sm" value="${row.dataset.descritorNivel2 || ''}">
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label small mb-1">Desc. N3</label>
+            <input name="descritor_nivel_3" class="form-control form-control-sm" value="${row.dataset.descritorNivel3 || ''}">
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label small mb-1">Desc. N4</label>
+            <input name="descritor_nivel_4" class="form-control form-control-sm" value="${row.dataset.descritorNivel4 || ''}">
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label small mb-1">Desc. N5</label>
+            <input name="descritor_nivel_5" class="form-control form-control-sm" value="${row.dataset.descritorNivel5 || ''}">
+          </div>
+          <div class="col-6 col-md-1">
+            <label class="form-label small mb-1">Ordem</label>
+            <input type="number" name="ordem" class="form-control form-control-sm" value="${row.dataset.ordem || 0}">
+          </div>
+          <div class="col-6 col-md-1">
+            <label class="form-label small mb-1">Peso</label>
+            <input type="number" step="0.01" name="peso" class="form-control form-control-sm" value="${row.dataset.peso || 0}">
+          </div>
+          <div class="col-6 col-md-1">
+            <div class="form-check mt-4">
+              <input class="form-check-input" type="checkbox" name="ativo" ${row.dataset.ativo === '1' ? 'checked' : ''}>
+              <label class="form-check-label small">Ativo</label>
+            </div>
+          </div>
+          <div class="col-12 col-md-1 d-flex gap-2 justify-content-md-end">
+            <button type="submit" class="btn btn-sm btn-success">Guardar</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary js-inline-rubrica-cancel">Cancelar</button>
+          </div>
+        </form>
+      </td>
+    `;
+    row.insertAdjacentElement('afterend', editor);
+    editor.scrollIntoView({ block: 'nearest' });
+  }
+
   function domainNameMap() {
     const map = {};
     document.querySelectorAll('#js-rubrica-domain option[value]').forEach((opt) => {
@@ -104,13 +184,24 @@
       tr.dataset.codigo = r.codigo || '';
       tr.dataset.nome = r.nome || '';
       tr.dataset.descricao = r.descricao || '';
+      tr.dataset.descritorNivel1 = r.descritor_nivel_1 || '';
+      tr.dataset.descritorNivel2 = r.descritor_nivel_2 || '';
+      tr.dataset.descritorNivel3 = r.descritor_nivel_3 || '';
+      tr.dataset.descritorNivel4 = r.descritor_nivel_4 || '';
+      tr.dataset.descritorNivel5 = r.descritor_nivel_5 || '';
+      tr.dataset.ordem = String(r.ordem ?? 0);
+      tr.dataset.peso = String(r.peso ?? 0);
       tr.dataset.ativo = r.ativo ? '1' : '0';
+      tr.id = `rubrica-${r.id}`;
       tr.innerHTML = `
         <td class="col-id">${r.id}</td>
         <td class="col-left">${dmap[String(r.domain_id)] || r.domain_nome || '—'}</td>
         <td class="col-left">${r.codigo || ''}</td>
         <td class="col-left">${r.nome || ''}</td>
         <td class="col-left">${r.descricao || ''}</td>
+        <td class="col-right text-end">${r.ordem ?? 0}</td>
+        <td class="col-right text-end">${Number(r.peso ?? 0).toFixed(2)}</td>
+        <td class="col-center">${r.components_count ?? (Array.isArray(r.components) ? r.components.length : 0)}</td>
         <td class="col-center">${r.ativo ? 'Sim' : 'Não'}</td>
         <td class="col-left">
           <button type="button" class="js-rubrica-edit secondary">Editar</button>
@@ -154,13 +245,13 @@
       const editBtn = event.target.closest('.js-rubrica-edit');
       if (editBtn) {
         const row = editBtn.closest('tr');
-        document.getElementById('js-rubrica-id').value = row.dataset.rubricaId || '';
-        document.getElementById('js-rubrica-domain').value = row.dataset.domainId || '';
-        document.getElementById('js-rubrica-codigo').value = row.dataset.codigo || '';
-        document.getElementById('js-rubrica-nome').value = row.dataset.nome || '';
-        document.getElementById('js-rubrica-descricao').value = row.dataset.descricao || '';
-        document.getElementById('js-rubrica-ativo').checked = row.dataset.ativo === '1';
-        setRubricaFormMode(true);
+        openInlineRubricaEditor(row);
+        return;
+      }
+
+      const inlineCancelBtn = event.target.closest('.js-inline-rubrica-cancel');
+      if (inlineCancelBtn) {
+        closeInlineRubricaEditor();
         return;
       }
 
@@ -182,8 +273,50 @@
         }
         showMessage('js-rubrica-msg', 'Rubrica eliminada com sucesso.', false);
         await refreshRubricasTable();
+        closeInlineRubricaEditor();
         resetRubricaForm();
       }
+    });
+
+    document.addEventListener('submit', async function(event){
+      const inlineForm = event.target.closest('.js-inline-rubrica-form');
+      if (!inlineForm) return;
+      event.preventDefault();
+      const hostRow = inlineForm.closest('tr')?.previousElementSibling;
+      const rubricaId = hostRow?.dataset?.rubricaId;
+      if (!rubricaId) return;
+
+      const payload = {
+        domain_id: Number(inlineForm.querySelector('[name="domain_id"]')?.value),
+        codigo: inlineForm.querySelector('[name="codigo"]')?.value?.trim(),
+        nome: inlineForm.querySelector('[name="nome"]')?.value?.trim(),
+        descricao: inlineForm.querySelector('[name="descricao"]')?.value?.trim() || null,
+        descritor_nivel_1: inlineForm.querySelector('[name="descritor_nivel_1"]')?.value?.trim() || null,
+        descritor_nivel_2: inlineForm.querySelector('[name="descritor_nivel_2"]')?.value?.trim() || null,
+        descritor_nivel_3: inlineForm.querySelector('[name="descritor_nivel_3"]')?.value?.trim() || null,
+        descritor_nivel_4: inlineForm.querySelector('[name="descritor_nivel_4"]')?.value?.trim() || null,
+        descritor_nivel_5: inlineForm.querySelector('[name="descritor_nivel_5"]')?.value?.trim() || null,
+        ordem: Number(inlineForm.querySelector('[name="ordem"]')?.value || 0),
+        peso: Number(inlineForm.querySelector('[name="peso"]')?.value || 0),
+        ativo: !!inlineForm.querySelector('[name="ativo"]')?.checked,
+      };
+
+      const response = await fetch(`/ev2/config/rubricas/${rubricaId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await parseResponse(response);
+      if (!response.ok) {
+        showMessage('js-rubrica-msg', data.error || 'Falha ao guardar rubrica.', true);
+        return;
+      }
+
+      showMessage('js-rubrica-msg', 'Rubrica atualizada.', false);
+      await refreshRubricasTable();
+      closeInlineRubricaEditor();
+      const updatedRow = document.getElementById(`rubrica-${rubricaId}`);
+      if (updatedRow) updatedRow.scrollIntoView({ block: 'center' });
     });
 
     const rubricaCancel = document.getElementById('js-rubrica-cancel');
@@ -198,9 +331,29 @@
         const codigo = document.getElementById('js-rubrica-codigo')?.value?.trim();
         const nome = document.getElementById('js-rubrica-nome')?.value?.trim();
         const descricao = document.getElementById('js-rubrica-descricao')?.value?.trim();
+        const descritor1 = document.getElementById('js-rubrica-descritor-1')?.value?.trim();
+        const descritor2 = document.getElementById('js-rubrica-descritor-2')?.value?.trim();
+        const descritor3 = document.getElementById('js-rubrica-descritor-3')?.value?.trim();
+        const descritor4 = document.getElementById('js-rubrica-descritor-4')?.value?.trim();
+        const descritor5 = document.getElementById('js-rubrica-descritor-5')?.value?.trim();
+        const ordem = Number(document.getElementById('js-rubrica-ordem')?.value || 0);
+        const peso = Number(document.getElementById('js-rubrica-peso')?.value || 0);
         const ativo = !!document.getElementById('js-rubrica-ativo')?.checked;
 
-        const payload = { domain_id: Number(domainId), codigo, nome, descricao, ativo };
+        const payload = {
+          domain_id: Number(domainId),
+          codigo,
+          nome,
+          descricao,
+          descritor_nivel_1: descritor1 || null,
+          descritor_nivel_2: descritor2 || null,
+          descritor_nivel_3: descritor3 || null,
+          descritor_nivel_4: descritor4 || null,
+          descritor_nivel_5: descritor5 || null,
+          ordem,
+          peso,
+          ativo,
+        };
         const url = rubricaId ? `/ev2/config/rubricas/${rubricaId}` : '/ev2/config/rubricas';
         const method = rubricaId ? 'PUT' : 'POST';
 
@@ -216,6 +369,7 @@
         }
         showMessage('js-rubrica-msg', rubricaId ? 'Rubrica atualizada.' : 'Rubrica criada.', false);
         await refreshRubricasTable();
+        closeInlineRubricaEditor();
         resetRubricaForm();
       });
     }

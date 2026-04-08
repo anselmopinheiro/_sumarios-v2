@@ -133,6 +133,10 @@ from models import (
     DTOcorrencia,
     DTOcorrenciaAluno,
     Trabalho,
+    AulaTrabalhoLink,
+    DominioOpcionalModelo,
+    DominioOpcionalModeloDominio,
+    DominioOpcionalModeloRubrica,
     GrupoTurma,
     GrupoTurmaMembro,
     TrabalhoGrupo,
@@ -142,6 +146,18 @@ from models import (
     ParametroDefinicao,
     EV2Domain,
     EV2Rubric,
+    EV2RubricComponent,
+    EV2SubjectConfig,
+    EV2SubjectRubric,
+    EV2Event,
+    EV2EventStudent,
+    EV2Assessment,
+    EV2AssessmentComponentScore,
+    EV2EvaluationGroup,
+    EV2EvaluationGroupMember,
+    EV2EventTheme,
+    EV2AulaThemeAssignment,
+    EV2AulaEventLink,
 )
 
 from calendario_service import (
@@ -1433,6 +1449,38 @@ def _mapear_alunos_em_falta(aulas):
     return resultados
 
 
+def _mapear_alunos_com_falta_disciplinar(aulas):
+    ids = [a.id for a in aulas if getattr(a, "id", None)]
+    if not ids:
+        return {}
+
+    resultados = defaultdict(list)
+    registos = (
+        AulaAluno.query.options(joinedload(AulaAluno.aluno))
+        .join(Aluno)
+        .filter(AulaAluno.aula_id.in_(ids), AulaAluno.falta_disciplinar == 1)
+        .order_by(Aluno.numero.is_(None), Aluno.numero, Aluno.nome)
+        .all()
+    )
+
+    for registo in registos:
+        aluno = registo.aluno
+        numero = aluno.numero if aluno else None
+        etiqueta_num = (
+            f"{numero:02d}"
+            if numero is not None
+            else (
+                str(aluno.processo).zfill(2)
+                if aluno and aluno.processo is not None
+                else "--"
+            )
+        )
+        nome = aluno.nome if aluno else ""
+        resultados[registo.aula_id].append(f"{etiqueta_num} {nome}".strip())
+
+    return resultados
+
+
 def _mapear_aulas_com_avaliacao(aulas):
     ids = [a.id for a in aulas if getattr(a, "id", None)]
     if not ids:
@@ -2059,6 +2107,10 @@ def create_app():
             "entregas",
             "parametro_definicoes",
             "entrega_parametros",
+            "aula_trabalho_links",
+            "dominio_opcional_modelos",
+            "dominio_opcional_modelo_dominios",
+            "dominio_opcional_modelo_rubricas",
             "grupos_turma",
             "grupo_turma_membros",
         }
@@ -2078,6 +2130,10 @@ def create_app():
                 Entrega.__table__,
                 ParametroDefinicao.__table__,
                 EntregaParametro.__table__,
+                AulaTrabalhoLink.__table__,
+                DominioOpcionalModelo.__table__,
+                DominioOpcionalModeloDominio.__table__,
+                DominioOpcionalModeloRubrica.__table__,
                 GrupoTurma.__table__,
                 GrupoTurmaMembro.__table__,
             ],
@@ -2090,13 +2146,36 @@ def create_app():
         trabalho_cols = {c["name"] for c in insp.get_columns("trabalhos")} if "trabalhos" in insp.get_table_names() else set()
         if "data_limite" not in trabalho_cols:
             db.session.execute(text("ALTER TABLE trabalhos ADD COLUMN data_limite DATE"))
-            db.session.commit()
+        if "tema_global" not in trabalho_cols:
+            db.session.execute(text("ALTER TABLE trabalhos ADD COLUMN tema_global TEXT"))
+        if "tipo_atividade" not in trabalho_cols:
+            db.session.execute(text("ALTER TABLE trabalhos ADD COLUMN tipo_atividade VARCHAR(20) DEFAULT 'trabalho'"))
+        if "usar_tema_por_grupo" not in trabalho_cols:
+            db.session.execute(text("ALTER TABLE trabalhos ADD COLUMN usar_tema_por_grupo BOOLEAN DEFAULT 0"))
+        if "peso_dominios" not in trabalho_cols:
+            db.session.execute(text("ALTER TABLE trabalhos ADD COLUMN peso_dominios FLOAT DEFAULT 1.0"))
+        if "peso_criterios_extra" not in trabalho_cols:
+            db.session.execute(text("ALTER TABLE trabalhos ADD COLUMN peso_criterios_extra FLOAT DEFAULT 0.0"))
+        grupo_cols = {c["name"] for c in insp.get_columns("trabalho_grupos")} if "trabalho_grupos" in insp.get_table_names() else set()
+        if "tema" not in grupo_cols:
+            db.session.execute(text("ALTER TABLE trabalho_grupos ADD COLUMN tema TEXT"))
+        if "data_entrega" not in grupo_cols:
+            db.session.execute(text("ALTER TABLE trabalho_grupos ADD COLUMN data_entrega DATE"))
+        if "observacoes" not in grupo_cols:
+            db.session.execute(text("ALTER TABLE trabalho_grupos ADD COLUMN observacoes TEXT"))
+        parametro_cols = {c["name"] for c in insp.get_columns("parametro_definicoes")} if "parametro_definicoes" in insp.get_table_names() else set()
+        if "escala" not in parametro_cols:
+            db.session.execute(text("ALTER TABLE parametro_definicoes ADD COLUMN escala VARCHAR(80)"))
+        if "peso" not in parametro_cols:
+            db.session.execute(text("ALTER TABLE parametro_definicoes ADD COLUMN peso FLOAT DEFAULT 1.0"))
 
         entrega_cols = {c["name"] for c in insp.get_columns("entregas")} if "entregas" in insp.get_table_names() else set()
         if "data_entrega" not in entrega_cols:
             db.session.execute(text("ALTER TABLE entregas ADD COLUMN data_entrega DATE"))
         if "observacoes" not in entrega_cols:
             db.session.execute(text("ALTER TABLE entregas ADD COLUMN observacoes TEXT"))
+        if "aluno_id" not in entrega_cols:
+            db.session.execute(text("ALTER TABLE entregas ADD COLUMN aluno_id INTEGER"))
         db.session.commit()
 
     def _ensure_columns():
@@ -2346,6 +2425,12 @@ def create_app():
             )
             db.session.commit()
 
+        if "calendario_aulas" not in tabelas:
+            CalendarioAula.__table__.create(db.engine, checkfirst=True)
+            db.session.commit()
+            insp = inspect(db.engine)
+            tabelas = set(insp.get_table_names())
+
         colunas = {col["name"] for col in insp.get_columns("calendario_aulas")}
 
         if "tempos_sem_aula" not in colunas:
@@ -2390,6 +2475,12 @@ def create_app():
             )
             db.session.commit()
 
+        if "turmas" not in tabelas:
+            Turma.__table__.create(db.engine, checkfirst=True)
+            db.session.commit()
+            insp = inspect(db.engine)
+            tabelas = set(insp.get_table_names())
+
         turmas_cols = {col["name"] for col in insp.get_columns("turmas")}
         if "periodo_tipo" not in turmas_cols:
             db.session.execute(
@@ -2419,6 +2510,55 @@ def create_app():
                 text("ALTER TABLE turmas ADD COLUMN letiva BOOLEAN NOT NULL DEFAULT 1")
             )
             db.session.commit()
+
+        tabelas = set(insp.get_table_names())
+        if "ev2_events" in tabelas:
+            ev2_event_cols = {col["name"] for col in insp.get_columns("ev2_events")}
+            if "numero" not in ev2_event_cols:
+                db.session.execute(text("ALTER TABLE ev2_events ADD COLUMN numero INTEGER"))
+                db.session.commit()
+            if "data_inicio" not in ev2_event_cols:
+                db.session.execute(text("ALTER TABLE ev2_events ADD COLUMN data_inicio DATE"))
+                db.session.commit()
+            if "prazo_entrega" not in ev2_event_cols:
+                db.session.execute(text("ALTER TABLE ev2_events ADD COLUMN prazo_entrega DATE"))
+                db.session.commit()
+            if "tema_multiplo" not in ev2_event_cols:
+                db.session.execute(text("ALTER TABLE ev2_events ADD COLUMN tema_multiplo BOOLEAN NOT NULL DEFAULT 0"))
+                db.session.commit()
+
+        if "ev2_rubrics" in tabelas:
+            ev2_rubric_cols = {col["name"] for col in insp.get_columns("ev2_rubrics")}
+            if "ordem" not in ev2_rubric_cols:
+                db.session.execute(text("ALTER TABLE ev2_rubrics ADD COLUMN ordem INTEGER NOT NULL DEFAULT 0"))
+                db.session.commit()
+            if "peso" not in ev2_rubric_cols:
+                db.session.execute(text("ALTER TABLE ev2_rubrics ADD COLUMN peso NUMERIC(5,2) NOT NULL DEFAULT 0"))
+                db.session.commit()
+            for col_name in [
+                "descritor_nivel_1",
+                "descritor_nivel_2",
+                "descritor_nivel_3",
+                "descritor_nivel_4",
+                "descritor_nivel_5",
+            ]:
+                if col_name not in ev2_rubric_cols:
+                    db.session.execute(text(f"ALTER TABLE ev2_rubrics ADD COLUMN {col_name} TEXT"))
+                    db.session.commit()
+
+        EV2RubricComponent.__table__.create(db.engine, checkfirst=True)
+        EV2AssessmentComponentScore.__table__.create(db.engine, checkfirst=True)
+
+        EV2EvaluationGroup.__table__.create(db.engine, checkfirst=True)
+        EV2EvaluationGroupMember.__table__.create(db.engine, checkfirst=True)
+        EV2EventTheme.__table__.create(db.engine, checkfirst=True)
+        EV2AulaThemeAssignment.__table__.create(db.engine, checkfirst=True)
+        EV2AulaEventLink.__table__.create(db.engine, checkfirst=True)
+        if "ev2_aula_event_links" in tabelas:
+            link_cols = {col["name"] for col in insp.get_columns("ev2_aula_event_links")}
+            if "grupo_turma_id" not in link_cols:
+                db.session.execute(text("ALTER TABLE ev2_aula_event_links ADD COLUMN grupo_turma_id INTEGER"))
+                db.session.commit()
 
         try:
             script = ScriptDirectory("migrations")
@@ -3313,18 +3453,35 @@ def create_app():
     # DASHBOARD
     # ----------------------------------------
     def calcular_media_por_dominio(avaliacao):
+        """
+        Calcula a média de cada domínio por aluno.
+        - Ignora rubricas não avaliadas (None)
+        - Ignora alunos ausentes
+        Retorna dict {letra_dominio: média}
+        """
         dominios = {}
         for item in (avaliacao.itens or []):
+            # Ignora alunos faltosos
+            if getattr(getattr(getattr(item, "avaliacao", None), "aluno", None), "faltou", False):
+                continue
+            # Ignora rubricas sem pontuação
+            if item.pontuacao is None:
+                continue
             rubrica = getattr(item, "rubrica", None)
             dominio = getattr(rubrica, "dominio", None)
-            if not dominio or item.pontuacao is None:
+            if not dominio:
                 continue
-            letra = (getattr(dominio, "letra", None) or getattr(dominio, "nome", None) or "Sem domínio").strip()
-            if letra not in dominios:
-                dominios[letra] = []
-            dominios[letra].append(float(item.pontuacao))
+            letra = (getattr(dominio, "letra", None) or "").strip()
+            if not letra:
+                continue
+            dominios.setdefault(letra, []).append(float(item.pontuacao))
 
-        medias = {letra: round(sum(vals) / len(vals), 1) for letra, vals in dominios.items() if vals}
+        medias = {}
+        for letra, vals in dominios.items():
+            if vals:
+                medias[letra] = round(sum(vals) / len(vals), 1)
+            else:
+                medias[letra] = None
         return medias
 
     def _detetar_ciclo_aula(aula):
@@ -3337,108 +3494,762 @@ def create_app():
             return "secundario"
         return "basico"
 
-    @app.route('/aula/<int:aula_id>/avaliar', methods=['GET', 'POST'])
-    def aula_avaliar(aula_id):
-        aula = CalendarioAula.query.get_or_404(aula_id)
-        alunos_turma = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
-        presencas = {
-            row.aluno_id: row
-            for row in AulaAluno.query.filter_by(aula_id=aula.id).all()
+    def resolve_num_tempos_aula(aula):
+        total_tempos = 0
+        total_tempos_raw = getattr(aula, "total_tempos", None)
+        if total_tempos_raw not in (None, ""):
+            try:
+                total_tempos = max(int(total_tempos_raw), 0)
+            except (TypeError, ValueError):
+                total_tempos = 0
+
+        if total_tempos <= 0:
+            total_tempos = _total_previsto_ui(
+                getattr(aula, "sumarios", None),
+                getattr(aula, "tempos_sem_aula", None),
+            )
+
+        if total_tempos <= 0:
+            horarios = Horario.query.filter_by(turma_id=aula.turma_id, weekday=aula.weekday).all()
+            total_horarios = 0
+            for horario in horarios:
+                try:
+                    total_horarios += max(int(getattr(horario, "horas", 0) or 0), 0)
+                except (TypeError, ValueError):
+                    continue
+            total_tempos = total_horarios
+            if total_tempos > 0:
+                app.logger.warning(
+                    "Fallback de tempos por horário usado para aula_id=%s (sem valor específico da ocorrência).",
+                    getattr(aula, "id", None),
+                )
+
+        if total_tempos <= 0:
+            tempo_dia = _tempo_da_turma_no_dia(aula.turma, aula.data)
+            try:
+                total_tempos = max(int(tempo_dia or 0), 0)
+            except (TypeError, ValueError):
+                total_tempos = 0
+
+        return max(total_tempos, 1)
+
+    def _resolver_total_tempos_aula(aula):
+        return resolve_num_tempos_aula(aula)
+
+    def _carregar_registros_faltas(aula, alunos, total_tempos):
+        registos_db = {r.aluno_id: r for r in AulaAluno.query.filter_by(aula_id=aula.id).all()}
+        registros = {}
+        for aluno in alunos:
+            r = registos_db.get(aluno.id)
+            atraso = False
+            faltas_tempos = []
+            fdis = False
+            obs = ""
+            if r:
+                meta = {}
+                raw_obs = (r.observacoes or "").strip()
+                if raw_obs:
+                    try:
+                        parsed = json.loads(raw_obs)
+                        if isinstance(parsed, dict):
+                            meta = parsed
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        meta = {}
+                atraso = bool(meta.get("atraso", r.atraso))
+                faltas_default = list(range(1, min(max(int(r.faltas or 0), 0), total_tempos) + 1))
+                faltas_tempos = [
+                    int(t) for t in (meta.get("faltas", faltas_default) or [])
+                    if str(t).isdigit()
+                ]
+                fdis = bool(meta.get("fdis", bool(getattr(r, "falta_disciplinar", 0))))
+                obs = str(meta.get("obs", raw_obs if not meta else ""))
+
+            registros[aluno.id] = {
+                "atraso": atraso,
+                "faltas": sorted({t for t in faltas_tempos if 1 <= t <= total_tempos}),
+                "fdis": fdis,
+                "obs": obs,
+            }
+        return registros, registos_db
+
+    def _resolver_disciplina_aula(aula):
+        turma = getattr(aula, "turma", None)
+        if not turma:
+            return None
+        disciplinas = list(turma.disciplinas or [])
+        if disciplinas:
+            disciplina_auto = next(
+                (
+                    d for d in disciplinas
+                    if (d.nome or "").strip().lower() == "disciplina automática (avaliação)"
+                    or (d.sigla or "").strip().upper() == "AUTO"
+                ),
+                None,
+            )
+            disciplina_normal = next(
+                (
+                    d for d in disciplinas
+                    if d and d.id != (disciplina_auto.id if disciplina_auto else None)
+                ),
+                None,
+            )
+            if disciplina_normal:
+                return disciplina_normal
+            if disciplina_auto:
+                current_app.logger.info(
+                    "[avaliacao] disciplina fallback AUTO turma=%s aula=%s disciplina_id=%s",
+                    turma.id,
+                    getattr(aula, "id", None),
+                    disciplina_auto.id,
+                )
+                return disciplina_auto
+
+        ano_letivo_id = getattr(turma, "ano_letivo_id", None)
+        if not ano_letivo_id:
+            ano_ativo = AnoLetivo.query.filter_by(ativo=True).order_by(AnoLetivo.id.desc()).first()
+            if not ano_ativo:
+                ano_ativo = AnoLetivo.query.order_by(AnoLetivo.id.desc()).first()
+            if not ano_ativo:
+                return None
+            ano_letivo_id = ano_ativo.id
+
+        disciplina = Disciplina(
+            nome="Disciplina automática (avaliação)",
+            sigla="AUTO",
+            ano_letivo_id=ano_letivo_id,
+        )
+        db.session.add(disciplina)
+        db.session.flush()
+        db.session.add(TurmaDisciplina(turma_id=turma.id, disciplina_id=disciplina.id))
+        db.session.flush()
+        current_app.logger.warning(
+            "[avaliacao] disciplina AUTO criada turma=%s aula=%s disciplina_id=%s",
+            turma.id,
+            getattr(aula, "id", None),
+            disciplina.id,
+        )
+        return disciplina
+
+    def _resolver_subject_config_com_fallback(turma_id, disciplina_id=None, contexto="avaliacao"):
+        subject_config = (
+            EV2SubjectConfig.query.filter_by(
+                turma_id=turma_id,
+                tipo="local_turma",
+                ativo=True,
+                usar_ev2=True,
+            )
+            .order_by(EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
+            .first()
+        )
+        if subject_config:
+            current_app.logger.info(
+                "[%s] perfil resolvido via turma turma=%s disciplina_ctx=%s profile_id=%s modo=ativo_usar_ev2",
+                contexto,
+                turma_id,
+                disciplina_id,
+                subject_config.id,
+            )
+            return subject_config, "turma_ativo_usar_ev2"
+
+        subject_config = (
+            EV2SubjectConfig.query.filter_by(
+                turma_id=turma_id,
+                tipo="local_turma",
+                ativo=True,
+            )
+            .order_by(EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
+            .first()
+        )
+        if subject_config:
+            current_app.logger.info(
+                "[%s] perfil resolvido via turma turma=%s disciplina_ctx=%s profile_id=%s modo=ativo",
+                contexto,
+                turma_id,
+                disciplina_id,
+                subject_config.id,
+            )
+            return subject_config, "turma_ativo"
+
+        current_app.logger.info(
+            "[%s] sem perfil ativo por turma turma=%s disciplina_ctx=%s",
+            contexto,
+            turma_id,
+            disciplina_id,
+        )
+        return None, "none"
+
+    def _obter_ou_criar_evento_avaliacao(aula, tipo):
+        tipo_map = {
+            "obser": "observacao_direta",
+            "portfolio": "portfolio",
+            "projeto": "projetos",
+            "trabalho": "trabalhos",
         }
-        alunos = [
-            aluno
-            for aluno in alunos_turma
-            if not (getattr(aluno, "faltou", False) or (presencas.get(aluno.id) and (presencas[aluno.id].faltas or 0) > 0))
-        ]
-        aluno_ids_presentes = {aluno.id for aluno in alunos}
-        dominios = (
-            EV2Domain.query.options(joinedload(EV2Domain.rubricas))
-            .filter_by(ativo=True)
-            .order_by(EV2Domain.letra.asc(), EV2Domain.nome.asc())
+        evaluation_type = tipo_map.get(tipo)
+        if not evaluation_type:
+            return None
+
+        event = EV2Event.query.filter_by(aula_id=aula.id, evaluation_type=evaluation_type).first()
+        if event:
+            return event
+
+        disciplina = _resolver_disciplina_aula(aula)
+        if not disciplina:
+            return None
+
+        subject_config, _source = _resolver_subject_config_com_fallback(
+            aula.turma_id,
+            disciplina.id,
+            contexto="avaliacao_evento",
+        )
+        if not subject_config:
+            subject_config = EV2SubjectConfig(
+                turma_id=aula.turma_id,
+                disciplina_id=disciplina.id,
+                nome="Configuração automática",
+                ativo=True,
+                usar_ev2=True,
+            )
+            db.session.add(subject_config)
+            db.session.flush()
+
+        event = EV2Event(
+            subject_config_id=subject_config.id,
+            disciplina_id=disciplina.id,
+            aula_id=aula.id,
+            evaluation_type=evaluation_type,
+            titulo=f"{evaluation_type.replace('_', ' ').title()} · Aula {aula.id}",
+            data_inicio=aula.data,
+            prazo_entrega=aula.data,
+            descricao="Evento criado automaticamente pela página unificada de avaliação.",
+            data=aula.data,
+            group_mode="grupo" if evaluation_type in {"portfolio", "projetos", "trabalhos"} else "individual",
+            peso_evento=100,
+            extra_component_weight=0,
+            config_snapshot={"source": "auto-shell"},
+        )
+        db.session.add(event)
+        db.session.flush()
+
+        alunos = Aluno.query.filter_by(turma_id=aula.turma_id).all()
+        for aluno in alunos:
+            db.session.add(
+                EV2EventStudent(
+                    event_id=event.id,
+                    aluno_id=aluno.id,
+                    tempos_totais=1,
+                    tempos_presentes=1,
+                    estado_assiduidade="presente_total",
+                    pontualidade_manual=True,
+                    elegivel_avaliacao=True,
+                )
+            )
+        db.session.commit()
+        return event
+
+    def _obter_evento_avaliacao_existente(aula, tipo):
+        tipo_map = {
+            "obser": "observacao_direta",
+            "portfolio": "portfolio",
+            "projeto": "projetos",
+            "trabalho": "trabalhos",
+        }
+        evaluation_type = tipo_map.get(tipo)
+        if not evaluation_type:
+            return None
+        return EV2Event.query.filter_by(aula_id=aula.id, evaluation_type=evaluation_type).first()
+
+    def _listar_eventos_relevantes_aula(aula, tipo):
+        tipo_map = {
+            "obser": "observacao_direta",
+            "portfolio": "portfolio",
+            "projeto": "projetos",
+            "trabalho": "trabalhos",
+        }
+        evaluation_type = tipo_map.get(tipo)
+        if not evaluation_type:
+            return []
+        query = (
+            EV2Event.query.join(EV2SubjectConfig, EV2Event.subject_config_id == EV2SubjectConfig.id)
+            .filter(EV2SubjectConfig.turma_id == aula.turma_id, EV2Event.evaluation_type == evaluation_type)
+        )
+        eventos = query.order_by(EV2Event.numero.desc().nullslast(), EV2Event.data.desc(), EV2Event.id.desc()).all()
+        relevantes = []
+        for ev in eventos:
+            data_inicio = ev.data_inicio or ev.data
+            prazo = ev.prazo_entrega or ev.data
+            associado = any(link.aula_id == aula.id for link in (ev.aula_links or []))
+            if associado or (data_inicio and prazo and data_inicio <= aula.data <= prazo):
+                relevantes.append(ev)
+        return relevantes
+
+    def _proximo_numero_evento_turma(aula, tipo):
+        tipo_map = {
+            "portfolio": "portfolio",
+            "projeto": "projetos",
+            "trabalho": "trabalhos",
+        }
+        evaluation_type = tipo_map.get(tipo)
+        if not evaluation_type:
+            return None
+        numero_max = (
+            db.session.query(db.func.max(EV2Event.numero))
+            .join(EV2SubjectConfig, EV2Event.subject_config_id == EV2SubjectConfig.id)
+            .filter(EV2SubjectConfig.turma_id == aula.turma_id, EV2Event.evaluation_type == evaluation_type)
+            .scalar()
+            or 0
+        )
+        return int(numero_max) + 1
+
+    def resolve_group_item_for_aula(aula_id, tipo, aluno_id):
+        tipo_map = {"projeto": "projetos", "trabalho": "trabalhos"}
+        evaluation_type = tipo_map.get(tipo)
+        if not evaluation_type:
+            return {"grupo_turma_id": None, "grupo_nome": "", "event": None}
+
+        aula = CalendarioAula.query.get(aula_id)
+        aluno = Aluno.query.get(aluno_id)
+        if not aula or not aluno:
+            return {"grupo_turma_id": None, "grupo_nome": "", "event": None}
+
+        grupo = (
+            GrupoTurma.query.join(GrupoTurmaMembro, GrupoTurmaMembro.grupo_turma_id == GrupoTurma.id)
+            .filter(GrupoTurma.turma_id == aula.turma_id, GrupoTurmaMembro.aluno_id == aluno_id)
+            .first()
+        )
+        grupo_turma_id = grupo.id if grupo else None
+        link = (
+            EV2AulaEventLink.query.join(EV2Event, EV2AulaEventLink.event_id == EV2Event.id)
+            .filter(
+                EV2AulaEventLink.aula_id == aula_id,
+                EV2AulaEventLink.grupo_turma_id == grupo_turma_id,
+                EV2Event.evaluation_type == evaluation_type,
+            )
+            .first()
+        )
+        return {
+            "grupo_turma_id": grupo_turma_id,
+            "grupo_nome": (grupo.nome if grupo else ""),
+            "event": (link.event if link else None),
+        }
+
+    def list_group_import_sources(current_event, turma_id):
+        sources = []
+        current_event_id = getattr(current_event, "id", None)
+
+        ev2_items = (
+            EV2Event.query.join(EV2SubjectConfig, EV2Event.subject_config_id == EV2SubjectConfig.id)
+            .filter(EV2SubjectConfig.turma_id == turma_id)
+            .order_by(EV2Event.data.desc(), EV2Event.id.desc())
             .all()
         )
+        for ev in ev2_items:
+            if current_event_id and ev.id == current_event_id:
+                continue
+            groups = EV2EvaluationGroup.query.filter_by(event_id=ev.id).all()
+            if not groups:
+                continue
+            member_count = 0
+            for g in groups:
+                member_count += EV2EvaluationGroupMember.query.filter_by(group_id=g.id).count()
+            if member_count <= 0:
+                continue
+            tipo_lbl = {
+                "projetos": "Projeto",
+                "trabalhos": "Trabalho",
+                "portfolio": "Portfólio",
+                "observacao_direta": "Obser Direta",
+            }.get(ev.evaluation_type, "Item")
+            label = f"{tipo_lbl} {ev.numero or '#'+str(ev.id)} — {ev.titulo or ''}".strip()
+            sources.append({
+                "key": f"ev2:{ev.id}",
+                "label": label,
+                "group_count": len(groups),
+                "member_count": member_count,
+            })
+
+        trabalhos = Trabalho.query.filter_by(turma_id=turma_id).order_by(Trabalho.id.desc()).all()
+        for trabalho in trabalhos:
+            grupos = trabalho.grupos or []
+            if not grupos:
+                continue
+            member_count = sum(len(g.membros or []) for g in grupos)
+            if member_count <= 0:
+                continue
+            label = f"Trabalho {getattr(trabalho, 'numero', None) or '#'+str(trabalho.id)} — {trabalho.titulo or ''}".strip()
+            sources.append({
+                "key": f"trabalho:{trabalho.id}",
+                "label": label,
+                "group_count": len(grupos),
+                "member_count": member_count,
+            })
+
+        grupos_turma = GrupoTurma.query.filter_by(turma_id=turma_id).all()
+        member_count_catalogo = sum(len(g.membros or []) for g in grupos_turma)
+        if grupos_turma and member_count_catalogo > 0:
+            sources.append({
+                "key": "turma_catalogo",
+                "label": "Atividades — Grupos da turma",
+                "group_count": len(grupos_turma),
+                "member_count": member_count_catalogo,
+            })
+
+        return sources
+
+    def _sincronizar_grupos_evento_com_turma(event, turma_id):
+        if not event or not turma_id:
+            return
+        grupos_turma = GrupoTurma.query.filter_by(turma_id=turma_id).order_by(GrupoTurma.nome.asc()).all()
+        membros_por_grupo_turma = {
+            g.nome: [m.aluno_id for m in (g.membros or []) if m.aluno_id]
+            for g in grupos_turma
+        }
+
+        grupos_evento = EV2EvaluationGroup.query.filter_by(event_id=event.id).all()
+        nomes_evento = {g.nome: g for g in grupos_evento if g.nome and not g.nome.startswith("__IND__")}
+        nomes_turma = set(membros_por_grupo_turma.keys())
+
+        for nome, grp in nomes_evento.items():
+            if nome not in nomes_turma:
+                db.session.delete(grp)
+        db.session.flush()
+
+        for ordem, nome in enumerate(sorted(nomes_turma), start=1):
+            grp = EV2EvaluationGroup.query.filter_by(event_id=event.id, nome=nome).first()
+            if not grp:
+                grp = EV2EvaluationGroup(event_id=event.id, nome=nome, ordem=ordem)
+                db.session.add(grp)
+                db.session.flush()
+            grp.ordem = ordem
+            EV2EvaluationGroupMember.query.filter_by(group_id=grp.id).delete()
+            for aluno_id in membros_por_grupo_turma.get(nome, []):
+                db.session.add(EV2EvaluationGroupMember(group_id=grp.id, aluno_id=aluno_id))
+                es = EV2EventStudent.query.filter_by(event_id=event.id, aluno_id=aluno_id).first()
+                if es:
+                    es.group_key = nome
+        db.session.commit()
+
+    def _bootstrap_effective_groups_from_turma(event, turma_id, force=False):
+        if not event or not turma_id:
+            return
+        existentes = EV2EvaluationGroup.query.filter_by(event_id=event.id).count()
+        if existentes > 0 and not force:
+            return
+        if force:
+            for grp in EV2EvaluationGroup.query.filter_by(event_id=event.id).all():
+                db.session.delete(grp)
+            db.session.flush()
+        grupos_turma = GrupoTurma.query.filter_by(turma_id=turma_id).order_by(GrupoTurma.nome.asc()).all()
+        for ordem, grupo_turma in enumerate(grupos_turma, start=1):
+            grp = EV2EvaluationGroup(event_id=event.id, nome=grupo_turma.nome, ordem=ordem)
+            db.session.add(grp)
+            db.session.flush()
+            for membro in (grupo_turma.membros or []):
+                if membro.aluno_id:
+                    db.session.add(EV2EvaluationGroupMember(group_id=grp.id, aluno_id=membro.aluno_id))
+                    es = EV2EventStudent.query.filter_by(event_id=event.id, aluno_id=membro.aluno_id).first()
+                    if es:
+                        es.group_key = grp.nome
+        db.session.commit()
+
+    def ensure_effective_groups_for_aula_tipo(aula, tipo, event=None):
+        if tipo not in {"obser", "portfolio", "projeto", "trabalho"}:
+            return event
+        alvo = event or _obter_evento_avaliacao_existente(aula, tipo) or _obter_ou_criar_evento_avaliacao(aula, tipo)
+        if alvo:
+            _bootstrap_effective_groups_from_turma(alvo, aula.turma_id, force=False)
+        return alvo
+
+    def resolve_turma_groups_for_aula(aula):
+        grupos = GrupoTurma.query.filter_by(turma_id=aula.turma_id).order_by(GrupoTurma.nome.asc()).all()
+        aluno_para_grupo = {}
+        membros_por_grupo = defaultdict(list)
+        for grupo in grupos:
+            for membro in (grupo.membros or []):
+                if not membro.aluno_id:
+                    continue
+                aluno_para_grupo[membro.aluno_id] = grupo
+                membros_por_grupo[grupo.id].append(membro.aluno_id)
+        return grupos, membros_por_grupo, aluno_para_grupo
+
+    def _load_mandatory_domains_from_profile_or_global(turma_id, disciplina_id):
+        """Fonte primária: perfil EV2 ativo turma+disciplina. Fallback: global."""
+        profile, source = _resolver_subject_config_com_fallback(
+            turma_id,
+            disciplina_id,
+            contexto="mandatory_domains",
+        )
+
         dominios_view = []
-        for idx, dominio in enumerate(dominios):
-            letra = getattr(dominio, "letra", None)
-            if not letra:
-                letra = chr(ord("A") + idx)
-            rubricas_dominio = sorted(
-                [r for r in (dominio.rubricas or []) if getattr(r, "ativo", True)],
-                key=lambda r: ((r.codigo or ""), (r.nome or "")),
+        profile_id = None
+        if profile:
+            profile_id = profile.id
+            if profile.domains:
+                for idx, sd in enumerate(sorted(profile.domains, key=lambda x: (x.ordem, x.id))):
+                    dominio = sd.domain
+                    if not dominio or not dominio.ativo or not sd.ativo:
+                        continue
+                    rubricas_linkadas = [
+                        sr for sr in sorted(profile.rubrics, key=lambda x: (getattr(x, "ordem", 0), x.id))
+                        if sr.ativo and sr.rubrica and sr.rubrica.ativo and sr.rubrica.domain_id == dominio.id
+                    ]
+                    rubricas = [sr.rubrica for sr in rubricas_linkadas]
+                    dominios_view.append({
+                        "id": dominio.id,
+                        "nome": dominio.nome,
+                        "letra": getattr(dominio, "letra", None) or chr(ord("A") + idx),
+                        "codigo": getattr(dominio, "codigo", None),
+                        "weight": float(sd.weight or 0),
+                        "rubricas": rubricas,
+                    })
+            elif profile.rubrics:
+                grouped = defaultdict(list)
+                for sr in sorted(profile.rubrics, key=lambda x: (getattr(x, "ordem", 0), x.id)):
+                    if sr.ativo and sr.rubrica and sr.rubrica.ativo:
+                        grouped[sr.rubrica.domain_id].append(sr.rubrica)
+                dids = sorted(grouped.keys())
+                domains = EV2Domain.query.filter(EV2Domain.id.in_(dids)).all() if dids else []
+                dmap = {d.id: d for d in domains}
+                for idx, did in enumerate(dids):
+                    dom = dmap.get(did)
+                    if not dom or not dom.ativo:
+                        continue
+                    dominios_view.append({
+                        "id": dom.id,
+                        "nome": dom.nome,
+                        "letra": getattr(dom, "letra", None) or chr(ord("A") + idx),
+                        "codigo": getattr(dom, "codigo", None),
+                        "weight": None,
+                        "rubricas": grouped[did],
+                    })
+
+        if not dominios_view:
+            source = f"{source}_global" if source != "none" else "fallback_global"
+            dominios = (
+                EV2Domain.query.options(joinedload(EV2Domain.rubricas))
+                .filter_by(ativo=True)
+                .order_by(EV2Domain.letra.asc(), EV2Domain.nome.asc())
+                .all()
             )
-            dominios_view.append(
-                {
+            for idx, dominio in enumerate(dominios):
+                letra = getattr(dominio, "letra", None) or chr(ord("A") + idx)
+                rubricas_dominio = sorted(
+                    [r for r in (dominio.rubricas or []) if getattr(r, "ativo", True)],
+                    key=lambda r: ((r.codigo or ""), (r.nome or "")),
+                )
+                dominios_view.append({
                     "id": dominio.id,
                     "nome": dominio.nome,
                     "letra": letra,
                     "codigo": getattr(dominio, "codigo", None),
+                    "weight": None,
                     "rubricas": rubricas_dominio,
-                }
+                })
+
+        app.logger.info(
+            "[avaliacao] mandatory domains source=%s turma=%s disciplina=%s profile_id=%s domains=%s",
+            source, turma_id, disciplina_id, profile_id, len(dominios_view),
+        )
+        return dominios_view, {"source": source, "profile_id": profile_id}
+
+    def build_avaliacao_context_for_aula(aula, tipo, event_override=None):
+        alunos = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
+        total_tempos = _resolver_total_tempos_aula(aula)
+        registros_faltas, _ = _carregar_registros_faltas(aula, alunos, total_tempos)
+
+        avaliavel_por_aluno = {}
+        bloqueio_motivo_por_aluno = {}
+        for aluno in alunos:
+            faltas = registros_faltas.get(aluno.id, {}).get("faltas", [])
+            fdis = bool(registros_faltas.get(aluno.id, {}).get("fdis"))
+            elegivel = len(faltas) < total_tempos and (not fdis)
+            avaliavel_por_aluno[aluno.id] = elegivel
+            if not elegivel:
+                bloqueio_motivo_por_aluno[aluno.id] = (
+                    "Bloqueado: falta disciplinar (FDis)." if fdis else "Bloqueado: aluno em falta no total dos tempos da aula."
+                )
+
+        disciplina = _resolver_disciplina_aula(aula)
+        disciplina_id = disciplina.id if disciplina else None
+        if disciplina_id:
+            dominios_view, dom_meta = _load_mandatory_domains_from_profile_or_global(
+                aula.turma_id,
+                disciplina_id,
             )
+        else:
+            dominios = (
+                EV2Domain.query.options(joinedload(EV2Domain.rubricas))
+                .filter_by(ativo=True)
+                .order_by(EV2Domain.letra.asc(), EV2Domain.nome.asc())
+                .all()
+            )
+            dominios_view = []
+            for idx, dominio in enumerate(dominios):
+                rubricas_dominio = sorted(
+                    [r for r in (dominio.rubricas or []) if getattr(r, "ativo", True)],
+                    key=lambda r: ((r.codigo or ""), (r.nome or "")),
+                )
+                dominios_view.append({
+                    "id": dominio.id,
+                    "nome": dominio.nome,
+                    "letra": getattr(dominio, "letra", None) or chr(ord("A") + idx),
+                    "codigo": getattr(dominio, "codigo", None),
+                    "weight": None,
+                    "rubricas": rubricas_dominio,
+                })
+            dom_meta = {"source": "fallback_global", "profile_id": None}
+
+        event = event_override or _obter_evento_avaliacao_existente(aula, tipo)
+        event_students = []
+        grupos = []
+        grupo_por_aluno = {}
+        if event:
+            event_students = (
+                EV2EventStudent.query.filter_by(event_id=event.id)
+                .options(
+                    joinedload(EV2EventStudent.aluno),
+                    joinedload(EV2EventStudent.assessments).joinedload(EV2Assessment.rubrica).joinedload(EV2Rubric.dominio),
+                )
+                .all()
+            )
+            if tipo in {"obser", "portfolio", "projeto", "trabalho"}:
+                grupos = EV2EvaluationGroup.query.filter_by(event_id=event.id).order_by(EV2EvaluationGroup.ordem.asc(), EV2EvaluationGroup.nome.asc()).all()
+                membros = (
+                    EV2EvaluationGroupMember.query.join(EV2EvaluationGroup, EV2EvaluationGroupMember.group_id == EV2EvaluationGroup.id)
+                    .filter(EV2EvaluationGroup.event_id == event.id)
+                    .all()
+                )
+                nomes_grupo = {g.id: g.nome for g in grupos}
+                for membro in membros:
+                    grupo_por_aluno[membro.aluno_id] = nomes_grupo.get(membro.group_id, "")
+
+        return {
+            "alunos": alunos,
+            "dominios_view": dominios_view,
+            "avaliavel_por_aluno": avaliavel_por_aluno,
+            "bloqueio_motivo_por_aluno": bloqueio_motivo_por_aluno,
+            "event": event,
+            "event_students": event_students,
+            "grupos": grupos,
+            "grupo_por_aluno": grupo_por_aluno,
+            "dominios_source": dom_meta.get("source"),
+            "dominios_profile_id": dom_meta.get("profile_id"),
+        }
+
+    @app.route('/aula/<int:aula_id>/avaliar', methods=['GET', 'POST'])
+    def aula_avaliar(aula_id):
+        if request.method == "GET" and request.args.get("embed") != "1":
+            return redirect(url_for("aula_avaliacao_shell", aula_id=aula_id, tipo="aula"))
+        aula = CalendarioAula.query.get_or_404(aula_id)
+        alunos = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
+        total_tempos = _resolver_total_tempos_aula(aula)
+        registros_faltas, _registos_aula = _carregar_registros_faltas(aula, alunos, total_tempos)
+        avaliavel_por_aluno = {}
+        for aluno in alunos:
+            faltas_aluno = registros_faltas.get(aluno.id, {}).get("faltas", [])
+            fdis_aluno = bool(registros_faltas.get(aluno.id, {}).get("fdis"))
+            avaliavel_por_aluno[aluno.id] = (
+                (not getattr(aluno, "faltou", False))
+                and (len(faltas_aluno) < total_tempos)
+                and (not fdis_aluno)
+            )
+        alunos_faltosos_ids = {aluno_id for aluno_id, avaliavel in avaliavel_por_aluno.items() if not avaliavel}
+        aluno_ids_avaliaveis = {aluno_id for aluno_id, avaliavel in avaliavel_por_aluno.items() if avaliavel}
+        disciplina = _resolver_disciplina_aula(aula)
+        disciplina_id = disciplina.id if disciplina else None
+        if disciplina_id:
+            dominios_view, _dom_meta = _load_mandatory_domains_from_profile_or_global(
+                aula.turma_id,
+                disciplina_id,
+            )
+        else:
+            dominios = (
+                EV2Domain.query.options(joinedload(EV2Domain.rubricas))
+                .filter_by(ativo=True)
+                .order_by(EV2Domain.letra.asc(), EV2Domain.nome.asc())
+                .all()
+            )
+            dominios_view = []
+            for idx, dominio in enumerate(dominios):
+                letra = getattr(dominio, "letra", None) or chr(ord("A") + idx)
+                rubricas_dominio = sorted(
+                    [r for r in (dominio.rubricas or []) if getattr(r, "ativo", True)],
+                    key=lambda r: ((r.codigo or ""), (r.nome or "")),
+                )
+                dominios_view.append(
+                    {
+                        "id": dominio.id,
+                        "nome": dominio.nome,
+                        "letra": letra,
+                        "codigo": getattr(dominio, "codigo", None),
+                        "rubricas": rubricas_dominio,
+                    }
+                )
 
         rubricas = [rubrica for dominio in dominios_view for rubrica in dominio["rubricas"]]
         rubricas_por_dominio = {dominio["id"]: dominio["rubricas"] for dominio in dominios_view}
 
         if request.method == 'POST':
             rubrica_id = request.form.get("rubrica_id", type=int)
-            valor_raw = request.form.get("valor", "0")
-            try:
-                valor = float(valor_raw)
-            except (TypeError, ValueError):
-                valor = 0.0
+            if rubrica_id:
+                valor_raw = request.form.get("valor")
+                valor = None
+                if valor_raw not in (None, ""):
+                    try:
+                        valor = float(valor_raw)
+                    except (TypeError, ValueError):
+                        valor = None
 
-            if not rubrica_id:
-                return jsonify({"status": "error", "message": "rubrica_id é obrigatório"}), 400
+                aluno_ids = request.form.getlist("aluno_ids[]")
+                if not aluno_ids:
+                    aluno_unico = request.form.get("aluno_id")
+                    if aluno_unico:
+                        aluno_ids = [aluno_unico]
+                aluno_ids = [int(aluno_id) for aluno_id in aluno_ids if str(aluno_id).isdigit()]
+                aluno_ids = [aluno_id for aluno_id in aluno_ids if aluno_id in aluno_ids_avaliaveis]
+                if not aluno_ids:
+                    return jsonify({"status": "error", "message": "Sem alunos elegíveis para atualizar"}), 400
 
-            aluno_ids = request.form.getlist("aluno_ids[]")
-            if not aluno_ids:
-                aluno_unico = request.form.get("aluno_id")
-                if aluno_unico:
-                    aluno_ids = [aluno_unico]
-            aluno_ids = [int(aluno_id) for aluno_id in aluno_ids if str(aluno_id).isdigit()]
-            aluno_ids = [aluno_id for aluno_id in aluno_ids if aluno_id in aluno_ids_presentes]
-            if not aluno_ids:
-                return jsonify({"status": "error", "message": "Sem alunos elegíveis para atualizar"}), 400
+                for aluno_id in aluno_ids:
+                    avaliacao = Avaliacao.query.filter_by(aula_id=aula.id, aluno_id=aluno_id).first()
+                    if not avaliacao:
+                        avaliacao = Avaliacao(aula_id=aula.id, aluno_id=aluno_id)
+                        db.session.add(avaliacao)
+                        db.session.flush()
 
-            for aluno_id in aluno_ids:
-                avaliacao = Avaliacao.query.filter_by(aula_id=aula.id, aluno_id=aluno_id).first()
-                if not avaliacao:
-                    avaliacao = Avaliacao(aula_id=aula.id, aluno_id=aluno_id)
-                    db.session.add(avaliacao)
-                    db.session.flush()
+                    item = AvaliacaoItem.query.filter_by(avaliacao_id=avaliacao.id, rubrica_id=rubrica_id).first()
+                    if not item:
+                        item = AvaliacaoItem(avaliacao_id=avaliacao.id, rubrica_id=rubrica_id)
+                        db.session.add(item)
+                    item.pontuacao = valor
 
-                item = AvaliacaoItem.query.filter_by(avaliacao_id=avaliacao.id, rubrica_id=rubrica_id).first()
-                if not item:
-                    item = AvaliacaoItem(avaliacao_id=avaliacao.id, rubrica_id=rubrica_id)
-                    db.session.add(item)
-                item.pontuacao = valor
+                    medias = calcular_media_por_dominio(avaliacao)
+                    avaliacao.resultado = round(sum(medias.values()) / len(medias), 1) if medias else 0.0
 
-                medias = calcular_media_por_dominio(avaliacao)
-                avaliacao.resultado = round(sum(medias.values()) / len(medias), 1) if medias else 0.0
+                db.session.commit()
 
-            db.session.commit()
-
-            medias_atualizadas = {}
-            for aluno_id in aluno_ids:
-                av = (
-                    Avaliacao.query.filter_by(aula_id=aula.id, aluno_id=aluno_id)
-                    .options(
-                        joinedload(Avaliacao.itens)
-                        .joinedload(AvaliacaoItem.rubrica)
-                        .joinedload(EV2Rubric.dominio)
+                medias_atualizadas = {}
+                for aluno_id in aluno_ids:
+                    av = (
+                        Avaliacao.query.filter_by(aula_id=aula.id, aluno_id=aluno_id)
+                        .options(
+                            joinedload(Avaliacao.itens)
+                            .joinedload(AvaliacaoItem.rubrica)
+                            .joinedload(EV2Rubric.dominio)
+                        )
+                        .first()
                     )
-                    .first()
-                )
-                medias_atualizadas[str(aluno_id)] = calcular_media_por_dominio(av) if av else {}
+                    medias_atualizadas[str(aluno_id)] = calcular_media_por_dominio(av) if av else {}
 
-            return jsonify(
-                {
-                    "status": "ok",
-                    "rubrica_id": rubrica_id,
-                    "valor": valor,
-                    "medias_por_aluno": medias_atualizadas,
-                }
-            ), 200
+                return jsonify(
+                    {
+                        "status": "ok",
+                        "rubrica_id": rubrica_id,
+                        "valor": valor,
+                        "medias_por_aluno": medias_atualizadas,
+                    }
+                ), 200
+            return jsonify({"status": "error", "message": "rubrica_id é obrigatório"}), 400
 
         avaliacao_map = {
             av.aluno_id: av
@@ -3456,6 +4267,10 @@ def create_app():
         avaliacoes = {}
         medias_por_aluno = {}
         for aluno in alunos:
+            if aluno.id in alunos_faltosos_ids:
+                avaliacoes[aluno.id] = {}
+                medias_por_aluno[aluno.id] = {}
+                continue
             av = avaliacao_map.get(aluno.id)
             avaliacoes[aluno.id] = {}
             if not av:
@@ -3474,7 +4289,1134 @@ def create_app():
             rubricas_por_dominio=rubricas_por_dominio,
             avaliacoes=avaliacoes,
             medias_por_aluno=medias_por_aluno,
+            avaliavel_por_aluno=avaliavel_por_aluno,
+            total_tempos=total_tempos,
+            alunos_faltosos_ids=alunos_faltosos_ids,
             ciclo_aula=_detetar_ciclo_aula(aula),
+            embed_mode=(request.args.get("embed") == "1"),
+        )
+
+    @app.route('/aula/<int:aula_id>/avaliacao')
+    def aula_avaliacao_shell(aula_id):
+        aula = CalendarioAula.query.get_or_404(aula_id)
+        tipo = (request.args.get("tipo") or "aula").strip().lower()
+        if tipo not in {"aula", "obser", "portfolio", "projeto", "trabalho"}:
+            tipo = "aula"
+        fallback_sumarios = url_for("calendario_semana")
+        return_url = _safe_next_url(request.args.get("next"), fallback=fallback_sumarios)
+        if return_url == fallback_sumarios:
+            return_url = _safe_next_url(request.referrer, fallback=fallback_sumarios)
+        turma_label = getattr(getattr(aula, "turma", None), "nome", None) or f"Turma {aula.turma_id}"
+        numero_sumario = (getattr(aula, "sumarios", None) or "").strip() or "—"
+        modulo_nome = getattr(getattr(aula, "modulo", None), "nome", None)
+        if modulo_nome:
+            modulo_label = modulo_nome
+        elif getattr(aula, "numero_modulo", None) not in (None, ""):
+            modulo_label = f"Módulo {aula.numero_modulo}"
+        else:
+            modulo_label = "—"
+        return render_template(
+            "aula_avaliacao_shell.html",
+            aula=aula,
+            tipo_ativo=tipo,
+            turma_label=turma_label,
+            numero_sumario=numero_sumario,
+            modulo_label=modulo_label,
+            return_url=return_url,
+        )
+
+    @app.route('/aula/<int:aula_id>/avaliacao/<tipo>', methods=['GET', 'POST'])
+    def aula_avaliacao_tipo(aula_id, tipo):
+        aula = CalendarioAula.query.get_or_404(aula_id)
+        tipo = (tipo or "").strip().lower()
+        if tipo == "aula":
+            return redirect(url_for("aula_avaliar", aula_id=aula.id, embed=1))
+        if tipo not in {"obser", "portfolio", "projeto", "trabalho"}:
+            abort(404)
+        if tipo in {"projeto", "trabalho"}:
+            turma = Turma.query.get(aula.turma_id)
+            trabalhos = Trabalho.query.filter_by(turma_id=aula.turma_id).order_by(Trabalho.created_at.desc(), Trabalho.id.desc()).all()
+            link = AulaTrabalhoLink.query.filter_by(aula_id=aula.id, tipo=tipo).first()
+            selected_trabalho_id = link.trabalho_id if link else None
+            if request.method == "POST":
+                action = (request.form.get("action") or "").strip().lower()
+                next_url = url_for("aula_avaliacao_shell", aula_id=aula.id, tipo=tipo)
+                if action == "open_existing":
+                    trabalho_id = request.form.get("trabalho_id", type=int)
+                    trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=aula.turma_id).first()
+                    if not trabalho:
+                        return jsonify({"ok": False, "error": "Atividade não encontrada", "status": "error"}), 404
+                    if not link:
+                        link = AulaTrabalhoLink(aula_id=aula.id, tipo=tipo, trabalho_id=trabalho.id)
+                        db.session.add(link)
+                    else:
+                        link.trabalho_id = trabalho.id
+                    db.session.commit()
+                    return jsonify({"ok": True, "redirect_url": url_for("trabalho_detail", turma_id=aula.turma_id, trabalho_id=trabalho.id, next=next_url)}), 200
+                if action == "create_new":
+                    numero = len(trabalhos) + 1
+                    prefixo = "Projeto" if tipo == "projeto" else "Trabalho"
+                    novo = Trabalho(
+                        turma_id=aula.turma_id,
+                        titulo=f"{prefixo} {numero}",
+                        modo="grupo",
+                        data_limite=aula.data,
+                    )
+                    db.session.add(novo)
+                    db.session.flush()
+                    if not link:
+                        link = AulaTrabalhoLink(aula_id=aula.id, tipo=tipo, trabalho_id=novo.id)
+                        db.session.add(link)
+                    else:
+                        link.trabalho_id = novo.id
+                    db.session.commit()
+                    return jsonify({"ok": True, "redirect_url": url_for("trabalho_detail", turma_id=aula.turma_id, trabalho_id=novo.id, next=next_url)}), 200
+            return render_template(
+                "avaliacao_link_atividade.html",
+                aula=aula,
+                turma=turma,
+                tipo=tipo,
+                trabalhos=trabalhos,
+                selected_trabalho_id=selected_trabalho_id,
+                embed_mode=True,
+            )
+
+        eventos_relevantes = _listar_eventos_relevantes_aula(aula, tipo) if tipo in {"portfolio", "projeto", "trabalho"} else []
+        event_id_escolhido = request.values.get("event_id", type=int)
+        evento_ativo = None
+        if event_id_escolhido:
+            evento_ativo = next((ev for ev in eventos_relevantes if ev.id == event_id_escolhido), None)
+        if not evento_ativo and eventos_relevantes:
+            evento_ativo = eventos_relevantes[0]
+
+        ctx = build_avaliacao_context_for_aula(aula, tipo, event_override=evento_ativo)
+        if tipo in {"portfolio", "projeto", "trabalho"} and ctx.get("event"):
+            ev = ensure_effective_groups_for_aula_tipo(aula, tipo, ctx.get("event"))
+            ctx = build_avaliacao_context_for_aula(aula, tipo, event_override=ev)
+
+        def _media_por_dominio_event_student(event_student):
+            dominios_scores = {}
+            for assessment in (event_student.assessments or []):
+                if assessment.tipo != "rubrica" or assessment.score_numeric is None:
+                    continue
+                rubrica = getattr(assessment, "rubrica", None)
+                dominio = getattr(rubrica, "dominio", None)
+                letra = getattr(dominio, "letra", None)
+                if not letra:
+                    continue
+                dominios_scores.setdefault(letra, []).append(float(assessment.score_numeric))
+            return {letra: round(sum(vals) / len(vals), 1) for letra, vals in dominios_scores.items() if vals}
+
+        def _apply_component_scores(assessment, rubric_id, request_obj, raw_numeric_value):
+            rubric = EV2Rubric.query.get(rubric_id)
+            components = sorted((rubric.components or []), key=lambda c: (c.ordem, c.id)) if rubric else []
+            if not components:
+                assessment.component_scores.clear()
+                return raw_numeric_value
+
+            payload = request_obj.form.get("component_scores")
+            if not payload and request_obj.is_json:
+                payload = (request_obj.get_json(silent=True) or {}).get("component_scores")
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except Exception:
+                    payload = None
+            if not isinstance(payload, dict):
+                assessment.component_scores.clear()
+                return raw_numeric_value
+
+            scores_by_component = {}
+            for comp in components:
+                raw = payload.get(str(comp.id), payload.get(comp.id))
+                try:
+                    level = int(raw)
+                except (TypeError, ValueError):
+                    continue
+                if 1 <= level <= 5:
+                    scores_by_component[comp.id] = level
+
+            assessment.component_scores.clear()
+            if not scores_by_component:
+                return raw_numeric_value
+
+            weighted_total = 0.0
+            weight_sum = 0.0
+            fallback_weight = 1.0
+            for comp in components:
+                level = scores_by_component.get(comp.id)
+                if level is None:
+                    continue
+                comp_weight = float(comp.peso or 0)
+                weight = comp_weight if comp_weight > 0 else fallback_weight
+                weighted_total += float(level) * weight
+                weight_sum += weight
+                assessment.component_scores.append(
+                    EV2AssessmentComponentScore(component_id=comp.id, score_level=level)
+                )
+            if weight_sum <= 0:
+                return raw_numeric_value
+            return round(weighted_total / weight_sum, 2)
+
+        def _apply_component_scores(assessment, rubric_id, request_obj, raw_numeric_value):
+            rubric = EV2Rubric.query.get(rubric_id)
+            components = sorted((rubric.components or []), key=lambda c: (c.ordem, c.id)) if rubric else []
+            if not components:
+                assessment.component_scores.clear()
+                return raw_numeric_value
+
+            payload = request_obj.form.get("component_scores")
+            if not payload and request_obj.is_json:
+                payload = (request_obj.get_json(silent=True) or {}).get("component_scores")
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except Exception:
+                    payload = None
+            if not isinstance(payload, dict):
+                assessment.component_scores.clear()
+                return raw_numeric_value
+
+            scores_by_component = {}
+            for comp in components:
+                raw = payload.get(str(comp.id), payload.get(comp.id))
+                try:
+                    level = int(raw)
+                except (TypeError, ValueError):
+                    continue
+                if 1 <= level <= 5:
+                    scores_by_component[comp.id] = level
+
+            assessment.component_scores.clear()
+            if not scores_by_component:
+                return raw_numeric_value
+
+            weighted_total = 0.0
+            weight_sum = 0.0
+            fallback_weight = 1.0
+            for comp in components:
+                level = scores_by_component.get(comp.id)
+                if level is None:
+                    continue
+                comp_weight = float(comp.peso or 0)
+                weight = comp_weight if comp_weight > 0 else fallback_weight
+                weighted_total += float(level) * weight
+                weight_sum += weight
+                assessment.component_scores.append(
+                    EV2AssessmentComponentScore(component_id=comp.id, score_level=level)
+                )
+            if weight_sum <= 0:
+                return raw_numeric_value
+            return round(weighted_total / weight_sum, 2)
+
+        if request.method == "POST":
+            event = ctx["event"] or _obter_ou_criar_evento_avaliacao(aula, tipo)
+            if not event:
+                app.logger.warning(
+                    "Autosave falhou sem contexto persistível | aula_id=%s tipo=%s",
+                    aula.id,
+                    tipo,
+                )
+                return jsonify({"ok": False, "error": "Não foi possível inicializar o contexto desta avaliação.", "status": "error"}), 500
+            if tipo in {"obser", "portfolio", "projeto", "trabalho"}:
+                event = ensure_effective_groups_for_aula_tipo(aula, tipo, event)
+
+            action = (request.form.get("action") or "score").strip().lower()
+            if action == "create_item" and tipo in {"portfolio", "projeto", "trabalho"}:
+                tipo_evento = {"portfolio": "portfolio", "projeto": "projetos", "trabalho": "trabalhos"}[tipo]
+                label_item = {"portfolio": "Portfólio", "projeto": "Projeto", "trabalho": "Trabalho"}[tipo]
+                numero = request.form.get("numero", type=int) or _proximo_numero_evento_turma(aula, tipo)
+                titulo = (request.form.get("titulo") or f"{label_item} {numero}").strip()
+                data_inicio_raw = request.form.get("data_inicio")
+                prazo_raw = request.form.get("prazo_entrega")
+                tema_multiplo = (request.form.get("tema_multiplo") == "1")
+                temas_raw = (request.form.get("temas") or "").strip()
+                data_inicio = date.fromisoformat(data_inicio_raw) if data_inicio_raw else aula.data
+                prazo_entrega = date.fromisoformat(prazo_raw) if prazo_raw else data_inicio
+                disciplina = _resolver_disciplina_aula(aula)
+                if not disciplina:
+                    return jsonify({"ok": False, "error": "Disciplina não encontrada", "status": "error"}), 400
+                subject_config = (
+                    EV2SubjectConfig.query.filter_by(
+                        turma_id=aula.turma_id,
+                        disciplina_id=disciplina.id,
+                        ativo=True,
+                        usar_ev2=True,
+                    )
+                    .order_by(EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
+                    .first()
+                )
+                if not subject_config:
+                    subject_config = (
+                        EV2SubjectConfig.query.filter_by(
+                            turma_id=aula.turma_id,
+                            disciplina_id=disciplina.id,
+                            ativo=True,
+                        )
+                        .order_by(EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
+                        .first()
+                    )
+                if not subject_config:
+                    subject_config = EV2SubjectConfig(
+                        turma_id=aula.turma_id,
+                        disciplina_id=disciplina.id,
+                        nome="Configuração automática",
+                        ativo=True,
+                        usar_ev2=True,
+                    )
+                    db.session.add(subject_config)
+                    db.session.flush()
+                novo_evento = EV2Event(
+                    subject_config_id=subject_config.id,
+                    disciplina_id=disciplina.id,
+                    aula_id=aula.id,
+                    evaluation_type=tipo_evento,
+                    numero=numero,
+                    titulo=titulo,
+                    data_inicio=data_inicio,
+                    prazo_entrega=prazo_entrega,
+                    tema_multiplo=tema_multiplo,
+                    descricao=f"{label_item} criado automaticamente pela shell de avaliação.",
+                    data=aula.data,
+                    group_mode="grupo" if tipo in {"portfolio", "projeto", "trabalho"} else "individual",
+                    peso_evento=100,
+                    extra_component_weight=0,
+                    config_snapshot={"source": "auto-shell"},
+                )
+                db.session.add(novo_evento)
+                db.session.flush()
+                alunos = Aluno.query.filter_by(turma_id=aula.turma_id).all()
+                for aluno in alunos:
+                    db.session.add(
+                        EV2EventStudent(
+                            event_id=novo_evento.id,
+                            aluno_id=aluno.id,
+                            tempos_totais=1,
+                            tempos_presentes=1,
+                            estado_assiduidade="presente_total",
+                            pontualidade_manual=True,
+                            elegivel_avaliacao=True,
+                        )
+                    )
+                if not EV2AulaEventLink.query.filter_by(aula_id=aula.id, event_id=novo_evento.id).first():
+                    db.session.add(EV2AulaEventLink(aula_id=aula.id, event_id=novo_evento.id))
+                nomes_temas = [t.strip() for t in temas_raw.split("\n") if t.strip()]
+                if not nomes_temas:
+                    nomes_temas = ["Tema único" if tema_multiplo else (titulo or "Tema único")]
+                for idx, nome_tema in enumerate(nomes_temas, start=1):
+                    db.session.add(EV2EventTheme(event_id=novo_evento.id, nome_tema=nome_tema, ordem=idx))
+                db.session.commit()
+                return jsonify({"ok": True, "status": "ok", "event_id": novo_evento.id}), 200
+
+            if action == "select_item" and tipo in {"portfolio", "projeto", "trabalho"}:
+                event_id_select = request.form.get("event_id", type=int)
+                selected = EV2Event.query.filter_by(id=event_id_select).first()
+                if not selected:
+                    return jsonify({"ok": False, "error": "Item não encontrado", "status": "error"}), 404
+                if not EV2AulaEventLink.query.filter_by(aula_id=aula.id, event_id=selected.id).first():
+                    db.session.add(EV2AulaEventLink(aula_id=aula.id, event_id=selected.id))
+                    db.session.commit()
+                return jsonify({"ok": True, "status": "ok"}), 200
+
+            if action == "set_group_item" and tipo in {"projeto", "trabalho"}:
+                group_id = request.form.get("group_id", type=int)
+                event_id_select = request.form.get("event_id", type=int)
+                grupo = GrupoTurma.query.filter_by(id=group_id, turma_id=aula.turma_id).first()
+                if not grupo:
+                    return jsonify({"ok": False, "error": "Grupo inválido", "status": "error"}), 400
+
+                tipo_evento = "projetos" if tipo == "projeto" else "trabalhos"
+                antigos_links = (
+                    EV2AulaEventLink.query.join(EV2Event, EV2AulaEventLink.event_id == EV2Event.id)
+                    .filter(
+                        EV2AulaEventLink.aula_id == aula.id,
+                        EV2AulaEventLink.grupo_turma_id == grupo.id,
+                        EV2Event.evaluation_type == tipo_evento,
+                    )
+                    .all()
+                )
+                for antigo in antigos_links:
+                    db.session.delete(antigo)
+                if event_id_select:
+                    selected = EV2Event.query.filter_by(id=event_id_select, evaluation_type=tipo_evento).first()
+                    if not selected:
+                        return jsonify({"ok": False, "error": "Item inválido", "status": "error"}), 400
+                    db.session.add(EV2AulaEventLink(aula_id=aula.id, event_id=selected.id, grupo_turma_id=grupo.id))
+                db.session.commit()
+                return jsonify({"ok": True, "status": "ok"}), 200
+
+            if action == "set_group_theme" and tipo in {"projeto", "trabalho"}:
+                if not event:
+                    return jsonify({"ok": False, "error": "Item não selecionado", "status": "error"}), 400
+                group_raw = (request.form.get("group_id") or "").strip()
+                group_id = int(group_raw) if group_raw.isdigit() else None
+                aluno_individual_id = None
+                if (not group_id) and group_raw.startswith("individual-"):
+                    aluno_part = group_raw.split("-", 1)[1]
+                    if aluno_part.isdigit():
+                        aluno_individual_id = int(aluno_part)
+                        nome_ind = f"__IND__{aluno_individual_id}"
+                        grp_ind = EV2EvaluationGroup.query.filter_by(event_id=event.id, nome=nome_ind).first()
+                        if not grp_ind:
+                            ordem_max = db.session.query(db.func.max(EV2EvaluationGroup.ordem)).filter_by(event_id=event.id).scalar() or 0
+                            grp_ind = EV2EvaluationGroup(event_id=event.id, nome=nome_ind, ordem=int(ordem_max) + 1)
+                            db.session.add(grp_ind)
+                            db.session.flush()
+                            db.session.add(EV2EvaluationGroupMember(group_id=grp_ind.id, aluno_id=aluno_individual_id))
+                            es = EV2EventStudent.query.filter_by(event_id=event.id, aluno_id=aluno_individual_id).first()
+                            if es:
+                                es.group_key = grp_ind.nome
+                            db.session.commit()
+                        group_id = grp_ind.id
+                theme_id = request.form.get("theme_id", type=int)
+                entregue = request.form.get("entregue") == "1"
+                data_entrega_raw = (request.form.get("data_entrega") or "").strip()
+                data_entrega = date.fromisoformat(data_entrega_raw) if data_entrega_raw else None
+                grupo = EV2EvaluationGroup.query.filter_by(id=group_id, event_id=event.id).first()
+                if not grupo:
+                    return jsonify({"ok": False, "error": "Grupo inválido", "status": "error"}), 400
+                tema = EV2EventTheme.query.filter_by(id=theme_id, event_id=event.id).first() if theme_id else None
+                if theme_id and not tema:
+                    return jsonify({"ok": False, "error": "Tema inválido", "status": "error"}), 400
+                reg = EV2AulaThemeAssignment.query.filter_by(aula_id=aula.id, event_id=event.id, group_id=grupo.id).first()
+                if not reg:
+                    reg = EV2AulaThemeAssignment(aula_id=aula.id, event_id=event.id, group_id=grupo.id)
+                    db.session.add(reg)
+                reg.theme_id = tema.id if tema else None
+                reg.entregue = entregue
+                reg.data_entrega = data_entrega
+                db.session.commit()
+                return jsonify(
+                    {
+                        "ok": True,
+                        "status": "ok",
+                        "group_id": grupo.id,
+                        "theme_id": reg.theme_id,
+                        "theme_nome": (tema.nome_tema if tema else ""),
+                        "entregue": bool(reg.entregue),
+                        "data_entrega": (reg.data_entrega.isoformat() if reg.data_entrega else ""),
+                    }
+                ), 200
+
+            if action == "save_meta":
+                titulo = (request.form.get("titulo") or "").strip()
+                numero_raw = (request.form.get("numero") or "").strip()
+                data_inicio_raw = (request.form.get("data_inicio") or "").strip()
+                prazo_raw = (request.form.get("prazo_entrega") or "").strip()
+                numero = None
+                if numero_raw:
+                    try:
+                        numero = int(numero_raw)
+                    except (TypeError, ValueError):
+                        return jsonify({"ok": False, "error": "Número inválido", "status": "error"}), 400
+                if tipo in {"portfolio", "projeto", "trabalho"}:
+                    if titulo:
+                        event.titulo = titulo
+                    event.numero = numero
+                    if data_inicio_raw:
+                        event.data_inicio = date.fromisoformat(data_inicio_raw)
+                    if prazo_raw:
+                        event.prazo_entrega = date.fromisoformat(prazo_raw)
+                    if tipo in {"projeto", "trabalho"}:
+                        event.tema_multiplo = (request.form.get("tema_multiplo") == "1")
+                    db.session.commit()
+                elif tipo == "obser":
+                    event.descricao = (request.form.get("observacoes") or "").strip() or None
+                    db.session.commit()
+                return jsonify({"ok": True, "status": "ok", "titulo": event.titulo, "numero": event.numero}), 200
+
+            if action == "group_reset_from_turma" and tipo in {"obser", "portfolio", "projeto", "trabalho"}:
+                _bootstrap_effective_groups_from_turma(event, aula.turma_id, force=True)
+                return jsonify({"ok": True, "status": "ok"}), 200
+
+            if action == "group_create" and tipo in {"obser", "portfolio", "projeto", "trabalho"}:
+                nome_grupo = (request.form.get("nome_grupo") or "").strip()
+                if not nome_grupo:
+                    return jsonify({"ok": False, "error": "Nome do grupo é obrigatório", "status": "error"}), 400
+                if EV2EvaluationGroup.query.filter_by(event_id=event.id, nome=nome_grupo).first():
+                    return jsonify({"ok": False, "error": "Grupo já existe", "status": "error"}), 400
+                ordem_max = db.session.query(db.func.max(EV2EvaluationGroup.ordem)).filter_by(event_id=event.id).scalar() or 0
+                db.session.add(EV2EvaluationGroup(event_id=event.id, nome=nome_grupo, ordem=int(ordem_max) + 1))
+                db.session.commit()
+                return jsonify({"ok": True, "status": "ok"}), 200
+
+            if action == "group_delete" and tipo in {"obser", "portfolio", "projeto", "trabalho"}:
+                group_id = request.form.get("group_id", type=int)
+                grupo = EV2EvaluationGroup.query.filter_by(id=group_id, event_id=event.id).first()
+                if not grupo:
+                    return jsonify({"ok": False, "error": "Grupo não encontrado", "status": "error"}), 404
+                nome = grupo.nome
+                db.session.delete(grupo)
+                for es in EV2EventStudent.query.filter_by(event_id=event.id, group_key=nome).all():
+                    es.group_key = None
+                db.session.commit()
+                return jsonify({"ok": True, "status": "ok"}), 200
+
+            if action == "group_assign" and tipo in {"obser", "portfolio", "projeto", "trabalho"}:
+                group_id = request.form.get("group_id", type=int)
+                aluno_id = request.form.get("aluno_id", type=int)
+                if not aluno_id:
+                    return jsonify({"ok": False, "error": "Aluno inválido", "status": "error"}), 400
+                grupos_ids_evento = [g.id for g in EV2EvaluationGroup.query.filter_by(event_id=event.id).all()]
+                if grupos_ids_evento:
+                    antigos = EV2EvaluationGroupMember.query.filter(
+                        EV2EvaluationGroupMember.aluno_id == aluno_id,
+                        EV2EvaluationGroupMember.group_id.in_(grupos_ids_evento),
+                    ).all()
+                    for antigo in antigos:
+                        db.session.delete(antigo)
+                es = EV2EventStudent.query.filter_by(event_id=event.id, aluno_id=aluno_id).first()
+                if not group_id:
+                    if es:
+                        es.group_key = None
+                    db.session.commit()
+                    return jsonify({"ok": True, "status": "ok"}), 200
+                grp = EV2EvaluationGroup.query.filter_by(id=group_id, event_id=event.id).first()
+                if not grp:
+                    return jsonify({"ok": False, "error": "Grupo inválido", "status": "error"}), 400
+                db.session.add(EV2EvaluationGroupMember(group_id=grp.id, aluno_id=aluno_id))
+                if es:
+                    es.group_key = grp.nome
+                db.session.commit()
+                return jsonify({"ok": True, "status": "ok"}), 200
+
+            if action == "save_observacao" and tipo == "portfolio":
+                aluno_id = request.form.get("aluno_id", type=int)
+                texto = (request.form.get("observacoes") or "").strip() or None
+                if not aluno_id:
+                    return jsonify({"ok": False, "error": "Aluno inválido", "status": "error"}), 400
+                es = EV2EventStudent.query.filter_by(event_id=event.id, aluno_id=aluno_id).first()
+                if not es:
+                    es = EV2EventStudent(
+                        event_id=event.id,
+                        aluno_id=aluno_id,
+                        tempos_totais=1,
+                        tempos_presentes=1,
+                        estado_assiduidade="presente_total",
+                        pontualidade_manual=True,
+                        elegivel_avaliacao=True,
+                    )
+                    db.session.add(es)
+                    db.session.flush()
+                es.observacoes = texto
+                db.session.commit()
+                return jsonify({"ok": True, "status": "ok"}), 200
+
+            rubrica_id = request.form.get("rubrica_id", type=int)
+            if not rubrica_id:
+                return jsonify({"ok": False, "error": "rubrica_id é obrigatório", "status": "error"}), 400
+            valor_raw = request.form.get("valor")
+            valor = None
+            if valor_raw not in (None, ""):
+                try:
+                    valor = float(valor_raw)
+                except (TypeError, ValueError):
+                    valor = None
+
+            aluno_ids = request.form.getlist("aluno_ids[]")
+            if not aluno_ids:
+                aluno_unico = request.form.get("aluno_id")
+                if aluno_unico:
+                    aluno_ids = [aluno_unico]
+            aluno_ids = [int(aid) for aid in aluno_ids if str(aid).isdigit()]
+            aluno_ids = [aid for aid in aluno_ids if ctx["avaliavel_por_aluno"].get(aid, False)]
+            if not aluno_ids:
+                app.logger.info(
+                    "Autosave sem alunos elegíveis | aula_id=%s tipo=%s rubrica_id=%s",
+                    aula.id,
+                    tipo,
+                    rubrica_id,
+                )
+                return jsonify({"ok": False, "error": "Sem alunos elegíveis para atualizar", "status": "error"}), 400
+
+            aluno_ids_sincronizados = set(aluno_ids)
+            if tipo in {"obser", "portfolio", "projeto", "trabalho"}:
+                memberships = (
+                    EV2EvaluationGroupMember.query.join(
+                        EV2EvaluationGroup,
+                        EV2EvaluationGroupMember.group_id == EV2EvaluationGroup.id,
+                    )
+                    .filter(EV2EvaluationGroup.event_id == event.id)
+                    .all()
+                )
+                group_ids_por_aluno = defaultdict(set)
+                alunos_por_grupo = defaultdict(set)
+                for member in memberships:
+                    group_ids_por_aluno[member.aluno_id].add(member.group_id)
+                    alunos_por_grupo[member.group_id].add(member.aluno_id)
+                for aid in list(aluno_ids_sincronizados):
+                    for gid in group_ids_por_aluno.get(aid, set()):
+                        for membro_id in alunos_por_grupo.get(gid, set()):
+                            if ctx["avaliavel_por_aluno"].get(membro_id, False):
+                                if tipo in {"projeto", "trabalho"} and getattr(event, "tema_multiplo", False):
+                                    reg_a = EV2AulaThemeAssignment.query.filter_by(aula_id=aula.id, event_id=event.id, group_id=gid).first()
+                                    reg_b = next((r for r in EV2AulaThemeAssignment.query.filter_by(aula_id=aula.id, event_id=event.id).all() if r.group_id in group_ids_por_aluno.get(membro_id, set())), None)
+                                    if not reg_a or not reg_b or reg_a.theme_id != reg_b.theme_id:
+                                        continue
+                                aluno_ids_sincronizados.add(membro_id)
+                aluno_ids = sorted(aluno_ids_sincronizados)
+            if tipo in {"projeto", "trabalho"} and getattr(event, "tema_multiplo", False):
+                memberships = (
+                    EV2EvaluationGroupMember.query.join(EV2EvaluationGroup, EV2EvaluationGroupMember.group_id == EV2EvaluationGroup.id)
+                    .filter(EV2EvaluationGroup.event_id == event.id)
+                    .all()
+                )
+                group_ids_por_aluno = defaultdict(set)
+                for member in memberships:
+                    group_ids_por_aluno[member.aluno_id].add(member.group_id)
+                atribuicoes = {
+                    a.group_id: a
+                    for a in EV2AulaThemeAssignment.query.filter_by(aula_id=aula.id, event_id=event.id).all()
+                }
+                validos = []
+                for aid in aluno_ids:
+                    gids = group_ids_por_aluno.get(aid, set())
+                    if not gids:
+                        continue
+                    if any(atribuicoes.get(gid) and atribuicoes[gid].theme_id for gid in gids):
+                        validos.append(aid)
+                aluno_ids = validos
+                if not aluno_ids:
+                    return jsonify({"ok": False, "error": "Sem grupo/tema atribuído para este item nesta aula.", "status": "error"}), 400
+
+            estudantes_existentes = {es.aluno_id: es for es in EV2EventStudent.query.filter_by(event_id=event.id).all()}
+            for aid in aluno_ids:
+                if aid not in estudantes_existentes:
+                    novo = EV2EventStudent(
+                        event_id=event.id,
+                        aluno_id=aid,
+                        tempos_totais=1,
+                        tempos_presentes=1,
+                        estado_assiduidade="presente_total",
+                        pontualidade_manual=True,
+                        elegivel_avaliacao=True,
+                    )
+                    db.session.add(novo)
+                    db.session.flush()
+                    estudantes_existentes[aid] = novo
+
+                es = estudantes_existentes[aid]
+                assessment = EV2Assessment.query.filter_by(event_student_id=es.id, rubric_id=rubrica_id).first()
+                if not assessment:
+                    assessment = EV2Assessment(event_student_id=es.id, tipo="rubrica", rubric_id=rubrica_id, weight=0)
+                    db.session.add(assessment)
+                if valor is None:
+                    assessment.state = "nao_observado"
+                    assessment.score_numeric = None
+                    assessment.component_scores.clear()
+                else:
+                    valor_final = _apply_component_scores(assessment, rubrica_id, request, valor)
+                    assessment.state = "avaliado"
+                    assessment.score_numeric = valor_final
+            db.session.commit()
+
+            medias_atualizadas = {}
+            for aid in aluno_ids:
+                es = EV2EventStudent.query.filter_by(event_id=event.id, aluno_id=aid).options(
+                    joinedload(EV2EventStudent.assessments).joinedload(EV2Assessment.rubrica).joinedload(EV2Rubric.dominio)
+                ).first()
+                medias_atualizadas[str(aid)] = _media_por_dominio_event_student(es) if es else {}
+            updated_members = [
+                {
+                    "aluno_id": aid,
+                    "rubrica_id": rubrica_id,
+                    "valor": valor,
+                    "medias_por_dominio": medias_atualizadas.get(str(aid), {}),
+                }
+                for aid in aluno_ids
+            ]
+            return jsonify({"ok": True, "status": "ok", "medias_por_aluno": medias_atualizadas, "updated_members": updated_members}), 200
+
+        avaliacoes = {}
+        medias_por_aluno = {}
+        linhas = []
+        students_by_aluno = {es.aluno_id: es for es in ctx["event_students"]}
+        grupo_item_config = []
+        temas = []
+        atribuicoes_tema = {}
+        tema_por_grupo = {}
+        groups_data = []
+        grupos_turma, _membros_grupo_turma, aluno_para_grupo_turma = resolve_turma_groups_for_aula(aula)
+        if tipo in {"projeto", "trabalho"} and ctx.get("event"):
+            temas = EV2EventTheme.query.filter_by(event_id=ctx["event"].id).order_by(EV2EventTheme.ordem.asc(), EV2EventTheme.id.asc()).all()
+            atribuicoes_tema = {
+                a.group_id: a
+                for a in EV2AulaThemeAssignment.query.filter_by(aula_id=aula.id, event_id=ctx["event"].id).all()
+            }
+            grupos_ctx = [g for g in ctx.get("grupos", []) if not (g.nome or "").startswith("__IND__")]
+            for grupo in grupos_ctx:
+                atr = atribuicoes_tema.get(grupo.id)
+                grupo_item_config.append({
+                    "grupo_id": grupo.id,
+                    "grupo_nome": grupo.nome,
+                    "theme_id": (atr.theme_id if atr else None),
+                    "entregue": bool(atr.entregue) if atr else False,
+                    "data_entrega": (atr.data_entrega.isoformat() if atr and atr.data_entrega else ""),
+                })
+                if atr and atr.theme:
+                    tema_por_grupo[grupo.id] = atr.theme.nome_tema
+        for aluno in ctx["alunos"]:
+            es = students_by_aluno.get(aluno.id)
+            grupo_turma = aluno_para_grupo_turma.get(aluno.id)
+            grupo_nome = (grupo_turma.nome if grupo_turma else "")
+            tema_label = ""
+            if tipo in {"projeto", "trabalho"}:
+                group_id = next((g.id for g in ctx.get("grupos", []) if g.nome == grupo_nome), None) if ctx.get("event") else None
+                tema_label = tema_por_grupo.get(group_id, "")
+                if getattr(ctx.get("event"), "tema_multiplo", False):
+                    if not group_id or not tema_label:
+                        ctx["bloqueio_motivo_por_aluno"][aluno.id] = "Sem grupo/tema atribuído."
+                        ctx["avaliavel_por_aluno"][aluno.id] = False
+            linhas.append({"aluno": aluno, "grupo": grupo_nome, "tema_label": tema_label, "observacoes": getattr(es, "observacoes", "") if es else ""})
+            avaliacoes[aluno.id] = {}
+            if es:
+                for assessment in (es.assessments or []):
+                    if assessment.tipo == "rubrica" and assessment.rubric_id and assessment.score_numeric is not None:
+                        avaliacoes[aluno.id][assessment.rubric_id] = float(assessment.score_numeric)
+                elegivel_local = ctx["avaliavel_por_aluno"].get(aluno.id, False)
+                medias_por_aluno[aluno.id] = _media_por_dominio_event_student(es) if elegivel_local else {}
+            else:
+                medias_por_aluno[aluno.id] = {}
+
+        if tipo in {"projeto", "trabalho"}:
+            lines_by_group = defaultdict(list)
+            for linha in linhas:
+                nome_grupo = (linha.get("grupo") or "").strip()
+                if nome_grupo:
+                    lines_by_group[nome_grupo].append(linha)
+                    continue
+                aluno = linha["aluno"]
+                ind_name = f"__IND__{aluno.id}"
+                lines_by_group[ind_name].append(linha)
+
+            visible_groups = [g for g in grupos_turma]
+            order_map = {g.nome: idx for idx, g in enumerate(visible_groups, start=1)}
+            all_group_names = sorted(lines_by_group.keys(), key=lambda g: (9000 if g.startswith("__IND__") else order_map.get(g, 8000), g.lower()))
+            group_name_to_id = {g.nome: g.id for g in (ctx.get("grupos", []) if ctx.get("event") else [])}
+            for nome_grupo in all_group_names:
+                linhas_grupo = sorted(
+                    lines_by_group[nome_grupo],
+                    key=lambda l: ((getattr(l["aluno"], "numero", None) is None), getattr(l["aluno"], "numero", 0), getattr(l["aluno"], "nome", "")),
+                )
+                gid = group_name_to_id.get(nome_grupo)
+                atr = atribuicoes_tema.get(gid) if gid else None
+                nome_label = nome_grupo
+                is_individual = False
+                if nome_grupo.startswith("__IND__"):
+                    is_individual = True
+                    nome_label = f"Sem grupo — {linhas_grupo[0]['aluno'].nome}" if linhas_grupo else "Individual"
+                groups_data.append(
+                    {
+                        "group_id": gid if gid else (f"individual-{linhas_grupo[0]['aluno'].id}" if linhas_grupo else ""),
+                        "group_name": nome_label,
+                        "is_individual_group": is_individual,
+                        "theme_id": (atr.theme_id if atr else None),
+                        "entregue": bool(atr.entregue) if atr else False,
+                        "data_entrega": (atr.data_entrega.isoformat() if atr and atr.data_entrega else ""),
+                        "rows": linhas_grupo,
+                    }
+                )
+
+        grupos_visiveis = [g for g in ctx.get("grupos", []) if not (g.nome or "").startswith("__IND__")]
+        return render_template(
+            "avaliacao_objeto.html",
+            tipo=tipo,
+            aula=aula,
+            event=ctx["event"],
+            titulo_evento=f"{tipo.title()} · Aula {aula.id}",
+            data_evento=aula.data,
+            linhas=linhas,
+            dominios=ctx["dominios_view"],
+            rubricas=[rubrica for dominio in ctx["dominios_view"] for rubrica in dominio["rubricas"]],
+            avaliacoes=avaliacoes,
+            medias_por_aluno=medias_por_aluno,
+            avaliavel_por_aluno=ctx["avaliavel_por_aluno"],
+            bloqueio_motivo_por_aluno=ctx["bloqueio_motivo_por_aluno"],
+            grupos=grupos_visiveis,
+            grupo_por_aluno=ctx.get("grupo_por_aluno", {}),
+            meta_numero=(ctx["event"].numero if ctx.get("event") else None),
+            meta_titulo=(ctx["event"].titulo if ctx.get("event") else ""),
+            meta_data_inicio=(ctx["event"].data_inicio.isoformat() if ctx.get("event") and ctx["event"].data_inicio else aula.data.isoformat() if aula.data else ""),
+            meta_prazo_entrega=(ctx["event"].prazo_entrega.isoformat() if ctx.get("event") and ctx["event"].prazo_entrega else ""),
+            meta_observacoes=(ctx["event"].descricao if ctx.get("event") else ""),
+            meta_numero_sugerido=(_proximo_numero_evento_turma(aula, tipo) if tipo in {"portfolio", "projeto", "trabalho"} else None),
+            eventos_relevantes=eventos_relevantes,
+            evento_ativo_id=(ctx["event"].id if ctx.get("event") else None),
+            grupos_origem=(list_group_import_sources(ctx.get("event"), aula.turma_id) if tipo in {"projeto", "portfolio", "trabalho"} else []),
+            grupo_item_config=grupo_item_config,
+            temas=temas,
+            tema_multiplo=(ctx["event"].tema_multiplo if ctx.get("event") and tipo in {"projeto", "trabalho"} else False),
+            groups_data=groups_data,
+            embed_mode=True,
+        )
+
+    @app.route('/avaliacao/aula/<int:id_aula>')
+    def avaliacao_aula_redirect(id_aula):
+        return redirect(url_for("aula_avaliacao_shell", aula_id=id_aula, tipo="aula"))
+
+    @app.route('/aula/<int:aula_id>/pontualidade', methods=['GET', 'POST'])
+    def aula_pontualidade(aula_id):
+        aula = CalendarioAula.query.get_or_404(aula_id)
+        alunos = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
+        registos = {r.aluno_id: r for r in AulaAluno.query.filter_by(aula_id=aula.id).all()}
+
+        pontualidade = {aluno.id: 1 for aluno in alunos}
+        for aluno in alunos:
+            registo = registos.get(aluno.id)
+            if not registo:
+                continue
+            pontualidade[aluno.id] = 0 if (bool(registo.atraso) or (registo.faltas or 0) > 0) else 1
+
+        if request.method == "POST":
+            for aluno in alunos:
+                valor_bruto = request.form.get(f"pontualidade-{aluno.id}", "1")
+                try:
+                    valor = int(valor_bruto)
+                except (TypeError, ValueError):
+                    valor = 1
+                valor = 1 if valor == 1 else 0
+
+                registo = registos.get(aluno.id)
+                if not registo:
+                    registo = AulaAluno(aula_id=aula.id, aluno_id=aluno.id)
+                    db.session.add(registo)
+                    registos[aluno.id] = registo
+                registo.atraso = (valor == 0)
+            db.session.commit()
+            flash("Pontualidade e faltas atualizadas.", "success")
+            return redirect(url_for("aula_avaliar", aula_id=aula.id))
+
+        return render_template(
+            "aula_pontualidade.html",
+            aula=aula,
+            alunos=alunos,
+            pontualidade=pontualidade,
+        )
+
+    @app.route('/avaliacao/<tipo>/<int:id_objeto>', methods=['GET', 'POST'])
+    def avaliacao_objeto(tipo, id_objeto):
+        tipo = (tipo or "").strip().lower()
+        valid_types = ['aula', 'obser', 'portfolio', 'projeto', 'trabalho']
+        if tipo not in valid_types:
+            abort(404)
+
+        tipo_map = {
+            "obser": "observacao_direta",
+            "portfolio": "portfolio",
+            "projeto": "projetos",
+            "trabalho": "trabalhos",
+        }
+        if tipo == "aula":
+            CalendarioAula.query.get_or_404(id_objeto)
+            return redirect(url_for("aula_avaliacao_shell", aula_id=id_objeto, tipo="aula"))
+
+        event = EV2Event.query.filter_by(id=id_objeto, evaluation_type=tipo_map[tipo]).first_or_404()
+        alunos_evento = (
+            EV2EventStudent.query.filter_by(event_id=event.id)
+            .options(joinedload(EV2EventStudent.aluno), joinedload(EV2EventStudent.assessments).joinedload(EV2Assessment.rubrica).joinedload(EV2Rubric.dominio))
+            .all()
+        )
+
+        turma_id_ctx = event.subject_config.turma_id if event.subject_config else None
+        disciplina_id_ctx = event.disciplina_id
+        if turma_id_ctx and disciplina_id_ctx:
+            dominios_view, _dom_meta = _load_mandatory_domains_from_profile_or_global(
+                turma_id_ctx, disciplina_id_ctx
+            )
+        else:
+            dominios = (
+                EV2Domain.query.options(joinedload(EV2Domain.rubricas))
+                .filter_by(ativo=True)
+                .order_by(EV2Domain.letra.asc(), EV2Domain.nome.asc())
+                .all()
+            )
+            dominios_view = []
+            for idx, dominio in enumerate(dominios):
+                letra = getattr(dominio, "letra", None) or chr(ord("A") + idx)
+                rubricas_dominio = sorted(
+                    [r for r in (dominio.rubricas or []) if getattr(r, "ativo", True)],
+                    key=lambda r: ((r.codigo or ""), (r.nome or "")),
+                )
+                dominios_view.append({"id": dominio.id, "nome": dominio.nome, "letra": letra, "rubricas": rubricas_dominio})
+        rubricas = [rubrica for dominio in dominios_view for rubrica in dominio["rubricas"]]
+
+        registros_faltas = {}
+        total_tempos = 1
+        if event.aula_id:
+            aula_evento = CalendarioAula.query.get(event.aula_id)
+            if aula_evento:
+                total_tempos = _resolver_total_tempos_aula(aula_evento)
+                alunos_aula = [es.aluno for es in alunos_evento if es.aluno]
+                registros_faltas, _ = _carregar_registros_faltas(aula_evento, alunos_aula, total_tempos)
+
+        avaliavel_por_aluno = {}
+        bloqueio_motivo_por_aluno = {}
+        for es in alunos_evento:
+            aluno = es.aluno
+            if not aluno:
+                continue
+            faltas = registros_faltas.get(aluno.id, {}).get("faltas", [])
+            fdis = bool(registros_faltas.get(aluno.id, {}).get("fdis"))
+            ausente_total = es.estado_assiduidade == "ausente_total" or es.tempos_presentes <= 0
+            elegivel = bool(es.elegivel_avaliacao) and (not ausente_total) and (len(faltas) < total_tempos) and (not fdis)
+            avaliavel_por_aluno[aluno.id] = elegivel
+            if not elegivel:
+                if fdis:
+                    bloqueio_motivo_por_aluno[aluno.id] = "Bloqueado: falta disciplinar (FDis)."
+                elif len(faltas) >= total_tempos:
+                    bloqueio_motivo_por_aluno[aluno.id] = "Bloqueado: aluno em falta no total dos tempos da aula."
+                elif ausente_total:
+                    bloqueio_motivo_por_aluno[aluno.id] = "Bloqueado: assiduidade marcada como ausente total."
+                else:
+                    bloqueio_motivo_por_aluno[aluno.id] = "Bloqueado: aluno não elegível para avaliação neste evento."
+
+        def _media_por_dominio_event_student(event_student):
+            dominios_scores = {}
+            for assessment in (event_student.assessments or []):
+                if assessment.tipo != "rubrica" or assessment.score_numeric is None:
+                    continue
+                rubrica = getattr(assessment, "rubrica", None)
+                dominio = getattr(rubrica, "dominio", None)
+                letra = getattr(dominio, "letra", None)
+                if not letra:
+                    continue
+                dominios_scores.setdefault(letra, []).append(float(assessment.score_numeric))
+            return {letra: round(sum(vals) / len(vals), 1) for letra, vals in dominios_scores.items() if vals}
+
+        if request.method == "POST":
+            action = (request.form.get("action") or "score").strip().lower()
+            if action == "save_meta":
+                titulo = (request.form.get("titulo") or "").strip()
+                numero_raw = (request.form.get("numero") or "").strip()
+                data_inicio_raw = (request.form.get("data_inicio") or "").strip()
+                prazo_raw = (request.form.get("prazo_entrega") or "").strip()
+                numero = None
+                if numero_raw:
+                    try:
+                        numero = int(numero_raw)
+                    except (TypeError, ValueError):
+                        return jsonify({"ok": False, "error": "Número inválido", "status": "error"}), 400
+                if tipo in {"portfolio", "projeto", "trabalho"}:
+                    if titulo:
+                        event.titulo = titulo
+                    event.numero = numero
+                    if data_inicio_raw:
+                        event.data_inicio = date.fromisoformat(data_inicio_raw)
+                    if prazo_raw:
+                        event.prazo_entrega = date.fromisoformat(prazo_raw)
+                elif tipo == "obser":
+                    event.descricao = (request.form.get("observacoes") or "").strip() or None
+                db.session.commit()
+                return jsonify({"ok": True, "status": "ok", "titulo": event.titulo, "numero": event.numero}), 200
+            if action == "save_observacao" and tipo == "portfolio":
+                aluno_id = request.form.get("aluno_id", type=int)
+                texto = (request.form.get("observacoes") or "").strip() or None
+                if not aluno_id:
+                    return jsonify({"ok": False, "error": "Aluno inválido", "status": "error"}), 400
+                es = EV2EventStudent.query.filter_by(event_id=event.id, aluno_id=aluno_id).first()
+                if not es:
+                    return jsonify({"ok": False, "error": "Aluno não encontrado no evento", "status": "error"}), 404
+                es.observacoes = texto
+                db.session.commit()
+                return jsonify({"ok": True, "status": "ok"}), 200
+
+            rubrica_id = request.form.get("rubrica_id", type=int)
+            if not rubrica_id:
+                return jsonify({"status": "error", "message": "rubrica_id é obrigatório"}), 400
+            valor_raw = request.form.get("valor")
+            valor = None
+            if valor_raw not in (None, ""):
+                try:
+                    valor = float(valor_raw)
+                except (TypeError, ValueError):
+                    valor = None
+
+            aluno_ids = request.form.getlist("aluno_ids[]")
+            if not aluno_ids:
+                aluno_unico = request.form.get("aluno_id")
+                if aluno_unico:
+                    aluno_ids = [aluno_unico]
+            aluno_ids = [int(aid) for aid in aluno_ids if str(aid).isdigit()]
+            aluno_ids = [aid for aid in aluno_ids if avaliavel_por_aluno.get(aid, False)]
+            if not aluno_ids:
+                return jsonify({"status": "error", "message": "Sem alunos elegíveis para atualizar"}), 400
+
+            if tipo in {"portfolio", "projeto", "trabalho"}:
+                memberships = (
+                    EV2EvaluationGroupMember.query.join(
+                        EV2EvaluationGroup,
+                        EV2EvaluationGroupMember.group_id == EV2EvaluationGroup.id,
+                    )
+                    .filter(EV2EvaluationGroup.event_id == event.id)
+                    .all()
+                )
+                group_ids_por_aluno = defaultdict(set)
+                alunos_por_grupo = defaultdict(set)
+                for member in memberships:
+                    group_ids_por_aluno[member.aluno_id].add(member.group_id)
+                    alunos_por_grupo[member.group_id].add(member.aluno_id)
+                synced_ids = set(aluno_ids)
+                for aid in list(synced_ids):
+                    for gid in group_ids_por_aluno.get(aid, set()):
+                        for membro_id in alunos_por_grupo.get(gid, set()):
+                            if avaliavel_por_aluno.get(membro_id, False):
+                                synced_ids.add(membro_id)
+                aluno_ids = sorted(synced_ids)
+
+            for aid in aluno_ids:
+                es = next((row for row in alunos_evento if row.aluno_id == aid), None)
+                if not es:
+                    continue
+                assessment = EV2Assessment.query.filter_by(event_student_id=es.id, rubric_id=rubrica_id).first()
+                if not assessment:
+                    assessment = EV2Assessment(event_student_id=es.id, tipo="rubrica", rubric_id=rubrica_id, weight=0)
+                    db.session.add(assessment)
+                if valor is None:
+                    assessment.state = "nao_observado"
+                    assessment.score_numeric = None
+                    assessment.component_scores.clear()
+                else:
+                    valor_final = _apply_component_scores(assessment, rubrica_id, request, valor)
+                    assessment.state = "avaliado"
+                    assessment.score_numeric = valor_final
+
+            db.session.commit()
+
+            medias_atualizadas = {}
+            for aid in aluno_ids:
+                es = EV2EventStudent.query.filter_by(event_id=event.id, aluno_id=aid).options(
+                    joinedload(EV2EventStudent.assessments).joinedload(EV2Assessment.rubrica).joinedload(EV2Rubric.dominio)
+                ).first()
+                medias_atualizadas[str(aid)] = _media_por_dominio_event_student(es) if es else {}
+            updated_members = [
+                {
+                    "aluno_id": aid,
+                    "rubrica_id": rubrica_id,
+                    "valor": valor,
+                    "medias_por_dominio": medias_atualizadas.get(str(aid), {}),
+                }
+                for aid in aluno_ids
+            ]
+            return jsonify({"status": "ok", "medias_por_aluno": medias_atualizadas, "updated_members": updated_members}), 200
+
+        avaliacoes = {}
+        medias_por_aluno = {}
+        linhas = []
+        grupos = []
+        grupo_por_aluno = {}
+        if tipo in {"portfolio", "projeto"}:
+            grupos = EV2EvaluationGroup.query.filter_by(event_id=event.id).order_by(EV2EvaluationGroup.ordem.asc(), EV2EvaluationGroup.nome.asc()).all()
+            membros = (
+                EV2EvaluationGroupMember.query.join(EV2EvaluationGroup, EV2EvaluationGroupMember.group_id == EV2EvaluationGroup.id)
+                .filter(EV2EvaluationGroup.event_id == event.id)
+                .all()
+            )
+            nomes_grupo = {g.id: g.nome for g in grupos}
+            for membro in membros:
+                grupo_por_aluno[membro.aluno_id] = nomes_grupo.get(membro.group_id, "")
+        for es in alunos_evento:
+            aluno = es.aluno
+            if not aluno:
+                continue
+            linhas.append({"aluno": aluno, "grupo": es.group_key or "", "observacoes": es.observacoes or ""})
+            avaliacoes[aluno.id] = {}
+            for assessment in (es.assessments or []):
+                if assessment.tipo == "rubrica" and assessment.rubric_id and assessment.score_numeric is not None:
+                    avaliacoes[aluno.id][assessment.rubric_id] = float(assessment.score_numeric)
+            medias_por_aluno[aluno.id] = _media_por_dominio_event_student(es) if avaliavel_por_aluno.get(aluno.id, False) else {}
+
+        return render_template(
+            "avaliacao_objeto.html",
+            tipo=tipo,
+            event=event,
+            linhas=linhas,
+            dominios=dominios_view,
+            rubricas=rubricas,
+            avaliacoes=avaliacoes,
+            medias_por_aluno=medias_por_aluno,
+            avaliavel_por_aluno=avaliavel_por_aluno,
+            bloqueio_motivo_por_aluno=bloqueio_motivo_por_aluno,
+            grupos=grupos,
+            grupo_por_aluno=grupo_por_aluno,
+            meta_numero=getattr(event, "numero", None),
+            meta_titulo=getattr(event, "titulo", ""),
+            meta_data_inicio=(event.data_inicio.isoformat() if getattr(event, "data_inicio", None) else ""),
+            meta_prazo_entrega=(event.prazo_entrega.isoformat() if getattr(event, "prazo_entrega", None) else ""),
+            meta_observacoes=(event.descricao if tipo == "obser" else ""),
+            meta_numero_sugerido=None,
+            eventos_relevantes=[],
+            evento_ativo_id=getattr(event, "id", None),
+            grupos_origem=[],
+            embed_mode=(request.args.get("embed") == "1"),
+        )
+
+    @app.route('/aula/<int:aula_id>/faltas', methods=['GET', 'POST'])
+    def aula_faltas(aula_id):
+        aula = CalendarioAula.query.get_or_404(aula_id)
+        alunos = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
+        total_tempos = resolve_num_tempos_aula(aula)
+        registros, registos_db = _carregar_registros_faltas(aula, alunos, total_tempos)
+        fallback_sumarios = url_for("calendario_semana")
+        return_url = _safe_next_url(request.args.get("next"), fallback=fallback_sumarios)
+        if return_url == fallback_sumarios:
+            return_url = _safe_next_url(request.referrer, fallback=fallback_sumarios)
+        turma_label = getattr(getattr(aula, "turma", None), "nome", None) or f"Turma {aula.turma_id}"
+        numero_sumario = (getattr(aula, "sumarios", None) or "").strip() or "—"
+        modulo_nome = getattr(getattr(aula, "modulo", None), "nome", None)
+        if modulo_nome:
+            modulo_label = modulo_nome
+        elif getattr(aula, "numero_modulo", None) not in (None, ""):
+            modulo_label = f"Módulo {aula.numero_modulo}"
+        else:
+            modulo_label = "—"
+
+        if request.method == "POST":
+            for aluno in alunos:
+                atraso = request.form.get(f"atraso-{aluno.id}") == "1"
+
+                faltas_raw = request.form.getlist(f"faltas-{aluno.id}[]")
+                faltas_tempos = sorted({
+                    int(t)
+                    for t in faltas_raw
+                    if str(t).isdigit() and 1 <= int(t) <= total_tempos
+                })
+                fdis = request.form.get(f"fdis-{aluno.id}") == "1"
+                obs = (request.form.get(f"obs-{aluno.id}", "") or "").strip()
+
+                registo = registos_db.get(aluno.id)
+                if not registo:
+                    registo = AulaAluno(aula_id=aula.id, aluno_id=aluno.id)
+                    db.session.add(registo)
+                    registos_db[aluno.id] = registo
+
+                registo.atraso = atraso
+                registo.faltas = len(faltas_tempos)
+                registo.falta_disciplinar = 1 if fdis else 0
+                registo.observacoes = json.dumps(
+                    {
+                        "atraso": atraso,
+                        "faltas": faltas_tempos,
+                        "fdis": fdis,
+                        "obs": obs if fdis else "",
+                    },
+                    ensure_ascii=False,
+                )
+
+            db.session.commit()
+            flash("Registos de faltas e atrasos atualizados.", "success")
+            return redirect(url_for("aula_faltas", aula_id=aula.id))
+
+        return render_template(
+            "aula_faltas.html",
+            aula=aula,
+            alunos=alunos,
+            registros=registros,
+            total_tempos=total_tempos,
+            num_tempos_reais=total_tempos,
+            turma_label=turma_label,
+            numero_sumario=numero_sumario,
+            modulo_label=modulo_label,
+            return_url=return_url,
         )
 
     @app.route("/")
@@ -4001,7 +5943,10 @@ def create_app():
     @app.route("/turmas")
     def turmas_list():
         turmas = (
-            Turma.query.options(joinedload(Turma.ano_letivo))
+            Turma.query.options(
+                joinedload(Turma.ano_letivo),
+                joinedload(Turma.turmas_disciplinas).joinedload(TurmaDisciplina.disciplina),
+            )
             .outerjoin(AnoLetivo)
             .order_by(AnoLetivo.ativo.desc(), AnoLetivo.fechado.asc(), AnoLetivo.data_inicio_ano.desc(), Turma.nome)
             .all()
@@ -4012,6 +5957,34 @@ def create_app():
         anos_letivos = (
             AnoLetivo.query.order_by(AnoLetivo.data_inicio_ano.desc()).all()
         )
+        turmas_ids = [t.id for t in turmas]
+        profile_status_map = {}
+        if turmas_ids:
+            profile_rows = (
+                EV2SubjectConfig.query
+                .filter(EV2SubjectConfig.turma_id.in_(turmas_ids), EV2SubjectConfig.tipo == "local_turma")
+                .with_entities(
+                    EV2SubjectConfig.turma_id,
+                    EV2SubjectConfig.id,
+                    EV2SubjectConfig.ativo,
+                )
+                .order_by(EV2SubjectConfig.updated_at.desc(), EV2SubjectConfig.id.desc())
+                .all()
+            )
+            for turma_id, profile_id, ativo in profile_rows:
+                key = turma_id
+                entry = profile_status_map.get(key)
+                if entry is None:
+                    profile_status_map[key] = {
+                        "status": "ativo" if ativo else "configurado",
+                        "active_profile_id": profile_id if ativo else None,
+                        "profiles_count": 1,
+                    }
+                    continue
+                entry["profiles_count"] += 1
+                if ativo and not entry.get("active_profile_id"):
+                    entry["status"] = "ativo"
+                    entry["active_profile_id"] = profile_id
 
         return render_template(
             "turmas/list.html",
@@ -4020,6 +5993,7 @@ def create_app():
             csv_dest_dir=app.config.get("CSV_EXPORT_DIR"),
             backup_json_dir=app.config.get("BACKUP_JSON_DIR"),
             anos_letivos=anos_letivos,
+            profile_status_map=profile_status_map,
         )
 
     @app.route("/turmas/<int:turma_id>/clone", methods=["POST"])
@@ -7054,31 +9028,41 @@ def create_app():
                     continue
         return None
 
-    def _estado_info(trabalho, entrega):
-        if not entrega or not entrega.entregue:
+    def _estado_info(trabalho, entrega_grupo):
+        if not entrega_grupo or not entrega_grupo.entregue:
             return "Por entregar", "badge-por-entregar", 0.0
-        if trabalho.data_limite and entrega.data_entrega and entrega.data_entrega > trabalho.data_limite:
+        data_entrega = entrega_grupo.data_entrega
+        if trabalho.data_limite and data_entrega and data_entrega > trabalho.data_limite:
             return "Atrasado", "badge-atrasado", 0.5
         return "No prazo", "badge-no-prazo", 1.0
 
-    def _calcular_metricas_entrega(trabalho, entrega, params_map, parametros):
-        estado, estado_css, fator_estado = _estado_info(trabalho, entrega)
+    def _calcular_metricas_entrega(trabalho, entrega_grupo, entrega_aluno, params_map, parametros):
+        estado, estado_css, fator_estado = _estado_info(trabalho, entrega_grupo)
 
-        valores = []
-        if entrega:
-            if entrega.consecucao is not None:
-                valores.append(float(entrega.consecucao))
-            if entrega.qualidade is not None:
-                valores.append(float(entrega.qualidade))
+        valores_dominios = []
+        valores_extra = []
+        if entrega_aluno:
+            if entrega_aluno.consecucao is not None:
+                valores_dominios.append(float(entrega_aluno.consecucao))
+            if entrega_aluno.qualidade is not None:
+                valores_dominios.append(float(entrega_aluno.qualidade))
 
             for p in parametros:
                 if p.tipo != "numerico":
                     continue
                 ep = params_map.get(p.id)
                 if ep and ep.valor_numerico is not None:
-                    valores.append(float(ep.valor_numerico))
+                    valores_extra.append(float(ep.valor_numerico) * float(p.peso or 1.0))
 
-        media_base = (sum(valores) / len(valores)) if valores else 0.0
+        media_dominios = (sum(valores_dominios) / len(valores_dominios)) if valores_dominios else 0.0
+        media_extra = (sum(valores_extra) / len(valores_extra)) if valores_extra else 0.0
+        peso_dominios = float(trabalho.peso_dominios or 1.0)
+        peso_extra = float(trabalho.peso_criterios_extra or 0.0)
+        total_pesos = peso_dominios + peso_extra
+        if total_pesos <= 0:
+            media_base = 0.0
+        else:
+            media_base = ((media_dominios * peso_dominios) + (media_extra * peso_extra)) / total_pesos
         nota_final = media_base * fator_estado
 
         return {
@@ -7092,10 +9076,38 @@ def create_app():
     def _ensure_individual_groups(trabalho):
         alunos = _listar_alunos_turma(trabalho.turma_id)
         existing_members = {m.aluno_id for g in trabalho.grupos for m in g.membros}
+        nomes_usados = {((g.nome or "").strip().lower()) for g in trabalho.grupos}
         for aluno in alunos:
             if aluno.id in existing_members:
                 continue
-            nome = (aluno.nome_curto or aluno.nome or f"Aluno {aluno.id}").strip()
+            base = (aluno.nome_curto or aluno.nome or f"Aluno {aluno.id}").strip()
+            nome = base
+            idx = 2
+            while nome.strip().lower() in nomes_usados:
+                nome = f"{base} ({idx})"
+                idx += 1
+            nomes_usados.add(nome.strip().lower())
+            grupo = TrabalhoGrupo(trabalho_id=trabalho.id, nome=nome)
+            db.session.add(grupo)
+            db.session.flush()
+            db.session.add(TrabalhoGrupoMembro(trabalho_grupo_id=grupo.id, aluno_id=aluno.id))
+
+    def _ensure_unassigned_students_as_individual_groups(trabalho):
+        if trabalho.modo != "grupo":
+            return
+        alunos = _listar_alunos_turma(trabalho.turma_id)
+        existing_members = {m.aluno_id for g in trabalho.grupos for m in g.membros if m.aluno_id is not None}
+        nomes_usados = {((g.nome or "").strip().lower()) for g in trabalho.grupos}
+        for aluno in alunos:
+            if aluno.id in existing_members:
+                continue
+            base = f"Individual — {(aluno.nome_curto or aluno.nome or f'Aluno {aluno.id}').strip()}"
+            nome = base
+            idx = 2
+            while nome.strip().lower() in nomes_usados:
+                nome = f"{base} ({idx})"
+                idx += 1
+            nomes_usados.add(nome.strip().lower())
             grupo = TrabalhoGrupo(trabalho_id=trabalho.id, nome=nome)
             db.session.add(grupo)
             db.session.flush()
@@ -7103,32 +9115,54 @@ def create_app():
 
     def _build_trabalho_grid(trabalho):
         parametros = sorted(trabalho.parametros, key=lambda p: (p.ordem, p.id))
-        entregas = {e.trabalho_grupo_id: e for e in trabalho.entregas}
+        alunos = _listar_alunos_turma(trabalho.turma_id)
+        aluno_por_id = {a.id: a for a in alunos}
+        grupo_por_aluno = {}
+        for g in trabalho.grupos:
+            for m in g.membros:
+                if m.aluno_id is not None:
+                    grupo_por_aluno[m.aluno_id] = g
+
+        entregas_grupo = {
+            e.trabalho_grupo_id: e
+            for e in trabalho.entregas
+            if e.aluno_id is None
+        }
+        entregas_aluno = {
+            (e.trabalho_grupo_id, e.aluno_id): e
+            for e in trabalho.entregas
+            if e.aluno_id is not None
+        }
         rows = []
-        for grupo in sorted(trabalho.grupos, key=lambda g: g.nome.lower() if g.nome else ""):
-            entrega = entregas.get(grupo.id)
+        ordered = sorted(
+            alunos,
+            key=lambda a: (
+                (grupo_por_aluno.get(a.id) is None),
+                (grupo_por_aluno.get(a.id).nome.lower() if grupo_por_aluno.get(a.id) and grupo_por_aluno.get(a.id).nome else ""),
+                (a.numero is None),
+                (a.numero if a.numero is not None else 0),
+                (a.nome or "").lower(),
+            ),
+        )
+        for aluno in ordered:
+            grupo = grupo_por_aluno.get(aluno.id)
+            entrega_grupo = entregas_grupo.get(grupo.id) if grupo else None
+            entrega_aluno = entregas_aluno.get((grupo.id, aluno.id)) if grupo else None
             params_map = {}
-            if entrega:
-                for ep in entrega.parametros:
+            if entrega_aluno:
+                for ep in entrega_aluno.parametros:
                     params_map[ep.parametro_definicao_id] = ep
 
-            metrics = _calcular_metricas_entrega(trabalho, entrega, params_map, parametros)
-
-            membros = sorted(
-                [m.aluno for m in grupo.membros if m.aluno],
-                key=lambda a: ((a.numero is None), a.numero if a.numero is not None else 0, (a.nome or "").lower()),
-            )
-            aluno_principal = membros[0] if membros else None
-            aluno_label = ""
-            if aluno_principal:
-                numero = aluno_principal.numero if aluno_principal.numero is not None else "—"
-                aluno_label = f"{numero} {aluno_principal.nome_curto_exibicao}".strip()
+            metrics = _calcular_metricas_entrega(trabalho, entrega_grupo, entrega_aluno, params_map, parametros)
+            numero = aluno.numero if aluno.numero is not None else "—"
+            aluno_label = f"{numero} {aluno.nome_curto_exibicao}".strip()
 
             rows.append({
                 "grupo": grupo,
-                "entrega": entrega,
+                "entrega_grupo": entrega_grupo,
+                "entrega_aluno": entrega_aluno,
                 "params": params_map,
-                "membros": membros,
+                "aluno": aluno_por_id.get(aluno.id) or aluno,
                 "aluno_label": aluno_label,
                 "estado": metrics["estado"],
                 "estado_css": metrics["estado_css"],
@@ -7138,6 +9172,161 @@ def create_app():
             })
 
         return parametros, rows[:30]
+
+    def _listar_dominios_obrigatorios_turma(turma_id):
+        subject_config = (
+            EV2SubjectConfig.query
+            .filter_by(turma_id=turma_id, ativo=True, usar_ev2=True)
+            .order_by(EV2SubjectConfig.id.desc())
+            .first()
+        )
+        if not subject_config:
+            subject_config = (
+                EV2SubjectConfig.query
+                .filter_by(turma_id=turma_id, ativo=True)
+                .order_by(EV2SubjectConfig.id.desc())
+                .first()
+            )
+        if not subject_config:
+            return []
+        if subject_config.domains:
+            view = []
+            for idx, sd in enumerate(sorted(subject_config.domains, key=lambda x: (x.ordem, x.id))):
+                dominio = sd.domain
+                if not dominio or not dominio.ativo:
+                    continue
+                rubricas_linkadas = [
+                    sr for sr in sorted(subject_config.rubrics, key=lambda x: (getattr(x, "ordem", 0), x.id))
+                    if sr.rubrica and sr.rubrica.domain_id == dominio.id and sr.ativo
+                ]
+                rubricas = [sr.rubrica for sr in rubricas_linkadas if sr.rubrica and sr.rubrica.ativo]
+                letra = getattr(dominio, "letra", None) or chr(ord("A") + idx)
+                view.append({"id": dominio.id, "nome": dominio.nome, "letra": letra, "rubricas": rubricas})
+            if view:
+                return view
+        dominios = (
+            EV2Domain.query
+            .join(EV2Rubric, EV2Rubric.domain_id == EV2Domain.id)
+            .join(EV2SubjectRubric, EV2SubjectRubric.rubric_id == EV2Rubric.id)
+            .filter(
+                EV2SubjectRubric.subject_config_id == subject_config.id,
+                EV2SubjectRubric.ativo.is_(True),
+                EV2Domain.ativo.is_(True),
+                EV2Rubric.ativo.is_(True),
+            )
+            .order_by(EV2Domain.nome.asc(), EV2Rubric.nome.asc())
+            .all()
+        )
+        view = []
+        for idx, dominio in enumerate(dominios):
+            letra = getattr(dominio, "letra", None) or chr(ord("A") + idx)
+            rubricas = sorted([r for r in (dominio.rubricas or []) if getattr(r, "ativo", True)], key=lambda r: (r.nome or "").lower())
+            view.append({"id": dominio.id, "nome": dominio.nome, "letra": letra, "rubricas": rubricas})
+        return view
+
+    def _build_trabalho_detail_viewmodel(trabalho):
+        alunos = _listar_alunos_turma(trabalho.turma_id)
+        alunos_by_id = {a.id: a for a in alunos}
+        dominios_obrigatorios = _listar_dominios_obrigatorios_turma(trabalho.turma_id)
+        parametros = sorted(trabalho.parametros, key=lambda p: (p.ordem, p.id))
+        rubric_param_id_map = {}
+        parametros_opcionais_locais = []
+        for p in parametros:
+            nome = (p.nome or "").strip()
+            if nome.startswith("EV2R:"):
+                raw = nome.split(":", 1)[1].strip()
+                if raw.isdigit():
+                    rubric_param_id_map[int(raw)] = p.id
+                continue
+            parametros_opcionais_locais.append(p)
+        opcionais = {}
+        for p in parametros_opcionais_locais:
+            if "•" in (p.nome or ""):
+                dom, rub = [x.strip() for x in p.nome.split("•", 1)]
+            else:
+                dom, rub = "Opcional", p.nome
+            opcionais.setdefault(dom, {"nome": dom, "rubricas": []})
+            opcionais[dom]["rubricas"].append({"id": p.id, "nome": rub, "peso": p.peso, "escala": p.escala, "tipo": p.tipo})
+        dominios_opcionais = list(opcionais.values())
+        app.logger.info(
+            "[trabalho] detail vm trabalho=%s mandatory_domains=%s optional_domains_local=%s optional_params_local=%s",
+            trabalho.id,
+            len(dominios_obrigatorios),
+            len(dominios_opcionais),
+            len(parametros_opcionais_locais),
+        )
+        if not dominios_opcionais:
+            app.logger.info(
+                "[trabalho] detail vm trabalho=%s optional domains skipped (no local optional model copy applied).",
+                trabalho.id,
+            )
+
+        entregas_grupo = {(e.trabalho_grupo_id): e for e in trabalho.entregas if e.aluno_id is None}
+        entregas_aluno = {(e.trabalho_grupo_id, e.aluno_id): e for e in trabalho.entregas if e.aluno_id is not None}
+        usados = set()
+        groups_vm = []
+        for g in sorted(trabalho.grupos, key=lambda x: (x.nome or "").lower()):
+            members = []
+            for m in sorted(g.membros, key=lambda mm: ((mm.aluno.numero if mm.aluno else 9999), (mm.aluno.nome if mm.aluno else ""))):
+                if not m.aluno:
+                    continue
+                usados.add(m.aluno.id)
+                ea = entregas_aluno.get((g.id, m.aluno.id))
+                extra_map = {ep.parametro_definicao_id: ep for ep in (ea.parametros if ea else [])}
+                rubric_values = {}
+                for rid, pid in rubric_param_id_map.items():
+                    ep = extra_map.get(pid)
+                    if ep and ep.valor_numerico is not None:
+                        rubric_values[rid] = int(ep.valor_numerico)
+                members.append({
+                    "aluno": m.aluno,
+                    "entrega": ea,
+                    "extra_map": extra_map,
+                    "rubric_values": rubric_values,
+                })
+            eg = entregas_grupo.get(g.id)
+            metrics = []
+            for member in members:
+                mm = _calcular_metricas_entrega(trabalho, eg, member["entrega"], member["extra_map"], parametros)
+                metrics.append(mm["nota_final"])
+            groups_vm.append({
+                "grupo": g,
+                "entrega_grupo": eg,
+                "members": members,
+                "media_grupo": (sum(metrics) / len(metrics)) if metrics else 0.0,
+            })
+
+        alunos_disponiveis = [a for a in alunos if a.id not in usados]
+        if trabalho.modo == "individual":
+            groups_vm = []
+            for a in alunos:
+                ea = next((e for e in trabalho.entregas if e.aluno_id == a.id), None)
+                extra_map = {ep.parametro_definicao_id: ep for ep in (ea.parametros if ea else [])}
+                rubric_values = {}
+                for rid, pid in rubric_param_id_map.items():
+                    ep = extra_map.get(pid)
+                    if ep and ep.valor_numerico is not None:
+                        rubric_values[rid] = int(ep.valor_numerico)
+                groups_vm.append({
+                    "grupo": {"id": f"ind-{a.id}", "nome": a.nome_curto_exibicao, "tema": None, "data_entrega": None, "observacoes": None},
+                    "entrega_grupo": None,
+                    "members": [{
+                        "aluno": a,
+                        "entrega": ea,
+                        "extra_map": extra_map,
+                        "rubric_values": rubric_values,
+                    }],
+                    "media_grupo": 0.0,
+                    "virtual": True,
+                })
+            alunos_disponiveis = []
+        return {
+            "dominios_obrigatorios": dominios_obrigatorios,
+            "dominios_opcionais": dominios_opcionais,
+            "grupos": groups_vm,
+            "alunos_disponiveis": alunos_disponiveis,
+            "alunos": alunos,
+        }
 
     @app.route("/turmas/<int:turma_id>/grupos", methods=["GET", "POST"])
     def turma_grupos_catalogo(turma_id):
@@ -7242,6 +9431,10 @@ def create_app():
             gid = grupo.id
             db.session.delete(grupo)
             db.session.commit()
+            app.logger.info(
+                "[trabalho] remove_membro ok+grupo_deleted turma=%s trabalho=%s grupo=%s aluno=%s",
+                turma_id, trabalho_id, grupo_id_deleted, aluno_id,
+            )
             return jsonify({
                 "ok": True,
                 "deleted": True,
@@ -7252,6 +9445,10 @@ def create_app():
             })
 
         db.session.commit()
+        app.logger.info(
+            "[trabalho] remove_membro ok turma=%s trabalho=%s grupo=%s aluno=%s restantes=%s",
+            turma_id, trabalho_id, grupo.id, aluno_id, restantes,
+        )
         return jsonify({
             "ok": True,
             "deleted": False,
@@ -7280,10 +9477,13 @@ def create_app():
             trabalho = Trabalho(
                 turma_id=turma.id,
                 titulo=titulo,
+                tipo_atividade=(request.form.get("tipo_atividade") or "trabalho").strip().lower(),
                 descricao=(request.form.get("descricao") or "").strip() or None,
                 modo=(request.form.get("modo") or "individual").strip().lower(),
                 data_limite=_parse_date_local(request.form.get("data_limite")),
             )
+            if trabalho.tipo_atividade not in {"trabalho", "projeto", "portfolio", "atividade"}:
+                trabalho.tipo_atividade = "trabalho"
             if trabalho.modo not in {"individual", "grupo"}:
                 trabalho.modo = "individual"
             db.session.add(trabalho)
@@ -7331,21 +9531,28 @@ def create_app():
                     mapping[m.aluno_id] = g
             grupo_por_aluno_trabalho[t.id] = mapping
 
-        entregas_por_chave = {}
-        for t in trabalhos:
-            for e in t.entregas:
-                entregas_por_chave[(t.id, e.trabalho_grupo_id)] = e
-
         mapa_rows = []
         for aluno in alunos:
             cells = []
             notas = []
             for t in trabalhos:
                 grupo = grupo_por_aluno_trabalho.get(t.id, {}).get(aluno.id)
-                entrega = entregas_por_chave.get((t.id, grupo.id)) if grupo else None
-                params_map = {ep.parametro_definicao_id: ep for ep in (entrega.parametros if entrega else [])}
-                metrics = _calcular_metricas_entrega(t, entrega, params_map, parametros_por_trabalho.get(t.id, []))
-                nota = metrics["nota_final"] if entrega else 0.0
+                entrega_grupo = None
+                entrega_aluno = None
+                if grupo:
+                    entrega_grupo = Entrega.query.filter_by(
+                        trabalho_id=t.id,
+                        trabalho_grupo_id=grupo.id,
+                        aluno_id=None,
+                    ).first()
+                    entrega_aluno = Entrega.query.filter_by(
+                        trabalho_id=t.id,
+                        trabalho_grupo_id=grupo.id,
+                        aluno_id=aluno.id,
+                    ).first()
+                params_map = {ep.parametro_definicao_id: ep for ep in (entrega_aluno.parametros if entrega_aluno else [])}
+                metrics = _calcular_metricas_entrega(t, entrega_grupo, entrega_aluno, params_map, parametros_por_trabalho.get(t.id, []))
+                nota = metrics["nota_final"] if entrega_aluno else 0.0
                 cells.append({"nota_final": nota})
                 notas.append(nota)
 
@@ -7402,23 +9609,18 @@ def create_app():
             _ensure_individual_groups(trabalho)
             db.session.commit()
 
-        parametros, rows = _build_trabalho_grid(trabalho)
-        alunos = _listar_alunos_turma(turma_id)
-        usados = {
-            m.aluno_id
-            for grupo in trabalho.grupos
-            for m in grupo.membros
-            if m.aluno_id is not None
-        }
-        alunos_disponiveis = [a for a in alunos if a.id not in usados]
+        vm = _build_trabalho_detail_viewmodel(trabalho)
+        modelos_opcionais = DominioOpcionalModelo.query.order_by(DominioOpcionalModelo.nome.asc()).all()
         return render_template(
             "trabalhos/detail.html",
             trabalho=trabalho,
             turma=trabalho.turma,
-            parametros=parametros,
-            rows=rows,
-            alunos=alunos,
-            alunos_disponiveis=alunos_disponiveis,
+            grupos_vm=vm["grupos"],
+            dominios_obrigatorios=vm["dominios_obrigatorios"],
+            dominios_opcionais=vm["dominios_opcionais"],
+            modelos_opcionais=modelos_opcionais,
+            alunos=vm["alunos"],
+            alunos_disponiveis=vm["alunos_disponiveis"],
         )
 
     @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/edit", methods=["GET", "POST"])
@@ -7429,6 +9631,7 @@ def create_app():
             titulo = (request.form.get("titulo") or "").strip()
             descricao = (request.form.get("descricao") or "").strip() or None
             modo = (request.form.get("modo") or trabalho.modo or "individual").strip().lower()
+            tipo_atividade = (request.form.get("tipo_atividade") or trabalho.tipo_atividade or "trabalho").strip().lower()
             data_limite_raw = request.form.get("data_limite")
 
             if not titulo:
@@ -7437,6 +9640,8 @@ def create_app():
 
             if modo not in {"individual", "grupo"}:
                 modo = trabalho.modo if trabalho.modo in {"individual", "grupo"} else "individual"
+            if tipo_atividade not in {"trabalho", "projeto", "portfolio", "atividade"}:
+                tipo_atividade = trabalho.tipo_atividade if trabalho.tipo_atividade in {"trabalho", "projeto", "portfolio", "atividade"} else "trabalho"
 
             parsed_data_limite = _parse_date_local(data_limite_raw)
             if data_limite_raw and str(data_limite_raw).strip() and parsed_data_limite is None:
@@ -7447,6 +9652,7 @@ def create_app():
                 trabalho.titulo = titulo
                 trabalho.descricao = descricao
                 trabalho.modo = modo
+                trabalho.tipo_atividade = tipo_atividade
                 trabalho.data_limite = parsed_data_limite
                 if trabalho.modo == "individual":
                     _ensure_individual_groups(trabalho)
@@ -7466,6 +9672,13 @@ def create_app():
         trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
         nome = (request.form.get("nome") or "").strip()
         tipo = (request.form.get("tipo") or "numerico").strip().lower()
+        escala = (request.form.get("escala") or "").strip() or None
+        try:
+            peso = float(request.form.get("peso") or 1.0)
+        except Exception:
+            peso = 1.0
+        if peso < 0:
+            peso = 0.0
         if tipo not in {"numerico", "texto"}:
             tipo = "numerico"
         if not nome:
@@ -7478,9 +9691,52 @@ def create_app():
             return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
 
         ordem = (db.session.query(func.max(ParametroDefinicao.ordem)).filter_by(trabalho_id=trabalho.id).scalar() or 0) + 1
-        db.session.add(ParametroDefinicao(trabalho_id=trabalho.id, nome=nome, tipo=tipo, ordem=ordem))
+        db.session.add(ParametroDefinicao(trabalho_id=trabalho.id, nome=nome, tipo=tipo, escala=escala, peso=peso, ordem=ordem))
         db.session.commit()
         flash("Parâmetro adicionado.", "success")
+        return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
+
+    @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/config", methods=["POST"])
+    def trabalho_update_config(turma_id, trabalho_id):
+        trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
+        trabalho.tema_global = (request.form.get("tema_global") or "").strip() or None
+        trabalho.usar_tema_por_grupo = (request.form.get("usar_tema_por_grupo") == "1")
+        try:
+            trabalho.peso_dominios = max(0.0, float(request.form.get("peso_dominios") or 1.0))
+        except Exception:
+            trabalho.peso_dominios = 1.0
+        try:
+            trabalho.peso_criterios_extra = max(0.0, float(request.form.get("peso_criterios_extra") or 0.0))
+        except Exception:
+            trabalho.peso_criterios_extra = 0.0
+        db.session.commit()
+        flash("Configuração do trabalho atualizada.", "success")
+        return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
+
+    @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/aplicar-modelo-opcional", methods=["POST"])
+    def trabalho_aplicar_modelo_opcional(turma_id, trabalho_id):
+        trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
+        modelo_id = request.form.get("modelo_id", type=int)
+        modelo = DominioOpcionalModelo.query.get_or_404(modelo_id)
+        ordem = (db.session.query(func.max(ParametroDefinicao.ordem)).filter_by(trabalho_id=trabalho.id).scalar() or 0) + 1
+        for dominio in sorted(modelo.dominios, key=lambda d: (d.ordem, d.id)):
+            for rubrica in sorted(dominio.rubricas, key=lambda r: (r.ordem, r.id)):
+                nome = f"{dominio.nome} • {rubrica.nome}"
+                if ParametroDefinicao.query.filter_by(trabalho_id=trabalho.id, nome=nome).first():
+                    continue
+                db.session.add(
+                    ParametroDefinicao(
+                        trabalho_id=trabalho.id,
+                        nome=nome,
+                        tipo="numerico",
+                        escala="1..5",
+                        peso=float((dominio.peso or 1.0) * (rubrica.peso or 1.0)),
+                        ordem=ordem,
+                    )
+                )
+                ordem += 1
+        db.session.commit()
+        flash("Modelo opcional aplicado (cópia local editável).", "success")
         return redirect(url_for("trabalho_detail", turma_id=turma_id, trabalho_id=trabalho_id))
 
     @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/grupos", methods=["POST"])
@@ -7593,13 +9849,100 @@ def create_app():
             },
         })
 
+    @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/grupos/<int:grupo_id>/membros/add", methods=["POST"])
+    def trabalho_add_membro_grupo(turma_id, trabalho_id, grupo_id):
+        trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
+        grupo = TrabalhoGrupo.query.filter_by(id=grupo_id, trabalho_id=trabalho.id).first_or_404()
+        payload = request.get_json(silent=True) or request.form
+        try:
+            aluno_id = int(payload.get("aluno_id") or 0)
+        except Exception:
+            aluno_id = 0
+        if not aluno_id:
+            return jsonify({"ok": False, "error": "Aluno é obrigatório."}), 400
+        aluno = Aluno.query.filter_by(id=aluno_id, turma_id=turma_id).first()
+        if not aluno:
+            return jsonify({"ok": False, "error": "Aluno inválido."}), 404
+
+        atual = TrabalhoGrupoMembro.query.filter_by(aluno_id=aluno_id).join(
+            TrabalhoGrupo, TrabalhoGrupoMembro.trabalho_grupo_id == TrabalhoGrupo.id
+        ).filter(TrabalhoGrupo.trabalho_id == trabalho.id).first()
+        if atual and atual.trabalho_grupo_id != grupo.id:
+            return jsonify({"ok": False, "error": "Aluno já pertence a outro grupo desta atividade."}), 400
+        exists = TrabalhoGrupoMembro.query.filter_by(trabalho_grupo_id=grupo.id, aluno_id=aluno_id).first()
+        if not exists:
+            db.session.add(TrabalhoGrupoMembro(trabalho_grupo_id=grupo.id, aluno_id=aluno_id))
+        db.session.commit()
+        app.logger.info(
+            "[trabalho] add_membro ok turma=%s trabalho=%s grupo=%s aluno=%s",
+            turma_id, trabalho_id, grupo_id, aluno_id,
+        )
+        numero = aluno.numero if aluno.numero is not None else "—"
+        return jsonify({"ok": True, "aluno": {"id": aluno.id, "label": f"{numero} {aluno.nome_curto_exibicao}".strip()}})
+
+    @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/grupos/<int:grupo_id>/rename", methods=["POST"])
+    def trabalho_rename_grupo(turma_id, trabalho_id, grupo_id):
+        trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
+        grupo = TrabalhoGrupo.query.filter_by(id=grupo_id, trabalho_id=trabalho.id).first_or_404()
+        payload = request.get_json(silent=True) or request.form
+        nome = (payload.get("nome") or "").strip()
+        if not nome:
+            return jsonify({"ok": False, "error": "Nome do grupo é obrigatório."}), 400
+        exists = TrabalhoGrupo.query.filter(
+            TrabalhoGrupo.trabalho_id == trabalho.id,
+            TrabalhoGrupo.id != grupo.id,
+            func.lower(TrabalhoGrupo.nome) == nome.lower(),
+        ).first()
+        if exists:
+            return jsonify({"ok": False, "error": "Já existe outro grupo com esse nome."}), 400
+        grupo.nome = nome
+        db.session.commit()
+        app.logger.info(
+            "[trabalho] rename_grupo ok turma=%s trabalho=%s grupo=%s nome=%s",
+            turma_id, trabalho_id, grupo_id, nome,
+        )
+        return jsonify({"ok": True, "nome": grupo.nome, "grupo_id": grupo.id})
+
     @app.route("/turmas/<int:turma_id>/trabalhos/<int:trabalho_id>/entregas/<int:grupo_id>/save", methods=["POST"])
     def trabalho_save_entrega(turma_id, trabalho_id, grupo_id):
         trabalho = Trabalho.query.filter_by(id=trabalho_id, turma_id=turma_id).first_or_404()
-        grupo = TrabalhoGrupo.query.filter_by(id=grupo_id, trabalho_id=trabalho.id).first_or_404()
-
         payload = request.get_json(silent=True) or request.form
+        app.logger.info(
+            "[trabalho] autosave recv turma=%s trabalho=%s grupo=%s keys=%s",
+            turma_id,
+            trabalho_id,
+            grupo_id,
+            sorted(list(payload.keys())) if isinstance(payload, dict) else "form",
+        )
+        try:
+            aluno_id = payload.get("aluno_id", type=int) if not isinstance(payload, dict) else int(payload.get("aluno_id") or 0)
+        except Exception:
+            aluno_id = 0
+        if not aluno_id:
+            return jsonify({"ok": False, "error": "Aluno é obrigatório."}), 400
+        aluno = Aluno.query.filter_by(id=aluno_id, turma_id=turma_id).first()
+        if not aluno:
+            return jsonify({"ok": False, "error": "Aluno inválido."}), 404
+
+        grupo = TrabalhoGrupo.query.filter_by(id=grupo_id, trabalho_id=trabalho.id).first()
+        if not grupo and grupo_id == 0 and trabalho.modo == "grupo":
+            nome = f"Grupo individual — {(aluno.nome_curto or aluno.nome or f'Aluno {aluno.id}').strip()}"
+            grupo = TrabalhoGrupo(trabalho_id=trabalho.id, nome=nome)
+            db.session.add(grupo)
+            db.session.flush()
+            db.session.add(TrabalhoGrupoMembro(trabalho_grupo_id=grupo.id, aluno_id=aluno_id))
+            db.session.flush()
+        if not grupo:
+            return jsonify({"ok": False, "error": "Grupo inválido."}), 404
+        pertence = TrabalhoGrupoMembro.query.filter_by(trabalho_grupo_id=grupo.id, aluno_id=aluno_id).first()
+        if not pertence:
+            return jsonify({"ok": False, "error": "Aluno não pertence ao grupo indicado."}), 400
+
         entregue = bool(payload.get("entregue"))
+        entregue_grupo = bool(payload.get("entregue_grupo"))
+        observacoes_grupo = (payload.get("observacoes_grupo") or "").strip() or None
+        tema_grupo = (payload.get("tema_grupo") or "").strip() or None
+        data_entrega_grupo = _parse_date_local(payload.get("data_entrega_grupo"))
 
         def _score(name):
             raw = payload.get(name)
@@ -7616,29 +9959,71 @@ def create_app():
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
 
-        entrega = Entrega.query.filter_by(trabalho_id=trabalho.id, trabalho_grupo_id=grupo.id).first()
-        if not entrega:
-            entrega = Entrega(trabalho_id=trabalho.id, trabalho_grupo_id=grupo.id)
-            db.session.add(entrega)
+        entrega_grupo = Entrega.query.filter_by(
+            trabalho_id=trabalho.id,
+            trabalho_grupo_id=grupo.id,
+            aluno_id=None,
+        ).first()
+        if not entrega_grupo:
+            entrega_grupo = Entrega(trabalho_id=trabalho.id, trabalho_grupo_id=grupo.id, aluno_id=None)
+            db.session.add(entrega_grupo)
             db.session.flush()
 
-        entrega.entregue = entregue
-        entrega.consecucao = consecucao
-        entrega.qualidade = qualidade
-        entrega.observacoes = (payload.get("observacoes") or "").strip() or None
+        entrega_aluno = Entrega.query.filter_by(
+            trabalho_id=trabalho.id,
+            trabalho_grupo_id=grupo.id,
+            aluno_id=aluno_id,
+        ).first()
+        if not entrega_aluno:
+            entrega_aluno = Entrega(trabalho_id=trabalho.id, trabalho_grupo_id=grupo.id, aluno_id=aluno_id)
+            db.session.add(entrega_aluno)
+            db.session.flush()
+
+        entrega_grupo.entregue = entregue_grupo
+        entrega_grupo.observacoes = observacoes_grupo
+        if entregue_grupo:
+            entrega_grupo.data_entrega = data_entrega_grupo or date.today()
+        else:
+            entrega_grupo.data_entrega = data_entrega_grupo
+        entrega_grupo.updated_at = datetime.utcnow()
+
+        if trabalho.usar_tema_por_grupo:
+            grupo.tema = tema_grupo
+        elif not grupo.tema:
+            grupo.tema = trabalho.tema_global
+        if data_entrega_grupo is not None:
+            grupo.data_entrega = data_entrega_grupo
+        grupo.observacoes = observacoes_grupo
+
+        entrega_aluno.entregue = entregue
+        entrega_aluno.consecucao = consecucao
+        entrega_aluno.qualidade = qualidade
+        entrega_aluno.observacoes = (payload.get("observacoes") or "").strip() or None
 
         parsed_data_entrega = _parse_date_local(payload.get("data_entrega"))
         if entregue:
-            entrega.data_entrega = parsed_data_entrega or date.today()
+            entrega_aluno.data_entrega = parsed_data_entrega or date.today()
         else:
-            entrega.data_entrega = None
-        entrega.updated_at = datetime.utcnow()
+            entrega_aluno.data_entrega = parsed_data_entrega
+        entrega_aluno.updated_at = datetime.utcnow()
 
         parametros = ParametroDefinicao.query.filter_by(trabalho_id=trabalho.id).all()
         defs_by_id = {p.id: p for p in parametros}
         extra = payload.get("extra") or {}
         if isinstance(extra, str):
             extra = {}
+        rubricas_payload = payload.get("rubricas") or {}
+        if isinstance(rubricas_payload, str):
+            rubricas_payload = {}
+        app.logger.info(
+            "[trabalho] autosave detail turma=%s trabalho=%s grupo=%s aluno=%s rubricas_in=%s extra_in=%s",
+            turma_id,
+            trabalho_id,
+            grupo.id,
+            aluno_id,
+            list(rubricas_payload.keys()) if isinstance(rubricas_payload, dict) else [],
+            list(extra.keys()) if isinstance(extra, dict) else [],
+        )
 
         for param_id, value in extra.items():
             try:
@@ -7649,9 +10034,9 @@ def create_app():
             if not definicao:
                 continue
 
-            ep = EntregaParametro.query.filter_by(entrega_id=entrega.id, parametro_definicao_id=pid).first()
+            ep = EntregaParametro.query.filter_by(entrega_id=entrega_aluno.id, parametro_definicao_id=pid).first()
             if not ep:
-                ep = EntregaParametro(entrega_id=entrega.id, parametro_definicao_id=pid)
+                ep = EntregaParametro(entrega_id=entrega_aluno.id, parametro_definicao_id=pid)
                 db.session.add(ep)
 
             if definicao.tipo == "numerico":
@@ -7668,15 +10053,99 @@ def create_app():
                 ep.valor_texto = (str(value).strip() if value is not None else None) or None
                 ep.valor_numerico = None
 
-        db.session.commit()
+        rubricas_saved = []
+        rubricas_ignored = []
+        if isinstance(rubricas_payload, dict):
+            max_ordem = max([p.ordem or 0 for p in parametros], default=0)
+            defs_by_name = {(p.nome or "").strip(): p for p in parametros}
+            for rubric_id_raw, value in rubricas_payload.items():
+                try:
+                    rid = int(rubric_id_raw)
+                except Exception:
+                    rubricas_ignored.append({"rubric_id": rubric_id_raw, "reason": "invalid_id"})
+                    continue
+                rubrica = EV2Rubric.query.get(rid)
+                if not rubrica:
+                    rubricas_ignored.append({"rubric_id": rid, "reason": "not_found"})
+                    continue
 
-        params_map = {ep.parametro_definicao_id: ep for ep in entrega.parametros}
-        metrics = _calcular_metricas_entrega(trabalho, entrega, params_map, parametros)
+                key_name = f"EV2R:{rid}"
+                definicao = defs_by_name.get(key_name)
+                if not definicao:
+                    max_ordem += 1
+                    definicao = ParametroDefinicao(
+                        trabalho_id=trabalho.id,
+                        nome=key_name,
+                        tipo="numerico",
+                        ordem=max_ordem,
+                        escala="1-5",
+                        peso=1.0,
+                    )
+                    db.session.add(definicao)
+                    db.session.flush()
+                    defs_by_name[key_name] = definicao
+                    defs_by_id[definicao.id] = definicao
+                    parametros.append(definicao)
+
+                ep = EntregaParametro.query.filter_by(
+                    entrega_id=entrega_aluno.id,
+                    parametro_definicao_id=definicao.id,
+                ).first()
+                if not ep:
+                    ep = EntregaParametro(
+                        entrega_id=entrega_aluno.id,
+                        parametro_definicao_id=definicao.id,
+                    )
+                    db.session.add(ep)
+
+                if value in (None, ""):
+                    ep.valor_numerico = None
+                    ep.valor_texto = None
+                    rubricas_saved.append({"rubric_id": rid, "value": None, "param_id": definicao.id})
+                    continue
+                try:
+                    iv = int(value)
+                except Exception:
+                    rubricas_ignored.append({"rubric_id": rid, "reason": "invalid_value", "value": value})
+                    continue
+                if iv < 1 or iv > 5:
+                    rubricas_ignored.append({"rubric_id": rid, "reason": "out_of_range", "value": iv})
+                    continue
+                ep.valor_numerico = iv
+                ep.valor_texto = None
+                rubricas_saved.append({"rubric_id": rid, "value": iv, "param_id": definicao.id})
+
+        db.session.commit()
+        app.logger.info(
+            "[trabalho] autosave commit ok turma=%s trabalho=%s grupo=%s aluno=%s entrega_aluno=%s entrega_grupo=%s",
+            turma_id,
+            trabalho_id,
+            grupo.id,
+            aluno_id,
+            entrega_aluno.id,
+            entrega_grupo.id,
+        )
+
+        params_map = {ep.parametro_definicao_id: ep for ep in entrega_aluno.parametros}
+        metrics = _calcular_metricas_entrega(trabalho, entrega_grupo, entrega_aluno, params_map, parametros)
 
         return jsonify({
             "ok": True,
-            "updated_at": entrega.updated_at.isoformat(timespec="seconds"),
-            "data_entrega": entrega.data_entrega.isoformat() if entrega.data_entrega else None,
+            "persisted": {
+                "grupo_id": grupo.id,
+                "aluno_id": aluno_id,
+                "consecucao": entrega_aluno.consecucao,
+                "qualidade": entrega_aluno.qualidade,
+                "observacoes": entrega_aluno.observacoes,
+                "entregue_grupo": bool(entrega_grupo.entregue),
+                "data_entrega_grupo": entrega_grupo.data_entrega.isoformat() if entrega_grupo.data_entrega else None,
+                "tema_grupo": grupo.tema,
+                "rubricas_saved": rubricas_saved,
+                "rubricas_ignored": rubricas_ignored,
+            },
+            "updated_at": entrega_aluno.updated_at.isoformat(timespec="seconds"),
+            "data_entrega": entrega_aluno.data_entrega.isoformat() if entrega_aluno.data_entrega else None,
+            "data_entrega_grupo": entrega_grupo.data_entrega.isoformat() if entrega_grupo.data_entrega else None,
             "estado": metrics["estado"],
             "estado_css": metrics["estado_css"],
             "media_base": round(metrics["media_base"], 2),
@@ -7722,6 +10191,7 @@ def create_app():
             query_aulas = query_aulas.filter_by(periodo_id=periodo_atual.id)
         aulas = query_aulas.order_by(CalendarioAula.data).all()
         faltas_por_aula = _mapear_alunos_em_falta(aulas)
+        faltas_disciplinares_por_aula = _mapear_alunos_com_falta_disciplinar(aulas)
         aulas_com_avaliacao = _mapear_aulas_com_avaliacao(aulas)
         sumarios_anteriores = _mapear_sumarios_anteriores(aulas)
 
@@ -7739,6 +10209,7 @@ def create_app():
             ano_fechado=ano_fechado,
             aulas=aulas,
             faltas_por_aula=faltas_por_aula,
+            faltas_disciplinares_por_aula=faltas_disciplinares_por_aula,
             aulas_com_avaliacao=aulas_com_avaliacao,
             sumarios_anteriores=sumarios_anteriores,
             periodo_atual=periodo_atual,
@@ -8114,6 +10585,7 @@ def create_app():
             if a.turma_id
         }
         faltas_por_aula = _mapear_alunos_em_falta(aulas)
+        faltas_disciplinares_por_aula = _mapear_alunos_com_falta_disciplinar(aulas)
         aulas_com_avaliacao = _mapear_aulas_com_avaliacao(aulas)
         sumarios_anteriores = _mapear_sumarios_anteriores(aulas)
 
@@ -8124,6 +10596,7 @@ def create_app():
             periodos_disponiveis=periodos_disponiveis,
             aulas=aulas,
             faltas_por_aula=faltas_por_aula,
+            faltas_disciplinares_por_aula=faltas_disciplinares_por_aula,
             aulas_com_avaliacao=aulas_com_avaliacao,
             tempos_por_aula=tempos_por_aula,
             sumarios_anteriores=sumarios_anteriores,
@@ -8219,6 +10692,7 @@ def create_app():
             a.id: _tempo_da_turma_no_dia(a.turma, a.data) for a in aulas
         }
         faltas_por_aula = _mapear_alunos_em_falta(aulas)
+        faltas_disciplinares_por_aula = _mapear_alunos_com_falta_disciplinar(aulas)
         aulas_com_avaliacao = _mapear_aulas_com_avaliacao(aulas)
         sumarios_anteriores = _mapear_sumarios_anteriores(aulas)
 
@@ -8248,6 +10722,7 @@ def create_app():
             semana_seguinte=semana_inicio + timedelta(days=7),
             aulas_por_data=aulas_por_data,
             faltas_por_aula=faltas_por_aula,
+            faltas_disciplinares_por_aula=faltas_disciplinares_por_aula,
             aulas_com_avaliacao=aulas_com_avaliacao,
             tempos_por_aula=tempos_por_aula,
             sumarios_anteriores=sumarios_anteriores,
@@ -8366,6 +10841,7 @@ def create_app():
 
         aulas = listar_sumarios_pendentes(hoje, turma_id=turma_id)
         faltas_por_aula = _mapear_alunos_em_falta(aulas)
+        faltas_disciplinares_por_aula = _mapear_alunos_com_falta_disciplinar(aulas)
         aulas_com_avaliacao = _mapear_aulas_com_avaliacao(aulas)
         anos_fechados = {
             a.turma_id: bool(
@@ -8383,6 +10859,7 @@ def create_app():
             turmas=turmas_abertas_ativas(),
             turma_selecionada=turma_selecionada,
             faltas_por_aula=faltas_por_aula,
+            faltas_disciplinares_por_aula=faltas_disciplinares_por_aula,
             aulas_com_avaliacao=aulas_com_avaliacao,
             sumarios_anteriores=sumarios_anteriores,
             tipos_sem_aula=DEFAULT_TIPOS_SEM_AULA,

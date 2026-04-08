@@ -191,8 +191,6 @@ def _snapshot_subject_rubric_meta(snapshot: Dict[str, Any]) -> Dict[int, Dict[st
                 continue
             out[int(rubric_id)] = {
                 "weight": _to_decimal(item.get("weight"), Decimal("0")),
-                "scale_min": item.get("scale_min"),
-                "scale_max": item.get("scale_max"),
             }
     return out
 
@@ -228,21 +226,32 @@ def _resolve_type_weight_for_event(event: EV2Event) -> Decimal:
 
 
 def _resolve_rubric_meta(event: EV2Event, rubric_id: int) -> Dict[str, Any]:
+    scale_min = getattr(event.subject_config, "escala_min", None) if event.subject_config else None
+    scale_max = getattr(event.subject_config, "escala_max", None) if event.subject_config else None
     if _event_has_snapshot(event):
-        return _snapshot_subject_rubric_meta(event.config_snapshot).get(
-            rubric_id, {"weight": Decimal("0"), "scale_min": None, "scale_max": None}
+        item = _snapshot_subject_rubric_meta(event.config_snapshot).get(
+            rubric_id, {"weight": Decimal("0")}
         )
+        return {
+            "weight": item.get("weight", Decimal("0")),
+            "scale_min": scale_min,
+            "scale_max": scale_max,
+        }
 
     if _event_allows_active_config_fallback(event):
         for sr in event.subject_config.rubrics or []:
             if sr.rubric_id == rubric_id:
                 return {
                     "weight": _to_decimal(sr.weight, Decimal("0")),
-                    "scale_min": sr.scale_min,
-                    "scale_max": sr.scale_max,
+                    "scale_min": scale_min,
+                    "scale_max": scale_max,
                 }
 
-    return {"weight": Decimal("0"), "scale_min": None, "scale_max": None}
+    return {
+        "weight": Decimal("0"),
+        "scale_min": scale_min,
+        "scale_max": scale_max,
+    }
 
 
 # ---------- Event-level calculations ----------

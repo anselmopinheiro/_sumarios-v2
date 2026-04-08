@@ -806,17 +806,63 @@ class EV2Rubric(db.Model):
     codigo = db.Column(db.String(80), nullable=False)
     nome = db.Column(db.String(140), nullable=False)
     descricao = db.Column(db.Text)
+    descritor_nivel_1 = db.Column(db.Text)
+    descritor_nivel_2 = db.Column(db.Text)
+    descritor_nivel_3 = db.Column(db.Text)
+    descritor_nivel_4 = db.Column(db.Text)
+    descritor_nivel_5 = db.Column(db.Text)
+    ordem = db.Column(db.Integer, nullable=False, default=0, server_default="0")
+    peso = db.Column(db.Numeric(5, 2), nullable=False, default=0, server_default="0")
     ativo = db.Column(db.Boolean, nullable=False, default=True, server_default=db.text("true"))
     pontuacao_padrao_basico = db.Column(db.Float, default=3)
     pontuacao_padrao_secundario = db.Column(db.Float, default=12)
 
     dominio = db.relationship("EV2Domain", back_populates="rubricas")
     subject_rubrics = db.relationship("EV2SubjectRubric", back_populates="rubrica")
+    components = db.relationship(
+        "EV2RubricComponent",
+        back_populates="rubrica",
+        cascade="all, delete-orphan",
+    )
 
     __table_args__ = (
         db.UniqueConstraint("domain_id", "codigo", name="uq_ev2_rubric_domain_codigo"),
+        db.CheckConstraint("peso >= 0 AND peso <= 100", name="ck_ev2_rubric_peso"),
         db.Index("ix_ev2_rubrics_domain", "domain_id"),
     )
+
+    def descriptor_for_level(self, level: int) -> str | None:
+        if level not in {1, 2, 3, 4, 5}:
+            return None
+        return getattr(self, f"descritor_nivel_{level}", None)
+
+
+class EV2RubricComponent(db.Model):
+    __tablename__ = "ev2_rubric_components"
+
+    id = db.Column(db.Integer, primary_key=True)
+    rubrica_id = db.Column(db.Integer, db.ForeignKey("ev2_rubrics.id"), nullable=False, index=True)
+    nome = db.Column(db.String(140), nullable=False)
+    ordem = db.Column(db.Integer, nullable=False, default=0, server_default="0")
+    peso = db.Column(db.Numeric(5, 2), nullable=False, default=0, server_default="0")
+    descritor_nivel_1 = db.Column(db.Text)
+    descritor_nivel_2 = db.Column(db.Text)
+    descritor_nivel_3 = db.Column(db.Text)
+    descritor_nivel_4 = db.Column(db.Text)
+    descritor_nivel_5 = db.Column(db.Text)
+    ativo = db.Column(db.Boolean, nullable=False, default=True, server_default=db.text("true"))
+
+    rubrica = db.relationship("EV2Rubric", back_populates="components")
+
+    __table_args__ = (
+        db.CheckConstraint("peso >= 0 AND peso <= 100", name="ck_ev2_rubric_component_peso"),
+        db.Index("ix_ev2_rubric_components_rubrica_ordem", "rubrica_id", "ordem"),
+    )
+
+    def descriptor_for_level(self, level: int) -> str | None:
+        if level not in {1, 2, 3, 4, 5}:
+            return None
+        return getattr(self, f"descritor_nivel_{level}", None)
 
 
 class EV2ExtraParam(db.Model):
@@ -833,11 +879,17 @@ class EV2SubjectConfig(db.Model):
     __tablename__ = "ev2_subject_configs"
 
     id = db.Column(db.Integer, primary_key=True)
-    turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), nullable=False)
-    disciplina_id = db.Column(db.Integer, db.ForeignKey("disciplinas.id"), nullable=False)
+    turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), nullable=True)
+    # legado de transição: EV2 passa a resolver perfis por turma.
+    # Mantemos a FK para compatibilidade, mas já não é eixo funcional principal.
+    disciplina_id = db.Column(db.Integer, db.ForeignKey("disciplinas.id"), nullable=True)
     nome = db.Column(db.String(140), nullable=False)
+    tipo = db.Column(db.String(32), nullable=False, default="local_turma", server_default="local_turma")
+    profile_model_id = db.Column(db.Integer, db.ForeignKey("ev2_subject_configs.id"), nullable=True)
     ativo = db.Column(db.Boolean, nullable=False, default=True, server_default=db.text("true"))
     usar_ev2 = db.Column(db.Boolean, nullable=False, default=False, server_default=db.text("false"))
+    escala_min = db.Column(db.Integer, nullable=False, default=1, server_default="1")
+    escala_max = db.Column(db.Integer, nullable=False, default=5, server_default="5")
     created_at = db.Column(
         db.DateTime,
         nullable=False,
@@ -854,8 +906,14 @@ class EV2SubjectConfig(db.Model):
 
     turma = db.relationship("Turma", backref="ev2_subject_configs")
     disciplina = db.relationship("Disciplina", back_populates="ev2_subject_configs")
+    profile_model = db.relationship("EV2SubjectConfig", remote_side=[id], backref="local_copies")
     type_weights = db.relationship(
         "EV2SubjectTypeWeight",
+        back_populates="subject_config",
+        cascade="all, delete-orphan",
+    )
+    domains = db.relationship(
+        "EV2SubjectDomain",
         back_populates="subject_config",
         cascade="all, delete-orphan",
     )
@@ -871,8 +929,12 @@ class EV2SubjectConfig(db.Model):
     )
 
     __table_args__ = (
-        db.UniqueConstraint("turma_id", "disciplina_id", "nome", name="uq_ev2_subject_cfg_nome"),
-        db.Index("ix_ev2_subject_cfg_turma_disciplina", "turma_id", "disciplina_id"),
+        db.UniqueConstraint("turma_id", "nome", "tipo", name="uq_ev2_subject_cfg_turma_nome_tipo"),
+        db.Index("ix_ev2_subject_cfg_turma", "turma_id"),
+        db.Index("ix_ev2_subject_cfg_tipo", "tipo"),
+        db.Index("ix_ev2_subject_cfg_profile_model_id", "profile_model_id"),
+        db.CheckConstraint("escala_min < escala_max", name="ck_ev2_subject_cfg_scale"),
+        db.CheckConstraint("tipo IN ('perfil_base_turma','modelo_atividade','local_turma')", name="ck_ev2_subject_cfg_tipo"),
     )
 
 
@@ -909,21 +971,52 @@ class EV2SubjectRubric(db.Model):
         db.Integer, db.ForeignKey("ev2_subject_configs.id"), nullable=False
     )
     rubric_id = db.Column(db.Integer, db.ForeignKey("ev2_rubrics.id"), nullable=False)
+    subject_domain_id = db.Column(
+        db.Integer, db.ForeignKey("ev2_subject_domains.id"), nullable=True
+    )
+    ordem = db.Column(db.Integer, nullable=False, default=0, server_default="0")
     weight = db.Column(db.Numeric(5, 2), nullable=False, default=0)
-    scale_min = db.Column(db.Integer, nullable=False, default=1)
-    scale_max = db.Column(db.Integer, nullable=False, default=5)
     ativo = db.Column(db.Boolean, nullable=False, default=True, server_default=db.text("true"))
 
     subject_config = db.relationship("EV2SubjectConfig", back_populates="rubrics")
     rubrica = db.relationship("EV2Rubric", back_populates="subject_rubrics")
+    subject_domain = db.relationship("EV2SubjectDomain", back_populates="rubrics")
 
     __table_args__ = (
         db.UniqueConstraint(
             "subject_config_id", "rubric_id", name="uq_ev2_subject_rubric_once"
         ),
         db.CheckConstraint("weight >= 0 AND weight <= 100", name="ck_ev2_subject_rubric_weight"),
-        db.CheckConstraint("scale_min < scale_max", name="ck_ev2_subject_rubric_scale"),
         db.Index("ix_ev2_subject_rubric_config", "subject_config_id"),
+    )
+
+
+class EV2SubjectDomain(db.Model):
+    __tablename__ = "ev2_subject_domains"
+
+    id = db.Column(db.Integer, primary_key=True)
+    subject_config_id = db.Column(
+        db.Integer, db.ForeignKey("ev2_subject_configs.id"), nullable=False
+    )
+    domain_id = db.Column(db.Integer, db.ForeignKey("ev2_domains.id"), nullable=False)
+    ordem = db.Column(db.Integer, nullable=False, default=0, server_default="0")
+    weight = db.Column(db.Numeric(5, 2), nullable=False, default=0, server_default="0")
+    ativo = db.Column(db.Boolean, nullable=False, default=True, server_default=db.text("true"))
+
+    subject_config = db.relationship("EV2SubjectConfig", back_populates="domains")
+    domain = db.relationship("EV2Domain")
+    rubrics = db.relationship(
+        "EV2SubjectRubric",
+        back_populates="subject_domain",
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "subject_config_id", "domain_id", name="uq_ev2_subject_domain_once"
+        ),
+        db.CheckConstraint("weight >= 0 AND weight <= 100", name="ck_ev2_subject_domain_weight"),
+        db.Index("ix_ev2_subject_domain_config", "subject_config_id"),
+        db.Index("ix_ev2_subject_domain_domain", "domain_id"),
     )
 
 
@@ -937,7 +1030,11 @@ class EV2Event(db.Model):
     disciplina_id = db.Column(db.Integer, db.ForeignKey("disciplinas.id"), nullable=False)
     aula_id = db.Column(db.Integer, db.ForeignKey("calendario_aulas.id"), nullable=True)
     evaluation_type = db.Column(db.String(32), nullable=False)
+    numero = db.Column(db.Integer, nullable=True)
     titulo = db.Column(db.String(255), nullable=False)
+    data_inicio = db.Column(db.Date, nullable=True)
+    prazo_entrega = db.Column(db.Date, nullable=True)
+    tema_multiplo = db.Column(db.Boolean, nullable=False, default=False, server_default=db.text("false"))
     descricao = db.Column(db.Text)
     data = db.Column(db.Date, nullable=False)
     group_mode = db.Column(db.String(20), nullable=False, default="individual", server_default="individual")
@@ -979,6 +1076,33 @@ class EV2Event(db.Model):
         db.Index("ix_ev2_events_disciplina_data", "disciplina_id", "data"),
         db.Index("ix_ev2_events_aula_type", "aula_id", "evaluation_type"),
         db.Index("ix_ev2_events_aula_data", "aula_id", "data"),
+        db.Index("ix_ev2_events_tipo_numero", "evaluation_type", "numero"),
+    )
+
+
+class EV2AulaEventLink(db.Model):
+    __tablename__ = "ev2_aula_event_links"
+
+    id = db.Column(db.Integer, primary_key=True)
+    aula_id = db.Column(db.Integer, db.ForeignKey("calendario_aulas.id"), nullable=False, index=True)
+    event_id = db.Column(db.Integer, db.ForeignKey("ev2_events.id"), nullable=False, index=True)
+    grupo_turma_id = db.Column(db.Integer, db.ForeignKey("grupos_turma.id"), nullable=True, index=True)
+    created_at = db.Column(
+        db.DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=db.text("now()"),
+    )
+
+    aula = db.relationship("CalendarioAula", backref=db.backref("ev2_event_links", cascade="all, delete-orphan"))
+    event = db.relationship("EV2Event", backref=db.backref("aula_links", cascade="all, delete-orphan"))
+    grupo_turma = db.relationship("GrupoTurma")
+
+    __table_args__ = (
+        db.UniqueConstraint("aula_id", "event_id", "grupo_turma_id", name="uq_ev2_aula_event_once"),
+        db.Index("ix_ev2_aula_event_aula", "aula_id"),
+        db.Index("ix_ev2_aula_event_event", "event_id"),
+        db.Index("ix_ev2_aula_event_grupo", "grupo_turma_id"),
     )
 
 
@@ -1024,6 +1148,84 @@ class EV2EventStudent(db.Model):
     )
 
 
+class EV2EvaluationGroup(db.Model):
+    __tablename__ = "ev2_evaluation_groups"
+
+    id = db.Column(db.Integer, primary_key=True)
+    event_id = db.Column(db.Integer, db.ForeignKey("ev2_events.id"), nullable=False, index=True)
+    nome = db.Column(db.String(120), nullable=False)
+    ordem = db.Column(db.Integer, nullable=True)
+    created_at = db.Column(
+        db.DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        server_default=db.text("now()"),
+    )
+
+    event = db.relationship("EV2Event", backref=db.backref("evaluation_groups", cascade="all, delete-orphan"))
+
+    __table_args__ = (
+        db.UniqueConstraint("event_id", "nome", name="uq_ev2_eval_group_event_nome"),
+        db.Index("ix_ev2_eval_group_event_ordem", "event_id", "ordem"),
+    )
+
+
+class EV2EvaluationGroupMember(db.Model):
+    __tablename__ = "ev2_evaluation_group_members"
+
+    id = db.Column(db.Integer, primary_key=True)
+    group_id = db.Column(db.Integer, db.ForeignKey("ev2_evaluation_groups.id"), nullable=False, index=True)
+    aluno_id = db.Column(db.Integer, db.ForeignKey("alunos.id"), nullable=False, index=True)
+
+    group = db.relationship("EV2EvaluationGroup", backref=db.backref("members", cascade="all, delete-orphan"))
+    aluno = db.relationship("Aluno")
+
+    __table_args__ = (
+        db.UniqueConstraint("group_id", "aluno_id", name="uq_ev2_eval_group_member_once"),
+        db.Index("ix_ev2_eval_group_member_group", "group_id"),
+    )
+
+
+class EV2EventTheme(db.Model):
+    __tablename__ = "ev2_event_themes"
+
+    id = db.Column(db.Integer, primary_key=True)
+    event_id = db.Column(db.Integer, db.ForeignKey("ev2_events.id"), nullable=False, index=True)
+    nome_tema = db.Column(db.String(255), nullable=False)
+    descricao = db.Column(db.Text, nullable=True)
+    ordem = db.Column(db.Integer, nullable=True)
+
+    event = db.relationship("EV2Event", backref=db.backref("themes", cascade="all, delete-orphan"))
+
+    __table_args__ = (
+        db.UniqueConstraint("event_id", "nome_tema", name="uq_ev2_event_theme_nome"),
+        db.Index("ix_ev2_event_theme_event_ordem", "event_id", "ordem"),
+    )
+
+
+class EV2AulaThemeAssignment(db.Model):
+    __tablename__ = "ev2_aula_theme_assignments"
+
+    id = db.Column(db.Integer, primary_key=True)
+    aula_id = db.Column(db.Integer, db.ForeignKey("calendario_aulas.id"), nullable=False, index=True)
+    event_id = db.Column(db.Integer, db.ForeignKey("ev2_events.id"), nullable=False, index=True)
+    group_id = db.Column(db.Integer, db.ForeignKey("ev2_evaluation_groups.id"), nullable=False, index=True)
+    theme_id = db.Column(db.Integer, db.ForeignKey("ev2_event_themes.id"), nullable=True, index=True)
+    entregue = db.Column(db.Boolean, nullable=False, default=False, server_default=db.text("false"))
+    data_entrega = db.Column(db.Date, nullable=True)
+    observacoes = db.Column(db.Text, nullable=True)
+
+    aula = db.relationship("CalendarioAula")
+    event = db.relationship("EV2Event")
+    group = db.relationship("EV2EvaluationGroup")
+    theme = db.relationship("EV2EventTheme")
+
+    __table_args__ = (
+        db.UniqueConstraint("aula_id", "event_id", "group_id", name="uq_ev2_aula_theme_assignment"),
+        db.Index("ix_ev2_aula_theme_assignment_aula_event", "aula_id", "event_id"),
+    )
+
+
 class EV2Assessment(db.Model):
     __tablename__ = "ev2_assessments"
 
@@ -1047,6 +1249,11 @@ class EV2Assessment(db.Model):
     event_student = db.relationship("EV2EventStudent", back_populates="assessments")
     rubrica = db.relationship("EV2Rubric")
     extra_param = db.relationship("EV2ExtraParam")
+    component_scores = db.relationship(
+        "EV2AssessmentComponentScore",
+        back_populates="assessment",
+        cascade="all, delete-orphan",
+    )
 
     __table_args__ = (
         db.CheckConstraint(
@@ -1087,6 +1294,23 @@ class EV2Assessment(db.Model):
     )
 
 
+class EV2AssessmentComponentScore(db.Model):
+    __tablename__ = "ev2_assessment_component_scores"
+
+    id = db.Column(db.Integer, primary_key=True)
+    assessment_id = db.Column(db.Integer, db.ForeignKey("ev2_assessments.id"), nullable=False, index=True)
+    component_id = db.Column(db.Integer, db.ForeignKey("ev2_rubric_components.id"), nullable=False, index=True)
+    score_level = db.Column(db.Integer, nullable=False)
+
+    assessment = db.relationship("EV2Assessment", back_populates="component_scores")
+    component = db.relationship("EV2RubricComponent")
+
+    __table_args__ = (
+        db.UniqueConstraint("assessment_id", "component_id", name="uq_ev2_assessment_component_once"),
+        db.CheckConstraint("score_level >= 1 AND score_level <= 5", name="ck_ev2_assessment_component_score"),
+    )
+
+
 class GrupoTurma(db.Model):
     __tablename__ = "grupos_turma"
 
@@ -1122,12 +1346,65 @@ class Trabalho(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     turma_id = db.Column(db.Integer, db.ForeignKey("turmas.id"), nullable=False, index=True)
     titulo = db.Column(db.String(255), nullable=False)
+    tipo_atividade = db.Column(db.String(20), nullable=False, default="trabalho", server_default="trabalho")
     descricao = db.Column(db.Text)
     modo = db.Column(db.String(20), nullable=False, default="individual")
+    tema_global = db.Column(db.Text)
+    usar_tema_por_grupo = db.Column(db.Boolean, nullable=False, default=False, server_default=db.text("0"))
+    peso_dominios = db.Column(db.Float, nullable=False, default=1.0, server_default="1.0")
+    peso_criterios_extra = db.Column(db.Float, nullable=False, default=0.0, server_default="0.0")
     data_limite = db.Column(db.Date)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, server_default=db.text("now()"))
 
     turma = db.relationship("Turma", backref=db.backref("trabalhos", cascade="all, delete-orphan"))
+
+
+class AulaTrabalhoLink(db.Model):
+    __tablename__ = "aula_trabalho_links"
+
+    id = db.Column(db.Integer, primary_key=True)
+    aula_id = db.Column(db.Integer, db.ForeignKey("calendario_aulas.id"), nullable=False, index=True)
+    tipo = db.Column(db.String(20), nullable=False, default="trabalho")
+    trabalho_id = db.Column(db.Integer, db.ForeignKey("trabalhos.id"), nullable=False, index=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, server_default=db.text("now()"))
+
+    aula = db.relationship("CalendarioAula")
+    trabalho = db.relationship("Trabalho")
+
+    __table_args__ = (
+        db.UniqueConstraint("aula_id", "tipo", name="uq_aula_trabalho_link"),
+    )
+
+
+class DominioOpcionalModelo(db.Model):
+    __tablename__ = "dominio_opcional_modelos"
+
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(140), nullable=False, unique=True)
+    descricao = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, server_default=db.text("now()"))
+
+
+class DominioOpcionalModeloDominio(db.Model):
+    __tablename__ = "dominio_opcional_modelo_dominios"
+
+    id = db.Column(db.Integer, primary_key=True)
+    modelo_id = db.Column(db.Integer, db.ForeignKey("dominio_opcional_modelos.id"), nullable=False, index=True)
+    nome = db.Column(db.String(120), nullable=False)
+    peso = db.Column(db.Float, nullable=False, default=1.0, server_default="1.0")
+    ordem = db.Column(db.Integer, nullable=False, default=0, server_default="0")
+    modelo = db.relationship("DominioOpcionalModelo", backref=db.backref("dominios", cascade="all, delete-orphan"))
+
+
+class DominioOpcionalModeloRubrica(db.Model):
+    __tablename__ = "dominio_opcional_modelo_rubricas"
+
+    id = db.Column(db.Integer, primary_key=True)
+    dominio_modelo_id = db.Column(db.Integer, db.ForeignKey("dominio_opcional_modelo_dominios.id"), nullable=False, index=True)
+    nome = db.Column(db.String(140), nullable=False)
+    peso = db.Column(db.Float, nullable=False, default=1.0, server_default="1.0")
+    ordem = db.Column(db.Integer, nullable=False, default=0, server_default="0")
+    dominio_modelo = db.relationship("DominioOpcionalModeloDominio", backref=db.backref("rubricas", cascade="all, delete-orphan"))
 
 
 class TrabalhoGrupo(db.Model):
@@ -1136,6 +1413,9 @@ class TrabalhoGrupo(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     trabalho_id = db.Column(db.Integer, db.ForeignKey("trabalhos.id"), nullable=False, index=True)
     nome = db.Column(db.String(255), nullable=False)
+    tema = db.Column(db.Text)
+    data_entrega = db.Column(db.Date)
+    observacoes = db.Column(db.Text)
 
     trabalho = db.relationship("Trabalho", backref=db.backref("grupos", cascade="all, delete-orphan"))
 
@@ -1165,6 +1445,7 @@ class Entrega(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     trabalho_id = db.Column(db.Integer, db.ForeignKey("trabalhos.id"), nullable=False, index=True)
     trabalho_grupo_id = db.Column(db.Integer, db.ForeignKey("trabalho_grupos.id"), nullable=False, index=True)
+    aluno_id = db.Column(db.Integer, db.ForeignKey("alunos.id"), nullable=True, index=True)
 
     entregue = db.Column(db.Boolean, nullable=False, default=False)
     data_entrega = db.Column(db.Date)
@@ -1175,9 +1456,10 @@ class Entrega(db.Model):
 
     trabalho = db.relationship("Trabalho", backref=db.backref("entregas", cascade="all, delete-orphan"))
     grupo = db.relationship("TrabalhoGrupo", backref=db.backref("entrega", uselist=False, cascade="all, delete-orphan"))
+    aluno = db.relationship("Aluno")
 
     __table_args__ = (
-        db.UniqueConstraint("trabalho_id", "trabalho_grupo_id", name="uq_entrega_trabalho_grupo"),
+        db.UniqueConstraint("trabalho_id", "trabalho_grupo_id", "aluno_id", name="uq_entrega_trabalho_grupo_aluno"),
         db.CheckConstraint("consecucao IS NULL OR (consecucao >= 1 AND consecucao <= 5)", name="ck_entrega_consecucao_1_5"),
         db.CheckConstraint("qualidade IS NULL OR (qualidade >= 1 AND qualidade <= 5)", name="ck_entrega_qualidade_1_5"),
     )
@@ -1190,6 +1472,8 @@ class ParametroDefinicao(db.Model):
     trabalho_id = db.Column(db.Integer, db.ForeignKey("trabalhos.id"), nullable=False, index=True)
     nome = db.Column(db.String(120), nullable=False)
     tipo = db.Column(db.String(20), nullable=False, default="numerico")
+    escala = db.Column(db.String(80))
+    peso = db.Column(db.Float, nullable=False, default=1.0, server_default="1.0")
     ordem = db.Column(db.Integer, nullable=False, default=0, server_default="0")
 
     trabalho = db.relationship("Trabalho", backref=db.backref("parametros", cascade="all, delete-orphan"))

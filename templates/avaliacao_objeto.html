@@ -1,0 +1,533 @@
+{% extends 'embedded_base.html' if embed_mode else 'base.html' %}
+{% block content %}
+{% if not embed_mode %}
+  <h2>
+    Avaliação de
+    {% if tipo == 'trabalho' %}Trabalho
+    {% elif tipo == 'projeto' %}Projeto
+    {% elif tipo == 'obser' %}Observação Direta
+    {% elif tipo == 'portfolio' %}Portfólio
+    {% else %}Evento{% endif %}
+  </h2>
+  <p>{{ (event.titulo if event else (titulo_evento or 'Avaliação')) }} · {{ (event.data if event else data_evento).strftime('%Y-%m-%d') if (event and event.data) or data_evento else '-' }}</p>
+{% endif %}
+
+{% if tipo in ['portfolio', 'projeto', 'trabalho'] %}
+  <div class="card card-body mb-3">
+    {% if eventos_relevantes %}
+      <div class="d-flex gap-2 align-items-end mb-2">
+        <div class="flex-grow-1">
+          <label class="form-label form-label-sm">Escolher {% if tipo == 'projeto' %}Projeto{% elif tipo == 'trabalho' %}Trabalho{% else %}Portfólio{% endif %}</label>
+          <select id="evento-existente" class="form-select form-select-sm">
+            {% for ev in eventos_relevantes %}
+              <option value="{{ ev.id }}" {% if evento_ativo_id == ev.id %}selected{% endif %}>
+                {% if tipo == 'projeto' %}Projeto{% elif tipo == 'trabalho' %}Trabalho{% else %}Portfólio{% endif %} {{ ev.numero or '—' }} — {{ ev.titulo or 'Sem título' }}{% if ev.prazo_entrega %} (Prazo {{ ev.prazo_entrega.strftime('%d-%m-%Y') }}){% endif %}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selecionarItemExistente()">Escolher outro</button>
+      </div>
+    {% endif %}
+    <div class="row g-2 align-items-end">
+      <div class="col-sm-3">
+        <label class="form-label form-label-sm">Número</label>
+        <input id="meta-numero" type="number" min="1" class="form-control form-control-sm" value="{{ meta_numero or meta_numero_sugerido or '' }}">
+      </div>
+      <div class="col-sm-5">
+        <label class="form-label form-label-sm">Título</label>
+        <input id="meta-titulo" type="text" class="form-control form-control-sm" value="{{ meta_titulo or '' }}">
+      </div>
+      <div class="col-sm-2">
+        <label class="form-label form-label-sm">Início</label>
+        <input id="meta-data-inicio" type="date" class="form-control form-control-sm" value="{{ meta_data_inicio or '' }}">
+      </div>
+      <div class="col-sm-2">
+        <label class="form-label form-label-sm">Prazo entrega</label>
+        <input id="meta-prazo" type="date" class="form-control form-control-sm" value="{{ meta_prazo_entrega or '' }}">
+      </div>
+      {% if tipo in ['projeto', 'trabalho'] %}
+      <div class="col-sm-2">
+        <label class="form-label form-label-sm">Temas</label>
+        <select id="meta-tema-multiplo" class="form-select form-select-sm">
+          <option value="0" {% if not tema_multiplo %}selected{% endif %}>Tema único</option>
+          <option value="1" {% if tema_multiplo %}selected{% endif %}>Vários temas</option>
+        </select>
+      </div>
+      {% endif %}
+      <div class="col-sm-2">
+        <button type="button" class="btn btn-sm btn-outline-primary w-100" onclick="guardarMetaObjeto()">Guardar</button>
+      </div>
+    </div>
+    {% if tipo in ['projeto', 'trabalho'] %}
+    <div class="mt-2">
+      <label class="form-label form-label-sm">Temas (um por linha)</label>
+      <textarea id="meta-temas" class="form-control form-control-sm" rows="2" placeholder="Tema 1&#10;Tema 2"></textarea>
+    </div>
+    {% endif %}
+    <div class="mt-2">
+      <button type="button" class="btn btn-sm btn-primary" onclick="criarNovoItem()">Novo {% if tipo == 'projeto' %}Projeto{% elif tipo == 'trabalho' %}Trabalho{% else %}Portfólio{% endif %}</button>
+    </div>
+  </div>
+{% endif %}
+
+{% if tipo in ['projeto', 'trabalho'] and grupo_item_config and tema_multiplo %}
+  <div class="card card-body mb-3">
+    <strong class="small mb-2">Associação grupo → tema (aula atual)</strong>
+    <div class="row g-2">
+      {% for cfg in grupo_item_config %}
+        <div class="col-md-6">
+          <label class="form-label form-label-sm">{{ cfg.grupo_nome }}</label>
+          <div class="input-group input-group-sm">
+            <select class="form-select" id="grupo-tema-{{ cfg.grupo_id }}">
+              <option value="">— Sem tema —</option>
+              {% for tema in temas %}
+                <option value="{{ tema.id }}" {% if cfg.theme_id == tema.id %}selected{% endif %}>
+                  {{ tema.nome_tema }}
+                </option>
+              {% endfor %}
+            </select>
+            <div class="form-check ms-2 mt-1">
+              <input class="form-check-input" type="checkbox" id="grupo-entregue-{{ cfg.grupo_id }}" {% if cfg.entregue %}checked{% endif %}>
+              <label class="form-check-label small" for="grupo-entregue-{{ cfg.grupo_id }}">Entregue</label>
+            </div>
+            <input type="date" class="form-control" id="grupo-data-entrega-{{ cfg.grupo_id }}" value="{{ cfg.data_entrega or '' }}">
+            <button type="button" class="btn btn-outline-secondary" onclick="guardarTemaGrupo({{ cfg.grupo_id }})">Guardar</button>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+{% endif %}
+
+{% if tipo == 'obser' %}
+  <div class="card card-body mb-3">
+    <label for="obser-descritivo" class="form-label form-label-sm mb-1">Descritivo</label>
+    <textarea id="obser-descritivo" class="form-control form-control-sm" rows="3" placeholder="Observações qualitativas da observação direta...">{{ meta_observacoes or '' }}</textarea>
+  </div>
+{% endif %}
+
+{% if tipo in ['obser', 'projeto', 'trabalho', 'portfolio'] %}
+  <div class="card card-body mb-3">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <div class="small text-muted">Grupos desta avaliação (baseados nos grupos da turma).</div>
+      <button type="button" class="btn btn-outline-secondary btn-sm" onclick="reporGruposTurma()">Repor grupos da turma</button>
+    </div>
+    <div class="d-flex gap-2">
+      <input id="novo-grupo-nome" class="form-control form-control-sm" placeholder="Novo grupo local">
+      <button type="button" class="btn btn-outline-primary btn-sm" onclick="criarGrupo()">Criar grupo</button>
+      {% if aula and aula.turma_id %}
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('turma_grupos_catalogo', turma_id=aula.turma_id) }}" target="_blank" rel="noopener">Gerir grupos da turma</a>
+      {% endif %}
+    </div>
+    <div class="mt-2 small text-muted">
+      {% for grupo in grupos %}
+        <span class="badge text-bg-light border">{{ grupo.nome }}</span>
+      {% else %}
+        Sem grupos locais definidos.
+      {% endfor %}
+    </div>
+      </div>
+{% endif %}
+
+<form method="post" id="avaliacao-objeto-form">
+  <div class="table-responsive">
+    <table class="table table-bordered table-sm align-middle" id="avaliacao-objeto-table">
+      <thead class="table-light">
+        <tr>
+          <th rowspan="2">No</th>
+          <th rowspan="2">Nome</th>
+          <th rowspan="2">Grupo</th>
+          {% if tipo in ['projeto', 'trabalho'] %}
+            <th rowspan="2">Tema</th>
+            <th rowspan="2">Entregue</th>
+            <th rowspan="2">Data de entrega</th>
+          {% endif %}
+          {% for dominio in dominios %}
+            <th colspan="{{ dominio.rubricas|length }}">{{ dominio.letra }} – {{ dominio.nome }}</th>
+          {% endfor %}
+          {% for dominio in dominios %}
+            <th rowspan="2" data-media-dominio="{{ dominio.letra }}">{{ dominio.letra }}</th>
+          {% endfor %}
+          <th rowspan="2">{% if tipo == 'portfolio' %}Projeto / Observações{% else %}Observações{% endif %}</th>
+        </tr>
+        <tr>
+          {% for dominio in dominios %}
+            {% for rubrica in dominio.rubricas %}
+              <th>
+                <div>{{ rubrica.nome }}</div>
+                <div class="d-flex flex-column gap-1 mt-1">
+                  <button type="button" class="btn btn-outline-primary btn-sm" onclick="aplicarValorAutomatico({{ rubrica.id }})" data-rubrica-id="{{ rubrica.id }}">Aplicar automático</button>
+                  <button type="button" class="btn btn-outline-secondary btn-sm" onclick="confirmarLimpar({{ rubrica.id }})">Limpar</button>
+                </div>
+              </th>
+            {% endfor %}
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% if tipo in ['projeto', 'trabalho'] %}
+          {% for grp in groups_data %}
+            <tr class="table-secondary">
+              <td colspan="2"><strong>{{ grp.group_name }}</strong></td>
+              <td>{{ grp.group_name }}</td>
+              <td>
+                <select class="form-select form-select-sm js-group-theme" data-group-id="{{ grp.group_id or '' }}" {% if not grp.group_id %}disabled{% endif %}>
+                  <option value="">{% if tema_multiplo %}Escolher tema{% else %}Tema único{% endif %}</option>
+                  {% for tema in temas %}
+                    <option value="{{ tema.id }}" {% if grp.theme_id == tema.id %}selected{% endif %}>{{ tema.nome_tema }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td class="text-center">
+                <input type="checkbox" class="form-check-input js-group-entregue" data-group-id="{{ grp.group_id or '' }}" {% if grp.entregue %}checked{% endif %} {% if not grp.group_id %}disabled{% endif %}>
+              </td>
+              <td>
+                <input type="date" class="form-control form-control-sm js-group-data-entrega" data-group-id="{{ grp.group_id or '' }}" value="{{ grp.data_entrega or '' }}" {% if not grp.group_id %}disabled{% endif %}>
+              </td>
+              {% set rubric_cols = dominios|map(attribute='rubricas')|map('length')|sum %}
+              {% set medias_cols = dominios|length %}
+              <td colspan="{{ rubric_cols + medias_cols + 1 }}"></td>
+            </tr>
+            {% for linha in grp.rows %}
+              {% set aluno = linha.aluno %}
+              {% set avaliavel = avaliavel_por_aluno.get(aluno.id, True) %}
+              {% set bloqueio_motivo = bloqueio_motivo_por_aluno.get(aluno.id, 'Não avaliado — ausente ou falta disciplinar') %}
+              <tr data-aluno-id="{{ aluno.id }}" data-presente="{{ 1 if avaliavel else 0 }}">
+                <td>{{ aluno.numero or '-' }}</td>
+                <td>{{ aluno.nome }}</td>
+                <td>
+                  <select class="form-select form-select-sm" onchange="atribuirGrupo({{ aluno.id }}, this.value)">
+                    <option value="">Individual</option>
+                    {% for grupo in grupos %}
+                      <option value="{{ grupo.id }}" {% if grp.group_name == grupo.nome %}selected{% endif %}>{{ grupo.nome }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td></td>
+                <td></td>
+                <td></td>
+                {% for dominio in dominios %}
+                  {% for rubrica in dominio.rubricas %}
+                    <td>
+                      <input type="number" step="0.5" class="form-control form-control-sm"
+                             name="pontuacao-{{ aluno.id }}-{{ rubrica.id }}"
+                             data-aluno-id="{{ aluno.id }}"
+                             data-rubrica-id="{{ rubrica.id }}"
+                             {% if not avaliavel %}disabled title="{{ bloqueio_motivo }}" style="background-color:#f5f5f5"{% endif %}
+                             value="{{ avaliacoes.get(aluno.id, {}).get(rubrica.id, '') }}">
+                    </td>
+                  {% endfor %}
+                {% endfor %}
+                {% set medias = medias_por_aluno.get(aluno.id, {}) %}
+                {% for dominio in dominios %}
+                  <td class="media-cell text-center" data-aluno-id="{{ aluno.id }}" data-dominio-letra="{{ dominio.letra }}">
+                    {% if not avaliavel %}-{% elif medias.get(dominio.letra) is not none %}{{ medias.get(dominio.letra) }}{% else %}-{% endif %}
+                  </td>
+                {% endfor %}
+                <td><textarea class="form-control form-control-sm" rows="2" readonly>{{ linha.observacoes }}</textarea></td>
+              </tr>
+            {% endfor %}
+          {% endfor %}
+        {% else %}
+          {% for linha in linhas %}
+            {% set aluno = linha.aluno %}
+            {% set avaliavel = avaliavel_por_aluno.get(aluno.id, True) %}
+            {% set bloqueio_motivo = bloqueio_motivo_por_aluno.get(aluno.id, 'Não avaliado — ausente ou falta disciplinar') %}
+            <tr data-aluno-id="{{ aluno.id }}" data-presente="{{ 1 if avaliavel else 0 }}">
+              <td>{{ loop.index }}</td>
+              <td>{{ aluno.nome }}</td>
+              <td>
+                {% set grupo_atual = grupo_por_aluno.get(aluno.id, linha.grupo or '') %}
+                {% if tipo in ['obser', 'portfolio'] %}
+                  <select class="form-select form-select-sm" onchange="atribuirGrupo({{ aluno.id }}, this.value)">
+                    <option value="">Individual</option>
+                    {% for grupo in grupos %}
+                      <option value="{{ grupo.id }}" {% if grupo_atual == grupo.nome %}selected{% endif %}>{{ grupo.nome }}</option>
+                    {% endfor %}
+                  </select>
+                {% else %}
+                  {{ grupo_atual or '-' }}
+                {% endif %}
+              </td>
+              {% if tipo in ['projeto', 'trabalho'] %}<td class="small"></td>{% endif %}
+              {% for dominio in dominios %}
+                {% for rubrica in dominio.rubricas %}
+                  <td>
+                    <input type="number" step="0.5" class="form-control form-control-sm"
+                           name="pontuacao-{{ aluno.id }}-{{ rubrica.id }}"
+                           data-aluno-id="{{ aluno.id }}"
+                           data-rubrica-id="{{ rubrica.id }}"
+                           {% if not avaliavel %}disabled title="{{ bloqueio_motivo }}" style="background-color:#f5f5f5"{% endif %}
+                           value="{{ avaliacoes.get(aluno.id, {}).get(rubrica.id, '') }}">
+                  </td>
+                {% endfor %}
+              {% endfor %}
+              {% set medias = medias_por_aluno.get(aluno.id, {}) %}
+              {% for dominio in dominios %}
+                <td class="media-cell text-center" data-aluno-id="{{ aluno.id }}" data-dominio-letra="{{ dominio.letra }}">
+                  {% if not avaliavel %}-{% elif medias.get(dominio.letra) is not none %}{{ medias.get(dominio.letra) }}{% else %}-{% endif %}
+                </td>
+              {% endfor %}
+              <td>
+                {% if tipo == 'portfolio' %}
+                  <textarea class="form-control form-control-sm js-portfolio-observacoes" data-aluno-id="{{ aluno.id }}" rows="2" placeholder="Designação do projeto/tema e observações...">{{ linha.observacoes }}</textarea>
+                {% else %}
+                  <textarea class="form-control form-control-sm" rows="2" readonly>{{ linha.observacoes }}</textarea>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</form>
+
+<script>
+(() => {
+  const table = document.getElementById("avaliacao-objeto-table");
+  if (!table) return;
+  const alunoIds = Array.from(table.querySelectorAll('tr[data-aluno-id][data-presente="1"]')).map((tr) => tr.dataset.alunoId);
+  const domainLetters = Array.from(table.querySelectorAll("th[data-media-dominio]")).map((th) => th.dataset.mediaDominio);
+
+  function renderMedias(alunoId, medias) {
+    const map = medias || {};
+    domainLetters.forEach((letra) => {
+      const cell = table.querySelector(`.media-cell[data-aluno-id="${alunoId}"][data-dominio-letra="${letra}"]`);
+      if (!cell) return;
+      cell.textContent = map[letra] == null ? "-" : map[letra];
+    });
+  }
+
+  function applyUpdatedMembers(updatedMembers) {
+    (updatedMembers || []).forEach((item) => {
+      const alunoId = String(item.aluno_id);
+      const rubricaId = String(item.rubrica_id);
+      const inputs = table.querySelectorAll(`input[data-aluno-id="${alunoId}"][data-rubrica-id="${rubricaId}"]`);
+      inputs.forEach((inp) => {
+        inp.value = item.valor == null ? "" : item.valor;
+      });
+      renderMedias(alunoId, item.medias_por_dominio || {});
+    });
+  }
+
+  async function postUpdate(payload) {
+    const body = new URLSearchParams();
+    Object.entries(payload).forEach(([key, value]) => {
+      if (Array.isArray(value)) value.forEach((v) => body.append(key, v));
+      else body.append(key, value);
+    });
+    const resp = await fetch(`${window.location.pathname}${window.location.search}`, { method: "POST", headers: { "X-Requested-With": "XMLHttpRequest" }, body });
+    if (!resp.ok) throw new Error("Falha ao guardar avaliação.");
+    return resp.json();
+  }
+
+  window.aplicarValorAutomatico = async function aplicarValorAutomatico(rubricaId) {
+    try {
+      const data = await postUpdate({ "aluno_ids[]": alunoIds, rubrica_id: rubricaId, valor: "3" });
+      table.querySelectorAll(`input[data-rubrica-id="${rubricaId}"]:not(:disabled)`).forEach((inp) => { inp.value = "3"; });
+      Object.entries(data.medias_por_aluno || {}).forEach(([alunoId, medias]) => renderMedias(alunoId, medias));
+      applyUpdatedMembers(data.updated_members);
+    } catch (err) { console.error(err); }
+  };
+
+  window.confirmarLimpar = async function confirmarLimpar(rubricaId) {
+    try {
+      const data = await postUpdate({ "aluno_ids[]": alunoIds, rubrica_id: rubricaId, valor: "" });
+      table.querySelectorAll(`input[data-rubrica-id="${rubricaId}"]:not(:disabled)`).forEach((inp) => { inp.value = ""; });
+      Object.entries(data.medias_por_aluno || {}).forEach(([alunoId, medias]) => renderMedias(alunoId, medias));
+      applyUpdatedMembers(data.updated_members);
+    } catch (err) { console.error(err); }
+  };
+
+  const debounceTimers = new Map();
+  table.querySelectorAll('input[type="number"][data-rubrica-id][data-aluno-id]').forEach((input) => {
+    input.addEventListener("input", () => {
+      const key = `${input.dataset.alunoId}-${input.dataset.rubricaId}`;
+      if (debounceTimers.has(key)) clearTimeout(debounceTimers.get(key));
+      debounceTimers.set(key, setTimeout(async () => {
+        const valor = input.value === "" ? "" : input.value;
+        try {
+          const data = await postUpdate({
+            "aluno_ids[]": [input.dataset.alunoId],
+            rubrica_id: input.dataset.rubricaId,
+            valor,
+          });
+          Object.entries(data.medias_por_aluno || {}).forEach(([alunoId, medias]) => renderMedias(alunoId, medias));
+          applyUpdatedMembers(data.updated_members);
+        } catch (err) { console.error(err); }
+      }, 500));
+    });
+  });
+
+  const observacoesInput = document.getElementById("obser-descritivo");
+  if (observacoesInput) {
+    observacoesInput.addEventListener("input", () => {
+      const key = "obser-descritivo";
+      if (debounceTimers.has(key)) clearTimeout(debounceTimers.get(key));
+      debounceTimers.set(key, setTimeout(async () => {
+        try {
+          await postUpdate({ action: "save_meta", observacoes: observacoesInput.value || "" });
+        } catch (err) { console.error(err); }
+      }, 500));
+    });
+  }
+
+  window.irParaAvaliacao = function irParaAvaliacao(tipo, idObjeto) {
+    window.location.href = `/avaliacao/${tipo}/${idObjeto}`;
+  };
+
+  window.guardarMetaObjeto = async function guardarMetaObjeto() {
+    try {
+      await postUpdate({
+        action: "save_meta",
+        numero: document.getElementById("meta-numero")?.value || "",
+        titulo: document.getElementById("meta-titulo")?.value || "",
+        data_inicio: document.getElementById("meta-data-inicio")?.value || "",
+        prazo_entrega: document.getElementById("meta-prazo")?.value || "",
+        tema_multiplo: document.getElementById("meta-tema-multiplo")?.value || "0",
+        temas: document.getElementById("meta-temas")?.value || "",
+      });
+    } catch (err) { console.error(err); }
+  };
+
+  window.criarNovoItem = async function criarNovoItem() {
+    try {
+      const data = await postUpdate({
+        action: "create_item",
+        numero: document.getElementById("meta-numero")?.value || "",
+        titulo: document.getElementById("meta-titulo")?.value || "",
+        data_inicio: document.getElementById("meta-data-inicio")?.value || "",
+        prazo_entrega: document.getElementById("meta-prazo")?.value || "",
+        tema_multiplo: document.getElementById("meta-tema-multiplo")?.value || "0",
+        temas: document.getElementById("meta-temas")?.value || "",
+      });
+      if (data.event_id) {
+        const url = new URL(window.location.href);
+        url.searchParams.set("event_id", data.event_id);
+        window.location.href = url.toString();
+      } else {
+        window.location.reload();
+      }
+    } catch (err) { console.error(err); }
+  };
+
+  window.selecionarItemExistente = async function selecionarItemExistente() {
+    const eventId = document.getElementById("evento-existente")?.value;
+    if (!eventId) return;
+    try {
+      await postUpdate({ action: "select_item", event_id: eventId });
+      const url = new URL(window.location.href);
+      url.searchParams.set("event_id", eventId);
+      window.location.href = url.toString();
+    } catch (err) { console.error(err); }
+  };
+
+  window.criarGrupo = async function criarGrupo() {
+    const nome = document.getElementById("novo-grupo-nome")?.value || "";
+    if (!nome.trim()) return;
+    try {
+      await postUpdate({ action: "group_create", nome_grupo: nome.trim() });
+      window.location.reload();
+    } catch (err) { console.error(err); }
+  };
+
+  window.apagarGrupo = async function apagarGrupo(groupId) {
+    try {
+      await postUpdate({ action: "group_delete", group_id: groupId });
+      window.location.reload();
+    } catch (err) { console.error(err); }
+  };
+
+  window.atribuirGrupo = async function atribuirGrupo(alunoId, groupId) {
+    try {
+      await postUpdate({ action: "group_assign", aluno_id: alunoId, group_id: groupId });
+    } catch (err) { console.error(err); }
+  };
+
+  window.importarGrupos = async function importarGrupos() {
+    const sourceKey = document.getElementById("grupos-origem")?.value;
+    if (!sourceKey) return;
+    try {
+      await postUpdate({ action: "import_groups", source_key: sourceKey });
+      window.location.reload();
+    } catch (err) { console.error(err); }
+  };
+
+  window.reporGruposTurma = async function reporGruposTurma() {
+    try {
+      await postUpdate({ action: "group_reset_from_turma" });
+      window.location.reload();
+    } catch (err) { console.error(err); }
+  };
+
+  window.guardarTemaGrupo = async function guardarTemaGrupo(groupId) {
+    const themeId = document.getElementById(`grupo-tema-${groupId}`)?.value || "";
+    const entregue = document.getElementById(`grupo-entregue-${groupId}`)?.checked ? "1" : "0";
+    const dataEntrega = document.getElementById(`grupo-data-entrega-${groupId}`)?.value || "";
+    try {
+      await postUpdate({
+        action: "set_group_theme",
+        group_id: groupId,
+        theme_id: themeId,
+        entregue,
+        data_entrega: dataEntrega,
+      });
+      window.location.reload();
+    } catch (err) { console.error(err); }
+  };
+
+  async function autosaveGrupoTheme(groupId) {
+    if (!groupId) return;
+    const themeId = document.querySelector(`.js-group-theme[data-group-id="${groupId}"]`)?.value || "";
+    const entregue = document.querySelector(`.js-group-entregue[data-group-id="${groupId}"]`)?.checked ? "1" : "0";
+    const dataField = document.querySelector(`.js-group-data-entrega[data-group-id="${groupId}"]`);
+    if (entregue === "1" && dataField && !dataField.value) {
+      const today = new Date();
+      dataField.value = today.toISOString().slice(0, 10);
+    }
+    const dataEntrega = dataField?.value || "";
+    await postUpdate({
+      action: "set_group_theme",
+      group_id: groupId,
+      theme_id: themeId,
+      entregue,
+      data_entrega: dataEntrega,
+    });
+  }
+
+  table.querySelectorAll(".js-group-theme").forEach((el) => {
+    el.addEventListener("change", async () => {
+      try { await autosaveGrupoTheme(el.dataset.groupId); } catch (err) { console.error(err); }
+    });
+  });
+  table.querySelectorAll(".js-group-entregue").forEach((el) => {
+    el.addEventListener("change", async () => {
+      try { await autosaveGrupoTheme(el.dataset.groupId); } catch (err) { console.error(err); }
+    });
+  });
+  table.querySelectorAll(".js-group-data-entrega").forEach((el) => {
+    el.addEventListener("change", async () => {
+      try { await autosaveGrupoTheme(el.dataset.groupId); } catch (err) { console.error(err); }
+    });
+  });
+
+  table.querySelectorAll(".js-portfolio-observacoes").forEach((input) => {
+    input.addEventListener("input", () => {
+      const key = `obs-${input.dataset.alunoId}`;
+      if (debounceTimers.has(key)) clearTimeout(debounceTimers.get(key));
+      debounceTimers.set(key, setTimeout(async () => {
+        try {
+          await postUpdate({
+            action: "save_observacao",
+            aluno_id: input.dataset.alunoId,
+            observacoes: input.value || "",
+          });
+        } catch (err) { console.error(err); }
+      }, 500));
+    });
+  });
+})();
+</script>
+{% endblock %}

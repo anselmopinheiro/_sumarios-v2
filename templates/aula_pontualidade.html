@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Painel de Pontualidade / Faltas</h2>
+<p>
+  Turma {{ aula.turma_id }} · Aula #{{ aula.id }} · Data {{ aula.data.strftime('%Y-%m-%d') if aula.data else '-' }}
+</p>
+
+<form method="post">
+  <div class="table-responsive">
+    <table class="table table-bordered table-sm align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>Aluno</th>
+          <th>Pontualidade</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for aluno in alunos %}
+          <tr>
+            <td>{{ aluno.numero or '-' }} - {{ aluno.nome }}</td>
+            <td>
+              <select name="pontualidade-{{ aluno.id }}" class="form-select form-select-sm">
+                <option value="1" {% if pontualidade.get(aluno.id, 1) == 1 %}selected{% endif %}>Pontual</option>
+                <option value="0" {% if pontualidade.get(aluno.id, 1) == 0 %}selected{% endif %}>Atrasado / Falta</option>
+              </select>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <button type="submit" class="btn btn-primary">Guardar</button>
+  <a href="{{ url_for('aula_avaliar', aula_id=aula.id) }}" class="btn btn-outline-secondary">Voltar à avaliação</a>
+</form>
+{% endblock %}

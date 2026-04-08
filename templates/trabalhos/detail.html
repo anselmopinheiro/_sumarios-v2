@@ -1,331 +1,475 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>{{ trabalho.titulo }} <small class="text-muted">({{ trabalho.modo }})</small></h2>
+<h2>{{ trabalho.titulo }}</h2>
+<p class="text-muted mb-1">
+  Turma: <strong>{{ turma.nome if turma else '—' }}</strong> ·
+  Tipo de avaliação: <strong>{{ trabalho.tipo_atividade or 'trabalho' }}</strong>
+</p>
 <p class="text-muted">{{ trabalho.descricao or '' }}</p>
-<p class="text-muted">Data limite: <strong>{{ trabalho.data_limite.strftime('%d/%m/%Y') if trabalho.data_limite else '—' }}</strong></p>
+<p class="text-muted">Prazo global: <strong>{{ trabalho.data_limite.strftime('%d/%m/%Y') if trabalho.data_limite else '—' }}</strong></p>
 <div class="mb-3 d-flex gap-2 flex-wrap">
-  <a class="btn btn-outline-secondary" href="{{ url_for('turma_trabalhos', turma_id=turma.id) }}">Voltar</a>
-  <a class="btn btn-outline-primary" href="{{ url_for('trabalho_edit', turma_id=turma.id, trabalho_id=trabalho.id) }}">Editar trabalho</a>
+  {% set grupos_count = grupos_vm|length %}
+  {% set next_url = request.args.get('next') %}
+  <a class="btn btn-outline-secondary" href="{{ next_url if next_url else url_for('turma_trabalhos', turma_id=turma.id) }}">Voltar</a>
+  <a class="btn btn-outline-primary" href="{{ url_for('trabalho_edit', turma_id=turma.id, trabalho_id=trabalho.id) }}">Editar atividade</a>
   {% if trabalho.modo == 'grupo' %}
   <form method="post" action="{{ url_for('trabalho_importar_grupos_turma', turma_id=turma.id, trabalho_id=trabalho.id) }}">
-    <button class="btn btn-outline-dark" type="submit">Importar grupos da turma</button>
+    <button class="btn btn-outline-dark" type="submit" {% if grupos_count > 0 %}disabled title="Já existem grupos nesta atividade"{% endif %}>Importar grupos pré-definidos</button>
   </form>
   {% endif %}
 </div>
-
-<div class="row g-3 mb-3">
-  <div class="col-md-6">
-    <div class="card">
-      <div class="card-header">Adicionar parâmetro</div>
-      <div class="card-body">
-        <form method="post" action="{{ url_for('trabalho_add_parametro', turma_id=turma.id, trabalho_id=trabalho.id) }}" class="row g-2">
-          <div class="col-md-6"><input class="form-control" name="nome" placeholder="Nome" required></div>
-          <div class="col-md-4">
-            <select class="form-select" name="tipo">
-              <option value="numerico">Numérico 1..5</option>
-              <option value="texto">Texto</option>
-            </select>
-          </div>
-          <div class="col-md-2"><button class="btn btn-primary w-100" type="submit">Adicionar</button></div>
-        </form>
-      </div>
-    </div>
-  </div>
-
-  {% if trabalho.modo == 'grupo' %}
-  <div class="col-md-6">
-    <div class="card">
-      <div class="card-header">Criar grupo (ajuste deste trabalho)</div>
-      <div class="card-body">
-        <form id="create-grupo-form" method="post" action="{{ url_for('trabalho_add_grupo', turma_id=turma.id, trabalho_id=trabalho.id) }}" class="row g-2">
-          <div class="col-md-5"><input class="form-control" name="nome" placeholder="Nome grupo" required></div>
-          <div class="col-md-5">
-            <select id="membros-picker" class="form-select membros-picker" name="aluno_ids" multiple size="{{ [alunos_disponiveis|length, 30]|min }}" aria-label="Selecionar membros do grupo">
-              {% for a in alunos_disponiveis %}
-              <option value="{{ a.id }}">{{ a.numero or '—' }} {{ a.nome_curto_exibicao }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="col-md-2"><button class="btn btn-primary w-100" type="submit">Criar</button></div>
-        </form>
-      </div>
-    </div>
-  </div>
-  {% endif %}
+<div class="position-sticky top-0 z-3 bg-body border rounded px-3 py-2 mb-3 d-flex justify-content-end gap-2 align-items-center shadow-sm">
+  <span id="save-status-sticky" class="badge text-bg-success">Guardado</span>
+  <button id="save-all-btn-sticky" class="btn btn-sm btn-primary" type="button" disabled>Guardar tudo</button>
 </div>
 
-<div class="alert alert-secondary py-2">Visualização simultânea: {{ rows|length }} linha(s) (máx. 30).</div>
-<style>
-  .lista-membros {
-    max-height: 240px;
-    overflow-y: auto;
-    white-space: normal;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.25rem 0.5rem;
-    align-items: flex-start;
-  }
-
-  .lista-membro-item {
-    white-space: nowrap;
-  }
-
-  .btn-remove-member {
-    font-size: 0.75rem;
-    text-decoration: none;
-    margin-left: 0.25rem;
-  }
-
-  .membros-picker {
-    width: 100%;
-    max-height: 520px;
-    overflow-y: auto;
-    white-space: normal;
-    padding: 6px;
-    border: 1px solid #ddd;
-    border-radius: 6px;
-  }
-
-  .membros-picker option {
-    white-space: normal;
-    line-height: 1.25;
-    padding: 2px 0;
-  }
-</style>
-<div class="table-responsive">
-  <table class="table table-sm align-middle" id="trabalhos-grid">
-    <thead>
-      <tr>
-        <th>{{ 'Grupo' if trabalho.modo == 'grupo' else 'Aluno' }}</th>
-        {% if trabalho.modo == 'grupo' %}<th>Membros</th>{% endif %}
-        <th>Estado</th>
-        <th>Média</th>
-        <th>Fator</th>
-        <th>Nota final</th>
-        <th>Entregue</th>
-        <th>Data entrega</th>
-        <th>Consec.</th>
-        <th>Qualidade</th>
-        <th>Observações</th>
-        {% for p in parametros %}<th>{{ p.nome }}</th>{% endfor %}
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in rows %}
-      {% set entrega = row.entrega %}
-      <tr data-grupo-id="{{ row.grupo.id }}">
-        {% if trabalho.modo == 'grupo' %}
-        <td>{{ row.grupo.nome }}</td>
-        <td>
-          <div class="lista-membros">
-            {% for m in row.membros %}
-              <span class="lista-membro-item" data-aluno-id="{{ m.id }}">
-                {{ m.numero or '—' }} {{ m.nome_curto_exibicao }}
-                <button type="button" class="btn btn-link btn-sm p-0 text-danger btn-remove-member" data-grupo-id="{{ row.grupo.id }}" data-aluno-id="{{ m.id }}" title="Remover membro">remover</button>
-              </span>
-            {% endfor %}
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header">Configuração da atividade</div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('trabalho_update_config', turma_id=turma.id, trabalho_id=trabalho.id) }}" class="row g-2">
+          <div class="col-md-6"><input class="form-control form-control-sm" name="tema_global" value="{{ trabalho.tema_global or '' }}" placeholder="Tema global"></div>
+          <div class="col-md-3"><select class="form-select form-select-sm" name="usar_tema_por_grupo"><option value="0" {% if not trabalho.usar_tema_por_grupo %}selected{% endif %}>Tema global</option><option value="1" {% if trabalho.usar_tema_por_grupo %}selected{% endif %}>Tema por grupo</option></select></div>
+          <div class="col-md-3"><button class="btn btn-sm btn-outline-primary w-100" type="submit">Guardar</button></div>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header">Domínios opcionais (modelo reutilizável)</div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('trabalho_aplicar_modelo_opcional', turma_id=turma.id, trabalho_id=trabalho.id) }}" class="row g-2">
+          <div class="col-md-8">
+            <select class="form-select form-select-sm" name="modelo_id" required>
+              <option value="">Aplicar modelo...</option>
+              {% for m in modelos_opcionais %}<option value="{{ m.id }}">{{ m.nome }}</option>{% endfor %}
+            </select>
           </div>
-        </td>
-        {% else %}
-        <td>{{ row.aluno_label }}</td>
-        {% endif %}
-        <td class="field-estado"><span class="badge-estado {{ row.estado_css }}">{{ row.estado }}</span></td>
-        <td class="field-media-base">{{ '%.2f'|format(row.media_base) }}</td>
-        <td class="field-fator-estado">{{ '%.2f'|format(row.fator_estado) }}</td>
-        <td class="field-nota-final">{{ '%.2f'|format(row.nota_final) }}</td>
-        <td><input type="checkbox" class="form-check-input field-entregue" {% if entrega and entrega.entregue %}checked{% endif %}></td>
-        <td><input type="date" class="form-control form-control-sm field-data-entrega" value="{{ entrega.data_entrega.strftime('%Y-%m-%d') if entrega and entrega.data_entrega else '' }}"></td>
-        <td>
-          <select class="form-select form-select-sm field-consecucao">
-            <option value=""></option>
-            {% for i in range(1,6) %}<option value="{{ i }}" {% if entrega and entrega.consecucao==i %}selected{% endif %}>{{ i }}</option>{% endfor %}
+          <div class="col-md-4"><button class="btn btn-sm btn-outline-dark w-100" type="submit">Aplicar cópia local</button></div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if trabalho.modo == 'grupo' %}
+<div class="card mb-4">
+  <div class="card-header">Gestão de grupos da atividade</div>
+  <div class="card-body">
+    <div class="row g-2">
+      <div class="col-md-8">
+        <form id="create-grupo-form" method="post" action="{{ url_for('trabalho_add_grupo', turma_id=turma.id, trabalho_id=trabalho.id) }}" class="row g-2">
+          <div class="col-md-5"><input class="form-control form-control-sm" name="nome" placeholder="Designação do grupo" required></div>
+          <div class="col-md-5">
+            <select id="membros-picker" class="form-select form-select-sm" name="aluno_ids" multiple size="6">
+              {% for a in alunos_disponiveis %}<option value="{{ a.id }}">{{ a.numero or '—' }} {{ a.nome_curto_exibicao }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-md-2"><button id="create-grupo-btn" class="btn btn-sm btn-primary w-100" type="submit" {% if alunos_disponiveis|length == 0 %}disabled title="Sem alunos disponíveis para criar grupo"{% endif %}>Criar grupo</button></div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div id="grupos-container" class="d-grid gap-3">
+  {% for bloco in grupos_vm %}
+  {% set g = bloco.grupo %}
+  {% set gid = g.id if g.id is defined else g['id'] %}
+  {% set gnome = g.nome if g.nome is defined else g['nome'] %}
+  {% set gvirtual = (g.virtual if g.virtual is defined else false) %}
+  <div class="card grupo-card" data-grupo-id="{{ gid }}">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <div class="d-flex gap-2 align-items-center">
+            <input class="form-control form-control-sm field-grupo-nome" style="max-width:280px" value="{{ gnome }}" {% if gvirtual %}disabled{% endif %}>
+            {% if not gvirtual %}<button class="btn btn-sm btn-outline-secondary btn-rename-grupo" type="button" data-grupo-id="{{ gid }}">Renomear</button>{% endif %}
+      </div>
+      <span class="badge text-bg-light">{{ bloco.members|length }} membro(s)</span>
+    </div>
+    <div class="card-body">
+      <div class="row g-2 mb-3 align-items-end">
+        <div class="col-md-3">
+          <label class="form-label form-label-sm mb-1">Tema do grupo</label>
+          <input class="form-control form-control-sm field-tema-grupo" placeholder="Tema do grupo" value="{{ g.tema if g.tema is defined else g['tema'] or '' }}" {% if gvirtual %}disabled{% endif %}>
+        </div>
+        <div class="col-md-1">
+          <label class="form-label form-label-sm mb-1 d-block">Entregue</label>
+          <div class="form-check mt-1">
+            <input type="checkbox" class="form-check-input field-entregue-grupo" {% if bloco.entrega_grupo and bloco.entrega_grupo.entregue %}checked{% endif %} {% if gvirtual %}disabled{% endif %}>
+          </div>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label form-label-sm mb-1">Data</label>
+          <input type="date" class="form-control form-control-sm field-data-entrega-grupo" value="{{ (g.data_entrega if g.data_entrega is defined else g['data_entrega']).strftime('%Y-%m-%d') if (g.data_entrega if g.data_entrega is defined else g['data_entrega']) else '' }}" {% if gvirtual %}disabled{% endif %}>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label form-label-sm mb-1">Observações</label>
+          <textarea class="form-control form-control-sm field-observacoes-grupo" rows="2" placeholder="Observações do grupo" {% if gvirtual %}disabled{% endif %}>{{ g.observacoes if g.observacoes is defined else g['observacoes'] or '' }}</textarea>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label form-label-sm mb-1 d-block">Adicionar membro</label>
+          {% if trabalho.modo == 'grupo' and not gvirtual %}
+          <select class="form-select form-select-sm field-add-member">
+            <option value="">Adicionar membro...</option>
+            {% for a in alunos_disponiveis %}<option value="{{ a.id }}">{{ a.numero or '—' }} {{ a.nome_curto_exibicao }}</option>{% endfor %}
           </select>
-        </td>
-        <td>
-          <select class="form-select form-select-sm field-qualidade">
-            <option value=""></option>
-            {% for i in range(1,6) %}<option value="{{ i }}" {% if entrega and entrega.qualidade==i %}selected{% endif %}>{{ i }}</option>{% endfor %}
-          </select>
-        </td>
-        <td><input class="form-control form-control-sm field-observacoes" value="{{ entrega.observacoes if entrega else '' }}"></td>
-        {% for p in parametros %}
-        {% set ep = row.params.get(p.id) %}
-        <td>
-          {% if p.tipo == 'numerico' %}
-          <select class="form-select form-select-sm field-extra" data-param-id="{{ p.id }}">
-            <option value=""></option>
-            {% for i in range(1,6) %}<option value="{{ i }}" {% if ep and ep.valor_numerico==i %}selected{% endif %}>{{ i }}</option>{% endfor %}
-          </select>
-          {% else %}
-          <input class="form-control form-control-sm field-extra" data-param-id="{{ p.id }}" value="{{ ep.valor_texto if ep else '' }}">
           {% endif %}
-        </td>
-        {% endfor %}
-        <td><button class="btn btn-sm btn-primary btn-save-row">Guardar</button></td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th rowspan="2">Membro</th>
+              {% for d in dominios_obrigatorios if d.rubricas %}
+                <th colspan="{{ d.rubricas|length + 1 }}" class="text-center">{{ d.letra }} · {{ d.nome }}</th>
+              {% endfor %}
+              {% for dom in dominios_opcionais if dom.rubricas %}
+                <th colspan="{{ dom.rubricas|length + 1 }}" class="text-center">{{ dom.nome }}</th>
+              {% endfor %}
+              <th rowspan="2">Obs. individuais</th>
+            </tr>
+            <tr>
+              {% for d in dominios_obrigatorios if d.rubricas %}
+                {% for r in d.rubricas %}<th>{{ r.nome }}</th>{% endfor %}
+                <th class="text-nowrap">{{ d.letra }}</th>
+              {% endfor %}
+              {% for dom in dominios_opcionais if dom.rubricas %}
+                {% for r in dom.rubricas %}<th>{{ r.nome }}</th>{% endfor %}
+                <th class="text-nowrap">{{ dom.nome }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for m in bloco.members %}
+            {% set e = m.entrega %}
+            {% set ns = namespace(mandatory_idx=0) %}
+            <tr data-grupo-id="{{ m.aluno.id and gid or gid }}" data-aluno-id="{{ m.aluno.id }}">
+              <td>
+                {{ m.aluno.numero or '—' }} {{ m.aluno.nome_curto_exibicao }}
+                {% if trabalho.modo == 'grupo' and not gvirtual %}
+                <button type="button" class="btn btn-link btn-sm text-danger btn-remove-member p-0" data-grupo-id="{{ gid }}" data-aluno-id="{{ m.aluno.id }}">remover</button>
+                {% endif %}
+              </td>
+              {% if not dominios_obrigatorios %}
+                <td class="text-muted">Sem domínios obrigatórios configurados para esta turma/disciplina.</td>
+              {% endif %}
+              {% for d in dominios_obrigatorios %}
+                {% set dominio_idx = loop.index0 %}
+                {% if d.rubricas %}
+                  {% for r in d.rubricas %}
+                  {% set rubrica_idx = loop.index0 %}
+                  {% set score_key = 'consecucao' if ns.mandatory_idx == 0 else ('qualidade' if ns.mandatory_idx == 1 else '') %}
+                  <td>
+                    <select class="form-select form-select-sm field-dominio field-domain-score" data-domain-key="req-{{ d.id }}" data-domain-id="{{ d.id }}" data-rubric-id="{{ r.id }}" data-dominio-idx="{{ dominio_idx }}" data-rubrica-idx="{{ rubrica_idx }}" data-score-key="{{ score_key }}">
+                      <option value=""></option>
+                      {% for i in range(1,6) %}
+                      <option value="{{ i }}" {% if (m.rubric_values and m.rubric_values.get(r.id) == i) or (score_key and e and (e|attr(score_key)) == i) %}selected{% endif %}>{{ i }}</option>
+                      {% endfor %}
+                    </select>
+                  </td>
+                  {% set ns.mandatory_idx = ns.mandatory_idx + 1 %}
+                  {% endfor %}
+                  <td class="text-center fw-semibold field-domain-average" data-domain-key="req-{{ d.id }}">—</td>
+                {% endif %}
+              {% endfor %}
+              {% for dom in dominios_opcionais %}
+                {% set dom_key = "opt-" ~ loop.index0 %}
+                {% for r in dom.rubricas %}
+                {% set ep = m.extra_map.get(r.id) %}
+                <td><select class="form-select form-select-sm field-extra field-domain-score" data-domain-key="{{ dom_key }}" data-param-id="{{ r.id }}"><option value=""></option>{% for i in range(1,6) %}<option value="{{ i }}" {% if ep and ep.valor_numerico==i %}selected{% endif %}>{{ i }}</option>{% endfor %}</select></td>
+                {% endfor %}
+                {% if dom.rubricas %}<td class="text-center fw-semibold field-domain-average" data-domain-key="{{ dom_key }}">—</td>{% endif %}
+              {% endfor %}
+              <td><input class="form-control form-control-sm field-observacoes" value="{{ e.observacoes if e else '' }}"></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="alert alert-info">Sem grupos criados para esta atividade.</div>
+  {% endfor %}
 </div>
 {% endblock %}
 
 {% block extra_scripts %}
 <script>
 (function(){
-  function toast(msg, level='info'){
-    if(window.showToast){ window.showToast(msg, level); return; }
-    alert(msg);
-  }
-
-  const params = new URLSearchParams(window.location.search);
-  if(params.get('toast') === 'updated'){
-    toast('Trabalho atualizado', 'success');
-  }
-
-  const grid = document.getElementById('trabalhos-grid');
+  const grid = document.getElementById('grupos-container');
   if(!grid) return;
+  const membrosPicker = document.getElementById('membros-picker');
+  const createGrupoBtn = document.getElementById('create-grupo-btn');
+  const saveStatus = document.getElementById('save-status');
+  const saveStatusSticky = document.getElementById('save-status-sticky');
+  const saveAllBtn = document.getElementById('save-all-btn');
+  const saveAllBtnSticky = document.getElementById('save-all-btn-sticky');
+  let dirty = false;
+  let saving = false;
+  let saveError = null;
+  const rowTimers = new Map();
+  const pendingRows = new Set();
+  function toast(msg, level='info'){ if(window.showToast){ window.showToast(msg, level); } else { alert(msg); } }
+  function updateGroupActionStates(){
+    if(createGrupoBtn && membrosPicker){
+      const hasAvailable = membrosPicker.options.length > 0;
+      createGrupoBtn.disabled = !hasAvailable || saving;
+      if(!hasAvailable){
+        createGrupoBtn.title = 'Sem alunos disponíveis para criar grupo';
+      } else {
+        createGrupoBtn.title = '';
+      }
+    }
+  }
+  function renderSaveState(){
+    const statusBadges = [saveStatus, saveStatusSticky].filter(Boolean);
+    if(!statusBadges.length) return;
+    statusBadges.forEach((badge)=>{ badge.className = 'badge'; });
+    if(saveError){
+      statusBadges.forEach((badge)=>{ badge.classList.add('text-bg-danger'); badge.textContent = 'Erro ao guardar'; });
+    } else if(saving){
+      statusBadges.forEach((badge)=>{ badge.classList.add('text-bg-warning'); badge.textContent = 'A guardar…'; });
+    } else if(dirty){
+      statusBadges.forEach((badge)=>{ badge.classList.add('text-bg-secondary'); badge.textContent = 'Alterações por guardar'; });
+    } else {
+      statusBadges.forEach((badge)=>{ badge.classList.add('text-bg-success'); badge.textContent = 'Guardado'; });
+    }
+    [saveAllBtn, saveAllBtnSticky].filter(Boolean).forEach((btn)=>{
+      btn.disabled = saving || (!dirty && !saveError);
+      btn.textContent = saving ? 'A guardar…' : 'Guardar tudo';
+    });
+    updateGroupActionStates();
+  }
+  function rowKey(tr){ return tr ? `${tr.dataset.grupoId}:${tr.dataset.alunoId}` : ''; }
+  function markDirty(tr){
+    if(tr){
+      const key = rowKey(tr);
+      if(key) pendingRows.add(key);
+    }
+    dirty = pendingRows.size > 0;
+    saveError = null;
+    renderSaveState();
+  }
+  function markSaving(){ saving = true; saveError = null; renderSaveState(); }
+  function markSaved(tr){
+    const key = rowKey(tr);
+    if(key) pendingRows.delete(key);
+    dirty = pendingRows.size > 0 || rowTimers.size > 0;
+    saving = false;
+    saveError = null;
+    renderSaveState();
+  }
+  function markError(msg){ saving = false; saveError = msg || 'Erro ao guardar'; renderSaveState(); }
+  renderSaveState();
+  updateGroupActionStates();
+
+  function recalcRowDomainAverages(tr){
+    if(!tr) return;
+    const sums = {};
+    const counts = {};
+    tr.querySelectorAll('.field-domain-score').forEach((el)=>{
+      const key = el.dataset.domainKey;
+      if(!key) return;
+      const num = Number(el.value);
+      if(!Number.isFinite(num) || num <= 0) return;
+      sums[key] = (sums[key] || 0) + num;
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    tr.querySelectorAll('.field-domain-average').forEach((cell)=>{
+      const key = cell.dataset.domainKey;
+      const c = counts[key] || 0;
+      cell.textContent = c ? (sums[key] / c).toFixed(2) : '—';
+    });
+  }
 
   async function saveRow(tr){
-    const grupoId = tr.dataset.grupoId;
+    if(!tr) return true;
+    markSaving();
+    const key = rowKey(tr);
     const payload = {
-      entregue: tr.querySelector('.field-entregue')?.checked || false,
-      data_entrega: tr.querySelector('.field-data-entrega')?.value || null,
-      consecucao: tr.querySelector('.field-consecucao')?.value || null,
-      qualidade: tr.querySelector('.field-qualidade')?.value || null,
+      aluno_id: Number(tr.dataset.alunoId),
+      entregue: true,
+      data_entrega: null,
+      entregue_grupo: tr.closest('.grupo-card')?.querySelector('.field-entregue-grupo')?.checked || false,
+      data_entrega_grupo: tr.closest('.grupo-card')?.querySelector('.field-data-entrega-grupo')?.value || null,
+      tema_grupo: tr.closest('.grupo-card')?.querySelector('.field-tema-grupo')?.value || null,
+      observacoes_grupo: tr.closest('.grupo-card')?.querySelector('.field-observacoes-grupo')?.value || null,
       observacoes: tr.querySelector('.field-observacoes')?.value || null,
-      extra: {}
+      extra: {},
+      rubricas: {}
     };
-    tr.querySelectorAll('.field-extra').forEach((el)=>{
-      payload.extra[el.dataset.paramId] = el.value;
+    tr.querySelectorAll('.field-dominio').forEach((el)=>{
+      const scoreKey = el.dataset.scoreKey;
+      const rubricId = Number(el.dataset.rubricId || 0);
+      if(rubricId){ payload.rubricas[String(rubricId)] = el.value || null; }
+      if(scoreKey){ payload[scoreKey] = el.value || null; }
     });
-
-    const url = "{{ url_for('trabalho_save_entrega', turma_id=turma.id, trabalho_id=trabalho.id, grupo_id=0) }}".replace('/0/save', `/${grupoId}/save`);
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json','Accept':'application/json'},
-      body: JSON.stringify(payload)
+    tr.querySelectorAll('.field-extra').forEach((el)=> payload.extra[el.dataset.paramId]=el.value);
+    const gid = tr.dataset.grupoId;
+    console.debug('[trabalho-autosave] sending', {
+      key, gid, aluno_id: payload.aluno_id,
+      has_extra: Object.keys(payload.extra || {}).length,
+      has_rubricas: Object.keys(payload.rubricas || {}).length,
+      rubricas: payload.rubricas,
     });
+    const url = "{{ url_for('trabalho_save_entrega', turma_id=turma.id, trabalho_id=trabalho.id, grupo_id=0) }}".replace('/0/save', `/${gid}/save`);
+    const resp = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(payload)});
     const data = await resp.json().catch(()=>({ok:false,error:'Erro inesperado'}));
     if(!resp.ok || !data.ok){
-      toast(data.error || 'Falha ao guardar', 'error');
-      return;
+      console.error('[trabalho-autosave] error', { key, status: resp.status, data });
+      markError(data.error || 'Erro ao guardar');
+      toast(data.error || 'Erro ao guardar', 'error');
+      return false;
     }
-    if(data.estado){
-      const el = tr.querySelector('.field-estado');
-      if(el){
-        const badge = el.querySelector('.badge-estado');
-        if(badge){
-          badge.textContent = data.estado;
-          badge.classList.remove('badge-por-entregar', 'badge-no-prazo', 'badge-atrasado');
-          if(data.estado_css){
-            badge.classList.add(data.estado_css);
-          }
-        } else {
-          el.innerHTML = `<span class="badge-estado ${data.estado_css || 'badge-por-entregar'}">${data.estado}</span>`;
-        }
-      }
-    }
-    if(typeof data.media_base !== 'undefined'){
-      const mediaCell = tr.querySelector('.field-media-base');
-      if(mediaCell) mediaCell.textContent = Number(data.media_base).toFixed(2);
-    }
-    if(typeof data.fator_estado !== 'undefined'){
-      const fatorCell = tr.querySelector('.field-fator-estado');
-      if(fatorCell) fatorCell.textContent = Number(data.fator_estado).toFixed(2);
-    }
-    if(typeof data.nota_final !== 'undefined'){
-      const notaCell = tr.querySelector('.field-nota-final');
-      if(notaCell) notaCell.textContent = Number(data.nota_final).toFixed(2);
-    }
-    if(data.data_entrega){
-      const dt = tr.querySelector('.field-data-entrega');
-      if(dt && !dt.value){
-        dt.value = data.data_entrega;
-      }
-    }
-    toast('Linha guardada com sucesso', 'success');
+    console.debug('[trabalho-autosave] saved', { key, persisted: data.persisted || null, updated_at: data.updated_at });
+    markSaved(tr);
+    return true;
   }
 
-  const createGroupForm = document.getElementById('create-grupo-form');
-  const membrosPicker = document.getElementById('membros-picker');
-
-  if(createGroupForm && membrosPicker){
-    createGroupForm.addEventListener('submit', async (ev)=>{
-      ev.preventDefault();
-      const formData = new FormData(createGroupForm);
-      const nome = (formData.get('nome') || '').toString().trim();
-      const alunoIds = Array.from(membrosPicker.selectedOptions).map((opt)=>Number(opt.value));
-      if(alunoIds.length === 0){
-        toast('Um grupo tem de ter, pelo menos, um aluno.', 'error');
-        return;
-      }
-
-      const resp = await fetch(createGroupForm.action, {
-        method: 'POST',
-        headers: {'Content-Type':'application/json','Accept':'application/json'},
-        body: JSON.stringify({nome, aluno_ids: alunoIds})
-      });
-      const data = await resp.json().catch(()=>({ok:false,error:'Erro inesperado'}));
-      if(!resp.ok || !data.ok){
-        toast(data.error || 'Erro ao criar grupo', 'error');
-        return;
-      }
-
-      const idsToRemove = new Set((data.membros_ids || []).map((v)=>String(v)));
-      Array.from(membrosPicker.options).forEach((opt)=>{
-        if(idsToRemove.has(opt.value)) opt.remove();
-      });
-      membrosPicker.selectedIndex = -1;
-      const nomeInput = createGroupForm.querySelector('input[name="nome"]');
-      if(nomeInput) nomeInput.value = '';
-      toast('Grupo criado', 'success');
-      window.location.reload();
-    });
+  function scheduleRowSave(tr, delay=700){
+    if(!tr) return;
+    const key = `${tr.dataset.grupoId}:${tr.dataset.alunoId}`;
+    if(rowTimers.has(key)) clearTimeout(rowTimers.get(key));
+    rowTimers.set(key, setTimeout(async ()=>{
+      rowTimers.delete(key);
+      await saveRow(tr);
+    }, delay));
   }
+
+  async function saveAllPending(){
+    const allRows = Array.from(grid.querySelectorAll('tr[data-aluno-id]'));
+    const rows = allRows.filter((tr)=> pendingRows.has(rowKey(tr)));
+    const targets = rows.length ? rows : allRows;
+    if(!targets.length){ dirty = false; renderSaveState(); return true; }
+    markSaving();
+    for(const tr of targets){
+      const ok = await saveRow(tr);
+      if(!ok){
+        return false;
+      }
+    }
+    dirty = pendingRows.size > 0;
+    saving = false;
+    renderSaveState();
+    return true;
+  }
+
+  document.getElementById('create-grupo-form')?.addEventListener('submit', async (ev)=>{
+    ev.preventDefault();
+    const nome = ev.target.querySelector('input[name="nome"]').value.trim();
+    const ids = Array.from(membrosPicker.selectedOptions).map(o=>Number(o.value));
+    const resp = await fetch(ev.target.action,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({nome:nome,aluno_ids:ids})});
+    const data = await resp.json().catch(()=>({ok:false,error:'Erro inesperado'}));
+    if(!resp.ok || !data.ok){ markError(data.error || 'Erro a criar grupo'); toast(data.error || 'Erro a criar grupo','error'); return; }
+    markSaved();
+    window.location.reload();
+  });
 
   grid.addEventListener('click', async (ev)=>{
-    const rmBtn = ev.target.closest('.btn-remove-member');
-    if(rmBtn){
+    const rm = ev.target.closest('.btn-remove-member');
+    if(rm){
       ev.preventDefault();
-      const grupoId = rmBtn.dataset.grupoId;
-      const alunoId = rmBtn.dataset.alunoId;
-      const url = "{{ url_for('trabalho_remove_membro_grupo', turma_id=turma.id, trabalho_id=trabalho.id, grupo_id=0, aluno_id=0) }}".replace('/0/membros/0/remove', `/${grupoId}/membros/${alunoId}/remove`);
-      const resp = await fetch(url, {method:'POST', headers:{'Accept':'application/json'}});
+      const url = "{{ url_for('trabalho_remove_membro_grupo', turma_id=turma.id, trabalho_id=trabalho.id, grupo_id=0, aluno_id=0) }}".replace('/0/membros/0/remove', `/${rm.dataset.grupoId}/membros/${rm.dataset.alunoId}/remove`);
+      const resp = await fetch(url,{method:'POST',headers:{'Accept':'application/json'}});
       const data = await resp.json().catch(()=>({ok:false,error:'Erro inesperado'}));
-      if(!resp.ok || !data.ok){
-        toast(data.error || 'Erro ao remover membro', 'error');
-        return;
-      }
-
-      const item = rmBtn.closest('.lista-membro-item');
-      if(item) item.remove();
-      if(membrosPicker && data.aluno && data.aluno.id){
-        const exists = Array.from(membrosPicker.options).some((opt)=>opt.value === String(data.aluno.id));
-        if(!exists){
-          const opt = document.createElement('option');
-          opt.value = String(data.aluno.id);
-          opt.textContent = data.aluno.label || String(data.aluno.id);
-          membrosPicker.appendChild(opt);
-        }
-      }
-
-      const groupDeleted = (typeof data.group_deleted !== 'undefined') ? Boolean(data.group_deleted) : Boolean(data.deleted);
-      if(groupDeleted){
-        const tr = rmBtn.closest('tr[data-grupo-id]');
-        if(tr) tr.remove();
-        toast('Grupo eliminado (sem membros)', 'success');
-      } else {
-        toast('Membro removido', 'success');
-      }
+      if(!resp.ok || !data.ok){ markError(data.error || 'Erro ao remover'); toast(data.error || 'Erro ao remover','error'); return; }
+      markSaved();
+      window.location.reload();
       return;
     }
 
-    const btn = ev.target.closest('.btn-save-row');
-    if(!btn) return;
-    ev.preventDefault();
-    const tr = btn.closest('tr[data-grupo-id]');
-    if(tr) saveRow(tr);
+    const ren = ev.target.closest('.btn-rename-grupo');
+    if(ren){
+      ev.preventDefault();
+      const card = ren.closest('.grupo-card');
+      const nome = card.querySelector('.field-grupo-nome')?.value?.trim() || '';
+      const url = "{{ url_for('trabalho_rename_grupo', turma_id=turma.id, trabalho_id=trabalho.id, grupo_id=0) }}".replace('/0/rename', `/${ren.dataset.grupoId}/rename`);
+      const resp = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({nome})});
+      const data = await resp.json().catch(()=>({ok:false,error:'Erro inesperado'}));
+      if(!resp.ok || !data.ok){ markError(data.error || 'Erro ao renomear'); toast(data.error || 'Erro ao renomear','error'); return; }
+      markSaved();
+      toast('Grupo renomeado','success');
+      return;
+    }
+  });
+
+  grid.addEventListener('input', (ev)=>{
+    const tr = ev.target.closest('tr[data-aluno-id]');
+    if(tr){
+      recalcRowDomainAverages(tr);
+      markDirty(tr);
+      scheduleRowSave(tr, 800);
+      return;
+    }
+    const groupField = ev.target.closest('.field-tema-grupo, .field-data-entrega-grupo, .field-observacoes-grupo');
+    if(groupField){
+      const card = ev.target.closest('.grupo-card');
+      const firstRow = card?.querySelector('tr[data-aluno-id]');
+      markDirty(firstRow);
+      scheduleRowSave(firstRow, 900);
+    }
+  });
+  grid.querySelectorAll('tr[data-aluno-id]').forEach((tr)=> recalcRowDomainAverages(tr));
+
+  grid.addEventListener('change', async (ev)=>{
+    const tr = ev.target.closest('tr[data-aluno-id]');
+    if(tr){
+      recalcRowDomainAverages(tr);
+      markDirty(tr);
+      scheduleRowSave(tr, 600);
+    }
+    const entregueChk = ev.target.closest('.field-entregue-grupo');
+    if(entregueChk){
+      const card = entregueChk.closest('.grupo-card');
+      const dataField = card?.querySelector('.field-data-entrega-grupo');
+      if(entregueChk.checked && dataField && !dataField.value){
+        const d = new Date();
+        const mm = String(d.getMonth()+1).padStart(2,'0');
+        const dd = String(d.getDate()).padStart(2,'0');
+        dataField.value = `${d.getFullYear()}-${mm}-${dd}`;
+      }
+      markDirty(card?.querySelector('tr[data-aluno-id]'));
+      scheduleRowSave(card?.querySelector('tr[data-aluno-id]'), 200);
+      return;
+    }
+
+    const addSel = ev.target.closest('.field-add-member');
+    if(!addSel || !addSel.value) return;
+    const card = addSel.closest('.grupo-card');
+    const gid = card?.dataset?.grupoId;
+    if(!gid) return;
+    const url = "{{ url_for('trabalho_add_membro_grupo', turma_id=turma.id, trabalho_id=trabalho.id, grupo_id=0) }}".replace('/0/membros/add', `/${gid}/membros/add`);
+    const resp = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({aluno_id:Number(addSel.value)})});
+    const data = await resp.json().catch(()=>({ok:false,error:'Erro inesperado'}));
+    if(!resp.ok || !data.ok){ markError(data.error || 'Erro a adicionar'); toast(data.error || 'Erro a adicionar','error'); return; }
+    markSaved();
+    window.location.reload();
+  });
+
+  async function onSaveAllClick(){ await saveAllPending(); }
+  saveAllBtn?.addEventListener('click', onSaveAllClick);
+  saveAllBtnSticky?.addEventListener('click', onSaveAllClick);
+
+  window.addEventListener('beforeunload', (ev)=>{
+    if(dirty || saving){
+      ev.preventDefault();
+      ev.returnValue = '';
+    }
+  });
+
+  document.querySelectorAll('a[href]').forEach((a)=>{
+    a.addEventListener('click', async (ev)=>{
+      if(!(dirty || saveError)) return;
+      ev.preventDefault();
+      const ok = await saveAllPending();
+      if(ok) window.location.href = a.href;
+    });
   });
 })();
 </script>
