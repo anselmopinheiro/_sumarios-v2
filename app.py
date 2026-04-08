@@ -2425,6 +2425,12 @@ def create_app():
             )
             db.session.commit()
 
+        if "calendario_aulas" not in tabelas:
+            CalendarioAula.__table__.create(db.engine, checkfirst=True)
+            db.session.commit()
+            insp = inspect(db.engine)
+            tabelas = set(insp.get_table_names())
+
         colunas = {col["name"] for col in insp.get_columns("calendario_aulas")}
 
         if "tempos_sem_aula" not in colunas:
@@ -2468,6 +2474,12 @@ def create_app():
                 text("ALTER TABLE aulas_alunos ADD COLUMN observacoes TEXT")
             )
             db.session.commit()
+
+        if "turmas" not in tabelas:
+            Turma.__table__.create(db.engine, checkfirst=True)
+            db.session.commit()
+            insp = inspect(db.engine)
+            tabelas = set(insp.get_table_names())
 
         turmas_cols = {col["name"] for col in insp.get_columns("turmas")}
         if "periodo_tipo" not in turmas_cols:
