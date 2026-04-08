@@ -67,6 +67,15 @@ def _as_int(value):
         return None
 
 
+def _as_float(value):
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _error(message: str, status: int, redirect_endpoint: str | None = None):
     if _wants_json() or not redirect_endpoint:
         return jsonify({"error": message}), status
@@ -100,6 +109,11 @@ def _rubric_to_dict(rubric: EV2Rubric) -> dict:
         "descritor_nivel_3": rubric.descritor_nivel_3,
         "descritor_nivel_4": rubric.descritor_nivel_4,
         "descritor_nivel_5": rubric.descritor_nivel_5,
+<<<<<<< HEAD
+=======
+        "ordem": int(getattr(rubric, "ordem", 0) or 0),
+        "peso": float(getattr(rubric, "peso", 0) or 0),
+>>>>>>> 036f04d (Rewrite rubricas import loop block to valid standalone payload form)
         "components_count": len(components),
         "components": [
             {
@@ -836,7 +850,11 @@ def ev2_domain_item(domain_id: int):
 @ev2_config_bp.route("/rubricas", methods=["GET", "POST"])
 def ev2_rubricas_collection():
     if request.method == "GET":
-        rubricas = EV2Rubric.query.order_by(EV2Rubric.domain_id.asc(), EV2Rubric.codigo.asc()).all()
+        rubricas = (
+            EV2Rubric.query
+            .order_by(EV2Rubric.domain_id.asc(), EV2Rubric.ordem.asc(), EV2Rubric.codigo.asc())
+            .all()
+        )
         domains = EV2Domain.query.order_by(EV2Domain.nome.asc()).all()
         edit_rubrica = None
         edit_id = request.args.get("edit", type=int)
@@ -865,6 +883,13 @@ def ev2_rubricas_collection():
         "descritor_nivel_4": (data.get("descritor_nivel_4") or "").strip() or None,
         "descritor_nivel_5": (data.get("descritor_nivel_5") or "").strip() or None,
     }
+<<<<<<< HEAD
+=======
+    ordem = _as_int(data.get("ordem")) or 0
+    peso = _as_float(data.get("peso"))
+    if peso is None:
+        peso = 0
+>>>>>>> 036f04d (Rewrite rubricas import loop block to valid standalone payload form)
     ativo = _to_bool(data.get("ativo"), default=True)
 
     if not domain_id or not codigo or not nome:
@@ -873,6 +898,8 @@ def ev2_rubricas_collection():
             400,
             "ev2_config.ev2_rubricas_collection",
         )
+    if peso < 0 or peso > 100:
+        return _error("Peso inválido: deve estar entre 0 e 100.", 400, "ev2_config.ev2_rubricas_collection")
 
     domain = EV2Domain.query.get(domain_id)
     if not domain:
@@ -892,6 +919,11 @@ def ev2_rubricas_collection():
         nome=nome,
         descricao=descricao,
         **descritores,
+<<<<<<< HEAD
+=======
+        ordem=ordem,
+        peso=peso,
+>>>>>>> 036f04d (Rewrite rubricas import loop block to valid standalone payload form)
         ativo=ativo,
     )
     db.session.add(rubrica)
@@ -934,18 +966,27 @@ def ev2_rubricas_import():
 
     warnings = []
     created = []
-    source_rubrics = EV2Rubric.query.filter_by(domain_id=source.id).order_by(EV2Rubric.codigo.asc()).all()
+    source_rubrics = (
+        EV2Rubric.query
+        .filter_by(domain_id=source.id)
+        .order_by(EV2Rubric.ordem.asc(), EV2Rubric.codigo.asc())
+        .all()
+    )
 
     for rubrica in source_rubrics:
         final_code = _unique_rubric_code(target.id, rubrica.codigo)
+
         if final_code != rubrica.codigo:
             warnings.append(
                 f"Código '{rubrica.codigo}' já existia no domínio de destino; usado '{final_code}'."
             )
 
+<<<<<<< HEAD
         new_rubrica = EV2Rubric(
             domain_id=target.id,
             codigo=final_code,
+=======
+>>>>>>> 036f04d (Rewrite rubricas import loop block to valid standalone payload form)
         rubrica_payload = {
             "domain_id": target.id,
             "codigo": final_code,
@@ -960,10 +1001,20 @@ def ev2_rubricas_import():
             "peso": rubrica.peso,
             "ativo": rubrica.ativo,
         }
+<<<<<<< HEAD
         new_rubrica = EV2Rubric(**rubrica_payload)
                     rubrica_id=new_rubrica.id,
                     nome=comp.nome,
                     ordem=comp.ordem,
+=======
+
+        new_rubrica = EV2Rubric(**rubrica_payload)
+        db.session.add(new_rubrica)
+        db.session.flush()
+
+        # clonar componentes se existirem
+        for comp in getattr(rubrica, "components", []):
+>>>>>>> 036f04d (Rewrite rubricas import loop block to valid standalone payload form)
             cloned_component = EV2RubricComponent(
                 rubrica_id=new_rubrica.id,
                 nome=comp.nome,
@@ -975,7 +1026,17 @@ def ev2_rubricas_import():
                 descritor_nivel_4=comp.descritor_nivel_4,
                 descritor_nivel_5=comp.descritor_nivel_5,
                 ativo=comp.ativo,
+<<<<<<< HEAD
             db.session.add(cloned_component)
+=======
+            )
+            db.session.add(cloned_component)
+
+        created.append(new_rubrica.id)
+
+    db.session.commit()
+
+>>>>>>> 036f04d (Rewrite rubricas import loop block to valid standalone payload form)
     payload = {
         "source_domain_id": source.id,
         "target_domain_id": target.id,
@@ -1010,7 +1071,11 @@ def ev2_rubrica_item(rubrica_id: int):
             return jsonify(_rubric_to_dict(rubrica))
         return render_template(
             "ev2/config/rubricas.html",
-            rubricas=EV2Rubric.query.order_by(EV2Rubric.domain_id.asc(), EV2Rubric.codigo.asc()).all(),
+            rubricas=(
+                EV2Rubric.query
+                .order_by(EV2Rubric.domain_id.asc(), EV2Rubric.ordem.asc(), EV2Rubric.codigo.asc())
+                .all()
+            ),
             domains=EV2Domain.query.order_by(EV2Domain.nome.asc()).all(),
             edit_rubrica=rubrica,
             selected_domain_id=rubrica.domain_id,
@@ -1022,6 +1087,15 @@ def ev2_rubrica_item(rubrica_id: int):
         codigo = (data.get("codigo") or "").strip()
         nome = (data.get("nome") or "").strip()
         descricao = (data.get("descricao") or "").strip() or None
+        descritor_nivel_1 = (data.get("descritor_nivel_1") or "").strip() or None
+        descritor_nivel_2 = (data.get("descritor_nivel_2") or "").strip() or None
+        descritor_nivel_3 = (data.get("descritor_nivel_3") or "").strip() or None
+        descritor_nivel_4 = (data.get("descritor_nivel_4") or "").strip() or None
+        descritor_nivel_5 = (data.get("descritor_nivel_5") or "").strip() or None
+        ordem = _as_int(data.get("ordem")) or 0
+        peso = _as_float(data.get("peso"))
+        if peso is None:
+            peso = 0
         ativo = _to_bool(data.get("ativo"), default=True)
 
         if not domain_id or not codigo or not nome:
@@ -1030,6 +1104,8 @@ def ev2_rubrica_item(rubrica_id: int):
                 400,
                 "ev2_config.ev2_rubricas_collection",
             )
+        if peso < 0 or peso > 100:
+            return _error("Peso inválido: deve estar entre 0 e 100.", 400, "ev2_config.ev2_rubricas_collection")
 
         descritor_nivel_1 = (data.get("descritor_nivel_1") or "").strip() or None
         descritor_nivel_2 = (data.get("descritor_nivel_2") or "").strip() or None
@@ -1057,6 +1133,11 @@ def ev2_rubrica_item(rubrica_id: int):
         rubrica.descritor_nivel_3 = descritor_nivel_3
         rubrica.descritor_nivel_4 = descritor_nivel_4
         rubrica.descritor_nivel_5 = descritor_nivel_5
+<<<<<<< HEAD
+=======
+        rubrica.ordem = ordem
+        rubrica.peso = peso
+>>>>>>> 036f04d (Rewrite rubricas import loop block to valid standalone payload form)
         rubrica.ativo = ativo
         db.session.commit()
 
