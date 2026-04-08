@@ -806,17 +806,60 @@ class EV2Rubric(db.Model):
     codigo = db.Column(db.String(80), nullable=False)
     nome = db.Column(db.String(140), nullable=False)
     descricao = db.Column(db.Text)
+    descritor_nivel_1 = db.Column(db.Text)
+    descritor_nivel_2 = db.Column(db.Text)
+    descritor_nivel_3 = db.Column(db.Text)
+    descritor_nivel_4 = db.Column(db.Text)
+    descritor_nivel_5 = db.Column(db.Text)
     ativo = db.Column(db.Boolean, nullable=False, default=True, server_default=db.text("true"))
     pontuacao_padrao_basico = db.Column(db.Float, default=3)
     pontuacao_padrao_secundario = db.Column(db.Float, default=12)
 
     dominio = db.relationship("EV2Domain", back_populates="rubricas")
     subject_rubrics = db.relationship("EV2SubjectRubric", back_populates="rubrica")
+    components = db.relationship(
+        "EV2RubricComponent",
+        back_populates="rubrica",
+        cascade="all, delete-orphan",
+    )
 
     __table_args__ = (
         db.UniqueConstraint("domain_id", "codigo", name="uq_ev2_rubric_domain_codigo"),
         db.Index("ix_ev2_rubrics_domain", "domain_id"),
     )
+
+    def descriptor_for_level(self, level: int) -> str | None:
+        if level not in {1, 2, 3, 4, 5}:
+            return None
+        return getattr(self, f"descritor_nivel_{level}", None)
+
+
+class EV2RubricComponent(db.Model):
+    __tablename__ = "ev2_rubric_components"
+
+    id = db.Column(db.Integer, primary_key=True)
+    rubrica_id = db.Column(db.Integer, db.ForeignKey("ev2_rubrics.id"), nullable=False, index=True)
+    nome = db.Column(db.String(140), nullable=False)
+    ordem = db.Column(db.Integer, nullable=False, default=0, server_default="0")
+    peso = db.Column(db.Numeric(5, 2), nullable=False, default=0, server_default="0")
+    descritor_nivel_1 = db.Column(db.Text)
+    descritor_nivel_2 = db.Column(db.Text)
+    descritor_nivel_3 = db.Column(db.Text)
+    descritor_nivel_4 = db.Column(db.Text)
+    descritor_nivel_5 = db.Column(db.Text)
+    ativo = db.Column(db.Boolean, nullable=False, default=True, server_default=db.text("true"))
+
+    rubrica = db.relationship("EV2Rubric", back_populates="components")
+
+    __table_args__ = (
+        db.CheckConstraint("peso >= 0 AND peso <= 100", name="ck_ev2_rubric_component_peso"),
+        db.Index("ix_ev2_rubric_components_rubrica_ordem", "rubrica_id", "ordem"),
+    )
+
+    def descriptor_for_level(self, level: int) -> str | None:
+        if level not in {1, 2, 3, 4, 5}:
+            return None
+        return getattr(self, f"descritor_nivel_{level}", None)
 
 
 class EV2ExtraParam(db.Model):
@@ -1203,6 +1246,11 @@ class EV2Assessment(db.Model):
     event_student = db.relationship("EV2EventStudent", back_populates="assessments")
     rubrica = db.relationship("EV2Rubric")
     extra_param = db.relationship("EV2ExtraParam")
+    component_scores = db.relationship(
+        "EV2AssessmentComponentScore",
+        back_populates="assessment",
+        cascade="all, delete-orphan",
+    )
 
     __table_args__ = (
         db.CheckConstraint(
@@ -1240,6 +1288,23 @@ class EV2Assessment(db.Model):
         db.Index("ix_ev2_assessments_rubric", "rubric_id"),
         db.Index("ix_ev2_assessments_extra", "extra_param_id"),
         db.Index("ix_ev2_assessments_state", "state"),
+    )
+
+
+class EV2AssessmentComponentScore(db.Model):
+    __tablename__ = "ev2_assessment_component_scores"
+
+    id = db.Column(db.Integer, primary_key=True)
+    assessment_id = db.Column(db.Integer, db.ForeignKey("ev2_assessments.id"), nullable=False, index=True)
+    component_id = db.Column(db.Integer, db.ForeignKey("ev2_rubric_components.id"), nullable=False, index=True)
+    score_level = db.Column(db.Integer, nullable=False)
+
+    assessment = db.relationship("EV2Assessment", back_populates="component_scores")
+    component = db.relationship("EV2RubricComponent")
+
+    __table_args__ = (
+        db.UniqueConstraint("assessment_id", "component_id", name="uq_ev2_assessment_component_once"),
+        db.CheckConstraint("score_level >= 1 AND score_level <= 5", name="ck_ev2_assessment_component_score"),
     )
 
 

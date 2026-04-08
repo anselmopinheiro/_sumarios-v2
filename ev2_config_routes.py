@@ -9,6 +9,7 @@ from models import (
     EV2Domain,
     EV2Event,
     EV2Rubric,
+    EV2RubricComponent,
     EV2SubjectConfig,
     EV2SubjectDomain,
     EV2SubjectRubric,
@@ -86,6 +87,7 @@ def _domain_to_dict(domain: EV2Domain) -> dict:
 
 
 def _rubric_to_dict(rubric: EV2Rubric) -> dict:
+    components = sorted(rubric.components or [], key=lambda c: (c.ordem, c.id))
     return {
         "id": rubric.id,
         "domain_id": rubric.domain_id,
@@ -93,6 +95,27 @@ def _rubric_to_dict(rubric: EV2Rubric) -> dict:
         "codigo": rubric.codigo,
         "nome": rubric.nome,
         "descricao": rubric.descricao,
+        "descritor_nivel_1": rubric.descritor_nivel_1,
+        "descritor_nivel_2": rubric.descritor_nivel_2,
+        "descritor_nivel_3": rubric.descritor_nivel_3,
+        "descritor_nivel_4": rubric.descritor_nivel_4,
+        "descritor_nivel_5": rubric.descritor_nivel_5,
+        "components_count": len(components),
+        "components": [
+            {
+                "id": c.id,
+                "nome": c.nome,
+                "ordem": int(c.ordem or 0),
+                "peso": float(c.peso or 0),
+                "ativo": bool(c.ativo),
+                "descritor_nivel_1": c.descritor_nivel_1,
+                "descritor_nivel_2": c.descritor_nivel_2,
+                "descritor_nivel_3": c.descritor_nivel_3,
+                "descritor_nivel_4": c.descritor_nivel_4,
+                "descritor_nivel_5": c.descritor_nivel_5,
+            }
+            for c in components
+        ],
         "ativo": bool(rubric.ativo),
         "in_use_count": EV2Assessment.query.filter_by(rubric_id=rubric.id).count(),
     }
@@ -652,6 +675,13 @@ def ev2_domains_collection():
     letra = (data.get("letra") or "").strip() or None
     codigo = (data.get("codigo") or "").strip() or None
     descricao = (data.get("descricao") or "").strip() or None
+    descritores = {
+        "descritor_nivel_1": (data.get("descritor_nivel_1") or "").strip() or None,
+        "descritor_nivel_2": (data.get("descritor_nivel_2") or "").strip() or None,
+        "descritor_nivel_3": (data.get("descritor_nivel_3") or "").strip() or None,
+        "descritor_nivel_4": (data.get("descritor_nivel_4") or "").strip() or None,
+        "descritor_nivel_5": (data.get("descritor_nivel_5") or "").strip() or None,
+    }
     ativo = _to_bool(data.get("ativo"), default=True)
 
     if not nome:
@@ -861,6 +891,7 @@ def ev2_rubricas_collection():
         codigo=codigo,
         nome=nome,
         descricao=descricao,
+        **descritores,
         ativo=ativo,
     )
     db.session.add(rubrica)
@@ -916,7 +947,27 @@ def ev2_rubricas_import():
             ativo=rubrica.ativo,
         )
         db.session.add(new_rubrica)
+            descritor_nivel_1=rubrica.descritor_nivel_1,
+            descritor_nivel_2=rubrica.descritor_nivel_2,
+            descritor_nivel_3=rubrica.descritor_nivel_3,
+            descritor_nivel_4=rubrica.descritor_nivel_4,
+            descritor_nivel_5=rubrica.descritor_nivel_5,
         db.session.flush()
+        for comp in sorted(rubrica.components or [], key=lambda c: (c.ordem, c.id)):
+            db.session.add(
+                EV2RubricComponent(
+                    rubrica_id=new_rubrica.id,
+                    nome=comp.nome,
+                    ordem=comp.ordem,
+                    peso=comp.peso,
+                    descritor_nivel_1=comp.descritor_nivel_1,
+                    descritor_nivel_2=comp.descritor_nivel_2,
+                    descritor_nivel_3=comp.descritor_nivel_3,
+                    descritor_nivel_4=comp.descritor_nivel_4,
+                    descritor_nivel_5=comp.descritor_nivel_5,
+                    ativo=comp.ativo,
+                )
+            )
         created.append(_rubric_to_dict(new_rubrica))
 
     db.session.commit()
@@ -976,6 +1027,11 @@ def ev2_rubrica_item(rubrica_id: int):
                 "ev2_config.ev2_rubricas_collection",
             )
 
+        descritor_nivel_1 = (data.get("descritor_nivel_1") or "").strip() or None
+        descritor_nivel_2 = (data.get("descritor_nivel_2") or "").strip() or None
+        descritor_nivel_3 = (data.get("descritor_nivel_3") or "").strip() or None
+        descritor_nivel_4 = (data.get("descritor_nivel_4") or "").strip() or None
+        descritor_nivel_5 = (data.get("descritor_nivel_5") or "").strip() or None
         domain = EV2Domain.query.get(domain_id)
         if not domain:
             return _error("Domínio não encontrado", 404, "ev2_config.ev2_rubricas_collection")
@@ -992,6 +1048,11 @@ def ev2_rubrica_item(rubrica_id: int):
         rubrica.codigo = codigo
         rubrica.nome = nome
         rubrica.descricao = descricao
+        rubrica.descritor_nivel_1 = descritor_nivel_1
+        rubrica.descritor_nivel_2 = descritor_nivel_2
+        rubrica.descritor_nivel_3 = descritor_nivel_3
+        rubrica.descritor_nivel_4 = descritor_nivel_4
+        rubrica.descritor_nivel_5 = descritor_nivel_5
         rubrica.ativo = ativo
         db.session.commit()
 
@@ -1013,4 +1074,97 @@ def ev2_rubrica_item(rubrica_id: int):
     if _wants_json() or request.method != "POST":
         return jsonify({"status": "ok"})
     flash("Rubrica eliminada com sucesso.", "success")
+    return redirect(url_for("ev2_config.ev2_rubricas_collection"))
+
+
+@ev2_config_bp.post("/rubricas/<int:rubrica_id>/components")
+def ev2_rubrica_add_component(rubrica_id: int):
+    rubrica = EV2Rubric.query.get(rubrica_id)
+    if not rubrica:
+        return _error("Rubrica não encontrada", 404, "ev2_config.ev2_rubricas_collection")
+
+    data = _payload()
+    nome = (data.get("nome") or "").strip()
+    if not nome:
+        return _error("Campo obrigatório: nome", 400, "ev2_config.ev2_rubricas_collection")
+
+    peso = _as_float(data.get("peso"))
+    if peso is None:
+        peso = 0
+    if peso < 0 or peso > 100:
+        return _error("Peso inválido: deve estar entre 0 e 100.", 400, "ev2_config.ev2_rubricas_collection")
+
+    next_ordem = (
+        db.session.query(db.func.max(EV2RubricComponent.ordem))
+        .filter(EV2RubricComponent.rubrica_id == rubrica.id)
+        .scalar()
+        or 0
+    )
+    comp = EV2RubricComponent(
+        rubrica_id=rubrica.id,
+        nome=nome,
+        ordem=_as_int(data.get("ordem")) if _as_int(data.get("ordem")) is not None else int(next_ordem) + 1,
+        peso=peso,
+        descritor_nivel_1=(data.get("descritor_nivel_1") or "").strip() or None,
+        descritor_nivel_2=(data.get("descritor_nivel_2") or "").strip() or None,
+        descritor_nivel_3=(data.get("descritor_nivel_3") or "").strip() or None,
+        descritor_nivel_4=(data.get("descritor_nivel_4") or "").strip() or None,
+        descritor_nivel_5=(data.get("descritor_nivel_5") or "").strip() or None,
+        ativo=_to_bool(data.get("ativo"), default=True),
+    )
+    db.session.add(comp)
+    db.session.commit()
+
+    if _wants_json():
+        return jsonify(_rubric_to_dict(rubrica)), 201
+    flash("Componente adicionada à rubrica.", "success")
+    return redirect(url_for("ev2_config.ev2_rubricas_collection"))
+
+
+@ev2_config_bp.route("/rubricas/components/<int:component_id>", methods=["PUT", "DELETE", "POST"])
+def ev2_rubrica_component_item(component_id: int):
+    comp = EV2RubricComponent.query.get(component_id)
+    if not comp:
+        return _error("Componente não encontrada.", 404, "ev2_config.ev2_rubricas_collection")
+
+    method = request.method
+    if method == "POST":
+        override = (request.form.get("_method") or "").upper()
+        if override in {"PUT", "DELETE"}:
+            method = override
+        else:
+            return _error("Método não permitido", 405, "ev2_config.ev2_rubricas_collection")
+
+    if method == "DELETE":
+        db.session.delete(comp)
+        db.session.commit()
+        if _wants_json() or request.method != "POST":
+            return jsonify({"status": "ok"})
+        flash("Componente removida.", "success")
+        return redirect(url_for("ev2_config.ev2_rubricas_collection"))
+
+    data = _payload()
+    nome = (data.get("nome") or "").strip()
+    if not nome:
+        return _error("Campo obrigatório: nome", 400, "ev2_config.ev2_rubricas_collection")
+    peso = _as_float(data.get("peso"))
+    if peso is None:
+        peso = 0
+    if peso < 0 or peso > 100:
+        return _error("Peso inválido: deve estar entre 0 e 100.", 400, "ev2_config.ev2_rubricas_collection")
+
+    comp.nome = nome
+    comp.ordem = _as_int(data.get("ordem")) or 0
+    comp.peso = peso
+    comp.descritor_nivel_1 = (data.get("descritor_nivel_1") or "").strip() or None
+    comp.descritor_nivel_2 = (data.get("descritor_nivel_2") or "").strip() or None
+    comp.descritor_nivel_3 = (data.get("descritor_nivel_3") or "").strip() or None
+    comp.descritor_nivel_4 = (data.get("descritor_nivel_4") or "").strip() or None
+    comp.descritor_nivel_5 = (data.get("descritor_nivel_5") or "").strip() or None
+    comp.ativo = _to_bool(data.get("ativo"), default=True)
+    db.session.commit()
+
+    if _wants_json() or request.method != "POST":
+        return jsonify({"status": "ok"})
+    flash("Componente atualizada.", "success")
     return redirect(url_for("ev2_config.ev2_rubricas_collection"))

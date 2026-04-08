@@ -80,6 +80,13 @@
         <textarea name="descricao" id="js-rubrica-descricao" class="form-control">{{ edit_rubrica.descricao if edit_rubrica and edit_rubrica.descricao else '' }}</textarea>
       </div>
 
+      <div class="col-12"><label class="form-label">Descritores por nível (1 a 5)</label></div>
+      <div class="col-12 col-md-6"><label class="form-label">Nível 1</label><textarea name="descritor_nivel_1" id="js-rubrica-descritor-1" class="form-control">{{ edit_rubrica.descritor_nivel_1 if edit_rubrica else '' }}</textarea></div>
+      <div class="col-12 col-md-6"><label class="form-label">Nível 2</label><textarea name="descritor_nivel_2" id="js-rubrica-descritor-2" class="form-control">{{ edit_rubrica.descritor_nivel_2 if edit_rubrica else '' }}</textarea></div>
+      <div class="col-12 col-md-6"><label class="form-label">Nível 3</label><textarea name="descritor_nivel_3" id="js-rubrica-descritor-3" class="form-control">{{ edit_rubrica.descritor_nivel_3 if edit_rubrica else '' }}</textarea></div>
+      <div class="col-12 col-md-6"><label class="form-label">Nível 4</label><textarea name="descritor_nivel_4" id="js-rubrica-descritor-4" class="form-control">{{ edit_rubrica.descritor_nivel_4 if edit_rubrica else '' }}</textarea></div>
+      <div class="col-12 col-md-6"><label class="form-label">Nível 5</label><textarea name="descritor_nivel_5" id="js-rubrica-descritor-5" class="form-control">{{ edit_rubrica.descritor_nivel_5 if edit_rubrica else '' }}</textarea></div>
+
       <div class="col-12 col-md-2">
         <label class="form-label">Ordem (placeholder)</label>
         <input type="number" id="js-rubrica-ordem" class="form-control" placeholder="não persistido">
@@ -133,21 +140,23 @@
             <th>Código</th>
             <th>Nome</th>
             <th>Descrição</th>
+            <th class="text-center">Componentes</th>
             <th class="text-center">Ativo</th>
             <th style="width: 180px;">Ações</th>
           </tr>
         </thead>
         <tbody>
           {% if not rubricas %}
-          <tr><td colspan="7" class="text-muted">Sem rubricas registadas.</td></tr>
+          <tr><td colspan="10" class="text-muted">Sem rubricas registadas.</td></tr>
           {% endif %}
           {% for r in rubricas %}
-          <tr data-rubrica-id="{{ r.id }}" data-domain-id="{{ r.domain_id }}" data-codigo="{{ r.codigo }}" data-nome="{{ r.nome }}" data-descricao="{{ r.descricao or '' }}" data-ativo="{{ 1 if r.ativo else 0 }}">
+          <tr id="rubrica-{{ r.id }}" data-rubrica-id="{{ r.id }}" data-domain-id="{{ r.domain_id }}" data-codigo="{{ r.codigo }}" data-nome="{{ r.nome }}" data-descricao="{{ r.descricao or '' }}" data-descritor-nivel-1="{{ r.descritor_nivel_1 or '' }}" data-descritor-nivel-2="{{ r.descritor_nivel_2 or '' }}" data-descritor-nivel-3="{{ r.descritor_nivel_3 or '' }}" data-descritor-nivel-4="{{ r.descritor_nivel_4 or '' }}" data-descritor-nivel-5="{{ r.descritor_nivel_5 or '' }}" data-ordem="{{ r.ordem or 0 }}" data-peso="{{ r.peso or 0 }}" data-ativo="{{ 1 if r.ativo else 0 }}">
             <td>{{ r.id }}</td>
             <td>{{ r.dominio.nome if r.dominio else '—' }}</td>
             <td>{{ r.codigo }}</td>
             <td>{{ r.nome }}</td>
             <td>{{ r.descricao or '' }}</td>
+            <td class="text-center"><span class="badge text-bg-light border text-dark">{{ (r.components|length) if r.components is defined else 0 }}</span></td>
             <td class="text-center">
               {% if r.ativo %}<span class="badge text-bg-success">Sim</span>{% else %}<span class="badge text-bg-secondary">Não</span>{% endif %}
             </td>

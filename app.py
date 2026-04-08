@@ -146,11 +146,13 @@ from models import (
     ParametroDefinicao,
     EV2Domain,
     EV2Rubric,
+    EV2RubricComponent,
     EV2SubjectConfig,
     EV2SubjectRubric,
     EV2Event,
     EV2EventStudent,
     EV2Assessment,
+    EV2AssessmentComponentScore,
     EV2EvaluationGroup,
     EV2EvaluationGroupMember,
     EV2EventTheme,
@@ -2521,6 +2523,19 @@ def create_app():
             if "peso" not in ev2_rubric_cols:
                 db.session.execute(text("ALTER TABLE ev2_rubrics ADD COLUMN peso NUMERIC(5,2) NOT NULL DEFAULT 0"))
                 db.session.commit()
+            for col_name in [
+                "descritor_nivel_1",
+                "descritor_nivel_2",
+                "descritor_nivel_3",
+                "descritor_nivel_4",
+                "descritor_nivel_5",
+            ]:
+                if col_name not in ev2_rubric_cols:
+                    db.session.execute(text(f"ALTER TABLE ev2_rubrics ADD COLUMN {col_name} TEXT"))
+                    db.session.commit()
+
+        EV2RubricComponent.__table__.create(db.engine, checkfirst=True)
+        EV2AssessmentComponentScore.__table__.create(db.engine, checkfirst=True)
 
         EV2EvaluationGroup.__table__.create(db.engine, checkfirst=True)
         EV2EvaluationGroupMember.__table__.create(db.engine, checkfirst=True)
@@ -4380,6 +4395,108 @@ def create_app():
                 dominios_scores.setdefault(letra, []).append(float(assessment.score_numeric))
             return {letra: round(sum(vals) / len(vals), 1) for letra, vals in dominios_scores.items() if vals}
 
+        def _apply_component_scores(assessment, rubric_id, request_obj, raw_numeric_value):
+            rubric = EV2Rubric.query.get(rubric_id)
+            components = sorted((rubric.components or []), key=lambda c: (c.ordem, c.id)) if rubric else []
+            if not components:
+                assessment.component_scores.clear()
+                return raw_numeric_value
+
+            payload = request_obj.form.get("component_scores")
+            if not payload and request_obj.is_json:
+                payload = (request_obj.get_json(silent=True) or {}).get("component_scores")
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except Exception:
+                    payload = None
+            if not isinstance(payload, dict):
+                assessment.component_scores.clear()
+                return raw_numeric_value
+
+            scores_by_component = {}
+            for comp in components:
+                raw = payload.get(str(comp.id), payload.get(comp.id))
+                try:
+                    level = int(raw)
+                except (TypeError, ValueError):
+                    continue
+                if 1 <= level <= 5:
+                    scores_by_component[comp.id] = level
+
+            assessment.component_scores.clear()
+            if not scores_by_component:
+                return raw_numeric_value
+
+            weighted_total = 0.0
+            weight_sum = 0.0
+            fallback_weight = 1.0
+            for comp in components:
+                level = scores_by_component.get(comp.id)
+                if level is None:
+                    continue
+                comp_weight = float(comp.peso or 0)
+                weight = comp_weight if comp_weight > 0 else fallback_weight
+                weighted_total += float(level) * weight
+                weight_sum += weight
+                assessment.component_scores.append(
+                    EV2AssessmentComponentScore(component_id=comp.id, score_level=level)
+                )
+            if weight_sum <= 0:
+                return raw_numeric_value
+            return round(weighted_total / weight_sum, 2)
+
+        def _apply_component_scores(assessment, rubric_id, request_obj, raw_numeric_value):
+            rubric = EV2Rubric.query.get(rubric_id)
+            components = sorted((rubric.components or []), key=lambda c: (c.ordem, c.id)) if rubric else []
+            if not components:
+                assessment.component_scores.clear()
+                return raw_numeric_value
+
+            payload = request_obj.form.get("component_scores")
+            if not payload and request_obj.is_json:
+                payload = (request_obj.get_json(silent=True) or {}).get("component_scores")
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except Exception:
+                    payload = None
+            if not isinstance(payload, dict):
+                assessment.component_scores.clear()
+                return raw_numeric_value
+
+            scores_by_component = {}
+            for comp in components:
+                raw = payload.get(str(comp.id), payload.get(comp.id))
+                try:
+                    level = int(raw)
+                except (TypeError, ValueError):
+                    continue
+                if 1 <= level <= 5:
+                    scores_by_component[comp.id] = level
+
+            assessment.component_scores.clear()
+            if not scores_by_component:
+                return raw_numeric_value
+
+            weighted_total = 0.0
+            weight_sum = 0.0
+            fallback_weight = 1.0
+            for comp in components:
+                level = scores_by_component.get(comp.id)
+                if level is None:
+                    continue
+                comp_weight = float(comp.peso or 0)
+                weight = comp_weight if comp_weight > 0 else fallback_weight
+                weighted_total += float(level) * weight
+                weight_sum += weight
+                assessment.component_scores.append(
+                    EV2AssessmentComponentScore(component_id=comp.id, score_level=level)
+                )
+            if weight_sum <= 0:
+                return raw_numeric_value
+            return round(weighted_total / weight_sum, 2)
+
         if request.method == "POST":
             event = ctx["event"] or _obter_ou_criar_evento_avaliacao(aula, tipo)
             if not event:
@@ -4774,9 +4891,11 @@ def create_app():
                 if valor is None:
                     assessment.state = "nao_observado"
                     assessment.score_numeric = None
+                    assessment.component_scores.clear()
                 else:
+                    valor_final = _apply_component_scores(assessment, rubrica_id, request, valor)
                     assessment.state = "avaliado"
-                    assessment.score_numeric = valor
+                    assessment.score_numeric = valor_final
             db.session.commit()
 
             medias_atualizadas = {}
@@ -5143,9 +5262,11 @@ def create_app():
                 if valor is None:
                     assessment.state = "nao_observado"
                     assessment.score_numeric = None
+                    assessment.component_scores.clear()
                 else:
+                    valor_final = _apply_component_scores(assessment, rubrica_id, request, valor)
                     assessment.state = "avaliado"
-                    assessment.score_numeric = valor
+                    assessment.score_numeric = valor_final
 
             db.session.commit()
 

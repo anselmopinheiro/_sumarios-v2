@@ -84,7 +84,27 @@
     setRubricaFormMode(false);
   }
 
-  function domainNameMap() {
+      <td colspan="10">
+          <div class="col-12 col-md-2">
+            <label class="form-label small mb-1">Desc. N1</label>
+            <input name="descritor_nivel_1" class="form-control form-control-sm" value="${row.dataset.descritorNivel1 || ''}">
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label small mb-1">Desc. N2</label>
+            <input name="descritor_nivel_2" class="form-control form-control-sm" value="${row.dataset.descritorNivel2 || ''}">
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label small mb-1">Desc. N3</label>
+            <input name="descritor_nivel_3" class="form-control form-control-sm" value="${row.dataset.descritorNivel3 || ''}">
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label small mb-1">Desc. N4</label>
+            <input name="descritor_nivel_4" class="form-control form-control-sm" value="${row.dataset.descritorNivel4 || ''}">
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label small mb-1">Desc. N5</label>
+            <input name="descritor_nivel_5" class="form-control form-control-sm" value="${row.dataset.descritorNivel5 || ''}">
+          </div>
     const map = {};
     document.querySelectorAll('#js-rubrica-domain option[value]').forEach((opt) => {
       if (opt.value) map[String(opt.value)] = opt.textContent || '—';
@@ -104,6 +124,11 @@
       tr.dataset.codigo = r.codigo || '';
       tr.dataset.nome = r.nome || '';
       tr.dataset.descricao = r.descricao || '';
+      tr.dataset.descritorNivel1 = r.descritor_nivel_1 || '';
+      tr.dataset.descritorNivel2 = r.descritor_nivel_2 || '';
+      tr.dataset.descritorNivel3 = r.descritor_nivel_3 || '';
+      tr.dataset.descritorNivel4 = r.descritor_nivel_4 || '';
+      tr.dataset.descritorNivel5 = r.descritor_nivel_5 || '';
       tr.dataset.ativo = r.ativo ? '1' : '0';
       tr.innerHTML = `
         <td class="col-id">${r.id}</td>
@@ -111,6 +136,7 @@
         <td class="col-left">${r.codigo || ''}</td>
         <td class="col-left">${r.nome || ''}</td>
         <td class="col-left">${r.descricao || ''}</td>
+        <td class="col-center">${r.components_count ?? (Array.isArray(r.components) ? r.components.length : 0)}</td>
         <td class="col-center">${r.ativo ? 'Sim' : 'Não'}</td>
         <td class="col-left">
           <button type="button" class="js-rubrica-edit secondary">Editar</button>
@@ -240,7 +266,30 @@
         if (!window.confirm('Importar todas as rubricas do domínio origem para o destino?')) return;
 
         const response = await fetch('/ev2/config/rubricas/import', {
-          method: 'POST',
+        descritor_nivel_1: inlineForm.querySelector('[name="descritor_nivel_1"]')?.value?.trim() || null,
+        descritor_nivel_2: inlineForm.querySelector('[name="descritor_nivel_2"]')?.value?.trim() || null,
+        descritor_nivel_3: inlineForm.querySelector('[name="descritor_nivel_3"]')?.value?.trim() || null,
+        descritor_nivel_4: inlineForm.querySelector('[name="descritor_nivel_4"]')?.value?.trim() || null,
+        descritor_nivel_5: inlineForm.querySelector('[name="descritor_nivel_5"]')?.value?.trim() || null,
+        const descritor1 = document.getElementById('js-rubrica-descritor-1')?.value?.trim();
+        const descritor2 = document.getElementById('js-rubrica-descritor-2')?.value?.trim();
+        const descritor3 = document.getElementById('js-rubrica-descritor-3')?.value?.trim();
+        const descritor4 = document.getElementById('js-rubrica-descritor-4')?.value?.trim();
+        const descritor5 = document.getElementById('js-rubrica-descritor-5')?.value?.trim();
+        const payload = {
+          domain_id: Number(domainId),
+          codigo,
+          nome,
+          descricao,
+          descritor_nivel_1: descritor1 || null,
+          descritor_nivel_2: descritor2 || null,
+          descritor_nivel_3: descritor3 || null,
+          descritor_nivel_4: descritor4 || null,
+          descritor_nivel_5: descritor5 || null,
+          ordem,
+          peso,
+          ativo,
+        };
           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
           body: JSON.stringify({ source_domain_id: Number(source), target_domain_id: Number(target) }),
         });
