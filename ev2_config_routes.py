@@ -942,7 +942,6 @@ def ev2_rubricas_import():
         new_rubrica = EV2Rubric(
             domain_id=target.id,
             codigo=final_code,
-        # Mantemos payload explícito em dict literal para evitar ambiguidades de sintaxe.
         rubrica_payload = {
             "domain_id": target.id,
             "codigo": final_code,
