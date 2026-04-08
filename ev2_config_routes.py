@@ -942,20 +942,21 @@ def ev2_rubricas_import():
         new_rubrica = EV2Rubric(
             domain_id=target.id,
             codigo=final_code,
-            nome=rubrica.nome,
-            descricao=rubrica.descricao,
-            ativo=rubrica.ativo,
-        )
-        db.session.add(new_rubrica)
-            descritor_nivel_1=rubrica.descritor_nivel_1,
-            descritor_nivel_2=rubrica.descritor_nivel_2,
-            descritor_nivel_3=rubrica.descritor_nivel_3,
-            descritor_nivel_4=rubrica.descritor_nivel_4,
-            descritor_nivel_5=rubrica.descritor_nivel_5,
-        db.session.flush()
-        for comp in sorted(rubrica.components or [], key=lambda c: (c.ordem, c.id)):
-            db.session.add(
-                EV2RubricComponent(
+        rubrica_payload = {
+            "domain_id": target.id,
+            "codigo": final_code,
+            "nome": rubrica.nome,
+            "descricao": rubrica.descricao,
+            "descritor_nivel_1": rubrica.descritor_nivel_1,
+            "descritor_nivel_2": rubrica.descritor_nivel_2,
+            "descritor_nivel_3": rubrica.descritor_nivel_3,
+            "descritor_nivel_4": rubrica.descritor_nivel_4,
+            "descritor_nivel_5": rubrica.descritor_nivel_5,
+            "ordem": rubrica.ordem,
+            "peso": rubrica.peso,
+            "ativo": rubrica.ativo,
+        }
+        new_rubrica = EV2Rubric(**rubrica_payload)
                     rubrica_id=new_rubrica.id,
                     nome=comp.nome,
                     ordem=comp.ordem,
