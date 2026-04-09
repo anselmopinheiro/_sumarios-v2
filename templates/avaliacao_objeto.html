@@ -1,17 +1,5 @@
 {% extends 'embedded_base.html' if embed_mode else 'base.html' %}
 {% block content %}
-{% macro short_domain(nome) -%}
-  {%- set n = (nome or '') -%}
-  {%- set l = n|lower -%}
-  {%- if 'comunica' in l -%}Com
-  {%- elif 'conhecimento' in l -%}Con
-  {%- elif 'resolu' in l and 'proble' in l -%}Res
-  {%- elif 'responsabilidade' in l and 'autonomia' in l -%}R&A
-  {%- elif n|length > 3 -%}{{ n[:3] }}
-  {%- else -%}{{ n }}
-  {%- endif -%}
-{%- endmacro %}
-
 {% macro short_rubric(rubrica) -%}
   {%- if rubrica.codigo -%}
     {{ rubrica.codigo }}
@@ -44,7 +32,7 @@
   #avaliacao-objeto-table .compact-score { max-width: 56px; min-width: 52px; text-align: center; padding: .1rem .2rem; margin: 0 auto; }
   #avaliacao-objeto-table .compact-actions .btn { padding: .08rem .28rem; font-size: .72rem; line-height: 1.1; }
   #avaliacao-objeto-table .rubrica-short { font-weight: 600; white-space: nowrap; }
-  #avaliacao-objeto-table .domain-short { font-weight: 600; white-space: nowrap; }
+  #avaliacao-objeto-table .domain-full { font-weight: 600; white-space: nowrap; }
   #avaliacao-objeto-table .component-block { border-left: 2px solid #dee2e6; margin-top: .25rem; padding-left: .35rem; }
   #avaliacao-objeto-table .component-block .form-control { max-width: 56px; min-width: 52px; text-align: center; padding: .05rem .2rem; margin: 0 auto; }
 </style>
@@ -194,8 +182,7 @@
           {% endif %}
           {% for dominio in dominios %}
             <th colspan="{{ dominio.rubricas|length }}" title="{{ dominio.nome }}">
-              <div class="domain-short">D{{ loop.index }}</div>
-              <div class="small text-muted" title="{{ dominio.nome }}">{{ short_domain(dominio.nome) }}</div>
+              <div class="domain-full">{{ dominio.nome }}</div>
             </th>
           {% endfor %}
           {% for dominio in dominios %}
