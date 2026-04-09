@@ -37,8 +37,13 @@
   #avaliacao-objeto-table .compact-score { max-width: 56px; min-width: 52px; text-align: center; padding: .1rem .2rem; margin: 0 auto; }
   #avaliacao-objeto-table .compact-actions .btn { padding: .08rem .28rem; font-size: .72rem; line-height: 1.1; }
   #avaliacao-objeto-table .rubrica-short { font-weight: 600; white-space: nowrap; }
+  #avaliacao-objeto-table .rubrica-rotated { display: inline-block; transform: rotate(-90deg); transform-origin: center; line-height: 1; }
+  #avaliacao-objeto-table .domain-code { font-weight: 700; font-size: 12px; text-align: center; line-height: 1.1; }
+  #avaliacao-objeto-table .domain-caption { font-size: 8px; line-height: 1.05; text-align: center; opacity: .9; }
   #avaliacao-objeto-table .domain-full { font-weight: 600; white-space: nowrap; }
-  #avaliacao-objeto-table .component-block { border-left: 2px solid #dee2e6; margin-top: .25rem; padding-left: .35rem; }
+  #avaliacao-objeto-table .component-block { margin-top: .25rem; display: flex; flex-wrap: nowrap; gap: .25rem; align-items: flex-end; }
+  #avaliacao-objeto-table .component-item { min-width: 62px; max-width: 72px; }
+  #avaliacao-objeto-table .component-item .label { font-size: 8px; line-height: 1.05; text-align: center; white-space: normal; }
   #avaliacao-objeto-table .component-block .form-control { max-width: 56px; min-width: 52px; text-align: center; padding: .05rem .2rem; margin: 0 auto; }
 </style>
 
@@ -186,8 +191,10 @@
             <th rowspan="2">Data de entrega</th>
           {% endif %}
           {% for dominio in dominios %}
+            {% set domain_short_code = dominio.codigo or ('D' ~ loop.index) %}
             <th colspan="{{ dominio.rubricas|length }}" title="{{ dominio.nome }}">
-              <div class="domain-full">{{ dominio.nome }}</div>
+              <div class="domain-code">{{ domain_short_code }}</div>
+              <div class="domain-caption">{{ dominio.nome }}</div>
             </th>
           {% endfor %}
           {% for dominio in dominios %}
@@ -200,28 +207,10 @@
             {% for rubrica in dominio.rubricas %}
               <th>
                 <div class="d-flex align-items-center justify-content-between gap-1">
-                  <span class="rubrica-short" title="{{ rubrica.nome }}">{{ short_rubric(rubrica) }}</span>
+                  <span class="rubrica-short rubrica-rotated" title="{{ rubrica.nome }}">{{ short_rubric(rubrica) }}</span>
                   {% set rubrica_json = rubricas_payload.get(rubrica.id, {}) %}
-                  {% if rubrica_json.get('components') %}
-                    <button type="button" class="btn btn-outline-secondary btn-sm js-toggle-components compact-toggle"
-                            data-rubrica-id="{{ rubrica.id }}" title="Expandir/recolher componentes">▶</button>
-                  {% endif %}
                 </div>
                 {% set rubrica_json = rubricas_payload.get(rubrica.id, {}) %}
-                {% if rubrica_json.get('components') %}
-                  <div class="small text-muted mt-1 d-flex flex-column gap-1 d-none" data-rubrica-components="{{ rubrica.id }}">
-                    {% for comp in rubrica_json.get('components', []) %}
-                      <details>
-                        <summary>{{ comp.get('nome') or 'Componente' }} · {% if comp.get('ativo') %}Ativo{% else %}Inativo{% endif %}</summary>
-                        <div>N1: {{ comp.get('descritor_nivel_1') or '—' }}</div>
-                        <div>N2: {{ comp.get('descritor_nivel_2') or '—' }}</div>
-                        <div>N3: {{ comp.get('descritor_nivel_3') or '—' }}</div>
-                        <div>N4: {{ comp.get('descritor_nivel_4') or '—' }}</div>
-                        <div>N5: {{ comp.get('descritor_nivel_5') or '—' }}</div>
-                      </details>
-                    {% endfor %}
-                  </div>
-                {% endif %}
                 <div class="d-flex gap-1 mt-1 compact-actions justify-content-center">
                   <button type="button" class="btn btn-outline-primary btn-sm" onclick="aplicarValorAutomatico({{ rubrica.id }})" data-rubrica-id="{{ rubrica.id }}" title="Aplicar automático">⚡</button>
                   <button type="button" class="btn btn-outline-secondary btn-sm" onclick="confirmarLimpar({{ rubrica.id }})" title="Limpar avaliações">🧹</button>
@@ -285,16 +274,18 @@
                                readonly
                                {% if not avaliavel %}disabled title="{{ bloqueio_motivo }}" style="background-color:#f5f5f5"{% endif %}
                                value="{{ avaliacoes.get(aluno.id, {}).get(rubrica.id, '') }}">
-                        <div class="d-flex flex-column gap-1 component-block d-none" data-rubrica-components="{{ rubrica.id }}">
+                        <div class="component-block" data-rubrica-components="{{ rubrica.id }}">
                           {% for componente in (rubrica.components|sort(attribute='ordem')) %}
-                            <label class="small text-muted">{{ componente.nome }}</label>
-                            <input type="number" min="1" max="5" step="1"
-                                   class="form-control form-control-sm js-component-score compact-score"
-                                   data-aluno-id="{{ aluno.id }}"
-                                   data-rubrica-id="{{ rubrica.id }}"
-                                   data-component-id="{{ componente.id }}"
-                                   {% if not avaliavel %}disabled title="{{ bloqueio_motivo }}" style="background-color:#f5f5f5"{% endif %}
-                                   value="{{ component_scores.get(aluno.id, {}).get(rubrica.id, {}).get(componente.id, '') }}">
+                            <div class="component-item" title="{{ componente.nome }}{% if not componente.ativo %} (Inativo){% endif %}">
+                              <div class="label">{{ componente.nome }}</div>
+                              <input type="number" min="1" max="5" step="1"
+                                     class="form-control form-control-sm js-component-score compact-score"
+                                     data-aluno-id="{{ aluno.id }}"
+                                     data-rubrica-id="{{ rubrica.id }}"
+                                     data-component-id="{{ componente.id }}"
+                                     {% if not avaliavel %}disabled title="{{ bloqueio_motivo }}" style="background-color:#f5f5f5"{% endif %}
+                                     value="{{ component_scores.get(aluno.id, {}).get(rubrica.id, {}).get(componente.id, '') }}">
+                            </div>
                           {% endfor %}
                         </div>
                       {% else %}
@@ -352,16 +343,18 @@
                              readonly
                              {% if not avaliavel %}disabled title="{{ bloqueio_motivo }}" style="background-color:#f5f5f5"{% endif %}
                              value="{{ avaliacoes.get(aluno.id, {}).get(rubrica.id, '') }}">
-                      <div class="d-flex flex-column gap-1 component-block d-none" data-rubrica-components="{{ rubrica.id }}">
+                      <div class="component-block" data-rubrica-components="{{ rubrica.id }}">
                         {% for componente in (rubrica.components|sort(attribute='ordem')) %}
-                          <label class="small text-muted">{{ componente.nome }}</label>
-                          <input type="number" min="1" max="5" step="1"
-                                 class="form-control form-control-sm js-component-score compact-score"
-                                 data-aluno-id="{{ aluno.id }}"
-                                 data-rubrica-id="{{ rubrica.id }}"
-                                 data-component-id="{{ componente.id }}"
-                                 {% if not avaliavel %}disabled title="{{ bloqueio_motivo }}" style="background-color:#f5f5f5"{% endif %}
-                                 value="{{ component_scores.get(aluno.id, {}).get(rubrica.id, {}).get(componente.id, '') }}">
+                          <div class="component-item" title="{{ componente.nome }}{% if not componente.ativo %} (Inativo){% endif %}">
+                            <div class="label">{{ componente.nome }}</div>
+                            <input type="number" min="1" max="5" step="1"
+                                   class="form-control form-control-sm js-component-score compact-score"
+                                   data-aluno-id="{{ aluno.id }}"
+                                   data-rubrica-id="{{ rubrica.id }}"
+                                   data-component-id="{{ componente.id }}"
+                                   {% if not avaliavel %}disabled title="{{ bloqueio_motivo }}" style="background-color:#f5f5f5"{% endif %}
+                                   value="{{ component_scores.get(aluno.id, {}).get(rubrica.id, {}).get(componente.id, '') }}">
+                          </div>
                         {% endfor %}
                       </div>
                     {% else %}
