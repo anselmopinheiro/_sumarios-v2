@@ -1,5 +1,54 @@
 {% extends 'embedded_base.html' if embed_mode else 'base.html' %}
 {% block content %}
+{% macro short_domain(nome) -%}
+  {%- set n = (nome or '') -%}
+  {%- set l = n|lower -%}
+  {%- if 'comunica' in l -%}Com
+  {%- elif 'conhecimento' in l -%}Con
+  {%- elif 'resolu' in l and 'proble' in l -%}Res
+  {%- elif 'responsabilidade' in l and 'autonomia' in l -%}R&A
+  {%- elif n|length > 3 -%}{{ n[:3] }}
+  {%- else -%}{{ n }}
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro short_rubric(rubrica) -%}
+  {%- if rubrica.codigo -%}
+    {{ rubrica.codigo }}
+  {%- else -%}
+    {%- set words = (rubrica.nome or '').split() -%}
+    {%- if words|length >= 2 -%}
+      {{ words[0][0:1] ~ words[-1][0:1] }}
+    {%- elif (rubrica.nome or '')|length > 4 -%}
+      {{ (rubrica.nome or '')[:4] }}
+    {%- else -%}
+      {{ rubrica.nome or 'Rub' }}
+    {%- endif -%}
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro short_student_name(full_name) -%}
+  {%- set words = (full_name or '').split() -%}
+  {%- if words|length >= 2 -%}
+    {{ words[0] }} {{ words[-1] }}
+  {%- elif words|length == 1 -%}
+    {{ words[0] }}
+  {%- else -%}
+    —
+  {%- endif -%}
+{%- endmacro %}
+
+<style>
+  #avaliacao-objeto-table { font-size: .82rem; }
+  #avaliacao-objeto-table th, #avaliacao-objeto-table td { padding: .25rem .3rem; vertical-align: middle; }
+  #avaliacao-objeto-table .compact-score { max-width: 56px; min-width: 52px; text-align: center; padding: .1rem .2rem; margin: 0 auto; }
+  #avaliacao-objeto-table .compact-actions .btn { padding: .08rem .28rem; font-size: .72rem; line-height: 1.1; }
+  #avaliacao-objeto-table .rubrica-short { font-weight: 600; white-space: nowrap; }
+  #avaliacao-objeto-table .domain-short { font-weight: 600; white-space: nowrap; }
+  #avaliacao-objeto-table .component-block { border-left: 2px solid #dee2e6; margin-top: .25rem; padding-left: .35rem; }
+  #avaliacao-objeto-table .component-block .form-control { max-width: 56px; min-width: 52px; text-align: center; padding: .05rem .2rem; margin: 0 auto; }
+</style>
+
 {% if not embed_mode %}
   <h2>
     Avaliação de
@@ -144,7 +193,10 @@
             <th rowspan="2">Data de entrega</th>
           {% endif %}
           {% for dominio in dominios %}
-            <th colspan="{{ dominio.rubricas|length }}">{{ dominio.letra }} – {{ dominio.nome }}</th>
+            <th colspan="{{ dominio.rubricas|length }}" title="{{ dominio.nome }}">
+              <div class="domain-short">D{{ loop.index }}</div>
+              <div class="small text-muted" title="{{ dominio.nome }}">{{ short_domain(dominio.nome) }}</div>
+            </th>
           {% endfor %}
           {% for dominio in dominios %}
             <th rowspan="2" data-media-dominio="{{ dominio.letra }}">{{ dominio.letra }}</th>
@@ -155,10 +207,17 @@
           {% for dominio in dominios %}
             {% for rubrica in dominio.rubricas %}
               <th>
-                <div>{{ rubrica.nome }}</div>
+                <div class="d-flex align-items-center justify-content-between gap-1">
+                  <span class="rubrica-short" title="{{ rubrica.nome }}">{{ short_rubric(rubrica) }}</span>
+                  {% set rubrica_json = rubricas_payload.get(rubrica.id, {}) %}
+                  {% if rubrica_json.get('components') %}
+                    <button type="button" class="btn btn-outline-secondary btn-sm js-toggle-components compact-toggle"
+                            data-rubrica-id="{{ rubrica.id }}" title="Expandir/recolher componentes">▶</button>
+                  {% endif %}
+                </div>
                 {% set rubrica_json = rubricas_payload.get(rubrica.id, {}) %}
                 {% if rubrica_json.get('components') %}
-                  <div class="small text-muted mt-1 d-flex flex-column gap-1">
+                  <div class="small text-muted mt-1 d-flex flex-column gap-1 d-none" data-rubrica-components="{{ rubrica.id }}">
                     {% for comp in rubrica_json.get('components', []) %}
                       <details>
                         <summary>{{ comp.get('nome') or 'Componente' }} · {% if comp.get('ativo') %}Ativo{% else %}Inativo{% endif %}</summary>
@@ -171,9 +230,9 @@
                     {% endfor %}
                   </div>
                 {% endif %}
-                <div class="d-flex flex-column gap-1 mt-1">
-                  <button type="button" class="btn btn-outline-primary btn-sm" onclick="aplicarValorAutomatico({{ rubrica.id }})" data-rubrica-id="{{ rubrica.id }}">Aplicar automático</button>
-                  <button type="button" class="btn btn-outline-secondary btn-sm" onclick="confirmarLimpar({{ rubrica.id }})">Limpar</button>
+                <div class="d-flex gap-1 mt-1 compact-actions justify-content-center">
+                  <button type="button" class="btn btn-outline-primary btn-sm" onclick="aplicarValorAutomatico({{ rubrica.id }})" data-rubrica-id="{{ rubrica.id }}" title="Aplicar automático">⚡</button>
+                  <button type="button" class="btn btn-outline-secondary btn-sm" onclick="confirmarLimpar({{ rubrica.id }})" title="Limpar avaliações">🧹</button>
                 </div>
               </th>
             {% endfor %}
@@ -210,7 +269,7 @@
               {% set bloqueio_motivo = bloqueio_motivo_por_aluno.get(aluno.id, 'Não avaliado — ausente ou falta disciplinar') %}
               <tr data-aluno-id="{{ aluno.id }}" data-presente="{{ 1 if avaliavel else 0 }}">
                 <td>{{ aluno.numero or '-' }}</td>
-                <td>{{ aluno.nome }}</td>
+                <td title="{{ aluno.nome }}">{{ short_student_name(aluno.nome) }}</td>
                 <td>
                   <select class="form-select form-select-sm" onchange="atribuirGrupo({{ aluno.id }}, this.value)">
                     <option value="">Individual</option>
@@ -227,18 +286,18 @@
                     <td>
                       {% set has_components = (rubrica.components|length) > 0 %}
                       {% if has_components %}
-                        <input type="number" step="0.01" class="form-control form-control-sm mb-2"
+                        <input type="number" step="0.01" class="form-control form-control-sm mb-2 compact-score"
                                name="pontuacao-{{ aluno.id }}-{{ rubrica.id }}"
                                data-aluno-id="{{ aluno.id }}"
                                data-rubrica-id="{{ rubrica.id }}"
                                readonly
                                {% if not avaliavel %}disabled title="{{ bloqueio_motivo }}" style="background-color:#f5f5f5"{% endif %}
                                value="{{ avaliacoes.get(aluno.id, {}).get(rubrica.id, '') }}">
-                        <div class="d-flex flex-column gap-1">
+                        <div class="d-flex flex-column gap-1 component-block d-none" data-rubrica-components="{{ rubrica.id }}">
                           {% for componente in (rubrica.components|sort(attribute='ordem')) %}
                             <label class="small text-muted">{{ componente.nome }}</label>
                             <input type="number" min="1" max="5" step="1"
-                                   class="form-control form-control-sm js-component-score"
+                                   class="form-control form-control-sm js-component-score compact-score"
                                    data-aluno-id="{{ aluno.id }}"
                                    data-rubrica-id="{{ rubrica.id }}"
                                    data-component-id="{{ componente.id }}"
@@ -247,7 +306,7 @@
                           {% endfor %}
                         </div>
                       {% else %}
-                        <input type="number" step="0.5" class="form-control form-control-sm"
+                        <input type="number" step="0.5" class="form-control form-control-sm compact-score"
                                name="pontuacao-{{ aluno.id }}-{{ rubrica.id }}"
                                data-aluno-id="{{ aluno.id }}"
                                data-rubrica-id="{{ rubrica.id }}"
@@ -274,7 +333,7 @@
             {% set bloqueio_motivo = bloqueio_motivo_por_aluno.get(aluno.id, 'Não avaliado — ausente ou falta disciplinar') %}
             <tr data-aluno-id="{{ aluno.id }}" data-presente="{{ 1 if avaliavel else 0 }}">
               <td>{{ loop.index }}</td>
-              <td>{{ aluno.nome }}</td>
+              <td title="{{ aluno.nome }}">{{ short_student_name(aluno.nome) }}</td>
               <td>
                 {% set grupo_atual = grupo_por_aluno.get(aluno.id, linha.grupo or '') %}
                 {% if tipo in ['obser', 'portfolio'] %}
@@ -294,18 +353,18 @@
                   <td>
                     {% set has_components = (rubrica.components|length) > 0 %}
                     {% if has_components %}
-                      <input type="number" step="0.01" class="form-control form-control-sm mb-2"
+                      <input type="number" step="0.01" class="form-control form-control-sm mb-2 compact-score"
                              name="pontuacao-{{ aluno.id }}-{{ rubrica.id }}"
                              data-aluno-id="{{ aluno.id }}"
                              data-rubrica-id="{{ rubrica.id }}"
                              readonly
                              {% if not avaliavel %}disabled title="{{ bloqueio_motivo }}" style="background-color:#f5f5f5"{% endif %}
                              value="{{ avaliacoes.get(aluno.id, {}).get(rubrica.id, '') }}">
-                      <div class="d-flex flex-column gap-1">
+                      <div class="d-flex flex-column gap-1 component-block d-none" data-rubrica-components="{{ rubrica.id }}">
                         {% for componente in (rubrica.components|sort(attribute='ordem')) %}
                           <label class="small text-muted">{{ componente.nome }}</label>
                           <input type="number" min="1" max="5" step="1"
-                                 class="form-control form-control-sm js-component-score"
+                                 class="form-control form-control-sm js-component-score compact-score"
                                  data-aluno-id="{{ aluno.id }}"
                                  data-rubrica-id="{{ rubrica.id }}"
                                  data-component-id="{{ componente.id }}"
@@ -314,7 +373,7 @@
                         {% endfor %}
                       </div>
                     {% else %}
-                      <input type="number" step="0.5" class="form-control form-control-sm"
+                      <input type="number" step="0.5" class="form-control form-control-sm compact-score"
                              name="pontuacao-{{ aluno.id }}-{{ rubrica.id }}"
                              data-aluno-id="{{ aluno.id }}"
                              data-rubrica-id="{{ rubrica.id }}"
@@ -351,6 +410,7 @@
   if (!table) return;
   const alunoIds = Array.from(table.querySelectorAll('tr[data-aluno-id][data-presente="1"]')).map((tr) => tr.dataset.alunoId);
   const domainLetters = Array.from(table.querySelectorAll("th[data-media-dominio]")).map((th) => th.dataset.mediaDominio);
+  const expandedRubricas = new Set();
 
   function renderMedias(alunoId, medias) {
     const map = medias || {};
@@ -386,6 +446,15 @@
     return payload;
   }
 
+  function setRubricaExpanded(rubricaId, expanded) {
+    const nodes = table.querySelectorAll(`[data-rubrica-components="${rubricaId}"]`);
+    nodes.forEach((node) => node.classList.toggle("d-none", !expanded));
+    table.querySelectorAll(`.js-toggle-components[data-rubrica-id="${rubricaId}"]`).forEach((btn) => {
+      btn.textContent = expanded ? "▼" : "▶";
+      btn.title = expanded ? "Recolher componentes" : "Expandir componentes";
+    });
+  }
+
   async function postUpdate(payload) {
     const body = new URLSearchParams();
     Object.entries(payload).forEach(([key, value]) => {
@@ -396,6 +465,17 @@
     if (!resp.ok) throw new Error("Falha ao guardar avaliação.");
     return resp.json();
   }
+
+  table.querySelectorAll(".js-toggle-components[data-rubrica-id]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const rubricaId = String(btn.dataset.rubricaId || "");
+      if (!rubricaId) return;
+      const next = !expandedRubricas.has(rubricaId);
+      if (next) expandedRubricas.add(rubricaId);
+      else expandedRubricas.delete(rubricaId);
+      setRubricaExpanded(rubricaId, next);
+    });
+  });
 
   window.aplicarValorAutomatico = async function aplicarValorAutomatico(rubricaId) {
     const compInputs = table.querySelectorAll(`.js-component-score[data-rubrica-id="${rubricaId}"]:not(:disabled)`);
