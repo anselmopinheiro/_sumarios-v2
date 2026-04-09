@@ -13,7 +13,7 @@
 </div>
 
 <ul class="nav nav-tabs mb-3" id="avaliacao-tabs">
-  {% for tipo, label in [('aula','Aula'),('obser','Obser Direta'),('portfolio','Portfólio'),('projeto','Projetos'),('trabalho','Trabalhos')] %}
+  {% for tipo, label in [('obser','Obser Direta'),('portfolio','Portfólio'),('projeto','Projetos'),('trabalho','Trabalhos')] %}
     <li class="nav-item">
       <button type="button"
               class="nav-link {% if tipo_ativo == tipo %}active{% endif %}"

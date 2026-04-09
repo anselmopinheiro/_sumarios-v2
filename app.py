@@ -4149,7 +4149,7 @@ def create_app():
     @app.route('/aula/<int:aula_id>/avaliar', methods=['GET', 'POST'])
     def aula_avaliar(aula_id):
         if request.method == "GET" and request.args.get("embed") != "1":
-            return redirect(url_for("aula_avaliacao_shell", aula_id=aula_id, tipo="aula"))
+            return redirect(url_for("aula_avaliacao_shell", aula_id=aula_id, tipo="obser"))
         aula = CalendarioAula.query.get_or_404(aula_id)
         alunos = Aluno.query.filter_by(turma_id=aula.turma_id).order_by(Aluno.numero.asc(), Aluno.nome.asc()).all()
         total_tempos = _resolver_total_tempos_aula(aula)
@@ -4309,9 +4309,9 @@ def create_app():
     @app.route('/aula/<int:aula_id>/avaliacao')
     def aula_avaliacao_shell(aula_id):
         aula = CalendarioAula.query.get_or_404(aula_id)
-        tipo = (request.args.get("tipo") or "aula").strip().lower()
-        if tipo not in {"aula", "obser", "portfolio", "projeto", "trabalho"}:
-            tipo = "aula"
+        tipo = (request.args.get("tipo") or "obser").strip().lower()
+        if tipo not in {"obser", "portfolio", "projeto", "trabalho"}:
+            tipo = "obser"
         fallback_sumarios = url_for("calendario_semana")
         return_url = _safe_next_url(request.args.get("next"), fallback=fallback_sumarios)
         if return_url == fallback_sumarios:
@@ -4340,7 +4340,7 @@ def create_app():
         aula = CalendarioAula.query.get_or_404(aula_id)
         tipo = (tipo or "").strip().lower()
         if tipo == "aula":
-            return redirect(url_for("aula_avaliar", aula_id=aula.id, embed=1))
+            return redirect(url_for("aula_avaliacao_tipo", aula_id=aula.id, tipo="obser"))
         if tipo not in {"obser", "portfolio", "projeto", "trabalho"}:
             abort(404)
         if tipo in {"projeto", "trabalho"}:
@@ -5025,7 +5025,7 @@ def create_app():
 
     @app.route('/avaliacao/aula/<int:id_aula>')
     def avaliacao_aula_redirect(id_aula):
-        return redirect(url_for("aula_avaliacao_shell", aula_id=id_aula, tipo="aula"))
+        return redirect(url_for("aula_avaliacao_shell", aula_id=id_aula, tipo="obser"))
 
     @app.route('/aula/<int:aula_id>/pontualidade', methods=['GET', 'POST'])
     def aula_pontualidade(aula_id):
@@ -5069,8 +5069,11 @@ def create_app():
     @app.route('/avaliacao/<tipo>/<int:id_objeto>', methods=['GET', 'POST'])
     def avaliacao_objeto(tipo, id_objeto):
         tipo = (tipo or "").strip().lower()
-        valid_types = ['aula', 'obser', 'portfolio', 'projeto', 'trabalho']
+        valid_types = ['obser', 'portfolio', 'projeto', 'trabalho']
         if tipo not in valid_types:
+            if tipo == "aula":
+                CalendarioAula.query.get_or_404(id_objeto)
+                return redirect(url_for("aula_avaliacao_shell", aula_id=id_objeto, tipo="obser"))
             abort(404)
 
         tipo_map = {
@@ -5079,10 +5082,6 @@ def create_app():
             "projeto": "projetos",
             "trabalho": "trabalhos",
         }
-        if tipo == "aula":
-            CalendarioAula.query.get_or_404(id_objeto)
-            return redirect(url_for("aula_avaliacao_shell", aula_id=id_objeto, tipo="aula"))
-
         event = EV2Event.query.filter_by(id=id_objeto, evaluation_type=tipo_map[tipo]).first_or_404()
         alunos_evento = (
             EV2EventStudent.query.filter_by(event_id=event.id)
