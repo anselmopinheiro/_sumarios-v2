@@ -84,9 +84,6 @@
     setRubricaFormMode(false);
   }
 
-<<<<<<< HEAD
-      <td colspan="10">
-=======
   function closeInlineRubricaEditor() {
     document.querySelectorAll('.js-inline-rubrica-editor').forEach((el) => el.remove());
   }
@@ -122,7 +119,6 @@
             <label class="form-label small mb-1">Descrição</label>
             <input name="descricao" class="form-control form-control-sm" value="${row.dataset.descricao || ''}">
           </div>
->>>>>>> 036f04d (Rewrite rubricas import loop block to valid standalone payload form)
           <div class="col-12 col-md-2">
             <label class="form-label small mb-1">Desc. N1</label>
             <input name="descritor_nivel_1" class="form-control form-control-sm" value="${row.dataset.descritorNivel1 || ''}">
@@ -143,8 +139,6 @@
             <label class="form-label small mb-1">Desc. N5</label>
             <input name="descritor_nivel_5" class="form-control form-control-sm" value="${row.dataset.descritorNivel5 || ''}">
           </div>
-<<<<<<< HEAD
-=======
           <div class="col-6 col-md-1">
             <label class="form-label small mb-1">Ordem</label>
             <input type="number" name="ordem" class="form-control form-control-sm" value="${row.dataset.ordem || 0}">
@@ -171,7 +165,6 @@
   }
 
   function domainNameMap() {
->>>>>>> 036f04d (Rewrite rubricas import loop block to valid standalone payload form)
     const map = {};
     document.querySelectorAll('#js-rubrica-domain option[value]').forEach((opt) => {
       if (opt.value) map[String(opt.value)] = opt.textContent || '—';
@@ -196,11 +189,8 @@
       tr.dataset.descritorNivel3 = r.descritor_nivel_3 || '';
       tr.dataset.descritorNivel4 = r.descritor_nivel_4 || '';
       tr.dataset.descritorNivel5 = r.descritor_nivel_5 || '';
-<<<<<<< HEAD
-=======
       tr.dataset.ordem = String(r.ordem ?? 0);
       tr.dataset.peso = String(r.peso ?? 0);
->>>>>>> 036f04d (Rewrite rubricas import loop block to valid standalone payload form)
       tr.dataset.ativo = r.ativo ? '1' : '0';
       tr.id = `rubrica-${r.id}`;
       tr.innerHTML = `
@@ -209,11 +199,8 @@
         <td class="col-left">${r.codigo || ''}</td>
         <td class="col-left">${r.nome || ''}</td>
         <td class="col-left">${r.descricao || ''}</td>
-<<<<<<< HEAD
-=======
         <td class="col-right text-end">${r.ordem ?? 0}</td>
         <td class="col-right text-end">${Number(r.peso ?? 0).toFixed(2)}</td>
->>>>>>> 036f04d (Rewrite rubricas import loop block to valid standalone payload form)
         <td class="col-center">${r.components_count ?? (Array.isArray(r.components) ? r.components.length : 0)}</td>
         <td class="col-center">${r.ativo ? 'Sim' : 'Não'}</td>
         <td class="col-left">
@@ -407,30 +394,7 @@
         if (!window.confirm('Importar todas as rubricas do domínio origem para o destino?')) return;
 
         const response = await fetch('/ev2/config/rubricas/import', {
-        descritor_nivel_1: inlineForm.querySelector('[name="descritor_nivel_1"]')?.value?.trim() || null,
-        descritor_nivel_2: inlineForm.querySelector('[name="descritor_nivel_2"]')?.value?.trim() || null,
-        descritor_nivel_3: inlineForm.querySelector('[name="descritor_nivel_3"]')?.value?.trim() || null,
-        descritor_nivel_4: inlineForm.querySelector('[name="descritor_nivel_4"]')?.value?.trim() || null,
-        descritor_nivel_5: inlineForm.querySelector('[name="descritor_nivel_5"]')?.value?.trim() || null,
-        const descritor1 = document.getElementById('js-rubrica-descritor-1')?.value?.trim();
-        const descritor2 = document.getElementById('js-rubrica-descritor-2')?.value?.trim();
-        const descritor3 = document.getElementById('js-rubrica-descritor-3')?.value?.trim();
-        const descritor4 = document.getElementById('js-rubrica-descritor-4')?.value?.trim();
-        const descritor5 = document.getElementById('js-rubrica-descritor-5')?.value?.trim();
-        const payload = {
-          domain_id: Number(domainId),
-          codigo,
-          nome,
-          descricao,
-          descritor_nivel_1: descritor1 || null,
-          descritor_nivel_2: descritor2 || null,
-          descritor_nivel_3: descritor3 || null,
-          descritor_nivel_4: descritor4 || null,
-          descritor_nivel_5: descritor5 || null,
-          ordem,
-          peso,
-          ativo,
-        };
+          method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
           body: JSON.stringify({ source_domain_id: Number(source), target_domain_id: Number(target) }),
         });
