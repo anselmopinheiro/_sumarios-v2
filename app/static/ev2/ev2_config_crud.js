@@ -119,25 +119,25 @@
             <label class="form-label small mb-1">Descrição</label>
             <input name="descricao" class="form-control form-control-sm" value="${row.dataset.descricao || ''}">
           </div>
-          <div class="col-12 col-md-2">
+          <div class="col-12">
             <label class="form-label small mb-1">Desc. N1</label>
-            <input name="descritor_nivel_1" class="form-control form-control-sm" value="${row.dataset.descritorNivel1 || ''}">
+            <textarea name="descritor_nivel_1" class="form-control form-control-sm" rows="4" style="resize: vertical;">${row.dataset.descritorNivel1 || ''}</textarea>
           </div>
-          <div class="col-12 col-md-2">
+          <div class="col-12">
             <label class="form-label small mb-1">Desc. N2</label>
-            <input name="descritor_nivel_2" class="form-control form-control-sm" value="${row.dataset.descritorNivel2 || ''}">
+            <textarea name="descritor_nivel_2" class="form-control form-control-sm" rows="4" style="resize: vertical;">${row.dataset.descritorNivel2 || ''}</textarea>
           </div>
-          <div class="col-12 col-md-2">
+          <div class="col-12">
             <label class="form-label small mb-1">Desc. N3</label>
-            <input name="descritor_nivel_3" class="form-control form-control-sm" value="${row.dataset.descritorNivel3 || ''}">
+            <textarea name="descritor_nivel_3" class="form-control form-control-sm" rows="4" style="resize: vertical;">${row.dataset.descritorNivel3 || ''}</textarea>
           </div>
-          <div class="col-12 col-md-2">
+          <div class="col-12">
             <label class="form-label small mb-1">Desc. N4</label>
-            <input name="descritor_nivel_4" class="form-control form-control-sm" value="${row.dataset.descritorNivel4 || ''}">
+            <textarea name="descritor_nivel_4" class="form-control form-control-sm" rows="4" style="resize: vertical;">${row.dataset.descritorNivel4 || ''}</textarea>
           </div>
-          <div class="col-12 col-md-2">
+          <div class="col-12">
             <label class="form-label small mb-1">Desc. N5</label>
-            <input name="descritor_nivel_5" class="form-control form-control-sm" value="${row.dataset.descritorNivel5 || ''}">
+            <textarea name="descritor_nivel_5" class="form-control form-control-sm" rows="4" style="resize: vertical;">${row.dataset.descritorNivel5 || ''}</textarea>
           </div>
           <div class="col-6 col-md-1">
             <label class="form-label small mb-1">Ordem</label>
