@@ -109,11 +109,8 @@ def _rubric_to_dict(rubric: EV2Rubric) -> dict:
         "descritor_nivel_3": rubric.descritor_nivel_3,
         "descritor_nivel_4": rubric.descritor_nivel_4,
         "descritor_nivel_5": rubric.descritor_nivel_5,
-<<<<<<< HEAD
-=======
         "ordem": int(getattr(rubric, "ordem", 0) or 0),
         "peso": float(getattr(rubric, "peso", 0) or 0),
->>>>>>> 036f04d (Rewrite rubricas import loop block to valid standalone payload form)
         "components_count": len(components),
         "components": [
             {
@@ -883,13 +880,10 @@ def ev2_rubricas_collection():
         "descritor_nivel_4": (data.get("descritor_nivel_4") or "").strip() or None,
         "descritor_nivel_5": (data.get("descritor_nivel_5") or "").strip() or None,
     }
-<<<<<<< HEAD
-=======
     ordem = _as_int(data.get("ordem")) or 0
     peso = _as_float(data.get("peso"))
     if peso is None:
         peso = 0
->>>>>>> 036f04d (Rewrite rubricas import loop block to valid standalone payload form)
     ativo = _to_bool(data.get("ativo"), default=True)
 
     if not domain_id or not codigo or not nome:
@@ -919,11 +913,8 @@ def ev2_rubricas_collection():
         nome=nome,
         descricao=descricao,
         **descritores,
-<<<<<<< HEAD
-=======
         ordem=ordem,
         peso=peso,
->>>>>>> 036f04d (Rewrite rubricas import loop block to valid standalone payload form)
         ativo=ativo,
     )
     db.session.add(rubrica)
@@ -981,12 +972,6 @@ def ev2_rubricas_import():
                 f"Código '{rubrica.codigo}' já existia no domínio de destino; usado '{final_code}'."
             )
 
-<<<<<<< HEAD
-        new_rubrica = EV2Rubric(
-            domain_id=target.id,
-            codigo=final_code,
-=======
->>>>>>> 036f04d (Rewrite rubricas import loop block to valid standalone payload form)
         rubrica_payload = {
             "domain_id": target.id,
             "codigo": final_code,
@@ -1001,20 +986,12 @@ def ev2_rubricas_import():
             "peso": rubrica.peso,
             "ativo": rubrica.ativo,
         }
-<<<<<<< HEAD
-        new_rubrica = EV2Rubric(**rubrica_payload)
-                    rubrica_id=new_rubrica.id,
-                    nome=comp.nome,
-                    ordem=comp.ordem,
-=======
-
         new_rubrica = EV2Rubric(**rubrica_payload)
         db.session.add(new_rubrica)
         db.session.flush()
 
         # clonar componentes se existirem
         for comp in getattr(rubrica, "components", []):
->>>>>>> 036f04d (Rewrite rubricas import loop block to valid standalone payload form)
             cloned_component = EV2RubricComponent(
                 rubrica_id=new_rubrica.id,
                 nome=comp.nome,
@@ -1026,17 +1003,12 @@ def ev2_rubricas_import():
                 descritor_nivel_4=comp.descritor_nivel_4,
                 descritor_nivel_5=comp.descritor_nivel_5,
                 ativo=comp.ativo,
-<<<<<<< HEAD
-            db.session.add(cloned_component)
-=======
             )
             db.session.add(cloned_component)
 
         created.append(new_rubrica.id)
 
     db.session.commit()
-
->>>>>>> 036f04d (Rewrite rubricas import loop block to valid standalone payload form)
     payload = {
         "source_domain_id": source.id,
         "target_domain_id": target.id,
@@ -1133,11 +1105,8 @@ def ev2_rubrica_item(rubrica_id: int):
         rubrica.descritor_nivel_3 = descritor_nivel_3
         rubrica.descritor_nivel_4 = descritor_nivel_4
         rubrica.descritor_nivel_5 = descritor_nivel_5
-<<<<<<< HEAD
-=======
         rubrica.ordem = ordem
         rubrica.peso = peso
->>>>>>> 036f04d (Rewrite rubricas import loop block to valid standalone payload form)
         rubrica.ativo = ativo
         db.session.commit()
 

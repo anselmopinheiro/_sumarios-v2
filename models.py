@@ -811,11 +811,8 @@ class EV2Rubric(db.Model):
     descritor_nivel_3 = db.Column(db.Text)
     descritor_nivel_4 = db.Column(db.Text)
     descritor_nivel_5 = db.Column(db.Text)
-<<<<<<< HEAD
-=======
     ordem = db.Column(db.Integer, nullable=False, default=0, server_default="0")
     peso = db.Column(db.Numeric(5, 2), nullable=False, default=0, server_default="0")
->>>>>>> 036f04d (Rewrite rubricas import loop block to valid standalone payload form)
     ativo = db.Column(db.Boolean, nullable=False, default=True, server_default=db.text("true"))
     pontuacao_padrao_basico = db.Column(db.Float, default=3)
     pontuacao_padrao_secundario = db.Column(db.Float, default=12)
