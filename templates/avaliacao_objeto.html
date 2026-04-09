@@ -1,17 +1,22 @@
 {% extends 'embedded_base.html' if embed_mode else 'base.html' %}
 {% block content %}
 {% macro short_rubric(rubrica) -%}
-  {%- if rubrica.codigo -%}
-    {{ rubrica.codigo }}
+  {%- set nome = (rubrica.nome or '') -%}
+  {%- set lower = nome|lower -%}
+  {%- if 'comunica' in lower -%}
+    Com
+  {%- elif 'conhecimento' in lower -%}
+    Con
+  {%- elif 'resolu' in lower and 'proble' in lower -%}
+    Res
+  {%- elif 'responsabilidade' in lower and 'autonomia' in lower -%}
+    R&A
+  {%- elif rubrica.codigo -%}
+    {{ (rubrica.codigo or '')[:6] }}
+  {%- elif nome|length > 4 -%}
+    {{ nome[:4] }}
   {%- else -%}
-    {%- set words = (rubrica.nome or '').split() -%}
-    {%- if words|length >= 2 -%}
-      {{ words[0][0:1] ~ words[-1][0:1] }}
-    {%- elif (rubrica.nome or '')|length > 4 -%}
-      {{ (rubrica.nome or '')[:4] }}
-    {%- else -%}
-      {{ rubrica.nome or 'Rub' }}
-    {%- endif -%}
+    {{ nome or 'Rub' }}
   {%- endif -%}
 {%- endmacro %}
 
