@@ -4123,9 +4123,19 @@ def create_app():
                 for membro in membros:
                     grupo_por_aluno[membro.aluno_id] = nomes_grupo.get(membro.group_id, "")
 
+        rubricas_payload = {}
+        for dominio in dominios_view:
+            serialized = []
+            for rubrica in (dominio.get("rubricas") or []):
+                rubrica_json = _ev2_rubric_to_dict(rubrica)
+                serialized.append(rubrica_json)
+                rubricas_payload[rubrica.id] = rubrica_json
+            dominio["rubricas_payload"] = serialized
+
         return {
             "alunos": alunos,
             "dominios_view": dominios_view,
+            "rubricas_payload": rubricas_payload,
             "avaliavel_por_aluno": avaliavel_por_aluno,
             "bloqueio_motivo_por_aluno": bloqueio_motivo_por_aluno,
             "event": event,
@@ -4979,11 +4989,6 @@ def create_app():
                 )
 
         grupos_visiveis = [g for g in ctx.get("grupos", []) if not (g.nome or "").startswith("__IND__")]
-        rubricas_payload = {
-            rubrica.id: _ev2_rubric_to_dict(rubrica)
-            for dominio in ctx["dominios_view"]
-            for rubrica in dominio["rubricas"]
-        }
         return render_template(
             "avaliacao_objeto.html",
             tipo=tipo,
@@ -4994,7 +4999,7 @@ def create_app():
             linhas=linhas,
             dominios=ctx["dominios_view"],
             rubricas=[rubrica for dominio in ctx["dominios_view"] for rubrica in dominio["rubricas"]],
-            rubricas_payload=rubricas_payload,
+            rubricas_payload=ctx.get("rubricas_payload", {}),
             avaliacoes=avaliacoes,
             component_scores=component_scores,
             medias_por_aluno=medias_por_aluno,
