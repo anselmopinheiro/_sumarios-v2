@@ -1142,12 +1142,6 @@ def ev2_rubrica_add_component(rubrica_id: int):
     if not nome:
         return _error("Campo obrigatório: nome", 400, "ev2_config.ev2_rubricas_collection")
 
-    peso = _as_float(data.get("peso"))
-    if peso is None:
-        peso = 0
-    if peso < 0 or peso > 100:
-        return _error("Peso inválido: deve estar entre 0 e 100.", 400, "ev2_config.ev2_rubricas_collection")
-
     next_ordem = (
         db.session.query(db.func.max(EV2RubricComponent.ordem))
         .filter(EV2RubricComponent.rubrica_id == rubrica.id)
@@ -1157,8 +1151,8 @@ def ev2_rubrica_add_component(rubrica_id: int):
     comp = EV2RubricComponent(
         rubrica_id=rubrica.id,
         nome=nome,
-        ordem=_as_int(data.get("ordem")) if _as_int(data.get("ordem")) is not None else int(next_ordem) + 1,
-        peso=peso,
+        ordem=int(next_ordem) + 1,
+        peso=0,
         descritor_nivel_1=(data.get("descritor_nivel_1") or "").strip() or None,
         descritor_nivel_2=(data.get("descritor_nivel_2") or "").strip() or None,
         descritor_nivel_3=(data.get("descritor_nivel_3") or "").strip() or None,

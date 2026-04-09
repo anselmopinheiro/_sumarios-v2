@@ -24,6 +24,9 @@
     }
   }
 
+  let rubricasCache = [];
+  const componentById = new Map();
+
   async function handleDomainButtons(event) {
     const duplicateBtn = event.target.closest('.js-domain-duplicate');
     if (duplicateBtn) {
@@ -86,6 +89,10 @@
 
   function closeInlineRubricaEditor() {
     document.querySelectorAll('.js-inline-rubrica-editor').forEach((el) => el.remove());
+  }
+
+  function closeInlineComponentEditor() {
+    document.querySelectorAll('.js-inline-component-editor').forEach((el) => el.remove());
   }
 
   function buildDomainOptions(selected) {
@@ -175,10 +182,13 @@
   function renderRubricasTable(items) {
     const tbody = document.querySelector('#js-rubricas-table tbody');
     if (!tbody) return;
+    rubricasCache = Array.isArray(items) ? items : [];
+    componentById.clear();
     const dmap = domainNameMap();
     tbody.innerHTML = '';
-    items.forEach((r) => {
+    rubricasCache.forEach((r) => {
       const tr = document.createElement('tr');
+      tr.className = 'js-rubrica-row';
       tr.dataset.rubricaId = r.id;
       tr.dataset.domainId = r.domain_id;
       tr.dataset.codigo = r.codigo || '';
@@ -204,12 +214,124 @@
         <td class="col-center">${r.components_count ?? (Array.isArray(r.components) ? r.components.length : 0)}</td>
         <td class="col-center">${r.ativo ? 'Sim' : 'Não'}</td>
         <td class="col-left">
+          <button type="button" class="js-rubrica-add-component secondary">Adicionar componente</button>
           <button type="button" class="js-rubrica-edit secondary">Editar</button>
           <button type="button" class="js-rubrica-delete secondary">Eliminar</button>
         </td>
       `;
       tbody.appendChild(tr);
+
+      const components = Array.isArray(r.components) ? r.components : [];
+      if (!components.length) return;
+
+      const compRows = components
+        .map((c) => {
+          componentById.set(Number(c.id), { ...c, rubrica_id: Number(r.id) });
+          return `
+            <tr class="js-component-row-item" data-component-id="${c.id}" data-rubrica-id="${r.id}">
+              <td>${c.id}</td>
+              <td colspan="2">${c.nome || ''}</td>
+              <td>${c.descritor_nivel_1 || ''}</td>
+              <td>${c.descritor_nivel_2 || ''}</td>
+              <td>${c.descritor_nivel_3 || ''}</td>
+              <td>${c.descritor_nivel_4 || ''}</td>
+              <td>${c.descritor_nivel_5 || ''}</td>
+              <td class="text-center">${c.ativo ? 'Sim' : 'Não'}</td>
+              <td>
+                <div class="d-flex gap-2">
+                  <button type="button" class="js-comp-edit btn btn-sm btn-outline-primary" data-component-id="${c.id}" data-rubrica-id="${r.id}">Editar</button>
+                  <button type="button" class="js-comp-delete btn btn-sm btn-outline-danger" data-component-id="${c.id}" data-rubrica-id="${r.id}">Eliminar</button>
+                </div>
+              </td>
+            </tr>
+          `;
+        })
+        .join('');
+
+      const compContainer = document.createElement('tr');
+      compContainer.className = 'js-components-row table-light';
+      compContainer.dataset.parentRubricaId = String(r.id);
+      compContainer.innerHTML = `
+        <td colspan="10" class="ps-4">
+          <div class="small fw-semibold mb-2">Componentes</div>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th style="width:60px;">ID</th>
+                  <th colspan="2">Nome</th>
+                  <th>Desc. N1</th>
+                  <th>Desc. N2</th>
+                  <th>Desc. N3</th>
+                  <th>Desc. N4</th>
+                  <th>Desc. N5</th>
+                  <th style="width:80px;" class="text-center">Ativo</th>
+                  <th style="width:180px;">Ações</th>
+                </tr>
+              </thead>
+              <tbody>${compRows}</tbody>
+            </table>
+          </div>
+        </td>
+      `;
+      tbody.appendChild(compContainer);
     });
+  }
+
+  function renderInlineComponentForm(rubricaId, component) {
+    closeInlineComponentEditor();
+    const rubricaRow = document.getElementById(`rubrica-${rubricaId}`);
+    if (!rubricaRow) return;
+    const anchorRow = rubricaRow.nextElementSibling?.classList.contains('js-components-row')
+      ? rubricaRow.nextElementSibling
+      : rubricaRow;
+
+    const editor = document.createElement('tr');
+    editor.className = 'js-inline-component-editor table-warning';
+    editor.innerHTML = `
+      <td colspan="10">
+        <form class="js-inline-component-form row g-2 align-items-end">
+          <input type="hidden" name="rubrica_id" value="${rubricaId}">
+          <input type="hidden" name="component_id" value="${component?.id || ''}">
+          <div class="col-12 col-md-4">
+            <label class="form-label small mb-1">Nome</label>
+            <input name="nome" class="form-control form-control-sm" value="${component?.nome || ''}" required>
+          </div>
+          <div class="col-12 col-md-8">
+            <div class="form-check mt-4">
+              <input class="form-check-input" type="checkbox" name="ativo" ${component ? (component.ativo ? 'checked' : '') : 'checked'}>
+              <label class="form-check-label small">Ativo</label>
+            </div>
+          </div>
+          <div class="col-12 col-md-6">
+            <label class="form-label small mb-1">Desc. N1</label>
+            <textarea name="descritor_nivel_1" class="form-control form-control-sm" rows="3" style="resize: vertical;">${component?.descritor_nivel_1 || ''}</textarea>
+          </div>
+          <div class="col-12 col-md-6">
+            <label class="form-label small mb-1">Desc. N2</label>
+            <textarea name="descritor_nivel_2" class="form-control form-control-sm" rows="3" style="resize: vertical;">${component?.descritor_nivel_2 || ''}</textarea>
+          </div>
+          <div class="col-12 col-md-6">
+            <label class="form-label small mb-1">Desc. N3</label>
+            <textarea name="descritor_nivel_3" class="form-control form-control-sm" rows="3" style="resize: vertical;">${component?.descritor_nivel_3 || ''}</textarea>
+          </div>
+          <div class="col-12 col-md-6">
+            <label class="form-label small mb-1">Desc. N4</label>
+            <textarea name="descritor_nivel_4" class="form-control form-control-sm" rows="3" style="resize: vertical;">${component?.descritor_nivel_4 || ''}</textarea>
+          </div>
+          <div class="col-12">
+            <label class="form-label small mb-1">Desc. N5</label>
+            <textarea name="descritor_nivel_5" class="form-control form-control-sm" rows="3" style="resize: vertical;">${component?.descritor_nivel_5 || ''}</textarea>
+          </div>
+          <div class="col-12 d-flex gap-2 justify-content-end">
+            <button type="submit" class="btn btn-sm btn-success">${component ? 'Guardar componente' : 'Adicionar componente'}</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary js-inline-component-cancel">Cancelar</button>
+          </div>
+        </form>
+      </td>
+    `;
+    anchorRow.insertAdjacentElement('afterend', editor);
+    editor.scrollIntoView({ block: 'nearest' });
   }
 
   async function refreshRubricasTable() {
@@ -227,17 +349,19 @@
   function applyRubricasFilters() {
     const domainFilter = document.getElementById('js-rubrica-filter-domain')?.value || '';
     const term = (document.getElementById('js-rubrica-search')?.value || '').trim().toLowerCase();
-    document.querySelectorAll('#js-rubricas-table tbody tr').forEach((row) => {
+    document.querySelectorAll('#js-rubricas-table tbody tr.js-rubrica-row').forEach((row) => {
       const rowDomain = row.dataset.domainId || '';
       const codigo = (row.dataset.codigo || '').toLowerCase();
       const nome = (row.dataset.nome || '').toLowerCase();
       const passDomain = !domainFilter || rowDomain === String(domainFilter);
       const passSearch = !term || codigo.includes(term) || nome.includes(term);
       row.style.display = passDomain && passSearch ? '' : 'none';
+      const compRow = document.querySelector(`#js-rubricas-table tbody tr.js-components-row[data-parent-rubrica-id="${row.dataset.rubricaId}"]`);
+      if (compRow) compRow.style.display = passDomain && passSearch ? '' : 'none';
     });
   }
 
-  ready(function(){
+  ready(async function(){
     document.addEventListener('click', async function(event){
       const handledDomain = await handleDomainButtons(event);
       if (handledDomain) return;
@@ -245,13 +369,61 @@
       const editBtn = event.target.closest('.js-rubrica-edit');
       if (editBtn) {
         const row = editBtn.closest('tr');
+        closeInlineComponentEditor();
         openInlineRubricaEditor(row);
+        return;
+      }
+
+      const addCompBtn = event.target.closest('.js-rubrica-add-component');
+      if (addCompBtn) {
+        const row = addCompBtn.closest('tr');
+        const rubricaId = Number(row?.dataset?.rubricaId || 0);
+        if (!rubricaId) return;
+        closeInlineRubricaEditor();
+        renderInlineComponentForm(rubricaId, null);
+        return;
+      }
+
+      const compEditBtn = event.target.closest('.js-comp-edit');
+      if (compEditBtn) {
+        const componentId = Number(compEditBtn.dataset.componentId || 0);
+        const rubricaId = Number(compEditBtn.dataset.rubricaId || 0);
+        const component = componentById.get(componentId);
+        if (!rubricaId || !component) return;
+        closeInlineRubricaEditor();
+        renderInlineComponentForm(rubricaId, component);
+        return;
+      }
+
+      const compDeleteBtn = event.target.closest('.js-comp-delete');
+      if (compDeleteBtn) {
+        const componentId = Number(compDeleteBtn.dataset.componentId || 0);
+        if (!componentId) return;
+        if (!window.confirm('Tem a certeza que pretende eliminar componente?')) return;
+        const response = await fetch(`/ev2/config/rubricas/components/${componentId}`, {
+          method: 'DELETE',
+          headers: { 'Accept': 'application/json' },
+        });
+        const data = await parseResponse(response);
+        if (!response.ok) {
+          showMessage('js-rubrica-msg', data.error || 'Falha ao eliminar componente.', true);
+          return;
+        }
+        showMessage('js-rubrica-msg', 'Componente eliminada com sucesso.', false);
+        closeInlineComponentEditor();
+        await refreshRubricasTable();
         return;
       }
 
       const inlineCancelBtn = event.target.closest('.js-inline-rubrica-cancel');
       if (inlineCancelBtn) {
         closeInlineRubricaEditor();
+        return;
+      }
+
+      const inlineCompCancelBtn = event.target.closest('.js-inline-component-cancel');
+      if (inlineCompCancelBtn) {
+        closeInlineComponentEditor();
         return;
       }
 
@@ -280,43 +452,80 @@
 
     document.addEventListener('submit', async function(event){
       const inlineForm = event.target.closest('.js-inline-rubrica-form');
-      if (!inlineForm) return;
+      if (inlineForm) {
+        event.preventDefault();
+        const hostRow = inlineForm.closest('tr')?.previousElementSibling;
+        const rubricaId = hostRow?.dataset?.rubricaId;
+        if (!rubricaId) return;
+
+        const payload = {
+          domain_id: Number(inlineForm.querySelector('[name="domain_id"]')?.value),
+          codigo: inlineForm.querySelector('[name="codigo"]')?.value?.trim(),
+          nome: inlineForm.querySelector('[name="nome"]')?.value?.trim(),
+          descricao: inlineForm.querySelector('[name="descricao"]')?.value?.trim() || null,
+          descritor_nivel_1: inlineForm.querySelector('[name="descritor_nivel_1"]')?.value?.trim() || null,
+          descritor_nivel_2: inlineForm.querySelector('[name="descritor_nivel_2"]')?.value?.trim() || null,
+          descritor_nivel_3: inlineForm.querySelector('[name="descritor_nivel_3"]')?.value?.trim() || null,
+          descritor_nivel_4: inlineForm.querySelector('[name="descritor_nivel_4"]')?.value?.trim() || null,
+          descritor_nivel_5: inlineForm.querySelector('[name="descritor_nivel_5"]')?.value?.trim() || null,
+          ordem: Number(inlineForm.querySelector('[name="ordem"]')?.value || 0),
+          peso: Number(inlineForm.querySelector('[name="peso"]')?.value || 0),
+          ativo: !!inlineForm.querySelector('[name="ativo"]')?.checked,
+        };
+
+        const response = await fetch(`/ev2/config/rubricas/${rubricaId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await parseResponse(response);
+        if (!response.ok) {
+          showMessage('js-rubrica-msg', data.error || 'Falha ao guardar rubrica.', true);
+          return;
+        }
+
+        showMessage('js-rubrica-msg', 'Rubrica atualizada.', false);
+        await refreshRubricasTable();
+        closeInlineRubricaEditor();
+        const updatedRow = document.getElementById(`rubrica-${rubricaId}`);
+        if (updatedRow) updatedRow.scrollIntoView({ block: 'center' });
+        return;
+      }
+
+      const compForm = event.target.closest('.js-inline-component-form');
+      if (!compForm) return;
       event.preventDefault();
-      const hostRow = inlineForm.closest('tr')?.previousElementSibling;
-      const rubricaId = hostRow?.dataset?.rubricaId;
+      const rubricaId = Number(compForm.querySelector('[name="rubrica_id"]')?.value || 0);
+      const componentId = Number(compForm.querySelector('[name="component_id"]')?.value || 0);
       if (!rubricaId) return;
 
       const payload = {
-        domain_id: Number(inlineForm.querySelector('[name="domain_id"]')?.value),
-        codigo: inlineForm.querySelector('[name="codigo"]')?.value?.trim(),
-        nome: inlineForm.querySelector('[name="nome"]')?.value?.trim(),
-        descricao: inlineForm.querySelector('[name="descricao"]')?.value?.trim() || null,
-        descritor_nivel_1: inlineForm.querySelector('[name="descritor_nivel_1"]')?.value?.trim() || null,
-        descritor_nivel_2: inlineForm.querySelector('[name="descritor_nivel_2"]')?.value?.trim() || null,
-        descritor_nivel_3: inlineForm.querySelector('[name="descritor_nivel_3"]')?.value?.trim() || null,
-        descritor_nivel_4: inlineForm.querySelector('[name="descritor_nivel_4"]')?.value?.trim() || null,
-        descritor_nivel_5: inlineForm.querySelector('[name="descritor_nivel_5"]')?.value?.trim() || null,
-        ordem: Number(inlineForm.querySelector('[name="ordem"]')?.value || 0),
-        peso: Number(inlineForm.querySelector('[name="peso"]')?.value || 0),
-        ativo: !!inlineForm.querySelector('[name="ativo"]')?.checked,
+        nome: compForm.querySelector('[name="nome"]')?.value?.trim(),
+        descritor_nivel_1: compForm.querySelector('[name="descritor_nivel_1"]')?.value?.trim() || null,
+        descritor_nivel_2: compForm.querySelector('[name="descritor_nivel_2"]')?.value?.trim() || null,
+        descritor_nivel_3: compForm.querySelector('[name="descritor_nivel_3"]')?.value?.trim() || null,
+        descritor_nivel_4: compForm.querySelector('[name="descritor_nivel_4"]')?.value?.trim() || null,
+        descritor_nivel_5: compForm.querySelector('[name="descritor_nivel_5"]')?.value?.trim() || null,
+        ativo: !!compForm.querySelector('[name="ativo"]')?.checked,
       };
 
-      const response = await fetch(`/ev2/config/rubricas/${rubricaId}`, {
-        method: 'PUT',
+      const url = componentId
+        ? `/ev2/config/rubricas/components/${componentId}`
+        : `/ev2/config/rubricas/${rubricaId}/components`;
+      const method = componentId ? 'PUT' : 'POST';
+      const response = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify(payload),
       });
       const data = await parseResponse(response);
       if (!response.ok) {
-        showMessage('js-rubrica-msg', data.error || 'Falha ao guardar rubrica.', true);
+        showMessage('js-rubrica-msg', data.error || 'Falha ao guardar componente.', true);
         return;
       }
-
-      showMessage('js-rubrica-msg', 'Rubrica atualizada.', false);
+      showMessage('js-rubrica-msg', componentId ? 'Componente atualizada.' : 'Componente adicionada.', false);
+      closeInlineComponentEditor();
       await refreshRubricasTable();
-      closeInlineRubricaEditor();
-      const updatedRow = document.getElementById(`rubrica-${rubricaId}`);
-      if (updatedRow) updatedRow.scrollIntoView({ block: 'center' });
     });
 
     const rubricaCancel = document.getElementById('js-rubrica-cancel');
@@ -378,7 +587,7 @@
     const searchInput = document.getElementById('js-rubrica-search');
     if (filterDomain) filterDomain.addEventListener('change', applyRubricasFilters);
     if (searchInput) searchInput.addEventListener('input', applyRubricasFilters);
-    applyRubricasFilters();
+    await refreshRubricasTable();
 
     const importForm = document.getElementById('js-rubricas-import-form');
     if (importForm) {
