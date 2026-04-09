@@ -135,7 +135,18 @@
             </tr>
             <tr>
               {% for d in dominios_obrigatorios if d.rubricas %}
-                {% for r in d.rubricas %}<th>{{ r.nome }}</th>{% endfor %}
+                {% for r in d.rubricas %}
+                  <th>
+                    <div>{{ r.nome }}</div>
+                    {% if r.components %}
+                      <div class="small text-muted mt-1">
+                        {% for c in r.components if c.ativo %}
+                          <div>• {{ c.nome }}</div>
+                        {% endfor %}
+                      </div>
+                    {% endif %}
+                  </th>
+                {% endfor %}
                 <th class="text-nowrap">{{ d.letra }}</th>
               {% endfor %}
               {% for dom in dominios_opcionais if dom.rubricas %}
@@ -171,6 +182,30 @@
                       <option value="{{ i }}" {% if (m.rubric_values and m.rubric_values.get(r.id) == i) or (score_key and e and (e|attr(score_key)) == i) %}selected{% endif %}>{{ i }}</option>
                       {% endfor %}
                     </select>
+                    {% if r.components %}
+                      <div class="mt-2 d-flex flex-column gap-1">
+                        {% for c in r.components if c.ativo %}
+                          <label class="small text-muted mb-0">{{ c.nome }}</label>
+                          <select class="form-select form-select-sm field-component-score"
+                                  data-rubric-id="{{ r.id }}"
+                                  data-domain-key="req-{{ d.id }}"
+                                  data-component-id="{{ c.id }}">
+                            <option value=""></option>
+                            {% for i in range(1,6) %}
+                              <option value="{{ i }}">{{ i }}</option>
+                            {% endfor %}
+                          </select>
+                          <details class="small text-muted">
+                            <summary>Descritores</summary>
+                            <div>N1: {{ c.descritor_nivel_1 or '—' }}</div>
+                            <div>N2: {{ c.descritor_nivel_2 or '—' }}</div>
+                            <div>N3: {{ c.descritor_nivel_3 or '—' }}</div>
+                            <div>N4: {{ c.descritor_nivel_4 or '—' }}</div>
+                            <div>N5: {{ c.descritor_nivel_5 or '—' }}</div>
+                          </details>
+                        {% endfor %}
+                      </div>
+                    {% endif %}
                   </td>
                   {% set ns.mandatory_idx = ns.mandatory_idx + 1 %}
                   {% endfor %}
@@ -288,6 +323,20 @@
     });
   }
 
+  function syncRubricScoreFromComponents(tr, rubricId){
+    if(!tr || !rubricId) return;
+    const componentFields = tr.querySelectorAll(`.field-component-score[data-rubric-id="${rubricId}"]`);
+    if(!componentFields.length) return;
+    const values = [];
+    componentFields.forEach((field)=>{
+      const raw = Number(field.value);
+      if(Number.isFinite(raw) && raw >= 1 && raw <= 5) values.push(raw);
+    });
+    const target = tr.querySelector(`.field-dominio[data-rubric-id="${rubricId}"]`);
+    if(!target) return;
+    target.value = values.length ? String(Math.round(values.reduce((a,b)=>a+b,0) / values.length)) : "";
+  }
+
   async function saveRow(tr){
     if(!tr) return true;
     markSaving();
@@ -402,6 +451,10 @@
   grid.addEventListener('input', (ev)=>{
     const tr = ev.target.closest('tr[data-aluno-id]');
     if(tr){
+      const compField = ev.target.closest('.field-component-score');
+      if(compField){
+        syncRubricScoreFromComponents(tr, compField.dataset.rubricId);
+      }
       recalcRowDomainAverages(tr);
       markDirty(tr);
       scheduleRowSave(tr, 800);
@@ -415,11 +468,20 @@
       scheduleRowSave(firstRow, 900);
     }
   });
-  grid.querySelectorAll('tr[data-aluno-id]').forEach((tr)=> recalcRowDomainAverages(tr));
+  grid.querySelectorAll('tr[data-aluno-id]').forEach((tr)=>{
+    tr.querySelectorAll('.field-component-score[data-rubric-id]').forEach((field)=>{
+      syncRubricScoreFromComponents(tr, field.dataset.rubricId);
+    });
+    recalcRowDomainAverages(tr);
+  });
 
   grid.addEventListener('change', async (ev)=>{
     const tr = ev.target.closest('tr[data-aluno-id]');
     if(tr){
+      const compField = ev.target.closest('.field-component-score');
+      if(compField){
+        syncRubricScoreFromComponents(tr, compField.dataset.rubricId);
+      }
       recalcRowDomainAverages(tr);
       markDirty(tr);
       scheduleRowSave(tr, 600);

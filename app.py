@@ -71,7 +71,7 @@ from sqlalchemy.sql.sqltypes import (
 from config import Config
 from offline_blueprint import offline_bp, refresh_snapshot_from_remote, snapshot_remote_to_local
 from ev2_routes import ev2_bp
-from ev2_config_routes import ev2_config_bp
+from ev2_config_routes import ev2_config_bp, _rubric_to_dict as _ev2_rubric_to_dict
 from offline_store import (
     count_offline_errors,
     get_offline_db_path as resolve_offline_db_path,
@@ -4979,6 +4979,11 @@ def create_app():
                 )
 
         grupos_visiveis = [g for g in ctx.get("grupos", []) if not (g.nome or "").startswith("__IND__")]
+        rubricas_payload = {
+            rubrica.id: _ev2_rubric_to_dict(rubrica)
+            for dominio in ctx["dominios_view"]
+            for rubrica in dominio["rubricas"]
+        }
         return render_template(
             "avaliacao_objeto.html",
             tipo=tipo,
@@ -4989,6 +4994,7 @@ def create_app():
             linhas=linhas,
             dominios=ctx["dominios_view"],
             rubricas=[rubrica for dominio in ctx["dominios_view"] for rubrica in dominio["rubricas"]],
+            rubricas_payload=rubricas_payload,
             avaliacoes=avaliacoes,
             component_scores=component_scores,
             medias_por_aluno=medias_por_aluno,
@@ -5295,6 +5301,7 @@ def create_app():
                     }
             medias_por_aluno[aluno.id] = _media_por_dominio_event_student(es) if avaliavel_por_aluno.get(aluno.id, False) else {}
 
+        rubricas_payload = {rubrica.id: _ev2_rubric_to_dict(rubrica) for rubrica in rubricas}
         return render_template(
             "avaliacao_objeto.html",
             tipo=tipo,
@@ -5302,6 +5309,7 @@ def create_app():
             linhas=linhas,
             dominios=dominios_view,
             rubricas=rubricas,
+            rubricas_payload=rubricas_payload,
             avaliacoes=avaliacoes,
             component_scores=component_scores,
             medias_por_aluno=medias_por_aluno,
@@ -9199,6 +9207,8 @@ def create_app():
         alunos = _listar_alunos_turma(trabalho.turma_id)
         alunos_by_id = {a.id: a for a in alunos}
         dominios_obrigatorios = _listar_dominios_obrigatorios_turma(trabalho.turma_id)
+        for dom in dominios_obrigatorios:
+            dom["rubricas_payload"] = [_ev2_rubric_to_dict(r) for r in (dom.get("rubricas") or [])]
         parametros = sorted(trabalho.parametros, key=lambda p: (p.ordem, p.id))
         rubric_param_id_map = {}
         parametros_opcionais_locais = []

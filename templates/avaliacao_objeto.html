@@ -156,6 +156,21 @@
             {% for rubrica in dominio.rubricas %}
               <th>
                 <div>{{ rubrica.nome }}</div>
+                {% set rubrica_json = rubricas_payload.get(rubrica.id, {}) %}
+                {% if rubrica_json.get('components') %}
+                  <div class="small text-muted mt-1 d-flex flex-column gap-1">
+                    {% for comp in rubrica_json.get('components', []) %}
+                      <details>
+                        <summary>{{ comp.get('nome') or 'Componente' }} · {% if comp.get('ativo') %}Ativo{% else %}Inativo{% endif %}</summary>
+                        <div>N1: {{ comp.get('descritor_nivel_1') or '—' }}</div>
+                        <div>N2: {{ comp.get('descritor_nivel_2') or '—' }}</div>
+                        <div>N3: {{ comp.get('descritor_nivel_3') or '—' }}</div>
+                        <div>N4: {{ comp.get('descritor_nivel_4') or '—' }}</div>
+                        <div>N5: {{ comp.get('descritor_nivel_5') or '—' }}</div>
+                      </details>
+                    {% endfor %}
+                  </div>
+                {% endif %}
                 <div class="d-flex flex-column gap-1 mt-1">
                   <button type="button" class="btn btn-outline-primary btn-sm" onclick="aplicarValorAutomatico({{ rubrica.id }})" data-rubrica-id="{{ rubrica.id }}">Aplicar automático</button>
                   <button type="button" class="btn btn-outline-secondary btn-sm" onclick="confirmarLimpar({{ rubrica.id }})">Limpar</button>
