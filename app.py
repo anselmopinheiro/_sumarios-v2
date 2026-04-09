@@ -4438,76 +4438,29 @@ def create_app():
 
             assessment.component_scores.clear()
             if not scores_by_component:
+                assessment.observacoes = None
                 return raw_numeric_value
 
-            weighted_total = 0.0
-            weight_sum = 0.0
-            fallback_weight = 1.0
+            total = 0.0
+            count = 0
+            feedback_parts = []
             for comp in components:
                 level = scores_by_component.get(comp.id)
                 if level is None:
                     continue
-                comp_weight = float(comp.peso or 0)
-                weight = comp_weight if comp_weight > 0 else fallback_weight
-                weighted_total += float(level) * weight
-                weight_sum += weight
+                total += float(level)
+                count += 1
                 assessment.component_scores.append(
                     EV2AssessmentComponentScore(component_id=comp.id, score_level=level)
                 )
-            if weight_sum <= 0:
+                desc = comp.descriptor_for_level(level)
+                if desc:
+                    feedback_parts.append(f"{comp.nome}: {desc}")
+            if count <= 0:
+                assessment.observacoes = None
                 return raw_numeric_value
-            return round(weighted_total / weight_sum, 2)
-
-        def _apply_component_scores(assessment, rubric_id, request_obj, raw_numeric_value):
-            rubric = EV2Rubric.query.get(rubric_id)
-            components = sorted((rubric.components or []), key=lambda c: (c.ordem, c.id)) if rubric else []
-            if not components:
-                assessment.component_scores.clear()
-                return raw_numeric_value
-
-            payload = request_obj.form.get("component_scores")
-            if not payload and request_obj.is_json:
-                payload = (request_obj.get_json(silent=True) or {}).get("component_scores")
-            if isinstance(payload, str):
-                try:
-                    payload = json.loads(payload)
-                except Exception:
-                    payload = None
-            if not isinstance(payload, dict):
-                assessment.component_scores.clear()
-                return raw_numeric_value
-
-            scores_by_component = {}
-            for comp in components:
-                raw = payload.get(str(comp.id), payload.get(comp.id))
-                try:
-                    level = int(raw)
-                except (TypeError, ValueError):
-                    continue
-                if 1 <= level <= 5:
-                    scores_by_component[comp.id] = level
-
-            assessment.component_scores.clear()
-            if not scores_by_component:
-                return raw_numeric_value
-
-            weighted_total = 0.0
-            weight_sum = 0.0
-            fallback_weight = 1.0
-            for comp in components:
-                level = scores_by_component.get(comp.id)
-                if level is None:
-                    continue
-                comp_weight = float(comp.peso or 0)
-                weight = comp_weight if comp_weight > 0 else fallback_weight
-                weighted_total += float(level) * weight
-                weight_sum += weight
-                assessment.component_scores.append(
-                    EV2AssessmentComponentScore(component_id=comp.id, score_level=level)
-                )
-            if weight_sum <= 0:
-                return raw_numeric_value
-            return round(weighted_total / weight_sum, 2)
+            assessment.observacoes = "\n".join(feedback_parts) if feedback_parts else None
+            return round(total / count, 2)
 
         if request.method == "POST":
             event = ctx["event"] or _obter_ou_criar_evento_avaliacao(aula, tipo)
@@ -4904,6 +4857,7 @@ def create_app():
                     assessment.state = "nao_observado"
                     assessment.score_numeric = None
                     assessment.component_scores.clear()
+                    assessment.observacoes = None
                 else:
                     valor_final = _apply_component_scores(assessment, rubrica_id, request, valor)
                     assessment.state = "avaliado"
@@ -4928,6 +4882,7 @@ def create_app():
             return jsonify({"ok": True, "status": "ok", "medias_por_aluno": medias_atualizadas, "updated_members": updated_members}), 200
 
         avaliacoes = {}
+        component_scores = {}
         medias_por_aluno = {}
         linhas = []
         students_by_aluno = {es.aluno_id: es for es in ctx["event_students"]}
@@ -4969,10 +4924,16 @@ def create_app():
                         ctx["avaliavel_por_aluno"][aluno.id] = False
             linhas.append({"aluno": aluno, "grupo": grupo_nome, "tema_label": tema_label, "observacoes": getattr(es, "observacoes", "") if es else ""})
             avaliacoes[aluno.id] = {}
+            component_scores[aluno.id] = {}
             if es:
                 for assessment in (es.assessments or []):
                     if assessment.tipo == "rubrica" and assessment.rubric_id and assessment.score_numeric is not None:
                         avaliacoes[aluno.id][assessment.rubric_id] = float(assessment.score_numeric)
+                    if assessment.tipo == "rubrica" and assessment.rubric_id and (assessment.component_scores or []):
+                        component_scores[aluno.id][assessment.rubric_id] = {
+                            score.component_id: int(score.score_level)
+                            for score in (assessment.component_scores or [])
+                        }
                 elegivel_local = ctx["avaliavel_por_aluno"].get(aluno.id, False)
                 medias_por_aluno[aluno.id] = _media_por_dominio_event_student(es) if elegivel_local else {}
             else:
@@ -5029,6 +4990,7 @@ def create_app():
             dominios=ctx["dominios_view"],
             rubricas=[rubrica for dominio in ctx["dominios_view"] for rubrica in dominio["rubricas"]],
             avaliacoes=avaliacoes,
+            component_scores=component_scores,
             medias_por_aluno=medias_por_aluno,
             avaliavel_por_aluno=ctx["avaliavel_por_aluno"],
             bloqueio_motivo_por_aluno=ctx["bloqueio_motivo_por_aluno"],
@@ -5275,6 +5237,7 @@ def create_app():
                     assessment.state = "nao_observado"
                     assessment.score_numeric = None
                     assessment.component_scores.clear()
+                    assessment.observacoes = None
                 else:
                     valor_final = _apply_component_scores(assessment, rubrica_id, request, valor)
                     assessment.state = "avaliado"
@@ -5300,6 +5263,7 @@ def create_app():
             return jsonify({"status": "ok", "medias_por_aluno": medias_atualizadas, "updated_members": updated_members}), 200
 
         avaliacoes = {}
+        component_scores = {}
         medias_por_aluno = {}
         linhas = []
         grupos = []
@@ -5320,9 +5284,15 @@ def create_app():
                 continue
             linhas.append({"aluno": aluno, "grupo": es.group_key or "", "observacoes": es.observacoes or ""})
             avaliacoes[aluno.id] = {}
+            component_scores[aluno.id] = {}
             for assessment in (es.assessments or []):
                 if assessment.tipo == "rubrica" and assessment.rubric_id and assessment.score_numeric is not None:
                     avaliacoes[aluno.id][assessment.rubric_id] = float(assessment.score_numeric)
+                if assessment.tipo == "rubrica" and assessment.rubric_id and (assessment.component_scores or []):
+                    component_scores[aluno.id][assessment.rubric_id] = {
+                        score.component_id: int(score.score_level)
+                        for score in (assessment.component_scores or [])
+                    }
             medias_por_aluno[aluno.id] = _media_por_dominio_event_student(es) if avaliavel_por_aluno.get(aluno.id, False) else {}
 
         return render_template(
@@ -5333,6 +5303,7 @@ def create_app():
             dominios=dominios_view,
             rubricas=rubricas,
             avaliacoes=avaliacoes,
+            component_scores=component_scores,
             medias_por_aluno=medias_por_aluno,
             avaliavel_por_aluno=avaliavel_por_aluno,
             bloqueio_motivo_por_aluno=bloqueio_motivo_por_aluno,
