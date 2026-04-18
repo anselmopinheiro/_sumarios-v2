@@ -13,6 +13,66 @@
 {% endif %}
 
 <style>
+  .avaliacao-container {
+    overflow: auto;
+    max-height: calc(100vh - 180px);
+    position: relative;
+  }
+
+  #avaliacao-table {
+    font-size: .82rem;
+  }
+
+  #avaliacao-table th,
+  #avaliacao-table td {
+    padding: .25rem .35rem;
+    vertical-align: middle;
+  }
+
+  #avaliacao-table .avaliacao-input {
+    font-size: 12px;
+    padding: 2px 4px;
+    height: 24px;
+    min-width: 48px;
+    width: 48px;
+    margin: 0;
+    text-align: center;
+  }
+
+  #avaliacao-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #fff;
+    box-shadow: inset 0 -1px 0 #dee2e6;
+  }
+
+  #avaliacao-table thead tr:nth-child(2) th {
+    top: 52px;
+    z-index: 11;
+  }
+
+  #avaliacao-table thead tr:first-child th[rowspan="2"] {
+    z-index: 12;
+  }
+
+  #avaliacao-table .nome-coluna {
+    position: sticky;
+    left: 0;
+    z-index: 5;
+    background: #fff;
+    min-width: 220px;
+    box-shadow: inset -1px 0 0 #dee2e6;
+  }
+
+  #avaliacao-table thead th.nome-coluna {
+    z-index: 15;
+  }
+
+  #avaliacao-table tbody td.nome-coluna {
+    z-index: 6;
+  }
+
   .avaliacao-save-panel {
     position: fixed;
     right: 1rem;
@@ -27,11 +87,11 @@
 </style>
 
 <form method="post" id="avaliacao-form">
-  <div class="table-responsive">
+  <div class="table-responsive avaliacao-container">
     <table class="table table-bordered table-sm align-middle" id="avaliacao-table" data-ciclo-aula="{{ ciclo_aula }}">
       <thead class="table-light">
         <tr>
-          <th rowspan="2">Aluno</th>
+          <th rowspan="2" class="nome-coluna">Aluno</th>
           {% for dominio in dominios %}
             <th colspan="{{ dominio.rubricas|length }}">
               {{ dominio.letra }} – {{ dominio.nome }}{% if dominio.codigo %} ({{ dominio.codigo }}){% endif %}
@@ -75,14 +135,14 @@
         {% for aluno in alunos %}
           {% set avaliavel = avaliavel_por_aluno.get(aluno.id, True) %}
           <tr data-aluno-id="{{ aluno.id }}" data-presente="{{ 1 if avaliavel else 0 }}">
-            <td>{{ aluno.numero or '-' }} - {{ aluno.nome }}</td>
+            <td class="nome-coluna">{{ aluno.numero or '-' }} - {{ aluno.nome }}</td>
             {% for dominio in dominios %}
               {% for rubrica in dominio.rubricas %}
                 <td>
                   <input
                     type="number"
                     step="0.5"
-                    class="form-control form-control-sm"
+                    class="form-control form-control-sm avaliacao-input"
                     name="pontuacao-{{ aluno.id }}-{{ rubrica.id }}"
                     data-aluno-id="{{ aluno.id }}"
                     data-rubrica-id="{{ rubrica.id }}"
