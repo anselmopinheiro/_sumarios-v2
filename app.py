@@ -3524,8 +3524,9 @@ def create_app():
         return {letra: round(sum(vals) / len(vals), 1) for letra, vals in dominios_scores.items() if vals}
 
     def _apply_component_scores_payload(assessment, rubric_id, component_payload, raw_numeric_value):
-        rubric = EV2Rubric.query.get(rubric_id)
-        components = sorted((rubric.components or []), key=lambda c: (c.ordem, c.id)) if rubric else []
+        with db.session.no_autoflush:
+            rubric = EV2Rubric.query.get(rubric_id)
+            components = sorted((rubric.components or []), key=lambda c: (c.ordem, c.id)) if rubric else []
         if not components:
             assessment.component_scores.clear()
             return raw_numeric_value
@@ -3551,7 +3552,13 @@ def create_app():
             if 1 <= level <= 5:
                 scores_by_component[comp.id] = level
 
-        assessment.component_scores.clear()
+        existing_by_component = {
+            score.component_id: score for score in (assessment.component_scores or [])
+        }
+        for component_id, existing_score in list(existing_by_component.items()):
+            if component_id not in scores_by_component:
+                assessment.component_scores.remove(existing_score)
+                existing_by_component.pop(component_id, None)
         if not scores_by_component:
             assessment.observacoes = None
             return raw_numeric_value
@@ -3565,9 +3572,11 @@ def create_app():
                 continue
             total += float(level)
             count += 1
-            assessment.component_scores.append(
-                EV2AssessmentComponentScore(component_id=comp.id, score_level=level)
-            )
+            component_score = existing_by_component.get(comp.id)
+            if component_score is None:
+                component_score = EV2AssessmentComponentScore(component_id=comp.id)
+                assessment.component_scores.append(component_score)
+            component_score.score_level = level
             desc = comp.descriptor_for_level(level)
             if desc:
                 feedback_parts.append(f"{comp.nome}: {desc}")
@@ -3803,6 +3812,7 @@ def create_app():
                     continue
                 event_student = _ensure_event_student(event.id, aluno_id)
                 assessment = EV2Assessment.query.filter_by(event_student_id=event_student.id, rubric_id=rubrica_id).first()
+                assessment_created = False
                 if not assessment:
                     assessment = EV2Assessment(
                         event_student_id=event_student.id,
@@ -3811,6 +3821,7 @@ def create_app():
                         weight=0,
                     )
                     db.session.add(assessment)
+                    assessment_created = True
                 valor = _optional_float(entry.get("valor"))
                 if valor is None:
                     assessment.state = "nao_observado"
@@ -3818,13 +3829,16 @@ def create_app():
                     assessment.component_scores.clear()
                     assessment.observacoes = None
                 else:
-                    assessment.state = "avaliado"
-                    assessment.score_numeric = _apply_component_scores_payload(
+                    if assessment_created:
+                        db.session.flush()
+                    valor_final = _apply_component_scores_payload(
                         assessment,
                         rubrica_id,
                         entry.get("component_scores"),
                         valor,
                     )
+                    assessment.state = "avaliado"
+                    assessment.score_numeric = valor_final
 
         db.session.commit()
 
