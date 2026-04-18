@@ -61,6 +61,14 @@
   #avaliacao-objeto-table thead th.nome-coluna { z-index: 15; }
   #avaliacao-objeto-table tbody td.indice-coluna { z-index: 7; }
   #avaliacao-objeto-table tbody td.nome-coluna { z-index: 6; }
+  #avaliacao-objeto-table .dominio-toggle { display: flex; align-items: center; gap: .35rem; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 600; cursor: pointer; text-align: left; }
+  #avaliacao-objeto-table .dominio-toggle-icon { flex: 0 0 auto; font-size: 11px; line-height: 1; }
+  #avaliacao-objeto-table .dominio-header.is-collapsed { background: #f8f9fa; min-width: 72px; width: 72px; }
+  #avaliacao-objeto-table .dominio-collapsed { display: none; }
+  #avaliacao-objeto-table .dominio-header .dominio-label-short { font-weight: 700; white-space: nowrap; }
+  #avaliacao-objeto-table .dominio-header .dominio-label-full { white-space: nowrap; }
+  #avaliacao-objeto-table .dominio-header.is-collapsed .dominio-label-full { display: none; }
+  #avaliacao-objeto-table .dominio-compact-cell { min-width: 72px; width: 72px; background: #fff; }
   .avaliacao-save-panel { position: fixed; right: 1rem; bottom: 1rem; z-index: 1080; }
   .avaliacao-save-panel .btn { min-width: 10rem; box-shadow: 0 .5rem 1rem rgba(0, 0, 0, .15); }
   button[onclick*="guardarMetaObjeto"], button[onclick*="guardarTemaGrupo"] { display: none; }
@@ -210,21 +218,30 @@
             <th rowspan="2">Data de entrega</th>
           {% endif %}
           {% for dominio in dominios %}
+            {% set domain_id = 'D' ~ (dominio.id if dominio.id is not none else loop.index) %}
             {% set domain_short_code = dominio.codigo or ('D' ~ loop.index) %}
-            <th colspan="{{ dominio.rubricas|length }}" title="{{ dominio.nome }}">
-              <div class="domain-code">{{ domain_short_code }}</div>
-              <div class="domain-caption">{{ dominio.nome }}</div>
+            {% set domain_label = dominio.codigo or dominio.letra or ('D' ~ loop.index) %}
+            <th colspan="{{ dominio.rubricas|length }}" class="dominio-header" data-domain-id="{{ domain_id }}" data-expanded-colspan="{{ dominio.rubricas|length }}" title="{{ dominio.nome }}">
+              <button type="button" class="dominio-toggle" data-domain-id="{{ domain_id }}" aria-expanded="true">
+                <span class="dominio-toggle-icon">▼</span>
+                <span class="d-flex flex-column">
+                  <span class="dominio-label-short">{{ domain_label }}</span>
+                  <span class="dominio-label-full">{{ dominio.nome }}</span>
+                </span>
+              </button>
             </th>
           {% endfor %}
           {% for dominio in dominios %}
-            <th rowspan="2" data-media-dominio="{{ dominio.letra }}">{{ dominio.letra }}</th>
+            {% set domain_id = 'D' ~ (dominio.id if dominio.id is not none else loop.index) %}
+            <th rowspan="2" class="dominio-media-coluna" data-domain-id="{{ domain_id }}" data-domain-media="1" data-media-dominio="{{ dominio.letra }}">{{ dominio.letra }}</th>
           {% endfor %}
           <th rowspan="2">{% if tipo == 'portfolio' %}Projeto / Observações{% else %}Observações{% endif %}</th>
         </tr>
         <tr>
           {% for dominio in dominios %}
+            {% set domain_id = 'D' ~ (dominio.id if dominio.id is not none else loop.index) %}
             {% for rubrica in dominio.rubricas %}
-              <th>
+              <th class="dominio-rubrica-coluna" data-domain-id="{{ domain_id }}">
                 <div class="d-flex align-items-center justify-content-between gap-1">
                   <span class="rubrica-short rubrica-rotated" title="{{ rubrica.nome }}">{{ short_rubric(rubrica) }}</span>
                   {% set rubrica_json = rubricas_payload.get(rubrica.id, {}) %}
@@ -240,11 +257,12 @@
         </tr>
       </thead>
       <tbody>
-        {% if tipo in ['projeto', 'trabalho'] %}
+        {% if groups_data %}
           {% for grp in groups_data %}
-            <tr class="table-secondary">
+            <tr class="table-secondary" data-group-row="1" data-group-id="{{ grp.group_id if not grp.is_individual_group else '' }}">
               <td colspan="2"><strong>{{ grp.group_name }}</strong></td>
               <td>{{ grp.group_name }}</td>
+              {% if tipo in ['projeto', 'trabalho'] %}
               <td>
                 <select class="form-select form-select-sm js-group-theme" data-group-id="{{ grp.group_id or '' }}" {% if not grp.group_id %}disabled{% endif %}>
                   <option value="">{% if tema_multiplo %}Escolher tema{% else %}Tema único{% endif %}</option>
@@ -259,38 +277,87 @@
               <td>
                 <input type="date" class="form-control form-control-sm js-group-data-entrega" data-group-id="{{ grp.group_id or '' }}" value="{{ grp.data_entrega or '' }}" {% if not grp.group_id %}disabled{% endif %}>
               </td>
-              {% set rubric_cols = dominios|map(attribute='rubricas')|map('length')|sum %}
-              {% set medias_cols = dominios|length %}
-              <td colspan="{{ rubric_cols + medias_cols + 1 }}"></td>
+              {% endif %}
+              {% for dominio in dominios %}
+                {% set domain_id = 'D' ~ (dominio.id if dominio.id is not none else loop.index) %}
+                {% for rubrica in dominio.rubricas %}
+                  {% set has_components = (rubrica.components|length) > 0 %}
+                  {% set group_base = grp.base_scores.get(rubrica.id, {}) %}
+                  {% set group_base_value = group_base.get('value') %}
+                  {% set group_base_components = group_base.get('component_scores', {}) %}
+                  <td class="dominio-rubrica-coluna" data-domain-id="{{ domain_id }}">
+                    {% if grp.is_individual_group %}
+                      <div class="small text-muted text-center">—</div>
+                    {% elif has_components %}
+                      <input type="number" step="0.01" class="form-control form-control-sm compact-score avaliacao-input js-group-score"
+                             data-group-id="{{ grp.group_id }}"
+                             data-rubrica-id="{{ rubrica.id }}"
+                             data-dominio-letra="{{ dominio.letra }}"
+                             readonly
+                             value="{{ group_base_value if group_base_value is not none else '' }}">
+                      <div class="component-block" data-rubrica-components="{{ rubrica.id }}">
+                        {% for componente in (rubrica.components|sort(attribute='ordem')) %}
+                          <div class="component-item" title="{{ componente.nome }}{% if not componente.ativo %} (Inativo){% endif %}">
+                            <div class="label">{{ componente.nome }}</div>
+                            <input type="number" min="1" max="5" step="1"
+                                   class="form-control form-control-sm compact-score avaliacao-input js-group-component-score"
+                                   data-group-id="{{ grp.group_id }}"
+                                   data-rubrica-id="{{ rubrica.id }}"
+                                   data-dominio-letra="{{ dominio.letra }}"
+                                   data-component-id="{{ componente.id }}"
+                                   value="{{ group_base_components.get(componente.id, '') }}">
+                          </div>
+                        {% endfor %}
+                      </div>
+                    {% else %}
+                      <input type="number" step="0.5" class="form-control form-control-sm compact-score avaliacao-input js-group-score"
+                             data-group-id="{{ grp.group_id }}"
+                             data-rubrica-id="{{ rubrica.id }}"
+                             data-dominio-letra="{{ dominio.letra }}"
+                             value="{{ group_base_value if group_base_value is not none else '' }}">
+                    {% endif %}
+                  </td>
+                {% endfor %}
+                <td class="dominio-compact-cell dominio-collapsed" data-domain-id="{{ domain_id }}"></td>
+              {% endfor %}
+              {% for dominio in dominios %}
+                {% set domain_id = 'D' ~ (dominio.id if dominio.id is not none else loop.index) %}
+                <td class="text-center dominio-media-coluna" data-domain-id="{{ domain_id }}">{% if grp.is_individual_group %}—{% endif %}</td>
+              {% endfor %}
+              <td></td>
             </tr>
             {% for linha in grp.rows %}
               {% set aluno = linha.aluno %}
               {% set avaliavel = avaliavel_por_aluno.get(aluno.id, True) %}
               {% set bloqueio_motivo = bloqueio_motivo_por_aluno.get(aluno.id, 'Não avaliado — ausente ou falta disciplinar') %}
-              <tr data-aluno-id="{{ aluno.id }}" data-presente="{{ 1 if avaliavel else 0 }}">
+              <tr data-aluno-id="{{ aluno.id }}" data-group-id="{{ group_id_por_aluno.get(aluno.id, '') }}" data-presente="{{ 1 if avaliavel else 0 }}">
                 <td class="indice-coluna">{{ aluno.numero or '-' }}</td>
                 <td class="nome-coluna" title="{{ aluno.nome }}">{{ short_student_name(aluno.nome) }}</td>
                 <td>
                   <select class="form-select form-select-sm js-group-assignment" data-aluno-id="{{ aluno.id }}" onchange="atribuirGrupo({{ aluno.id }}, this.value)">
                     <option value="">Individual</option>
                     {% for grupo in grupos %}
-                      <option value="{{ grupo.id }}" {% if grp.group_name == grupo.nome %}selected{% endif %}>{{ grupo.nome }}</option>
+                      <option value="{{ grupo.id }}" {% if group_id_por_aluno.get(aluno.id) == grupo.id %}selected{% endif %}>{{ grupo.nome }}</option>
                     {% endfor %}
                   </select>
                 </td>
-                <td></td>
-                <td></td>
-                <td></td>
+                {% if tipo in ['projeto', 'trabalho'] %}
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                {% endif %}
                 {% for dominio in dominios %}
+                  {% set domain_id = 'D' ~ (dominio.id if dominio.id is not none else loop.index) %}
                   {% for rubrica in dominio.rubricas %}
-                    <td>
+                    <td class="dominio-rubrica-coluna" data-domain-id="{{ domain_id }}">
                       {% set has_components = (rubrica.components|length) > 0 %}
                       {% if has_components %}
-                        <input type="number" step="0.01" class="form-control form-control-sm compact-score avaliacao-input"
+                        <input type="number" step="0.01" class="form-control form-control-sm compact-score avaliacao-input js-student-score"
                                name="pontuacao-{{ aluno.id }}-{{ rubrica.id }}"
                                data-aluno-id="{{ aluno.id }}"
                                data-rubrica-id="{{ rubrica.id }}"
                                data-dominio-letra="{{ dominio.letra }}"
+                               data-override-active="{{ 1 if override_flags.get(aluno.id, {}).get(rubrica.id, False) else 0 }}"
                                readonly
                                {% if not avaliavel %}disabled title="{{ bloqueio_motivo }}" style="background-color:#f5f5f5"{% endif %}
                                value="{{ avaliacoes.get(aluno.id, {}).get(rubrica.id, '') }}">
@@ -304,26 +371,30 @@
                                      data-rubrica-id="{{ rubrica.id }}"
                                      data-dominio-letra="{{ dominio.letra }}"
                                      data-component-id="{{ componente.id }}"
+                                     data-override-active="{{ 1 if override_flags.get(aluno.id, {}).get(rubrica.id, False) else 0 }}"
                                      {% if not avaliavel %}disabled title="{{ bloqueio_motivo }}" style="background-color:#f5f5f5"{% endif %}
                                      value="{{ component_scores.get(aluno.id, {}).get(rubrica.id, {}).get(componente.id, '') }}">
                             </div>
                           {% endfor %}
                         </div>
                       {% else %}
-                        <input type="number" step="0.5" class="form-control form-control-sm compact-score avaliacao-input"
+                        <input type="number" step="0.5" class="form-control form-control-sm compact-score avaliacao-input js-student-score"
                                name="pontuacao-{{ aluno.id }}-{{ rubrica.id }}"
                                data-aluno-id="{{ aluno.id }}"
                                data-rubrica-id="{{ rubrica.id }}"
                                data-dominio-letra="{{ dominio.letra }}"
+                               data-override-active="{{ 1 if override_flags.get(aluno.id, {}).get(rubrica.id, False) else 0 }}"
                                {% if not avaliavel %}disabled title="{{ bloqueio_motivo }}" style="background-color:#f5f5f5"{% endif %}
                                value="{{ avaliacoes.get(aluno.id, {}).get(rubrica.id, '') }}">
                       {% endif %}
                     </td>
                   {% endfor %}
+                  <td class="dominio-compact-cell dominio-collapsed" data-domain-id="{{ domain_id }}"></td>
                 {% endfor %}
                 {% set medias = medias_por_aluno.get(aluno.id, {}) %}
                 {% for dominio in dominios %}
-                  <td class="media-cell text-center" data-aluno-id="{{ aluno.id }}" data-dominio-letra="{{ dominio.letra }}">
+                  {% set domain_id = 'D' ~ (dominio.id if dominio.id is not none else loop.index) %}
+                  <td class="media-cell text-center dominio-media-coluna" data-domain-id="{{ domain_id }}" data-aluno-id="{{ aluno.id }}" data-dominio-letra="{{ dominio.letra }}">
                     {% if not avaliavel %}-{% elif medias.get(dominio.letra) is not none %}{{ medias.get(dominio.letra) }}{% else %}-{% endif %}
                   </td>
                 {% endfor %}
@@ -336,7 +407,7 @@
             {% set aluno = linha.aluno %}
             {% set avaliavel = avaliavel_por_aluno.get(aluno.id, True) %}
             {% set bloqueio_motivo = bloqueio_motivo_por_aluno.get(aluno.id, 'Não avaliado — ausente ou falta disciplinar') %}
-            <tr data-aluno-id="{{ aluno.id }}" data-presente="{{ 1 if avaliavel else 0 }}">
+            <tr data-aluno-id="{{ aluno.id }}" data-group-id="{{ group_id_por_aluno.get(aluno.id, '') }}" data-presente="{{ 1 if avaliavel else 0 }}">
               <td class="indice-coluna">{{ loop.index }}</td>
               <td class="nome-coluna" title="{{ aluno.nome }}">{{ short_student_name(aluno.nome) }}</td>
               <td>
@@ -345,7 +416,7 @@
                   <select class="form-select form-select-sm js-group-assignment" data-aluno-id="{{ aluno.id }}" onchange="atribuirGrupo({{ aluno.id }}, this.value)">
                     <option value="">Individual</option>
                     {% for grupo in grupos %}
-                      <option value="{{ grupo.id }}" {% if grupo_atual == grupo.nome %}selected{% endif %}>{{ grupo.nome }}</option>
+                      <option value="{{ grupo.id }}" {% if group_id_por_aluno.get(aluno.id) == grupo.id %}selected{% endif %}>{{ grupo.nome }}</option>
                     {% endfor %}
                   </select>
                 {% else %}
@@ -354,15 +425,17 @@
               </td>
               {% if tipo in ['projeto', 'trabalho'] %}<td class="small"></td>{% endif %}
               {% for dominio in dominios %}
+                {% set domain_id = 'D' ~ (dominio.id if dominio.id is not none else loop.index) %}
                 {% for rubrica in dominio.rubricas %}
-                  <td>
+                  <td class="dominio-rubrica-coluna" data-domain-id="{{ domain_id }}">
                     {% set has_components = (rubrica.components|length) > 0 %}
                     {% if has_components %}
-                      <input type="number" step="0.01" class="form-control form-control-sm compact-score avaliacao-input"
+                      <input type="number" step="0.01" class="form-control form-control-sm compact-score avaliacao-input js-student-score"
                              name="pontuacao-{{ aluno.id }}-{{ rubrica.id }}"
                              data-aluno-id="{{ aluno.id }}"
                              data-rubrica-id="{{ rubrica.id }}"
                              data-dominio-letra="{{ dominio.letra }}"
+                             data-override-active="{{ 1 if override_flags.get(aluno.id, {}).get(rubrica.id, False) else 0 }}"
                              readonly
                              {% if not avaliavel %}disabled title="{{ bloqueio_motivo }}" style="background-color:#f5f5f5"{% endif %}
                              value="{{ avaliacoes.get(aluno.id, {}).get(rubrica.id, '') }}">
@@ -376,26 +449,30 @@
                                    data-rubrica-id="{{ rubrica.id }}"
                                    data-dominio-letra="{{ dominio.letra }}"
                                    data-component-id="{{ componente.id }}"
+                                   data-override-active="{{ 1 if override_flags.get(aluno.id, {}).get(rubrica.id, False) else 0 }}"
                                    {% if not avaliavel %}disabled title="{{ bloqueio_motivo }}" style="background-color:#f5f5f5"{% endif %}
                                    value="{{ component_scores.get(aluno.id, {}).get(rubrica.id, {}).get(componente.id, '') }}">
                           </div>
                         {% endfor %}
                       </div>
                     {% else %}
-                      <input type="number" step="0.5" class="form-control form-control-sm compact-score avaliacao-input"
+                      <input type="number" step="0.5" class="form-control form-control-sm compact-score avaliacao-input js-student-score"
                              name="pontuacao-{{ aluno.id }}-{{ rubrica.id }}"
                              data-aluno-id="{{ aluno.id }}"
                              data-rubrica-id="{{ rubrica.id }}"
                              data-dominio-letra="{{ dominio.letra }}"
+                             data-override-active="{{ 1 if override_flags.get(aluno.id, {}).get(rubrica.id, False) else 0 }}"
                              {% if not avaliavel %}disabled title="{{ bloqueio_motivo }}" style="background-color:#f5f5f5"{% endif %}
                              value="{{ avaliacoes.get(aluno.id, {}).get(rubrica.id, '') }}">
                     {% endif %}
                   </td>
                 {% endfor %}
+                <td class="dominio-compact-cell dominio-collapsed" data-domain-id="{{ domain_id }}"></td>
               {% endfor %}
               {% set medias = medias_por_aluno.get(aluno.id, {}) %}
               {% for dominio in dominios %}
-                <td class="media-cell text-center" data-aluno-id="{{ aluno.id }}" data-dominio-letra="{{ dominio.letra }}">
+                {% set domain_id = 'D' ~ (dominio.id if dominio.id is not none else loop.index) %}
+                <td class="media-cell text-center dominio-media-coluna" data-domain-id="{{ domain_id }}" data-aluno-id="{{ aluno.id }}" data-dominio-letra="{{ dominio.letra }}">
                   {% if not avaliavel %}-{% elif medias.get(dominio.letra) is not none %}{{ medias.get(dominio.letra) }}{% else %}-{% endif %}
                 </td>
               {% endfor %}
@@ -779,6 +856,10 @@
   const alunoIds = Array.from(table.querySelectorAll('tr[data-aluno-id][data-presente="1"]'))
     .map((tr) => String(tr.dataset.alunoId))
     .filter(Boolean);
+  const domainIds = Array.from(table.querySelectorAll(".dominio-header[data-domain-id]"))
+    .map((header) => header.dataset.domainId)
+    .filter(Boolean);
+  let dominiosState = Object.fromEntries(domainIds.map((domainId) => [domainId, true]));
   let isDirty = false;
   let isSaving = false;
 
@@ -842,9 +923,23 @@
     return table.querySelector(`input[data-aluno-id="${alunoId}"][data-rubrica-id="${rubricaId}"]:not(.js-component-score)`);
   }
 
+  function getStudentRow(alunoId) {
+    return table.querySelector(`tr[data-aluno-id="${alunoId}"]`);
+  }
+
   function getComponentInputs(alunoId, rubricaId) {
     return Array.from(
       table.querySelectorAll(`.js-component-score[data-aluno-id="${alunoId}"][data-rubrica-id="${rubricaId}"]`)
+    );
+  }
+
+  function getGroupScoreInput(groupId, rubricaId) {
+    return table.querySelector(`.js-group-score[data-group-id="${groupId}"][data-rubrica-id="${rubricaId}"]`);
+  }
+
+  function getGroupComponentInputs(groupId, rubricaId) {
+    return Array.from(
+      table.querySelectorAll(`.js-group-component-score[data-group-id="${groupId}"][data-rubrica-id="${rubricaId}"]`)
     );
   }
 
@@ -856,6 +951,46 @@
       const value = mediaMap[letra];
       cell.textContent = value == null ? "-" : `${value}`;
     });
+  }
+
+  function updateGroupTrailingColspans() {
+    const visibleRubricaHeaders = table.querySelectorAll('thead tr:nth-child(2) th.dominio-rubrica-coluna:not(.dominio-collapsed)').length;
+    const compactDomainCols = table.querySelectorAll('thead th.dominio-header.is-collapsed').length;
+    const visibleMediaHeaders = table.querySelectorAll('thead th.dominio-media-coluna:not(.dominio-collapsed)').length;
+    const observationCols = table.querySelectorAll('thead th[rowspan="2"]:last-child').length || 1;
+    const nextColspan = Math.max(1, visibleRubricaHeaders + compactDomainCols + visibleMediaHeaders + observationCols);
+    table.querySelectorAll(".grupo-trailing-cell").forEach((cell) => {
+      cell.colSpan = nextColspan;
+    });
+  }
+
+  function setDomainExpanded(domainId, expanded) {
+    dominiosState[domainId] = expanded;
+    table.querySelectorAll(`.dominio-rubrica-coluna[data-domain-id="${domainId}"]`).forEach((cell) => {
+      cell.classList.toggle("dominio-collapsed", !expanded);
+    });
+    table.querySelectorAll(`.dominio-media-coluna[data-domain-id="${domainId}"]`).forEach((cell) => {
+      cell.classList.toggle("dominio-collapsed", !expanded);
+    });
+    table.querySelectorAll(`.dominio-compact-cell[data-domain-id="${domainId}"]`).forEach((cell) => {
+      cell.classList.toggle("dominio-collapsed", expanded);
+    });
+    table.querySelectorAll(`.dominio-header[data-domain-id="${domainId}"]`).forEach((header) => {
+      const expandedColspan = Number(header.dataset.expandedColspan || 1);
+      header.classList.toggle("is-collapsed", !expanded);
+      header.colSpan = expanded ? expandedColspan : 1;
+      header.rowSpan = expanded ? 1 : 2;
+    });
+    table.querySelectorAll(`.dominio-toggle[data-domain-id="${domainId}"]`).forEach((toggle) => {
+      toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+      const icon = toggle.querySelector(".dominio-toggle-icon");
+      if (icon) icon.textContent = expanded ? "▼" : "▶";
+    });
+    updateGroupTrailingColspans();
+  }
+
+  function toggleDomain(domainId) {
+    setDomainExpanded(domainId, !dominiosState[domainId]);
   }
 
   function computeStudentMedias(alunoId) {
@@ -885,22 +1020,6 @@
     return table.querySelector(`.js-group-assignment[data-aluno-id="${alunoId}"]`);
   }
 
-  function getSyncedStudentIds(alunoId) {
-    const currentSelect = getGroupAssignmentSelect(alunoId);
-    const currentGroupId = currentSelect?.value || "";
-    if (!currentGroupId) return [String(alunoId)];
-    return Array.from(table.querySelectorAll(".js-group-assignment"))
-      .filter((select) => {
-        const studentId = String(select.dataset.alunoId || "");
-        return (
-          studentId &&
-          alunoIds.includes(studentId) &&
-          (select.value || "") === currentGroupId
-        );
-      })
-      .map((select) => String(select.dataset.alunoId));
-  }
-
   function getComponentScores(alunoId, rubricaId) {
     const scores = {};
     getComponentInputs(alunoId, rubricaId).forEach((input) => {
@@ -922,22 +1041,93 @@
     return (Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 100) / 100).toFixed(2);
   }
 
-  function applyRubricaValueToStudents(studentIds, rubricaId, value, componentScores = null) {
-    studentIds.forEach((studentId) => {
-      const directInput = getDirectScoreInput(studentId, rubricaId);
-      if (directInput && !directInput.disabled) {
-        directInput.value = value;
-      }
-      const componentInputs = getComponentInputs(studentId, rubricaId);
-      if (componentInputs.length) {
-        componentInputs.forEach((input) => {
-          const nextValue = componentScores ? componentScores[String(input.dataset.componentId)] : null;
-          input.value = nextValue == null ? "" : String(nextValue);
-        });
-      }
-      refreshStudentMedias(studentId);
+  function getCurrentGroupIdForStudent(alunoId) {
+    return getGroupAssignmentSelect(alunoId)?.value || getStudentRow(alunoId)?.dataset.groupId || "";
+  }
+
+  function setCurrentGroupIdForStudent(alunoId, groupId) {
+    const row = getStudentRow(alunoId);
+    if (row) row.dataset.groupId = groupId || "";
+  }
+
+  function isStudentOverrideActive(alunoId, rubricaId) {
+    const directInput = getDirectScoreInput(alunoId, rubricaId);
+    if (directInput) {
+      return directInput.dataset.overrideActive === "1";
+    }
+    const firstComponent = getComponentInputs(alunoId, rubricaId)[0];
+    return firstComponent ? firstComponent.dataset.overrideActive === "1" : false;
+  }
+
+  function setStudentOverrideActive(alunoId, rubricaId, isActive) {
+    const normalized = isActive ? "1" : "0";
+    const directInput = getDirectScoreInput(alunoId, rubricaId);
+    if (directInput) {
+      directInput.dataset.overrideActive = normalized;
+    }
+    getComponentInputs(alunoId, rubricaId).forEach((input) => {
+      input.dataset.overrideActive = normalized;
     });
-    markDirty();
+  }
+
+  function getGroupComponentScores(groupId, rubricaId) {
+    const scores = {};
+    getGroupComponentInputs(groupId, rubricaId).forEach((input) => {
+      const value = coerceNumber(input.value);
+      if (value == null) return;
+      const level = Math.round(value);
+      if (level >= 1 && level <= 5) {
+        scores[String(input.dataset.componentId)] = level;
+      }
+    });
+    return scores;
+  }
+
+  function getGroupBaseState(groupId, rubricaId) {
+    const directInput = getGroupScoreInput(groupId, rubricaId);
+    const componentScores = getGroupComponentScores(groupId, rubricaId);
+    return {
+      value: Object.keys(componentScores).length ? coerceNumber(computeScoreFromComponents(componentScores)) : coerceNumber(directInput?.value),
+      component_scores: componentScores,
+    };
+  }
+
+  function applyPayloadToStudent(alunoId, rubricaId, payload) {
+    const directInput = getDirectScoreInput(alunoId, rubricaId);
+    if (directInput && !directInput.disabled) {
+      directInput.value = payload.value == null ? "" : String(payload.value);
+    }
+    const componentInputs = getComponentInputs(alunoId, rubricaId);
+    if (componentInputs.length) {
+      componentInputs.forEach((input) => {
+        const nextValue = payload.component_scores?.[String(input.dataset.componentId)];
+        input.value = nextValue == null ? "" : String(nextValue);
+      });
+    }
+  }
+
+  function restoreStudentFromGroup(alunoId, rubricaId) {
+    const groupId = getCurrentGroupIdForStudent(alunoId);
+    if (!groupId) {
+      applyPayloadToStudent(alunoId, rubricaId, { value: null, component_scores: {} });
+      setStudentOverrideActive(alunoId, rubricaId, false);
+      refreshStudentMedias(alunoId);
+      return;
+    }
+    const groupState = getGroupBaseState(groupId, rubricaId);
+    applyPayloadToStudent(alunoId, rubricaId, groupState);
+    setStudentOverrideActive(alunoId, rubricaId, false);
+    refreshStudentMedias(alunoId);
+  }
+
+  function applyGroupValueToFollowers(groupId, rubricaId) {
+    if (!groupId) return;
+    Array.from(table.querySelectorAll(".js-group-assignment[data-aluno-id]")).forEach((select) => {
+      if ((select.value || "") !== String(groupId)) return;
+      const alunoId = String(select.dataset.alunoId || "");
+      if (!alunoId || isStudentOverrideActive(alunoId, rubricaId)) return;
+      restoreStudentFromGroup(alunoId, rubricaId);
+    });
   }
 
   function getGroupIdFromControl(control) {
@@ -1032,8 +1222,14 @@
         temas: document.getElementById("meta-temas")?.value || "",
         observacoes: document.getElementById("obser-descritivo")?.value || "",
       },
-      scores: Array.from(table.querySelectorAll('input[data-rubrica-id][data-aluno-id]:not(.js-component-score)'))
+      scores: Array.from(table.querySelectorAll('.js-student-score[data-rubrica-id][data-aluno-id]'))
         .filter((input) => !input.disabled)
+        .filter((input) => {
+          const alunoId = String(input.dataset.alunoId);
+          const rubricaId = String(input.dataset.rubricaId);
+          const groupId = getCurrentGroupIdForStudent(alunoId);
+          return !groupId || isStudentOverrideActive(alunoId, rubricaId);
+        })
         .map((input) => {
           const alunoId = String(input.dataset.alunoId);
           const rubricaId = String(input.dataset.rubricaId);
@@ -1044,6 +1240,29 @@
             component_scores: getComponentInputs(alunoId, rubricaId).length ? getComponentScores(alunoId, rubricaId) : {},
           };
         }),
+      group_scores: Array.from(table.querySelectorAll('.js-group-score[data-group-id][data-rubrica-id]'))
+        .map((input) => {
+          const groupId = String(input.dataset.groupId || "");
+          const rubricaId = String(input.dataset.rubricaId || "");
+          return {
+            group_id: groupId,
+            rubrica_id: Number(rubricaId),
+            valor: coerceNumber(input.value),
+            component_scores: getGroupComponentInputs(groupId, rubricaId).length ? getGroupComponentScores(groupId, rubricaId) : {},
+          };
+        }),
+      override_states: Array.from(table.querySelectorAll('.js-student-score[data-rubrica-id][data-aluno-id]'))
+        .map((input) => {
+          const alunoId = String(input.dataset.alunoId);
+          const rubricaId = String(input.dataset.rubricaId);
+          const groupId = getCurrentGroupIdForStudent(alunoId);
+          return groupId ? {
+            aluno_id: Number(alunoId),
+            rubrica_id: Number(rubricaId),
+            is_override: isStudentOverrideActive(alunoId, rubricaId),
+          } : null;
+        })
+        .filter(Boolean),
       group_assignments: Array.from(table.querySelectorAll(".js-group-assignment[data-aluno-id]")).map((select) => ({
         aluno_id: Number(select.dataset.alunoId),
         group_id: select.value || "",
@@ -1112,23 +1331,60 @@
 
   window.aplicarValorAutomatico = function aplicarValorAutomatico(rubricaId) {
     if (!window.confirm("Deseja aplicar o valor automatico a todos os alunos desta rubrica?")) return;
-    const componentInputs = Array.from(table.querySelectorAll(`.js-component-score[data-rubrica-id="${rubricaId}"]:not(:disabled)`));
-    if (componentInputs.length) {
-      componentInputs.forEach((input) => { input.value = "3"; });
-      table.querySelectorAll(`input[data-rubrica-id="${rubricaId}"]:not(.js-component-score):not(:disabled)`)
-        .forEach((input) => { input.value = "3.00"; });
-    } else {
-      table.querySelectorAll(`input[data-rubrica-id="${rubricaId}"]:not(.js-component-score):not(:disabled)`)
-        .forEach((input) => { input.value = "3"; });
+    const groupScoreInputs = Array.from(table.querySelectorAll(`.js-group-score[data-rubrica-id="${rubricaId}"]`));
+    if (groupScoreInputs.length) {
+      groupScoreInputs.forEach((input) => {
+        const groupId = String(input.dataset.groupId || "");
+        if (!groupId) return;
+        const groupComponentInputs = getGroupComponentInputs(groupId, rubricaId);
+        if (groupComponentInputs.length) {
+          groupComponentInputs.forEach((componentInput) => { componentInput.value = "3"; });
+          input.value = "3.00";
+        } else if (!input.readOnly) {
+          input.value = "3";
+        }
+        applyGroupValueToFollowers(groupId, rubricaId);
+      });
     }
+    table.querySelectorAll(`.js-student-score[data-rubrica-id="${rubricaId}"]`).forEach((input) => {
+      const alunoId = String(input.dataset.alunoId || "");
+      const groupId = getCurrentGroupIdForStudent(alunoId);
+      if (groupId) return;
+      const componentInputs = getComponentInputs(alunoId, rubricaId);
+      if (componentInputs.length) {
+        componentInputs.forEach((componentInput) => { componentInput.value = "3"; });
+        input.value = "3.00";
+      } else if (!input.readOnly) {
+        input.value = "3";
+      }
+      setStudentOverrideActive(alunoId, rubricaId, true);
+      refreshStudentMedias(alunoId);
+    });
     refreshAllMedias();
     markDirty();
   };
 
   window.confirmarLimpar = function confirmarLimpar(rubricaId) {
     if (!window.confirm("Deseja limpar todos os valores desta rubrica?")) return;
-    table.querySelectorAll(`input[data-rubrica-id="${rubricaId}"]:not(:disabled)`).forEach((input) => {
+    table.querySelectorAll(`.js-group-score[data-rubrica-id="${rubricaId}"]`).forEach((input) => {
+      const groupId = String(input.dataset.groupId || "");
+      if (!groupId) return;
+      if (!input.readOnly) input.value = "";
+      getGroupComponentInputs(groupId, rubricaId).forEach((componentInput) => { componentInput.value = ""; });
+      applyGroupValueToFollowers(groupId, rubricaId);
+    });
+    table.querySelectorAll(`.js-student-score[data-rubrica-id="${rubricaId}"]`).forEach((input) => {
+      const alunoId = String(input.dataset.alunoId || "");
+      const groupId = getCurrentGroupIdForStudent(alunoId);
+      if (groupId) {
+        setStudentOverrideActive(alunoId, rubricaId, false);
+        restoreStudentFromGroup(alunoId, rubricaId);
+        return;
+      }
       input.value = "";
+      getComponentInputs(alunoId, rubricaId).forEach((componentInput) => { componentInput.value = ""; });
+      setStudentOverrideActive(alunoId, rubricaId, false);
+      refreshStudentMedias(alunoId);
     });
     refreshAllMedias();
     markDirty();
@@ -1141,6 +1397,15 @@
     if (select && select.value !== (groupId || "")) {
       select.value = groupId || "";
     }
+    setCurrentGroupIdForStudent(alunoId, groupId || "");
+    table.querySelectorAll(`.js-student-score[data-aluno-id="${alunoId}"]`).forEach((input) => {
+      const rubricaId = String(input.dataset.rubricaId || "");
+      if (!isStudentOverrideActive(alunoId, rubricaId)) {
+        restoreStudentFromGroup(alunoId, rubricaId);
+      } else {
+        refreshStudentMedias(alunoId);
+      }
+    });
     markDirty();
   };
 
@@ -1231,21 +1496,69 @@
     }
   };
 
-  table.querySelectorAll('input[data-rubrica-id][data-aluno-id]:not(.js-component-score)').forEach((input) => {
+  table.querySelectorAll('.js-group-score[data-group-id][data-rubrica-id]').forEach((input) => {
     if (input.readOnly) return;
     input.addEventListener("input", () => {
-      const studentIds = getSyncedStudentIds(input.dataset.alunoId);
-      applyRubricaValueToStudents(studentIds, input.dataset.rubricaId, input.value, null);
+      applyGroupValueToFollowers(String(input.dataset.groupId || ""), String(input.dataset.rubricaId || ""));
+      markDirty();
     });
   });
 
-  table.querySelectorAll(".js-component-score[data-rubrica-id][data-aluno-id][data-component-id]").forEach((input) => {
+  table.querySelectorAll('.js-group-component-score[data-group-id][data-rubrica-id][data-component-id]').forEach((input) => {
     input.addEventListener("input", () => {
-      const componentScores = getComponentScores(input.dataset.alunoId, input.dataset.rubricaId);
-      const value = computeScoreFromComponents(componentScores);
-      const studentIds = getSyncedStudentIds(input.dataset.alunoId);
-      applyRubricaValueToStudents(studentIds, input.dataset.rubricaId, value, componentScores);
+      const groupId = String(input.dataset.groupId || "");
+      const rubricaId = String(input.dataset.rubricaId || "");
+      const groupComponentScores = getGroupComponentScores(groupId, rubricaId);
+      const directInput = getGroupScoreInput(groupId, rubricaId);
+      if (directInput) {
+        directInput.value = computeScoreFromComponents(groupComponentScores);
+      }
+      applyGroupValueToFollowers(groupId, rubricaId);
+      markDirty();
     });
+  });
+
+  table.querySelectorAll('.js-student-score[data-rubrica-id][data-aluno-id]').forEach((input) => {
+    if (input.readOnly) return;
+    input.addEventListener("input", () => {
+      const alunoId = String(input.dataset.alunoId || "");
+      const rubricaId = String(input.dataset.rubricaId || "");
+      const groupId = getCurrentGroupIdForStudent(alunoId);
+      if (groupId && String(input.value || "").trim() === "") {
+        setStudentOverrideActive(alunoId, rubricaId, false);
+        restoreStudentFromGroup(alunoId, rubricaId);
+      } else {
+        setStudentOverrideActive(alunoId, rubricaId, Boolean(groupId) || String(input.value || "").trim() !== "");
+        refreshStudentMedias(alunoId);
+      }
+      markDirty();
+    });
+  });
+
+  table.querySelectorAll('.js-component-score[data-rubrica-id][data-aluno-id][data-component-id]').forEach((input) => {
+    input.addEventListener("input", () => {
+      const alunoId = String(input.dataset.alunoId || "");
+      const rubricaId = String(input.dataset.rubricaId || "");
+      const componentScores = getComponentScores(alunoId, rubricaId);
+      const value = computeScoreFromComponents(componentScores);
+      const directInput = getDirectScoreInput(alunoId, rubricaId);
+      if (directInput) {
+        directInput.value = value;
+      }
+      const groupId = getCurrentGroupIdForStudent(alunoId);
+      if (groupId && Object.keys(componentScores).length === 0) {
+        setStudentOverrideActive(alunoId, rubricaId, false);
+        restoreStudentFromGroup(alunoId, rubricaId);
+      } else {
+        setStudentOverrideActive(alunoId, rubricaId, Boolean(groupId) || Object.keys(componentScores).length > 0);
+        refreshStudentMedias(alunoId);
+      }
+      markDirty();
+    });
+  });
+
+  table.querySelectorAll(".dominio-toggle[data-domain-id]").forEach((toggle) => {
+    toggle.addEventListener("click", () => toggleDomain(toggle.dataset.domainId));
   });
 
   document.getElementById("obser-descritivo")?.addEventListener("input", markDirty);
@@ -1277,6 +1590,7 @@
   });
 
   refreshAllMedias();
+  domainIds.forEach((domainId) => setDomainExpanded(domainId, dominiosState[domainId]));
   setButtonState("idle");
 })();
 </script>

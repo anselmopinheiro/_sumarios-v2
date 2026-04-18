@@ -3523,13 +3523,12 @@ def create_app():
             dominios_scores.setdefault(letra, []).append(float(assessment.score_numeric))
         return {letra: round(sum(vals) / len(vals), 1) for letra, vals in dominios_scores.items() if vals}
 
-    def _apply_component_scores_payload(assessment, rubric_id, component_payload, raw_numeric_value):
+    def _normalize_component_scores_payload(rubric_id, component_payload):
         with db.session.no_autoflush:
             rubric = EV2Rubric.query.get(rubric_id)
             components = sorted((rubric.components or []), key=lambda c: (c.ordem, c.id)) if rubric else []
         if not components:
-            assessment.component_scores.clear()
-            return raw_numeric_value
+            return None
 
         payload = component_payload
         if isinstance(payload, str):
@@ -3538,9 +3537,7 @@ def create_app():
             except Exception:
                 payload = None
         if not isinstance(payload, dict):
-            assessment.component_scores.clear()
-            assessment.observacoes = None
-            return raw_numeric_value
+            return {"component_scores": {}, "score_numeric": None, "observacoes": None}
 
         scores_by_component = {}
         for comp in components:
@@ -3551,6 +3548,228 @@ def create_app():
                 continue
             if 1 <= level <= 5:
                 scores_by_component[comp.id] = level
+
+        if not scores_by_component:
+            return {"component_scores": {}, "score_numeric": None, "observacoes": None}
+
+        total = 0.0
+        count = 0
+        feedback_parts = []
+        for comp in components:
+            level = scores_by_component.get(comp.id)
+            if level is None:
+                continue
+            total += float(level)
+            count += 1
+            desc = comp.descriptor_for_level(level)
+            if desc:
+                feedback_parts.append(f"{comp.nome}: {desc}")
+
+        if count <= 0:
+            return {"component_scores": {}, "score_numeric": None, "observacoes": None}
+
+        return {
+            "component_scores": scores_by_component,
+            "score_numeric": round(total / count, 2),
+            "observacoes": "\n".join(feedback_parts) if feedback_parts else None,
+        }
+
+    def _assessment_payload_for_rubric(assessment):
+        if not assessment or getattr(assessment, "tipo", None) != "rubrica":
+            return None
+        component_scores = {
+            int(score.component_id): int(score.score_level)
+            for score in (assessment.component_scores or [])
+        }
+        if assessment.score_numeric is None and not component_scores:
+            return None
+        value = float(assessment.score_numeric) if assessment.score_numeric is not None else None
+        if value is None and component_scores:
+            normalized = _normalize_component_scores_payload(
+                assessment.rubric_id,
+                {str(component_id): level for component_id, level in component_scores.items()},
+            )
+            value = normalized.get("score_numeric") if normalized else None
+        return {
+            "value": value,
+            "component_scores": component_scores,
+        }
+
+    def _score_payloads_match(left_payload, right_payload):
+        if not left_payload or not right_payload:
+            return False
+        return (
+            _optional_float(left_payload.get("value")) == _optional_float(right_payload.get("value"))
+            and {
+                int(component_id): int(level)
+                for component_id, level in (left_payload.get("component_scores") or {}).items()
+            }
+            == {
+                int(component_id): int(level)
+                for component_id, level in (right_payload.get("component_scores") or {}).items()
+            }
+        )
+
+    def _serialize_group_score_entry(rubric_id, raw_numeric_value, component_payload):
+        normalized_components = _normalize_component_scores_payload(rubric_id, component_payload)
+        if normalized_components is None:
+            value = _optional_float(raw_numeric_value)
+            if value is None:
+                return None
+            return {"value": value, "component_scores": {}}
+
+        if normalized_components["component_scores"]:
+            return {
+                "value": normalized_components["score_numeric"],
+                "component_scores": {
+                    str(component_id): int(level)
+                    for component_id, level in normalized_components["component_scores"].items()
+                },
+            }
+        return None
+
+    def _get_event_group_score_snapshot(event):
+        snapshot = event.config_snapshot if isinstance(event.config_snapshot, dict) else {}
+        raw_group_scores = snapshot.get("group_scores")
+        return raw_group_scores if isinstance(raw_group_scores, dict) else {}
+
+    def _set_event_group_score_snapshot(event, group_scores):
+        snapshot = dict(event.config_snapshot or {})
+        if group_scores:
+            snapshot["group_scores"] = group_scores
+        else:
+            snapshot.pop("group_scores", None)
+        event.config_snapshot = snapshot
+
+    def _derive_legacy_group_scores(event_students, group_id_por_aluno):
+        students_by_group = defaultdict(list)
+        for event_student in (event_students or []):
+            group_id = group_id_por_aluno.get(event_student.aluno_id)
+            if group_id is None:
+                continue
+            students_by_group[group_id].append(event_student)
+
+        derived = {}
+        for group_id, students in students_by_group.items():
+            if not students:
+                continue
+            candidate_rubrics = None
+            payloads_by_student = {}
+            for event_student in students:
+                rubric_payloads = {}
+                for assessment in (event_student.assessments or []):
+                    if assessment.tipo != "rubrica" or assessment.rubric_id is None:
+                        continue
+                    payload = _assessment_payload_for_rubric(assessment)
+                    if payload is None:
+                        continue
+                    rubric_payloads[int(assessment.rubric_id)] = payload
+                payloads_by_student[event_student.aluno_id] = rubric_payloads
+                rubric_ids = set(rubric_payloads.keys())
+                candidate_rubrics = rubric_ids if candidate_rubrics is None else (candidate_rubrics & rubric_ids)
+
+            if not candidate_rubrics:
+                continue
+
+            for rubric_id in sorted(candidate_rubrics):
+                payloads = [
+                    payloads_by_student.get(event_student.aluno_id, {}).get(rubric_id)
+                    for event_student in students
+                ]
+                first_payload = payloads[0] if payloads else None
+                if not first_payload:
+                    continue
+                if all(_score_payloads_match(first_payload, current_payload) for current_payload in payloads[1:]):
+                    derived.setdefault(str(group_id), {})[str(rubric_id)] = {
+                        "value": first_payload.get("value"),
+                        "component_scores": {
+                            str(component_id): int(level)
+                            for component_id, level in (first_payload.get("component_scores") or {}).items()
+                        },
+                    }
+        return derived
+
+    def _build_effective_group_scores(event, event_students, group_id_por_aluno):
+        explicit_scores = json.loads(json.dumps(_get_event_group_score_snapshot(event) or {}))
+        legacy_scores = _derive_legacy_group_scores(event_students, group_id_por_aluno)
+        for group_id, rubric_map in legacy_scores.items():
+            target_group = explicit_scores.setdefault(group_id, {})
+            for rubric_id, payload in rubric_map.items():
+                target_group.setdefault(rubric_id, payload)
+        return explicit_scores
+
+    def _group_score_entry_for_render(group_scores, group_id, rubric_id):
+        if group_id in (None, ""):
+            return None
+        group_payload = (group_scores or {}).get(str(group_id))
+        if not isinstance(group_payload, dict):
+            return None
+        rubric_payload = group_payload.get(str(rubric_id))
+        if not isinstance(rubric_payload, dict):
+            return None
+        return {
+            "value": _optional_float(rubric_payload.get("value")),
+            "component_scores": {
+                int(component_id): int(level)
+                for component_id, level in (rubric_payload.get("component_scores") or {}).items()
+                if str(component_id).isdigit()
+            },
+        }
+
+    def _resolve_effective_rubric_payload(event_student, rubric_id, group_id, group_scores):
+        assessment = None
+        if event_student is not None:
+            assessment = next(
+                (
+                    current_assessment
+                    for current_assessment in (event_student.assessments or [])
+                    if current_assessment.tipo == "rubrica" and current_assessment.rubric_id == rubric_id
+                ),
+                None,
+            )
+        assessment_payload = _assessment_payload_for_rubric(assessment)
+        group_payload = _group_score_entry_for_render(group_scores, group_id, rubric_id)
+
+        if group_payload:
+            if assessment_payload and not _score_payloads_match(assessment_payload, group_payload):
+                return {"value": assessment_payload.get("value"), "component_scores": assessment_payload.get("component_scores") or {}, "is_override": True}
+            return {"value": group_payload.get("value"), "component_scores": group_payload.get("component_scores") or {}, "is_override": False}
+
+        if assessment_payload:
+            return {"value": assessment_payload.get("value"), "component_scores": assessment_payload.get("component_scores") or {}, "is_override": bool(group_id)}
+
+        return {"value": None, "component_scores": {}, "is_override": False}
+
+    def _compute_effective_media_for_student(event_student, rubricas, group_id, group_scores):
+        if rubricas is None:
+            return {}
+        dominios_scores = defaultdict(list)
+        for rubrica in rubricas:
+            payload = _resolve_effective_rubric_payload(event_student, rubrica.id, group_id, group_scores)
+            value = _optional_float(payload.get("value"))
+            if value is None:
+                continue
+            dominio = getattr(rubrica, "dominio", None)
+            letra = getattr(dominio, "letra", None)
+            if not letra:
+                continue
+            dominios_scores[letra].append(float(value))
+        return {
+            letra: round(sum(values) / len(values), 1)
+            for letra, values in dominios_scores.items()
+            if values
+        }
+
+    def _apply_component_scores_payload(assessment, rubric_id, component_payload, raw_numeric_value):
+        normalized_components = _normalize_component_scores_payload(rubric_id, component_payload)
+        if normalized_components is None:
+            assessment.component_scores.clear()
+            return raw_numeric_value
+
+        with db.session.no_autoflush:
+            rubric = EV2Rubric.query.get(rubric_id)
+            components = sorted((rubric.components or []), key=lambda c: (c.ordem, c.id)) if rubric else []
+        scores_by_component = normalized_components["component_scores"]
 
         existing_by_component = {
             score.component_id: score for score in (assessment.component_scores or [])
@@ -3577,14 +3796,11 @@ def create_app():
                 component_score = EV2AssessmentComponentScore(component_id=comp.id)
                 assessment.component_scores.append(component_score)
             component_score.score_level = level
-            desc = comp.descriptor_for_level(level)
-            if desc:
-                feedback_parts.append(f"{comp.nome}: {desc}")
         if count <= 0:
             assessment.observacoes = None
             return raw_numeric_value
-        assessment.observacoes = "\n".join(feedback_parts) if feedback_parts else None
-        return round(total / count, 2)
+        assessment.observacoes = normalized_components["observacoes"]
+        return normalized_components["score_numeric"]
 
     def _ensure_event_student(event_id, aluno_id):
         event_student = EV2EventStudent.query.filter_by(event_id=event_id, aluno_id=aluno_id).first()
@@ -3683,6 +3899,13 @@ def create_app():
         return jsonify({"status": "ok", "ok": True, "medias_por_aluno": medias_atualizadas}), 200
 
     def _save_event_batch(aula, tipo, event, avaliavel_por_aluno, rubrica_ids_validos, payload):
+        rubricas_evento = (
+            EV2Rubric.query.options(joinedload(EV2Rubric.dominio))
+            .filter(EV2Rubric.id.in_(list(rubrica_ids_validos)))
+            .all()
+            if rubrica_ids_validos
+            else []
+        )
         meta = payload.get("meta") or {}
         if isinstance(meta, dict):
             if tipo in {"portfolio", "projeto", "trabalho"}:
@@ -3819,6 +4042,47 @@ def create_app():
                     event_student = _ensure_event_student(event.id, aluno_id)
                     event_student.observacoes = (entry.get("observacoes") or "").strip() or None
 
+        grupos_evento = EV2EvaluationGroup.query.filter_by(event_id=event.id).all()
+        grupos_por_id = {grupo.id: grupo for grupo in grupos_evento}
+        group_id_por_aluno = {}
+        memberships_evento = (
+            EV2EvaluationGroupMember.query.join(
+                EV2EvaluationGroup,
+                EV2EvaluationGroupMember.group_id == EV2EvaluationGroup.id,
+            )
+            .filter(EV2EvaluationGroup.event_id == event.id)
+            .all()
+        )
+        for membership in memberships_evento:
+            if membership.group_id in grupos_por_id:
+                group_id_por_aluno[membership.aluno_id] = membership.group_id
+
+        persisted_group_scores = json.loads(json.dumps(_get_event_group_score_snapshot(event) or {}))
+        group_scores_payload = payload.get("group_scores") or []
+        if isinstance(group_scores_payload, list):
+            for entry in group_scores_payload:
+                if not isinstance(entry, dict):
+                    continue
+                group_id = _optional_int(entry.get("group_id"))
+                rubrica_id = _optional_int(entry.get("rubrica_id"))
+                if group_id not in grupos_por_id or rubrica_id not in rubrica_ids_validos:
+                    continue
+                serialized_entry = _serialize_group_score_entry(
+                    rubrica_id,
+                    entry.get("valor"),
+                    entry.get("component_scores"),
+                )
+                group_key = str(group_id)
+                rubric_key = str(rubrica_id)
+                if serialized_entry is None:
+                    if group_key in persisted_group_scores:
+                        persisted_group_scores[group_key].pop(rubric_key, None)
+                        if not persisted_group_scores[group_key]:
+                            persisted_group_scores.pop(group_key, None)
+                    continue
+                persisted_group_scores.setdefault(group_key, {})[rubric_key] = serialized_entry
+        _set_event_group_score_snapshot(event, persisted_group_scores)
+
         scores = payload.get("scores") or []
         if isinstance(scores, list):
             for entry in scores:
@@ -3835,7 +4099,19 @@ def create_app():
                     continue
                 event_student = _ensure_event_student(event.id, aluno_id)
                 assessment = EV2Assessment.query.filter_by(event_student_id=event_student.id, rubric_id=rubrica_id).first()
+                normalized_components = _normalize_component_scores_payload(
+                    rubrica_id,
+                    entry.get("component_scores"),
+                )
+                has_component_scores = bool(
+                    normalized_components and normalized_components.get("component_scores")
+                )
                 assessment_created = False
+                valor = _optional_float(entry.get("valor"))
+                if valor is None and not has_component_scores:
+                    if assessment is not None:
+                        db.session.delete(assessment)
+                    continue
                 if not assessment:
                     assessment = EV2Assessment(
                         event_student_id=event_student.id,
@@ -3845,12 +4121,11 @@ def create_app():
                     )
                     db.session.add(assessment)
                     assessment_created = True
-                valor = _optional_float(entry.get("valor"))
-                if valor is None:
-                    assessment.state = "nao_observado"
-                    assessment.score_numeric = None
+                if normalized_components is None:
                     assessment.component_scores.clear()
                     assessment.observacoes = None
+                    assessment.state = "avaliado"
+                    assessment.score_numeric = valor
                 else:
                     if assessment_created:
                         db.session.flush()
@@ -3863,23 +4138,71 @@ def create_app():
                     assessment.state = "avaliado"
                     assessment.score_numeric = valor_final
 
+        override_states = payload.get("override_states") or []
+        if isinstance(override_states, list):
+            for entry in override_states:
+                if not isinstance(entry, dict):
+                    continue
+                aluno_id = _optional_int(entry.get("aluno_id"))
+                rubrica_id = _optional_int(entry.get("rubrica_id"))
+                if (
+                    aluno_id is None
+                    or rubrica_id is None
+                    or rubrica_id not in rubrica_ids_validos
+                    or group_id_por_aluno.get(aluno_id) is None
+                ):
+                    continue
+                is_override = str(entry.get("is_override") or "").strip().lower() in {"1", "true", "yes", "on"}
+                if is_override:
+                    continue
+                event_student = EV2EventStudent.query.filter_by(event_id=event.id, aluno_id=aluno_id).first()
+                if not event_student:
+                    continue
+                assessment = EV2Assessment.query.filter_by(
+                    event_student_id=event_student.id,
+                    rubric_id=rubrica_id,
+                ).first()
+                if assessment is not None:
+                    db.session.delete(assessment)
+
         db.session.commit()
 
+        event_students = (
+            EV2EventStudent.query.filter_by(event_id=event.id)
+            .options(
+                joinedload(EV2EventStudent.assessments)
+                .joinedload(EV2Assessment.rubrica)
+                .joinedload(EV2Rubric.dominio),
+                joinedload(EV2EventStudent.assessments)
+                .joinedload(EV2Assessment.component_scores),
+            )
+            .all()
+        )
+        group_id_por_aluno = {}
+        memberships_evento = (
+            EV2EvaluationGroupMember.query.join(
+                EV2EvaluationGroup,
+                EV2EvaluationGroupMember.group_id == EV2EvaluationGroup.id,
+            )
+            .filter(EV2EvaluationGroup.event_id == event.id)
+            .all()
+        )
+        for membership in memberships_evento:
+            group_id_por_aluno[membership.aluno_id] = membership.group_id
+        effective_group_scores = _build_effective_group_scores(event, event_students, group_id_por_aluno)
+        students_by_aluno = {event_student.aluno_id: event_student for event_student in event_students}
         medias_atualizadas = {}
         for aluno_id, elegivel in sorted(avaliavel_por_aluno.items()):
             if not elegivel:
                 medias_atualizadas[str(aluno_id)] = {}
                 continue
-            event_student = (
-                EV2EventStudent.query.filter_by(event_id=event.id, aluno_id=aluno_id)
-                .options(
-                    joinedload(EV2EventStudent.assessments)
-                    .joinedload(EV2Assessment.rubrica)
-                    .joinedload(EV2Rubric.dominio)
-                )
-                .first()
+            event_student = students_by_aluno.get(aluno_id)
+            medias_atualizadas[str(aluno_id)] = _compute_effective_media_for_student(
+                event_student,
+                rubricas_evento,
+                group_id_por_aluno.get(aluno_id),
+                effective_group_scores,
             )
-            medias_atualizadas[str(aluno_id)] = _media_por_dominio_event_student(event_student) if event_student else {}
 
         return jsonify({"ok": True, "status": "ok", "medias_por_aluno": medias_atualizadas}), 200
 
@@ -4492,12 +4815,14 @@ def create_app():
         event_students = []
         grupos = []
         grupo_por_aluno = {}
+        group_id_por_aluno = {}
         if event:
             event_students = (
                 EV2EventStudent.query.filter_by(event_id=event.id)
                 .options(
                     joinedload(EV2EventStudent.aluno),
                     joinedload(EV2EventStudent.assessments).joinedload(EV2Assessment.rubrica).joinedload(EV2Rubric.dominio),
+                    joinedload(EV2EventStudent.assessments).joinedload(EV2Assessment.component_scores),
                 )
                 .all()
             )
@@ -4510,6 +4835,7 @@ def create_app():
                 )
                 nomes_grupo = {g.id: g.nome for g in grupos}
                 for membro in membros:
+                    group_id_por_aluno[membro.aluno_id] = membro.group_id
                     grupo_por_aluno[membro.aluno_id] = nomes_grupo.get(membro.group_id, "")
 
         rubricas_payload = {}
@@ -4531,6 +4857,7 @@ def create_app():
             "event_students": event_students,
             "grupos": grupos,
             "grupo_por_aluno": grupo_por_aluno,
+            "group_id_por_aluno": group_id_por_aluno,
             "dominios_source": dom_meta.get("source"),
             "dominios_profile_id": dom_meta.get("profile_id"),
         }
@@ -5299,8 +5626,35 @@ def create_app():
             ]
             return jsonify({"ok": True, "status": "ok", "medias_por_aluno": medias_atualizadas, "updated_members": updated_members}), 200
 
+        rubricas_evento = [rubrica for dominio in ctx["dominios_view"] for rubrica in dominio["rubricas"]]
+        effective_group_scores = (
+            _build_effective_group_scores(
+                ctx["event"],
+                ctx["event_students"],
+                ctx.get("group_id_por_aluno", {}),
+            )
+            if ctx.get("event")
+            else {}
+        )
+        group_scores = {}
+        for group_id, rubric_map in (effective_group_scores or {}).items():
+            if not str(group_id).isdigit():
+                continue
+            group_scores[int(group_id)] = {}
+            for rubric_id, payload in (rubric_map or {}).items():
+                if not str(rubric_id).isdigit() or not isinstance(payload, dict):
+                    continue
+                group_scores[int(group_id)][int(rubric_id)] = {
+                    "value": _optional_float(payload.get("value")),
+                    "component_scores": {
+                        int(component_id): int(level)
+                        for component_id, level in (payload.get("component_scores") or {}).items()
+                        if str(component_id).isdigit()
+                    },
+                }
         avaliacoes = {}
         component_scores = {}
+        override_flags = {}
         medias_por_aluno = {}
         linhas = []
         students_by_aluno = {es.aluno_id: es for es in ctx["event_students"]}
@@ -5328,36 +5682,55 @@ def create_app():
                 })
                 if atr and atr.theme:
                     tema_por_grupo[grupo.id] = atr.theme.nome_tema
+        group_id_por_aluno = ctx.get("group_id_por_aluno", {})
+        grupo_por_aluno = ctx.get("grupo_por_aluno", {})
         for aluno in ctx["alunos"]:
             es = students_by_aluno.get(aluno.id)
-            grupo_turma = aluno_para_grupo_turma.get(aluno.id)
-            grupo_nome = (grupo_turma.nome if grupo_turma else "")
+            group_id = group_id_por_aluno.get(aluno.id)
+            grupo_nome = grupo_por_aluno.get(aluno.id, "")
             tema_label = ""
             if tipo in {"projeto", "trabalho"}:
-                group_id = next((g.id for g in ctx.get("grupos", []) if g.nome == grupo_nome), None) if ctx.get("event") else None
                 tema_label = tema_por_grupo.get(group_id, "")
                 if getattr(ctx.get("event"), "tema_multiplo", False):
                     if not group_id or not tema_label:
                         ctx["bloqueio_motivo_por_aluno"][aluno.id] = "Sem grupo/tema atribuído."
                         ctx["avaliavel_por_aluno"][aluno.id] = False
-            linhas.append({"aluno": aluno, "grupo": grupo_nome, "tema_label": tema_label, "observacoes": getattr(es, "observacoes", "") if es else ""})
+            linhas.append({
+                "aluno": aluno,
+                "grupo": grupo_nome,
+                "group_id": group_id,
+                "tema_label": tema_label,
+                "observacoes": getattr(es, "observacoes", "") if es else "",
+            })
             avaliacoes[aluno.id] = {}
             component_scores[aluno.id] = {}
-            if es:
-                for assessment in (es.assessments or []):
-                    if assessment.tipo == "rubrica" and assessment.rubric_id and assessment.score_numeric is not None:
-                        avaliacoes[aluno.id][assessment.rubric_id] = float(assessment.score_numeric)
-                    if assessment.tipo == "rubrica" and assessment.rubric_id and (assessment.component_scores or []):
-                        component_scores[aluno.id][assessment.rubric_id] = {
-                            score.component_id: int(score.score_level)
-                            for score in (assessment.component_scores or [])
-                        }
-                elegivel_local = ctx["avaliavel_por_aluno"].get(aluno.id, False)
-                medias_por_aluno[aluno.id] = _media_por_dominio_event_student(es) if elegivel_local else {}
-            else:
-                medias_por_aluno[aluno.id] = {}
+            override_flags[aluno.id] = {}
+            for rubrica in rubricas_evento:
+                resolved_payload = _resolve_effective_rubric_payload(
+                    es,
+                    rubrica.id,
+                    group_id,
+                    effective_group_scores,
+                )
+                if resolved_payload["value"] is not None:
+                    avaliacoes[aluno.id][rubrica.id] = resolved_payload["value"]
+                if resolved_payload["component_scores"]:
+                    component_scores[aluno.id][rubrica.id] = resolved_payload["component_scores"]
+                override_flags[aluno.id][rubrica.id] = bool(resolved_payload["is_override"])
+            elegivel_local = ctx["avaliavel_por_aluno"].get(aluno.id, False)
+            medias_por_aluno[aluno.id] = (
+                _compute_effective_media_for_student(
+                    es,
+                    rubricas_evento,
+                    group_id,
+                    effective_group_scores,
+                )
+                if elegivel_local
+                else {}
+            )
 
-        if tipo in {"projeto", "trabalho"}:
+        grupos_visiveis = [g for g in ctx.get("grupos", []) if not (g.nome or "").startswith("__IND__")]
+        if grupos_visiveis:
             lines_by_group = defaultdict(list)
             for linha in linhas:
                 nome_grupo = (linha.get("grupo") or "").strip()
@@ -5368,7 +5741,7 @@ def create_app():
                 ind_name = f"__IND__{aluno.id}"
                 lines_by_group[ind_name].append(linha)
 
-            visible_groups = [g for g in grupos_turma]
+            visible_groups = [g for g in grupos_turma] or grupos_visiveis
             order_map = {g.nome: idx for idx, g in enumerate(visible_groups, start=1)}
             all_group_names = sorted(lines_by_group.keys(), key=lambda g: (9000 if g.startswith("__IND__") else order_map.get(g, 8000), g.lower()))
             group_name_to_id = {g.nome: g.id for g in (ctx.get("grupos", []) if ctx.get("event") else [])}
@@ -5392,11 +5765,10 @@ def create_app():
                         "theme_id": (atr.theme_id if atr else None),
                         "entregue": bool(atr.entregue) if atr else False,
                         "data_entrega": (atr.data_entrega.isoformat() if atr and atr.data_entrega else ""),
+                        "base_scores": group_scores.get(gid, {}) if gid else {},
                         "rows": linhas_grupo,
                     }
                 )
-
-        grupos_visiveis = [g for g in ctx.get("grupos", []) if not (g.nome or "").startswith("__IND__")]
         return render_template(
             "avaliacao_objeto.html",
             tipo=tipo,
@@ -5406,15 +5778,18 @@ def create_app():
             data_evento=aula.data,
             linhas=linhas,
             dominios=ctx["dominios_view"],
-            rubricas=[rubrica for dominio in ctx["dominios_view"] for rubrica in dominio["rubricas"]],
+            rubricas=rubricas_evento,
             rubricas_payload=ctx.get("rubricas_payload", {}),
             avaliacoes=avaliacoes,
             component_scores=component_scores,
+            override_flags=override_flags,
+            group_scores=group_scores,
             medias_por_aluno=medias_por_aluno,
             avaliavel_por_aluno=ctx["avaliavel_por_aluno"],
             bloqueio_motivo_por_aluno=ctx["bloqueio_motivo_por_aluno"],
             grupos=grupos_visiveis,
-            grupo_por_aluno=ctx.get("grupo_por_aluno", {}),
+            grupo_por_aluno=grupo_por_aluno,
+            group_id_por_aluno=group_id_por_aluno,
             meta_numero=(ctx["event"].numero if ctx.get("event") else None),
             meta_titulo=(ctx["event"].titulo if ctx.get("event") else ""),
             meta_data_inicio=(ctx["event"].data_inicio.isoformat() if ctx.get("event") and ctx["event"].data_inicio else aula.data.isoformat() if aula.data else ""),
@@ -5690,13 +6065,17 @@ def create_app():
             ]
             return jsonify({"status": "ok", "medias_por_aluno": medias_atualizadas, "updated_members": updated_members}), 200
 
+        effective_group_scores = _build_effective_group_scores(event, alunos_evento, {})
+        group_scores = {}
         avaliacoes = {}
         component_scores = {}
+        override_flags = {}
         medias_por_aluno = {}
         linhas = []
         grupos = []
         grupo_por_aluno = {}
-        if tipo in {"portfolio", "projeto"}:
+        group_id_por_aluno = {}
+        if tipo in {"portfolio", "projeto", "trabalho"}:
             grupos = EV2EvaluationGroup.query.filter_by(event_id=event.id).order_by(EV2EvaluationGroup.ordem.asc(), EV2EvaluationGroup.nome.asc()).all()
             membros = (
                 EV2EvaluationGroupMember.query.join(EV2EvaluationGroup, EV2EvaluationGroupMember.group_id == EV2EvaluationGroup.id)
@@ -5705,25 +6084,107 @@ def create_app():
             )
             nomes_grupo = {g.id: g.nome for g in grupos}
             for membro in membros:
+                group_id_por_aluno[membro.aluno_id] = membro.group_id
                 grupo_por_aluno[membro.aluno_id] = nomes_grupo.get(membro.group_id, "")
+            effective_group_scores = _build_effective_group_scores(event, alunos_evento, group_id_por_aluno)
+            for group_id, rubric_map in (effective_group_scores or {}).items():
+                if not str(group_id).isdigit():
+                    continue
+                group_scores[int(group_id)] = {}
+                for rubric_id, payload in (rubric_map or {}).items():
+                    if not str(rubric_id).isdigit() or not isinstance(payload, dict):
+                        continue
+                    group_scores[int(group_id)][int(rubric_id)] = {
+                        "value": _optional_float(payload.get("value")),
+                        "component_scores": {
+                            int(component_id): int(level)
+                            for component_id, level in (payload.get("component_scores") or {}).items()
+                            if str(component_id).isdigit()
+                        },
+                    }
         for es in alunos_evento:
             aluno = es.aluno
             if not aluno:
                 continue
-            linhas.append({"aluno": aluno, "grupo": es.group_key or "", "observacoes": es.observacoes or ""})
+            group_id = group_id_por_aluno.get(aluno.id)
+            linhas.append({
+                "aluno": aluno,
+                "grupo": grupo_por_aluno.get(aluno.id, es.group_key or ""),
+                "group_id": group_id,
+                "observacoes": es.observacoes or "",
+            })
             avaliacoes[aluno.id] = {}
             component_scores[aluno.id] = {}
-            for assessment in (es.assessments or []):
-                if assessment.tipo == "rubrica" and assessment.rubric_id and assessment.score_numeric is not None:
-                    avaliacoes[aluno.id][assessment.rubric_id] = float(assessment.score_numeric)
-                if assessment.tipo == "rubrica" and assessment.rubric_id and (assessment.component_scores or []):
-                    component_scores[aluno.id][assessment.rubric_id] = {
-                        score.component_id: int(score.score_level)
-                        for score in (assessment.component_scores or [])
-                    }
-            medias_por_aluno[aluno.id] = _media_por_dominio_event_student(es) if avaliavel_por_aluno.get(aluno.id, False) else {}
+            override_flags[aluno.id] = {}
+            for rubrica in rubricas:
+                resolved_payload = _resolve_effective_rubric_payload(
+                    es,
+                    rubrica.id,
+                    group_id,
+                    effective_group_scores,
+                )
+                if resolved_payload["value"] is not None:
+                    avaliacoes[aluno.id][rubrica.id] = resolved_payload["value"]
+                if resolved_payload["component_scores"]:
+                    component_scores[aluno.id][rubrica.id] = resolved_payload["component_scores"]
+                override_flags[aluno.id][rubrica.id] = bool(resolved_payload["is_override"])
+            medias_por_aluno[aluno.id] = (
+                _compute_effective_media_for_student(
+                    es,
+                    rubricas,
+                    group_id,
+                    effective_group_scores,
+                )
+                if avaliavel_por_aluno.get(aluno.id, False)
+                else {}
+            )
 
         rubricas_payload = {rubrica.id: _ev2_rubric_to_dict(rubrica) for rubrica in rubricas}
+        groups_data = []
+        grupos_visiveis = [g for g in grupos if not (g.nome or "").startswith("__IND__")]
+        if grupos_visiveis:
+            lines_by_group = defaultdict(list)
+            for linha in linhas:
+                nome_grupo = (linha.get("grupo") or "").strip()
+                if nome_grupo:
+                    lines_by_group[nome_grupo].append(linha)
+                    continue
+                aluno = linha["aluno"]
+                lines_by_group[f"__IND__{aluno.id}"].append(linha)
+
+            order_map = {g.nome: idx for idx, g in enumerate(grupos_visiveis, start=1)}
+            all_group_names = sorted(
+                lines_by_group.keys(),
+                key=lambda g: (
+                    9000 if g.startswith("__IND__") else order_map.get(g, 8000),
+                    g.lower(),
+                ),
+            )
+            group_name_to_id = {g.nome: g.id for g in grupos}
+            for nome_grupo in all_group_names:
+                linhas_grupo = sorted(
+                    lines_by_group[nome_grupo],
+                    key=lambda l: (
+                        (getattr(l["aluno"], "numero", None) is None),
+                        getattr(l["aluno"], "numero", 0),
+                        getattr(l["aluno"], "nome", ""),
+                    ),
+                )
+                gid = group_name_to_id.get(nome_grupo)
+                nome_label = nome_grupo
+                is_individual = False
+                if nome_grupo.startswith("__IND__"):
+                    is_individual = True
+                    nome_label = f"Sem grupo â€” {linhas_grupo[0]['aluno'].nome}" if linhas_grupo else "Individual"
+                groups_data.append(
+                    {
+                        "group_id": gid if gid else (f"individual-{linhas_grupo[0]['aluno'].id}" if linhas_grupo else ""),
+                        "group_name": nome_label,
+                        "is_individual_group": is_individual,
+                        "base_scores": group_scores.get(gid, {}) if gid else {},
+                        "rows": linhas_grupo,
+                    }
+                )
         return render_template(
             "avaliacao_objeto.html",
             tipo=tipo,
@@ -5734,11 +6195,14 @@ def create_app():
             rubricas_payload=rubricas_payload,
             avaliacoes=avaliacoes,
             component_scores=component_scores,
+            override_flags=override_flags,
+            group_scores=group_scores,
             medias_por_aluno=medias_por_aluno,
             avaliavel_por_aluno=avaliavel_por_aluno,
             bloqueio_motivo_por_aluno=bloqueio_motivo_por_aluno,
-            grupos=grupos,
+            grupos=grupos_visiveis,
             grupo_por_aluno=grupo_por_aluno,
+            group_id_por_aluno=group_id_por_aluno,
             meta_numero=getattr(event, "numero", None),
             meta_titulo=getattr(event, "titulo", ""),
             meta_data_inicio=(event.data_inicio.isoformat() if getattr(event, "data_inicio", None) else ""),
@@ -5748,6 +6212,7 @@ def create_app():
             eventos_relevantes=[],
             evento_ativo_id=getattr(event, "id", None),
             grupos_origem=[],
+            groups_data=groups_data,
             embed_mode=(request.args.get("embed") == "1"),
         )
 
