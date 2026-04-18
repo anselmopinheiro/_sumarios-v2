@@ -19,3 +19,5 @@ gestor_lectivo.db
 logs/
 .env.development
 .env.production
+playwright-report/
+test-results/

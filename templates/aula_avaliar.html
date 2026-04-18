@@ -73,6 +73,56 @@
     z-index: 6;
   }
 
+  #avaliacao-table .dominio-toggle {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  #avaliacao-table .dominio-toggle-icon {
+    flex: 0 0 auto;
+    font-size: 11px;
+    line-height: 1;
+  }
+
+  #avaliacao-table .dominio-header.is-collapsed {
+    background: #f8f9fa;
+    min-width: 72px;
+    width: 72px;
+  }
+
+  #avaliacao-table .dominio-collapsed {
+    display: none;
+  }
+
+  #avaliacao-table .dominio-header .dominio-label-short {
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  #avaliacao-table .dominio-header .dominio-label-full {
+    white-space: nowrap;
+  }
+
+  #avaliacao-table .dominio-header.is-collapsed .dominio-label-full {
+    display: none;
+  }
+
+  #avaliacao-table .dominio-compact-cell {
+    min-width: 72px;
+    width: 72px;
+    background: #fff;
+  }
+
   .avaliacao-save-panel {
     position: fixed;
     right: 1rem;
@@ -93,18 +143,26 @@
         <tr>
           <th rowspan="2" class="nome-coluna">Aluno</th>
           {% for dominio in dominios %}
-            <th colspan="{{ dominio.rubricas|length }}">
-              {{ dominio.letra }} – {{ dominio.nome }}{% if dominio.codigo %} ({{ dominio.codigo }}){% endif %}
+            {% set domain_id = 'D' ~ (dominio.id if dominio.id is not none else loop.index) %}
+            {% set domain_label = dominio.codigo or dominio.letra or ('D' ~ loop.index) %}
+            <th colspan="{{ dominio.rubricas|length }}" class="dominio-header" data-domain-id="{{ domain_id }}" data-expanded-colspan="{{ dominio.rubricas|length }}">
+              <button type="button" class="dominio-toggle" data-domain-id="{{ domain_id }}" aria-expanded="true">
+                <span class="dominio-toggle-icon">▼</span>
+                <span class="dominio-label-short">{{ domain_label }}</span>
+                <span class="dominio-label-full">{{ dominio.nome }}</span>
+              </button>
             </th>
           {% endfor %}
           {% for dominio in dominios %}
-            <th rowspan="2" data-media-dominio="{{ dominio.letra }}">{{ dominio.letra }}</th>
+            {% set domain_id = 'D' ~ (dominio.id if dominio.id is not none else loop.index) %}
+            <th rowspan="2" class="dominio-media-coluna" data-domain-id="{{ domain_id }}" data-domain-media="1" data-media-dominio="{{ dominio.letra }}">{{ dominio.letra }}</th>
           {% endfor %}
         </tr>
         <tr>
           {% for dominio in dominios %}
+            {% set domain_id = 'D' ~ (dominio.id if dominio.id is not none else loop.index) %}
             {% for rubrica in dominio.rubricas %}
-              <th>
+              <th class="dominio-rubrica-coluna" data-domain-id="{{ domain_id }}">
                 <div>{{ rubrica.nome }}</div>
                 <div class="d-flex flex-column gap-1 mt-1">
                   <button
@@ -137,8 +195,9 @@
           <tr data-aluno-id="{{ aluno.id }}" data-presente="{{ 1 if avaliavel else 0 }}">
             <td class="nome-coluna">{{ aluno.numero or '-' }} - {{ aluno.nome }}</td>
             {% for dominio in dominios %}
+              {% set domain_id = 'D' ~ (dominio.id if dominio.id is not none else loop.index) %}
               {% for rubrica in dominio.rubricas %}
-                <td>
+                <td class="dominio-rubrica-coluna" data-domain-id="{{ domain_id }}">
                   <input
                     type="number"
                     step="0.5"
@@ -151,10 +210,12 @@
                   >
                 </td>
               {% endfor %}
+              <td class="dominio-compact-cell dominio-collapsed" data-domain-id="{{ domain_id }}"></td>
             {% endfor %}
             {% set medias = medias_por_aluno.get(aluno.id, {}) %}
             {% for dominio in dominios %}
-              <td class="media-cell text-center" data-aluno-id="{{ aluno.id }}" data-dominio-letra="{{ dominio.letra }}">
+              {% set domain_id = 'D' ~ (dominio.id if dominio.id is not none else loop.index) %}
+              <td class="media-cell text-center dominio-media-coluna" data-domain-id="{{ domain_id }}" data-aluno-id="{{ aluno.id }}" data-dominio-letra="{{ dominio.letra }}">
                 {% if not avaliavel %}
                   <span class="text-muted">-</span>
                 {% elif medias.get(dominio.letra) is not none %}
@@ -195,6 +256,10 @@
   const alunoIds = Array.from(table.querySelectorAll('tr[data-aluno-id][data-presente="1"]'))
     .map((tr) => tr.dataset.alunoId)
     .filter(Boolean);
+  const domainIds = Array.from(table.querySelectorAll(".dominio-header[data-domain-id]"))
+    .map((header) => header.dataset.domainId)
+    .filter(Boolean);
+  let dominiosState = Object.fromEntries(domainIds.map((domainId) => [domainId, true]));
   let isDirty = false;
   let isSaving = false;
 
@@ -208,6 +273,34 @@
       const value = mediaMap[letra];
       cell.innerHTML = value == null ? '<span class="text-muted">-</span>' : `${value}`;
     });
+  }
+
+  function setDomainExpanded(domainId, expanded) {
+    dominiosState[domainId] = expanded;
+    table.querySelectorAll(`.dominio-rubrica-coluna[data-domain-id="${domainId}"]`).forEach((cell) => {
+      cell.classList.toggle("dominio-collapsed", !expanded);
+    });
+    table.querySelectorAll(`.dominio-media-coluna[data-domain-id="${domainId}"]`).forEach((cell) => {
+      cell.classList.toggle("dominio-collapsed", !expanded);
+    });
+    table.querySelectorAll(`.dominio-compact-cell[data-domain-id="${domainId}"]`).forEach((cell) => {
+      cell.classList.toggle("dominio-collapsed", expanded);
+    });
+    table.querySelectorAll(`.dominio-header[data-domain-id="${domainId}"]`).forEach((header) => {
+      const expandedColspan = Number(header.dataset.expandedColspan || 1);
+      header.classList.toggle("is-collapsed", !expanded);
+      header.colSpan = expanded ? expandedColspan : 1;
+      header.rowSpan = expanded ? 1 : 2;
+    });
+    table.querySelectorAll(`.dominio-toggle[data-domain-id="${domainId}"]`).forEach((toggle) => {
+      toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+      const icon = toggle.querySelector(".dominio-toggle-icon");
+      if (icon) icon.textContent = expanded ? "▼" : "▶";
+    });
+  }
+
+  function toggleDomain(domainId) {
+    setDomainExpanded(domainId, !dominiosState[domainId]);
   }
 
   function notifyParent(state) {
@@ -383,6 +476,10 @@
     });
   });
 
+  table.querySelectorAll(".dominio-toggle[data-domain-id]").forEach((toggle) => {
+    toggle.addEventListener("click", () => toggleDomain(toggle.dataset.domainId));
+  });
+
   form.addEventListener("submit", (event) => event.preventDefault());
   saveButton.addEventListener("click", saveBatch);
   window.addEventListener("beforeunload", (event) => {
@@ -392,6 +489,7 @@
   });
 
   refreshAllMedias();
+  domainIds.forEach((domainId) => setDomainExpanded(domainId, dominiosState[domainId]));
   setButtonState("idle");
 
 })();

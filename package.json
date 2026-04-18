@@ -1,0 +1,8 @@
+{
+  "scripts": {
+    "test:visual:aula-avaliacao": "playwright test tests/playwright/aula-avaliacao.visual.spec.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.59.1"
+  }
+}

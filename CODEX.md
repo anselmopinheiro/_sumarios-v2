@@ -203,3 +203,16 @@ Isto agora está num nível que:
 - impede exatamente os erros que tiveste (indentação, syntax, etc.)  
 
 ---
+
+## Validaçã o visual obrigatória para alterações de UI
+
+Se a tarefa alterar templates, CSS, JS, tabelas ou layout visual:
+
+1. arrancar a app localmente
+2. cor4rer o teste Playwright da página afetada
+3. confirmar que a página abre
+4. tirar screenshot
+5. só depois concluir
+
+Se o teste não existir:
+- criar ou adaptar um teste mínimo para a página alterada
