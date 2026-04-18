@@ -36,17 +36,20 @@
   const tabs = document.querySelectorAll('#avaliacao-tabs [data-tipo]');
   const frame = document.getElementById('avaliacao-frame');
   const indicator = document.getElementById('save-indicator');
+  const dirtyMessage = 'Existem alteracoes por guardar';
+  let frameDirty = false;
 
   function setIndicator(state, msg) {
     indicator.className = 'badge';
-    if (state === 'saving') indicator.classList.add('text-bg-warning');
-    else if (state === 'ok') indicator.classList.add('text-bg-success');
+    if (state === 'saving' || state === 'dirty') indicator.classList.add('text-bg-warning');
+    else if (state === 'saved' || state === 'ok') indicator.classList.add('text-bg-success');
     else if (state === 'error') indicator.classList.add('text-bg-danger');
     else indicator.classList.add('text-bg-secondary');
     indicator.textContent = msg;
   }
 
   function activate(tipo) {
+    if (frameDirty && !window.confirm(dirtyMessage)) return;
     tabs.forEach((btn) => btn.classList.toggle('active', btn.dataset.tipo === tipo));
     const url = `/aula/${aulaId}/avaliacao/${tipo}?next=${encodeURIComponent(returnUrl)}`;
     frame.src = url;
@@ -54,11 +57,47 @@
     pageUrl.searchParams.set('tipo', tipo);
     pageUrl.searchParams.set('next', returnUrl);
     history.replaceState({}, '', pageUrl.toString());
+    frameDirty = false;
+    setIndicator('idle', 'Guardar');
   }
 
   tabs.forEach((btn) => btn.addEventListener('click', () => activate(btn.dataset.tipo)));
 
+  window.addEventListener('message', (event) => {
+    if (event.origin !== window.location.origin) return;
+    const payload = event.data || {};
+    if (payload.source !== 'avaliacao-editor' || payload.kind !== 'state') return;
+    const state = payload.state || {};
+    frameDirty = Boolean(state.dirty);
+    if (state.status === 'saving') {
+      setIndicator('saving', 'A guardar...');
+      return;
+    }
+    if (state.status === 'saved') {
+      setIndicator('saved', 'Guardado');
+      return;
+    }
+    if (state.status === 'error') {
+      setIndicator('error', 'Erro ao guardar');
+      return;
+    }
+    if (state.status === 'dirty') {
+      setIndicator('dirty', 'Guardar *');
+      return;
+    }
+    setIndicator('idle', state.buttonLabel || 'Guardar');
+  });
+
+  window.addEventListener('beforeunload', (event) => {
+    if (!frameDirty) return;
+    event.preventDefault();
+    event.returnValue = dirtyMessage;
+  });
+
   frame.addEventListener('load', () => {
+    frameDirty = false;
+    setIndicator('idle', 'Guardar');
+    return;
     try {
       const win = frame.contentWindow;
       if (!win) return;

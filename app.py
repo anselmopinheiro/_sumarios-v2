@@ -3494,6 +3494,358 @@ def create_app():
             return "secundario"
         return "basico"
 
+    def _optional_int(raw_value):
+        if raw_value in (None, ""):
+            return None
+        try:
+            return int(raw_value)
+        except (TypeError, ValueError):
+            return None
+
+    def _optional_float(raw_value):
+        if raw_value in (None, ""):
+            return None
+        try:
+            return float(raw_value)
+        except (TypeError, ValueError):
+            return None
+
+    def _media_por_dominio_event_student(event_student):
+        dominios_scores = {}
+        for assessment in (event_student.assessments or []):
+            if assessment.tipo != "rubrica" or assessment.score_numeric is None:
+                continue
+            rubrica = getattr(assessment, "rubrica", None)
+            dominio = getattr(rubrica, "dominio", None)
+            letra = getattr(dominio, "letra", None)
+            if not letra:
+                continue
+            dominios_scores.setdefault(letra, []).append(float(assessment.score_numeric))
+        return {letra: round(sum(vals) / len(vals), 1) for letra, vals in dominios_scores.items() if vals}
+
+    def _apply_component_scores_payload(assessment, rubric_id, component_payload, raw_numeric_value):
+        rubric = EV2Rubric.query.get(rubric_id)
+        components = sorted((rubric.components or []), key=lambda c: (c.ordem, c.id)) if rubric else []
+        if not components:
+            assessment.component_scores.clear()
+            return raw_numeric_value
+
+        payload = component_payload
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                payload = None
+        if not isinstance(payload, dict):
+            assessment.component_scores.clear()
+            assessment.observacoes = None
+            return raw_numeric_value
+
+        scores_by_component = {}
+        for comp in components:
+            raw = payload.get(str(comp.id), payload.get(comp.id))
+            try:
+                level = int(raw)
+            except (TypeError, ValueError):
+                continue
+            if 1 <= level <= 5:
+                scores_by_component[comp.id] = level
+
+        assessment.component_scores.clear()
+        if not scores_by_component:
+            assessment.observacoes = None
+            return raw_numeric_value
+
+        total = 0.0
+        count = 0
+        feedback_parts = []
+        for comp in components:
+            level = scores_by_component.get(comp.id)
+            if level is None:
+                continue
+            total += float(level)
+            count += 1
+            assessment.component_scores.append(
+                EV2AssessmentComponentScore(component_id=comp.id, score_level=level)
+            )
+            desc = comp.descriptor_for_level(level)
+            if desc:
+                feedback_parts.append(f"{comp.nome}: {desc}")
+        if count <= 0:
+            assessment.observacoes = None
+            return raw_numeric_value
+        assessment.observacoes = "\n".join(feedback_parts) if feedback_parts else None
+        return round(total / count, 2)
+
+    def _ensure_event_student(event_id, aluno_id):
+        event_student = EV2EventStudent.query.filter_by(event_id=event_id, aluno_id=aluno_id).first()
+        if event_student:
+            return event_student
+        event_student = EV2EventStudent(
+            event_id=event_id,
+            aluno_id=aluno_id,
+            tempos_totais=1,
+            tempos_presentes=1,
+            estado_assiduidade="presente_total",
+            pontualidade_manual=True,
+            elegivel_avaliacao=True,
+        )
+        db.session.add(event_student)
+        db.session.flush()
+        return event_student
+
+    def _save_aula_avaliar_batch(aula, aluno_ids_avaliaveis, rubrica_ids_validos, payload):
+        scores = payload.get("scores") or []
+        if not isinstance(scores, list):
+            return jsonify({"status": "error", "message": "Payload invalido"}), 400
+
+        avaliacao_map = {
+            av.aluno_id: av
+            for av in (
+                Avaliacao.query.filter_by(aula_id=aula.id)
+                .options(
+                    joinedload(Avaliacao.itens)
+                    .joinedload(AvaliacaoItem.rubrica)
+                    .joinedload(EV2Rubric.dominio)
+                )
+                .all()
+            )
+        }
+        touched_alunos = set()
+
+        for entry in scores:
+            if not isinstance(entry, dict):
+                continue
+            aluno_id = _optional_int(entry.get("aluno_id"))
+            rubrica_id = _optional_int(entry.get("rubrica_id"))
+            if (
+                aluno_id is None
+                or rubrica_id is None
+                or aluno_id not in aluno_ids_avaliaveis
+                or rubrica_id not in rubrica_ids_validos
+            ):
+                continue
+
+            avaliacao = avaliacao_map.get(aluno_id)
+            if not avaliacao:
+                avaliacao = Avaliacao(aula_id=aula.id, aluno_id=aluno_id)
+                db.session.add(avaliacao)
+                db.session.flush()
+                avaliacao_map[aluno_id] = avaliacao
+
+            items_by_rubrica = {item.rubrica_id: item for item in (avaliacao.itens or [])}
+            item = items_by_rubrica.get(rubrica_id)
+            if not item:
+                item = AvaliacaoItem(avaliacao_id=avaliacao.id, rubrica_id=rubrica_id)
+                db.session.add(item)
+            item.pontuacao = _optional_float(entry.get("valor"))
+            touched_alunos.add(aluno_id)
+
+        db.session.flush()
+
+        for aluno_id in touched_alunos:
+            avaliacao = (
+                Avaliacao.query.filter_by(aula_id=aula.id, aluno_id=aluno_id)
+                .options(
+                    joinedload(Avaliacao.itens)
+                    .joinedload(AvaliacaoItem.rubrica)
+                    .joinedload(EV2Rubric.dominio)
+                )
+                .first()
+            )
+            medias = calcular_media_por_dominio(avaliacao) if avaliacao else {}
+            avaliacao.resultado = round(sum(medias.values()) / len(medias), 1) if medias else 0.0
+
+        db.session.commit()
+
+        medias_atualizadas = {}
+        for aluno_id in sorted(aluno_ids_avaliaveis):
+            av = (
+                Avaliacao.query.filter_by(aula_id=aula.id, aluno_id=aluno_id)
+                .options(
+                    joinedload(Avaliacao.itens)
+                    .joinedload(AvaliacaoItem.rubrica)
+                    .joinedload(EV2Rubric.dominio)
+                )
+                .first()
+            )
+            medias_atualizadas[str(aluno_id)] = calcular_media_por_dominio(av) if av else {}
+
+        return jsonify({"status": "ok", "ok": True, "medias_por_aluno": medias_atualizadas}), 200
+
+    def _save_event_batch(aula, tipo, event, avaliavel_por_aluno, rubrica_ids_validos, payload):
+        meta = payload.get("meta") or {}
+        if isinstance(meta, dict):
+            if tipo in {"portfolio", "projeto", "trabalho"}:
+                event.numero = _optional_int(meta.get("numero"))
+                titulo = (meta.get("titulo") or "").strip()
+                if titulo:
+                    event.titulo = titulo
+
+                data_inicio_raw = (meta.get("data_inicio") or "").strip()
+                prazo_raw = (meta.get("prazo_entrega") or "").strip()
+                try:
+                    event.data_inicio = date.fromisoformat(data_inicio_raw) if data_inicio_raw else None
+                    event.prazo_entrega = date.fromisoformat(prazo_raw) if prazo_raw else None
+                except ValueError:
+                    return jsonify({"ok": False, "error": "Data invalida", "status": "error"}), 400
+
+                if tipo in {"projeto", "trabalho"} and str(meta.get("tema_multiplo", "")) in {"0", "1"}:
+                    event.tema_multiplo = str(meta.get("tema_multiplo")) == "1"
+            elif tipo == "obser":
+                event.descricao = (meta.get("observacoes") or "").strip() or None
+
+        group_assignments = payload.get("group_assignments") or []
+        if isinstance(group_assignments, list):
+            grupos_evento = EV2EvaluationGroup.query.filter_by(event_id=event.id).all()
+            grupos_por_id = {grupo.id: grupo for grupo in grupos_evento}
+            grupos_ids_evento = list(grupos_por_id.keys())
+            for assignment in group_assignments:
+                if not isinstance(assignment, dict):
+                    continue
+                aluno_id = _optional_int(assignment.get("aluno_id"))
+                if aluno_id is None:
+                    continue
+                event_student = _ensure_event_student(event.id, aluno_id)
+                if grupos_ids_evento:
+                    antigos = EV2EvaluationGroupMember.query.filter(
+                        EV2EvaluationGroupMember.aluno_id == aluno_id,
+                        EV2EvaluationGroupMember.group_id.in_(grupos_ids_evento),
+                    ).all()
+                    for antigo in antigos:
+                        db.session.delete(antigo)
+                group_id = _optional_int(assignment.get("group_id"))
+                if not group_id:
+                    event_student.group_key = None
+                    continue
+                grupo = grupos_por_id.get(group_id)
+                if not grupo:
+                    continue
+                db.session.add(EV2EvaluationGroupMember(group_id=grupo.id, aluno_id=aluno_id))
+                event_student.group_key = grupo.nome
+
+        if tipo in {"projeto", "trabalho"} and aula is not None:
+            themes_por_id = {
+                tema.id: tema
+                for tema in EV2EventTheme.query.filter_by(event_id=event.id).all()
+            }
+            group_themes = payload.get("group_themes") or []
+            if isinstance(group_themes, list):
+                for assignment in group_themes:
+                    if not isinstance(assignment, dict):
+                        continue
+                    group_raw = str(assignment.get("group_id") or "").strip()
+                    if not group_raw:
+                        continue
+                    grupo = None
+                    if group_raw.isdigit():
+                        grupo = EV2EvaluationGroup.query.filter_by(id=int(group_raw), event_id=event.id).first()
+                    elif group_raw.startswith("individual-"):
+                        aluno_part = group_raw.split("-", 1)[1]
+                        if aluno_part.isdigit():
+                            aluno_id = int(aluno_part)
+                            nome_individual = f"__IND__{aluno_id}"
+                            grupo = EV2EvaluationGroup.query.filter_by(event_id=event.id, nome=nome_individual).first()
+                            if not grupo:
+                                ordem_max = db.session.query(db.func.max(EV2EvaluationGroup.ordem)).filter_by(event_id=event.id).scalar() or 0
+                                grupo = EV2EvaluationGroup(event_id=event.id, nome=nome_individual, ordem=int(ordem_max) + 1)
+                                db.session.add(grupo)
+                                db.session.flush()
+                            if not EV2EvaluationGroupMember.query.filter_by(group_id=grupo.id, aluno_id=aluno_id).first():
+                                db.session.add(EV2EvaluationGroupMember(group_id=grupo.id, aluno_id=aluno_id))
+                            _ensure_event_student(event.id, aluno_id).group_key = grupo.nome
+                    if not grupo:
+                        continue
+                    theme_id = _optional_int(assignment.get("theme_id"))
+                    tema = themes_por_id.get(theme_id) if theme_id else None
+                    data_entrega_raw = str(assignment.get("data_entrega") or "").strip()
+                    try:
+                        data_entrega = date.fromisoformat(data_entrega_raw) if data_entrega_raw else None
+                    except ValueError:
+                        return jsonify({"ok": False, "error": "Data de entrega invalida", "status": "error"}), 400
+                    registo = EV2AulaThemeAssignment.query.filter_by(
+                        aula_id=aula.id,
+                        event_id=event.id,
+                        group_id=grupo.id,
+                    ).first()
+                    if not registo:
+                        registo = EV2AulaThemeAssignment(aula_id=aula.id, event_id=event.id, group_id=grupo.id)
+                        db.session.add(registo)
+                    registo.theme_id = tema.id if tema else None
+                    registo.entregue = str(assignment.get("entregue") or "0").lower() in {"1", "true", "yes"}
+                    registo.data_entrega = data_entrega
+
+        if tipo == "portfolio":
+            observacoes_batch = payload.get("portfolio_observacoes") or []
+            if isinstance(observacoes_batch, list):
+                for entry in observacoes_batch:
+                    if not isinstance(entry, dict):
+                        continue
+                    aluno_id = _optional_int(entry.get("aluno_id"))
+                    if aluno_id is None:
+                        continue
+                    event_student = _ensure_event_student(event.id, aluno_id)
+                    event_student.observacoes = (entry.get("observacoes") or "").strip() or None
+
+        scores = payload.get("scores") or []
+        if isinstance(scores, list):
+            for entry in scores:
+                if not isinstance(entry, dict):
+                    continue
+                aluno_id = _optional_int(entry.get("aluno_id"))
+                rubrica_id = _optional_int(entry.get("rubrica_id"))
+                if (
+                    aluno_id is None
+                    or rubrica_id is None
+                    or rubrica_id not in rubrica_ids_validos
+                    or not avaliavel_por_aluno.get(aluno_id, False)
+                ):
+                    continue
+                event_student = _ensure_event_student(event.id, aluno_id)
+                assessment = EV2Assessment.query.filter_by(event_student_id=event_student.id, rubric_id=rubrica_id).first()
+                if not assessment:
+                    assessment = EV2Assessment(
+                        event_student_id=event_student.id,
+                        tipo="rubrica",
+                        rubric_id=rubrica_id,
+                        weight=0,
+                    )
+                    db.session.add(assessment)
+                valor = _optional_float(entry.get("valor"))
+                if valor is None:
+                    assessment.state = "nao_observado"
+                    assessment.score_numeric = None
+                    assessment.component_scores.clear()
+                    assessment.observacoes = None
+                else:
+                    assessment.state = "avaliado"
+                    assessment.score_numeric = _apply_component_scores_payload(
+                        assessment,
+                        rubrica_id,
+                        entry.get("component_scores"),
+                        valor,
+                    )
+
+        db.session.commit()
+
+        medias_atualizadas = {}
+        for aluno_id, elegivel in sorted(avaliavel_por_aluno.items()):
+            if not elegivel:
+                medias_atualizadas[str(aluno_id)] = {}
+                continue
+            event_student = (
+                EV2EventStudent.query.filter_by(event_id=event.id, aluno_id=aluno_id)
+                .options(
+                    joinedload(EV2EventStudent.assessments)
+                    .joinedload(EV2Assessment.rubrica)
+                    .joinedload(EV2Rubric.dominio)
+                )
+                .first()
+            )
+            medias_atualizadas[str(aluno_id)] = _media_por_dominio_event_student(event_student) if event_student else {}
+
+        return jsonify({"ok": True, "status": "ok", "medias_por_aluno": medias_atualizadas}), 200
+
     def resolve_num_tempos_aula(aula):
         total_tempos = 0
         total_tempos_raw = getattr(aula, "total_tempos", None)
@@ -4200,6 +4552,14 @@ def create_app():
         rubricas_por_dominio = {dominio["id"]: dominio["rubricas"] for dominio in dominios_view}
 
         if request.method == 'POST':
+            payload = request.get_json(silent=True) if request.is_json else None
+            if isinstance(payload, dict) and (payload.get("action") or "").strip().lower() == "save_batch":
+                return _save_aula_avaliar_batch(
+                    aula,
+                    aluno_ids_avaliaveis,
+                    {rubrica.id for rubrica in rubricas},
+                    payload,
+                )
             rubrica_id = request.form.get("rubrica_id", type=int)
             if rubrica_id:
                 valor_raw = request.form.get("valor")
@@ -4483,6 +4843,17 @@ def create_app():
                 return jsonify({"ok": False, "error": "Não foi possível inicializar o contexto desta avaliação.", "status": "error"}), 500
             if tipo in {"obser", "portfolio", "projeto", "trabalho"}:
                 event = ensure_effective_groups_for_aula_tipo(aula, tipo, event)
+
+            payload = request.get_json(silent=True) if request.is_json else None
+            if isinstance(payload, dict) and (payload.get("action") or "").strip().lower() == "save_batch":
+                return _save_event_batch(
+                    aula,
+                    tipo,
+                    event,
+                    ctx["avaliavel_por_aluno"],
+                    {rubrica.id for dominio in ctx["dominios_view"] for rubrica in dominio["rubricas"]},
+                    payload,
+                )
 
             action = (request.form.get("action") or "score").strip().lower()
             if action == "create_item" and tipo in {"portfolio", "projeto", "trabalho"}:
@@ -5156,6 +5527,16 @@ def create_app():
             return {letra: round(sum(vals) / len(vals), 1) for letra, vals in dominios_scores.items() if vals}
 
         if request.method == "POST":
+            payload = request.get_json(silent=True) if request.is_json else None
+            if isinstance(payload, dict) and (payload.get("action") or "").strip().lower() == "save_batch":
+                return _save_event_batch(
+                    aula_evento if event.aula_id else None,
+                    tipo,
+                    event,
+                    avaliavel_por_aluno,
+                    {rubrica.id for rubrica in rubricas},
+                    payload,
+                )
             action = (request.form.get("action") or "score").strip().lower()
             if action == "save_meta":
                 titulo = (request.form.get("titulo") or "").strip()

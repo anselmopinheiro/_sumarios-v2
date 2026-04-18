@@ -12,6 +12,20 @@
   </p>
 {% endif %}
 
+<style>
+  .avaliacao-save-panel {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 1080;
+  }
+
+  .avaliacao-save-panel .btn {
+    min-width: 10rem;
+    box-shadow: 0 .5rem 1rem rgba(0, 0, 0, .15);
+  }
+</style>
+
 <form method="post" id="avaliacao-form">
   <div class="table-responsive">
     <table class="table table-bordered table-sm align-middle" id="avaliacao-table" data-ciclo-aula="{{ ciclo_aula }}">
@@ -38,6 +52,7 @@
                     class="btn btn-outline-primary btn-sm"
                     onclick="aplicarValorAutomatico({{ rubrica.id }}, {{ aula.id }})"
                     data-rubrica-id="{{ rubrica.id }}"
+                    data-dominio-letra="{{ dominio.letra }}"
                     data-valor-basico="{{ rubrica.pontuacao_padrao_basico if rubrica.pontuacao_padrao_basico is not none else 3 }}"
                     data-valor-secundario="{{ rubrica.pontuacao_padrao_secundario if rubrica.pontuacao_padrao_secundario is not none else 12 }}"
                   >
@@ -100,19 +115,28 @@
   {% endif %}
 </form>
 
+<div class="avaliacao-save-panel">
+  <button type="button" id="avaliacao-save-button" class="btn btn-primary">Guardar</button>
+</div>
+
 <script>
 (() => {
   const form = document.getElementById("avaliacao-form");
   const table = document.getElementById("avaliacao-table");
-  if (!form || !table) return;
+  const saveButton = document.getElementById("avaliacao-save-button");
+  if (!form || !table || !saveButton) return;
 
+  const dirtyMessage = "Existem alteraÃ§Ãµes por guardar";
   const ciclo = table.dataset.cicloAula || "basico";
   const domainLetters = Array.from(table.querySelectorAll("th[data-media-dominio]"))
     .map((th) => th.dataset.mediaDominio)
     .filter(Boolean);
+  const saveUrl = `${window.location.pathname}${window.location.search}`;
   const alunoIds = Array.from(table.querySelectorAll('tr[data-aluno-id][data-presente="1"]'))
     .map((tr) => tr.dataset.alunoId)
     .filter(Boolean);
+  let isDirty = false;
+  let isSaving = false;
 
   function renderMedias(alunoId, medias) {
     const mediaMap = medias || {};
@@ -124,6 +148,128 @@
       const value = mediaMap[letra];
       cell.innerHTML = value == null ? '<span class="text-muted">-</span>' : `${value}`;
     });
+  }
+
+  function notifyParent(state) {
+    if (window.parent === window) return;
+    try {
+      window.parent.postMessage(
+        {
+          source: "avaliacao-editor",
+          kind: "state",
+          state,
+        },
+        window.location.origin,
+      );
+    } catch (err) {
+      console.warn("Nao foi possivel notificar a shell de avaliacao.", err);
+    }
+  }
+
+  function setButtonState(state) {
+    saveButton.disabled = state === "saving";
+    saveButton.className = "btn";
+    if (state === "dirty") {
+      saveButton.classList.add("btn-warning");
+      saveButton.textContent = "Guardar *";
+    } else if (state === "saving") {
+      saveButton.classList.add("btn-secondary");
+      saveButton.textContent = "A guardar...";
+    } else if (state === "saved") {
+      saveButton.classList.add("btn-success");
+      saveButton.textContent = "Guardado";
+    } else if (state === "error") {
+      saveButton.classList.add("btn-danger");
+      saveButton.textContent = "Erro ao guardar";
+    } else {
+      saveButton.classList.add("btn-primary");
+      saveButton.textContent = "Guardar";
+    }
+    notifyParent({ dirty: isDirty, saving: isSaving, status: state, buttonLabel: saveButton.textContent });
+  }
+
+  function markDirty() {
+    if (isSaving) return;
+    isDirty = true;
+    setButtonState("dirty");
+  }
+
+  function coerceNumber(rawValue) {
+    if (rawValue == null) return null;
+    const value = String(rawValue).trim();
+    if (!value) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function roundToOneDecimal(value) {
+    return Math.round(value * 10) / 10;
+  }
+
+  function computeStudentMedias(alunoId) {
+    const medias = {};
+    domainLetters.forEach((letra) => {
+      const values = Array.from(
+        table.querySelectorAll(`input[data-aluno-id="${alunoId}"][data-dominio-letra="${letra}"]:not(:disabled)`)
+      )
+        .map((input) => coerceNumber(input.value))
+        .filter((value) => value != null);
+      medias[letra] = values.length
+        ? roundToOneDecimal(values.reduce((sum, value) => sum + value, 0) / values.length)
+        : null;
+    });
+    return medias;
+  }
+
+  function refreshStudentMedias(alunoId) {
+    renderMedias(alunoId, computeStudentMedias(alunoId));
+  }
+
+  function refreshAllMedias() {
+    alunoIds.forEach((alunoId) => refreshStudentMedias(alunoId));
+  }
+
+  function serializeScores() {
+    return Array.from(table.querySelectorAll('input[type="number"][data-rubrica-id][data-aluno-id]'))
+      .filter((input) => !input.disabled)
+      .map((input) => ({
+        aluno_id: Number(input.dataset.alunoId),
+        rubrica_id: Number(input.dataset.rubricaId),
+        valor: coerceNumber(input.value),
+      }));
+  }
+
+  async function saveBatch() {
+    if (!isDirty || isSaving) return;
+    isSaving = true;
+    setButtonState("saving");
+    try {
+      const response = await fetch(saveUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Requested-With": "XMLHttpRequest",
+        },
+        body: JSON.stringify({
+          action: "save_batch",
+          scores: serializeScores(),
+        }),
+      });
+      if (!response.ok) {
+        throw new Error("Falha ao guardar avaliacao.");
+      }
+      const data = await response.json();
+      Object.entries(data.medias_por_aluno || {}).forEach(([alunoId, medias]) => {
+        renderMedias(alunoId, medias);
+      });
+      isDirty = false;
+      setButtonState("saved");
+    } catch (err) {
+      console.error(err);
+      setButtonState("error");
+    } finally {
+      isSaving = false;
+    }
   }
 
   async function postUpdate(payload) {
@@ -145,69 +291,48 @@
     return resp.json();
   }
 
-  async function updateRubricaForAlunos(rubricaId, valor, updateInputValue = true) {
-    const data = await postUpdate({
-      "aluno_ids[]": alunoIds,
-      rubrica_id: rubricaId,
-      valor,
-    });
+  function updateRubricaForAlunos(rubricaId, valor, updateInputValue = true) {
     if (updateInputValue) {
       table.querySelectorAll(`input[data-rubrica-id="${rubricaId}"][type="number"]`)
         .forEach((inp) => { inp.value = valor; });
     }
-    Object.entries(data.medias_por_aluno || {}).forEach(([alunoId, medias]) => {
-      renderMedias(alunoId, medias);
-    });
+    refreshAllMedias();
+    markDirty();
   }
 
-  window.aplicarValorAutomatico = async function aplicarValorAutomatico(rubricaId) {
+  window.aplicarValorAutomatico = function aplicarValorAutomatico(rubricaId) {
     if (!window.confirm("Deseja aplicar o valor automático a todos os alunos desta rubrica?")) return;
     const button = table.querySelector(`button[data-rubrica-id="${rubricaId}"]`);
     const valor = ciclo === "secundario"
       ? (button?.dataset.valorSecundario || "12")
       : (button?.dataset.valorBasico || "3");
-    try {
-      await updateRubricaForAlunos(rubricaId, valor, true);
-    } catch (err) {
-      console.error(err);
-    }
+    updateRubricaForAlunos(rubricaId, valor, true);
   };
 
-  window.confirmarLimpar = async function confirmarLimpar(rubricaId) {
+  window.confirmarLimpar = function confirmarLimpar(rubricaId) {
     if (!window.confirm("Deseja limpar todos os valores desta rubrica?")) return;
-    try {
-      await updateRubricaForAlunos(rubricaId, "", false);
-      table.querySelectorAll(`input[data-rubrica-id="${rubricaId}"][type="number"]`)
-        .forEach((inp) => { inp.value = ""; });
-    } catch (err) {
-      console.error(err);
-    }
+    table.querySelectorAll(`input[data-rubrica-id="${rubricaId}"][type="number"]`)
+      .forEach((inp) => { inp.value = ""; });
+    updateRubricaForAlunos(rubricaId, "", false);
   };
 
-  const debounceTimers = new Map();
   table.querySelectorAll('input[type="number"][data-rubrica-id][data-aluno-id]').forEach((input) => {
     input.addEventListener("input", () => {
-      const key = `${input.dataset.alunoId}-${input.dataset.rubricaId}`;
-      if (debounceTimers.has(key)) clearTimeout(debounceTimers.get(key));
-      debounceTimers.set(key, setTimeout(async () => {
-        const valor = input.value === "" ? "" : input.value;
-        try {
-          const data = await postUpdate({
-            "aluno_ids[]": [input.dataset.alunoId],
-            rubrica_id: input.dataset.rubricaId,
-            valor,
-          });
-          Object.entries(data.medias_por_aluno || {}).forEach(([alunoId, medias]) => {
-            renderMedias(alunoId, medias);
-          });
-        } catch (err) {
-          console.error(err);
-        }
-      }, 500));
+      refreshStudentMedias(input.dataset.alunoId);
+      markDirty();
     });
   });
 
   form.addEventListener("submit", (event) => event.preventDefault());
+  saveButton.addEventListener("click", saveBatch);
+  window.addEventListener("beforeunload", (event) => {
+    if (!isDirty) return;
+    event.preventDefault();
+    event.returnValue = "Existem alteracoes por guardar";
+  });
+
+  refreshAllMedias();
+  setButtonState("idle");
 
 })();
 </script>

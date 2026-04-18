@@ -45,6 +45,9 @@
   #avaliacao-objeto-table .component-item { min-width: 62px; max-width: 72px; }
   #avaliacao-objeto-table .component-item .label { font-size: 8px; line-height: 1.05; text-align: center; white-space: normal; }
   #avaliacao-objeto-table .component-block .form-control { max-width: 56px; min-width: 52px; text-align: center; padding: .05rem .2rem; margin: 0 auto; }
+  .avaliacao-save-panel { position: fixed; right: 1rem; bottom: 1rem; z-index: 1080; }
+  .avaliacao-save-panel .btn { min-width: 10rem; box-shadow: 0 .5rem 1rem rgba(0, 0, 0, .15); }
+  button[onclick*="guardarMetaObjeto"], button[onclick*="guardarTemaGrupo"] { display: none; }
 </style>
 
 {% if not embed_mode %}
@@ -252,7 +255,7 @@
                 <td>{{ aluno.numero or '-' }}</td>
                 <td title="{{ aluno.nome }}">{{ short_student_name(aluno.nome) }}</td>
                 <td>
-                  <select class="form-select form-select-sm" onchange="atribuirGrupo({{ aluno.id }}, this.value)">
+                  <select class="form-select form-select-sm js-group-assignment" data-aluno-id="{{ aluno.id }}" onchange="atribuirGrupo({{ aluno.id }}, this.value)">
                     <option value="">Individual</option>
                     {% for grupo in grupos %}
                       <option value="{{ grupo.id }}" {% if grp.group_name == grupo.nome %}selected{% endif %}>{{ grupo.nome }}</option>
@@ -271,6 +274,7 @@
                                name="pontuacao-{{ aluno.id }}-{{ rubrica.id }}"
                                data-aluno-id="{{ aluno.id }}"
                                data-rubrica-id="{{ rubrica.id }}"
+                               data-dominio-letra="{{ dominio.letra }}"
                                readonly
                                {% if not avaliavel %}disabled title="{{ bloqueio_motivo }}" style="background-color:#f5f5f5"{% endif %}
                                value="{{ avaliacoes.get(aluno.id, {}).get(rubrica.id, '') }}">
@@ -282,6 +286,7 @@
                                      class="form-control form-control-sm js-component-score compact-score"
                                      data-aluno-id="{{ aluno.id }}"
                                      data-rubrica-id="{{ rubrica.id }}"
+                                     data-dominio-letra="{{ dominio.letra }}"
                                      data-component-id="{{ componente.id }}"
                                      {% if not avaliavel %}disabled title="{{ bloqueio_motivo }}" style="background-color:#f5f5f5"{% endif %}
                                      value="{{ component_scores.get(aluno.id, {}).get(rubrica.id, {}).get(componente.id, '') }}">
@@ -293,6 +298,7 @@
                                name="pontuacao-{{ aluno.id }}-{{ rubrica.id }}"
                                data-aluno-id="{{ aluno.id }}"
                                data-rubrica-id="{{ rubrica.id }}"
+                               data-dominio-letra="{{ dominio.letra }}"
                                {% if not avaliavel %}disabled title="{{ bloqueio_motivo }}" style="background-color:#f5f5f5"{% endif %}
                                value="{{ avaliacoes.get(aluno.id, {}).get(rubrica.id, '') }}">
                       {% endif %}
@@ -320,7 +326,7 @@
               <td>
                 {% set grupo_atual = grupo_por_aluno.get(aluno.id, linha.grupo or '') %}
                 {% if tipo in ['obser', 'portfolio'] %}
-                  <select class="form-select form-select-sm" onchange="atribuirGrupo({{ aluno.id }}, this.value)">
+                  <select class="form-select form-select-sm js-group-assignment" data-aluno-id="{{ aluno.id }}" onchange="atribuirGrupo({{ aluno.id }}, this.value)">
                     <option value="">Individual</option>
                     {% for grupo in grupos %}
                       <option value="{{ grupo.id }}" {% if grupo_atual == grupo.nome %}selected{% endif %}>{{ grupo.nome }}</option>
@@ -340,6 +346,7 @@
                              name="pontuacao-{{ aluno.id }}-{{ rubrica.id }}"
                              data-aluno-id="{{ aluno.id }}"
                              data-rubrica-id="{{ rubrica.id }}"
+                             data-dominio-letra="{{ dominio.letra }}"
                              readonly
                              {% if not avaliavel %}disabled title="{{ bloqueio_motivo }}" style="background-color:#f5f5f5"{% endif %}
                              value="{{ avaliacoes.get(aluno.id, {}).get(rubrica.id, '') }}">
@@ -351,6 +358,7 @@
                                    class="form-control form-control-sm js-component-score compact-score"
                                    data-aluno-id="{{ aluno.id }}"
                                    data-rubrica-id="{{ rubrica.id }}"
+                                   data-dominio-letra="{{ dominio.letra }}"
                                    data-component-id="{{ componente.id }}"
                                    {% if not avaliavel %}disabled title="{{ bloqueio_motivo }}" style="background-color:#f5f5f5"{% endif %}
                                    value="{{ component_scores.get(aluno.id, {}).get(rubrica.id, {}).get(componente.id, '') }}">
@@ -362,6 +370,7 @@
                              name="pontuacao-{{ aluno.id }}-{{ rubrica.id }}"
                              data-aluno-id="{{ aluno.id }}"
                              data-rubrica-id="{{ rubrica.id }}"
+                             data-dominio-letra="{{ dominio.letra }}"
                              {% if not avaliavel %}disabled title="{{ bloqueio_motivo }}" style="background-color:#f5f5f5"{% endif %}
                              value="{{ avaliacoes.get(aluno.id, {}).get(rubrica.id, '') }}">
                     {% endif %}
@@ -389,10 +398,16 @@
   </div>
 </form>
 
+<div class="avaliacao-save-panel">
+  <button type="button" id="avaliacao-save-button" class="btn btn-primary">Guardar</button>
+</div>
+
 <script>
 (() => {
   const table = document.getElementById("avaliacao-objeto-table");
   if (!table) return;
+  const legacyAutosaveDisabled = true;
+  if (legacyAutosaveDisabled) return;
   const alunoIds = Array.from(table.querySelectorAll('tr[data-aluno-id][data-presente="1"]')).map((tr) => tr.dataset.alunoId);
   const domainLetters = Array.from(table.querySelectorAll("th[data-media-dominio]")).map((th) => th.dataset.mediaDominio);
   const expandedRubricas = new Set();
@@ -732,6 +747,521 @@
       }, 500));
     });
   });
+})();
+</script>
+<script>
+(() => {
+  const table = document.getElementById("avaliacao-objeto-table");
+  const saveButton = document.getElementById("avaliacao-save-button");
+  if (!table || !saveButton) return;
+
+  const dirtyPromptMessage = "Existem alteracoes por guardar";
+  const saveUrl = `${window.location.pathname}${window.location.search}`;
+  const domainLetters = Array.from(table.querySelectorAll("th[data-media-dominio]"))
+    .map((th) => th.dataset.mediaDominio)
+    .filter(Boolean);
+  const alunoIds = Array.from(table.querySelectorAll('tr[data-aluno-id][data-presente="1"]'))
+    .map((tr) => String(tr.dataset.alunoId))
+    .filter(Boolean);
+  let isDirty = false;
+  let isSaving = false;
+
+  function notifyParent(state) {
+    if (window.parent === window) return;
+    try {
+      window.parent.postMessage(
+        {
+          source: "avaliacao-editor",
+          kind: "state",
+          state,
+        },
+        window.location.origin,
+      );
+    } catch (err) {
+      console.warn("Nao foi possivel notificar a shell de avaliacao.", err);
+    }
+  }
+
+  function setButtonState(state) {
+    saveButton.disabled = state === "saving";
+    saveButton.className = "btn";
+    if (state === "dirty") {
+      saveButton.classList.add("btn-warning");
+      saveButton.textContent = "Guardar *";
+    } else if (state === "saving") {
+      saveButton.classList.add("btn-secondary");
+      saveButton.textContent = "A guardar...";
+    } else if (state === "saved") {
+      saveButton.classList.add("btn-success");
+      saveButton.textContent = "Guardado";
+    } else if (state === "error") {
+      saveButton.classList.add("btn-danger");
+      saveButton.textContent = "Erro ao guardar";
+    } else {
+      saveButton.classList.add("btn-primary");
+      saveButton.textContent = "Guardar";
+    }
+    notifyParent({ dirty: isDirty, saving: isSaving, status: state, buttonLabel: saveButton.textContent });
+  }
+
+  function markDirty() {
+    if (isSaving) return;
+    isDirty = true;
+    setButtonState("dirty");
+  }
+
+  function coerceNumber(rawValue) {
+    if (rawValue == null) return null;
+    const value = String(rawValue).trim();
+    if (!value) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function roundToOneDecimal(value) {
+    return Math.round(value * 10) / 10;
+  }
+
+  function getDirectScoreInput(alunoId, rubricaId) {
+    return table.querySelector(`input[data-aluno-id="${alunoId}"][data-rubrica-id="${rubricaId}"]:not(.js-component-score)`);
+  }
+
+  function getComponentInputs(alunoId, rubricaId) {
+    return Array.from(
+      table.querySelectorAll(`.js-component-score[data-aluno-id="${alunoId}"][data-rubrica-id="${rubricaId}"]`)
+    );
+  }
+
+  function renderMedias(alunoId, medias) {
+    const mediaMap = medias || {};
+    domainLetters.forEach((letra) => {
+      const cell = table.querySelector(`.media-cell[data-aluno-id="${alunoId}"][data-dominio-letra="${letra}"]`);
+      if (!cell) return;
+      const value = mediaMap[letra];
+      cell.textContent = value == null ? "-" : `${value}`;
+    });
+  }
+
+  function computeStudentMedias(alunoId) {
+    const medias = {};
+    domainLetters.forEach((letra) => {
+      const values = Array.from(
+        table.querySelectorAll(`input[data-aluno-id="${alunoId}"][data-dominio-letra="${letra}"]:not(.js-component-score):not(:disabled)`)
+      )
+        .map((input) => coerceNumber(input.value))
+        .filter((value) => value != null);
+      medias[letra] = values.length
+        ? roundToOneDecimal(values.reduce((sum, value) => sum + value, 0) / values.length)
+        : null;
+    });
+    return medias;
+  }
+
+  function refreshStudentMedias(alunoId) {
+    renderMedias(alunoId, computeStudentMedias(alunoId));
+  }
+
+  function refreshAllMedias() {
+    alunoIds.forEach((alunoId) => refreshStudentMedias(alunoId));
+  }
+
+  function getGroupAssignmentSelect(alunoId) {
+    return table.querySelector(`.js-group-assignment[data-aluno-id="${alunoId}"]`);
+  }
+
+  function getSyncedStudentIds(alunoId) {
+    const currentSelect = getGroupAssignmentSelect(alunoId);
+    const currentGroupId = currentSelect?.value || "";
+    if (!currentGroupId) return [String(alunoId)];
+    return Array.from(table.querySelectorAll(".js-group-assignment"))
+      .filter((select) => {
+        const studentId = String(select.dataset.alunoId || "");
+        return (
+          studentId &&
+          alunoIds.includes(studentId) &&
+          (select.value || "") === currentGroupId
+        );
+      })
+      .map((select) => String(select.dataset.alunoId));
+  }
+
+  function getComponentScores(alunoId, rubricaId) {
+    const scores = {};
+    getComponentInputs(alunoId, rubricaId).forEach((input) => {
+      const value = coerceNumber(input.value);
+      if (value == null) return;
+      const level = Math.round(value);
+      if (level >= 1 && level <= 5) {
+        scores[String(input.dataset.componentId)] = level;
+      }
+    });
+    return scores;
+  }
+
+  function computeScoreFromComponents(componentScores) {
+    const values = Object.values(componentScores)
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value));
+    if (!values.length) return "";
+    return (Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 100) / 100).toFixed(2);
+  }
+
+  function applyRubricaValueToStudents(studentIds, rubricaId, value, componentScores = null) {
+    studentIds.forEach((studentId) => {
+      const directInput = getDirectScoreInput(studentId, rubricaId);
+      if (directInput && !directInput.disabled) {
+        directInput.value = value;
+      }
+      const componentInputs = getComponentInputs(studentId, rubricaId);
+      if (componentInputs.length) {
+        componentInputs.forEach((input) => {
+          const nextValue = componentScores ? componentScores[String(input.dataset.componentId)] : null;
+          input.value = nextValue == null ? "" : String(nextValue);
+        });
+      }
+      refreshStudentMedias(studentId);
+    });
+    markDirty();
+  }
+
+  function getGroupIdFromControl(control) {
+    if (!control) return "";
+    if (control.dataset.groupId) return String(control.dataset.groupId);
+    if (control.id?.startsWith("grupo-tema-")) return control.id.replace("grupo-tema-", "");
+    if (control.id?.startsWith("grupo-entregue-")) return control.id.replace("grupo-entregue-", "");
+    if (control.id?.startsWith("grupo-data-entrega-")) return control.id.replace("grupo-data-entrega-", "");
+    return "";
+  }
+
+  function getThemeSelect(groupId, preferredControl = null) {
+    if (preferredControl && (preferredControl.classList.contains("js-group-theme") || preferredControl.id === `grupo-tema-${groupId}`)) {
+      return preferredControl;
+    }
+    return table.querySelector(`.js-group-theme[data-group-id="${groupId}"]`) || document.getElementById(`grupo-tema-${groupId}`);
+  }
+
+  function getThemeDelivered(groupId, preferredControl = null) {
+    if (preferredControl && (preferredControl.classList.contains("js-group-entregue") || preferredControl.id === `grupo-entregue-${groupId}`)) {
+      return preferredControl;
+    }
+    return table.querySelector(`.js-group-entregue[data-group-id="${groupId}"]`) || document.getElementById(`grupo-entregue-${groupId}`);
+  }
+
+  function getThemeDate(groupId, preferredControl = null) {
+    if (preferredControl && (preferredControl.classList.contains("js-group-data-entrega") || preferredControl.id === `grupo-data-entrega-${groupId}`)) {
+      return preferredControl;
+    }
+    return table.querySelector(`.js-group-data-entrega[data-group-id="${groupId}"]`) || document.getElementById(`grupo-data-entrega-${groupId}`);
+  }
+
+  function getGroupThemeState(groupId, preferredControl = null) {
+    const themeSelect = getThemeSelect(groupId, preferredControl);
+    const deliveredInput = getThemeDelivered(groupId, preferredControl);
+    const dateInput = getThemeDate(groupId, preferredControl);
+    return {
+      group_id: groupId,
+      theme_id: themeSelect?.value || "",
+      entregue: deliveredInput?.checked ? "1" : "0",
+      data_entrega: dateInput?.value || "",
+    };
+  }
+
+  function applyGroupThemeState(groupId, state) {
+    const themeSelect = getThemeSelect(groupId);
+    const deliveredInput = getThemeDelivered(groupId);
+    const dateInput = getThemeDate(groupId);
+    if (themeSelect) themeSelect.value = state.theme_id || "";
+    const extraThemeSelect = document.getElementById(`grupo-tema-${groupId}`);
+    if (extraThemeSelect) extraThemeSelect.value = state.theme_id || "";
+    if (deliveredInput) deliveredInput.checked = state.entregue === "1";
+    const extraDelivered = document.getElementById(`grupo-entregue-${groupId}`);
+    if (extraDelivered) extraDelivered.checked = state.entregue === "1";
+    if (dateInput) dateInput.value = state.data_entrega || "";
+    const extraDate = document.getElementById(`grupo-data-entrega-${groupId}`);
+    if (extraDate) extraDate.value = state.data_entrega || "";
+  }
+
+  function syncGroupThemeControls(control) {
+    const groupId = getGroupIdFromControl(control);
+    if (!groupId) return;
+    const state = getGroupThemeState(groupId, control);
+    if (state.entregue === "1" && !state.data_entrega) {
+      state.data_entrega = new Date().toISOString().slice(0, 10);
+    }
+    applyGroupThemeState(groupId, state);
+    markDirty();
+  }
+
+  function collectGroupThemeIds() {
+    const ids = new Set();
+    table.querySelectorAll(".js-group-theme[data-group-id], .js-group-entregue[data-group-id], .js-group-data-entrega[data-group-id]").forEach((control) => {
+      if (control.dataset.groupId) ids.add(String(control.dataset.groupId));
+    });
+    document.querySelectorAll('[id^="grupo-tema-"], [id^="grupo-entregue-"], [id^="grupo-data-entrega-"]').forEach((control) => {
+      const groupId = getGroupIdFromControl(control);
+      if (groupId) ids.add(groupId);
+    });
+    return Array.from(ids);
+  }
+
+  function collectPayload() {
+    return {
+      action: "save_batch",
+      meta: {
+        numero: document.getElementById("meta-numero")?.value || "",
+        titulo: document.getElementById("meta-titulo")?.value || "",
+        data_inicio: document.getElementById("meta-data-inicio")?.value || "",
+        prazo_entrega: document.getElementById("meta-prazo")?.value || "",
+        tema_multiplo: document.getElementById("meta-tema-multiplo")?.value || "",
+        temas: document.getElementById("meta-temas")?.value || "",
+        observacoes: document.getElementById("obser-descritivo")?.value || "",
+      },
+      scores: Array.from(table.querySelectorAll('input[data-rubrica-id][data-aluno-id]:not(.js-component-score)'))
+        .filter((input) => !input.disabled)
+        .map((input) => {
+          const alunoId = String(input.dataset.alunoId);
+          const rubricaId = String(input.dataset.rubricaId);
+          return {
+            aluno_id: Number(alunoId),
+            rubrica_id: Number(rubricaId),
+            valor: coerceNumber(input.value),
+            component_scores: getComponentInputs(alunoId, rubricaId).length ? getComponentScores(alunoId, rubricaId) : {},
+          };
+        }),
+      group_assignments: Array.from(table.querySelectorAll(".js-group-assignment[data-aluno-id]")).map((select) => ({
+        aluno_id: Number(select.dataset.alunoId),
+        group_id: select.value || "",
+      })),
+      group_themes: collectGroupThemeIds().map((groupId) => getGroupThemeState(groupId)),
+      portfolio_observacoes: Array.from(table.querySelectorAll(".js-portfolio-observacoes[data-aluno-id]")).map((input) => ({
+        aluno_id: Number(input.dataset.alunoId),
+        observacoes: input.value || "",
+      })),
+    };
+  }
+
+  async function postAction(payload) {
+    const body = new URLSearchParams();
+    Object.entries(payload).forEach(([key, value]) => {
+      if (Array.isArray(value)) {
+        value.forEach((item) => body.append(key, item));
+      } else {
+        body.append(key, value);
+      }
+    });
+    const response = await fetch(saveUrl, {
+      method: "POST",
+      headers: { "X-Requested-With": "XMLHttpRequest" },
+      body,
+    });
+    if (!response.ok) {
+      throw new Error("Falha na operacao.");
+    }
+    return response.json();
+  }
+
+  function requireCleanState() {
+    if (!isDirty) return true;
+    window.alert(dirtyPromptMessage);
+    return false;
+  }
+
+  async function saveBatch() {
+    if (!isDirty || isSaving) return;
+    isSaving = true;
+    setButtonState("saving");
+    try {
+      const response = await fetch(saveUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Requested-With": "XMLHttpRequest",
+        },
+        body: JSON.stringify(collectPayload()),
+      });
+      if (!response.ok) {
+        throw new Error("Falha ao guardar.");
+      }
+      const data = await response.json();
+      Object.entries(data.medias_por_aluno || {}).forEach(([alunoId, medias]) => renderMedias(alunoId, medias));
+      isDirty = false;
+      isSaving = false;
+      setButtonState("saved");
+    } catch (err) {
+      isSaving = false;
+      console.error(err);
+      setButtonState("error");
+    }
+  }
+
+  window.aplicarValorAutomatico = function aplicarValorAutomatico(rubricaId) {
+    if (!window.confirm("Deseja aplicar o valor automatico a todos os alunos desta rubrica?")) return;
+    const componentInputs = Array.from(table.querySelectorAll(`.js-component-score[data-rubrica-id="${rubricaId}"]:not(:disabled)`));
+    if (componentInputs.length) {
+      componentInputs.forEach((input) => { input.value = "3"; });
+      table.querySelectorAll(`input[data-rubrica-id="${rubricaId}"]:not(.js-component-score):not(:disabled)`)
+        .forEach((input) => { input.value = "3.00"; });
+    } else {
+      table.querySelectorAll(`input[data-rubrica-id="${rubricaId}"]:not(.js-component-score):not(:disabled)`)
+        .forEach((input) => { input.value = "3"; });
+    }
+    refreshAllMedias();
+    markDirty();
+  };
+
+  window.confirmarLimpar = function confirmarLimpar(rubricaId) {
+    if (!window.confirm("Deseja limpar todos os valores desta rubrica?")) return;
+    table.querySelectorAll(`input[data-rubrica-id="${rubricaId}"]:not(:disabled)`).forEach((input) => {
+      input.value = "";
+    });
+    refreshAllMedias();
+    markDirty();
+  };
+
+  window.guardarMetaObjeto = saveBatch;
+  window.guardarTemaGrupo = saveBatch;
+  window.atribuirGrupo = function atribuirGrupo(alunoId, groupId) {
+    const select = getGroupAssignmentSelect(alunoId);
+    if (select && select.value !== (groupId || "")) {
+      select.value = groupId || "";
+    }
+    markDirty();
+  };
+
+  window.irParaAvaliacao = function irParaAvaliacao(tipo, idObjeto) {
+    if (!requireCleanState()) return;
+    window.location.href = `/avaliacao/${tipo}/${idObjeto}`;
+  };
+
+  window.criarNovoItem = async function criarNovoItem() {
+    if (!requireCleanState()) return;
+    try {
+      const data = await postAction({
+        action: "create_item",
+        numero: document.getElementById("meta-numero")?.value || "",
+        titulo: document.getElementById("meta-titulo")?.value || "",
+        data_inicio: document.getElementById("meta-data-inicio")?.value || "",
+        prazo_entrega: document.getElementById("meta-prazo")?.value || "",
+        tema_multiplo: document.getElementById("meta-tema-multiplo")?.value || "0",
+        temas: document.getElementById("meta-temas")?.value || "",
+      });
+      if (data.event_id) {
+        const url = new URL(window.location.href);
+        url.searchParams.set("event_id", data.event_id);
+        window.location.href = url.toString();
+      } else {
+        window.location.reload();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  window.selecionarItemExistente = async function selecionarItemExistente() {
+    if (!requireCleanState()) return;
+    const eventId = document.getElementById("evento-existente")?.value;
+    if (!eventId) return;
+    try {
+      await postAction({ action: "select_item", event_id: eventId });
+      const url = new URL(window.location.href);
+      url.searchParams.set("event_id", eventId);
+      window.location.href = url.toString();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  window.criarGrupo = async function criarGrupo() {
+    if (!requireCleanState()) return;
+    const nome = document.getElementById("novo-grupo-nome")?.value || "";
+    if (!nome.trim()) return;
+    try {
+      await postAction({ action: "group_create", nome_grupo: nome.trim() });
+      window.location.reload();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  window.apagarGrupo = async function apagarGrupo(groupId) {
+    if (!requireCleanState()) return;
+    try {
+      await postAction({ action: "group_delete", group_id: groupId });
+      window.location.reload();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  window.importarGrupos = async function importarGrupos() {
+    if (!requireCleanState()) return;
+    const sourceKey = document.getElementById("grupos-origem")?.value;
+    if (!sourceKey) return;
+    try {
+      await postAction({ action: "import_groups", source_key: sourceKey });
+      window.location.reload();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  window.reporGruposTurma = async function reporGruposTurma() {
+    if (!requireCleanState()) return;
+    try {
+      await postAction({ action: "group_reset_from_turma" });
+      window.location.reload();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  table.querySelectorAll('input[data-rubrica-id][data-aluno-id]:not(.js-component-score)').forEach((input) => {
+    if (input.readOnly) return;
+    input.addEventListener("input", () => {
+      const studentIds = getSyncedStudentIds(input.dataset.alunoId);
+      applyRubricaValueToStudents(studentIds, input.dataset.rubricaId, input.value, null);
+    });
+  });
+
+  table.querySelectorAll(".js-component-score[data-rubrica-id][data-aluno-id][data-component-id]").forEach((input) => {
+    input.addEventListener("input", () => {
+      const componentScores = getComponentScores(input.dataset.alunoId, input.dataset.rubricaId);
+      const value = computeScoreFromComponents(componentScores);
+      const studentIds = getSyncedStudentIds(input.dataset.alunoId);
+      applyRubricaValueToStudents(studentIds, input.dataset.rubricaId, value, componentScores);
+    });
+  });
+
+  document.getElementById("obser-descritivo")?.addEventListener("input", markDirty);
+  table.querySelectorAll(".js-portfolio-observacoes").forEach((input) => input.addEventListener("input", markDirty));
+  table.querySelectorAll(".js-group-assignment").forEach((select) => {
+    select.addEventListener("change", () => markDirty());
+  });
+  document.querySelectorAll(".js-group-theme, .js-group-entregue, .js-group-data-entrega, [id^='grupo-tema-'], [id^='grupo-entregue-'], [id^='grupo-data-entrega-']").forEach((control) => {
+    const eventName = control.type === "checkbox" || control.tagName === "SELECT" ? "change" : "input";
+    control.addEventListener(eventName, () => syncGroupThemeControls(control));
+  });
+  [
+    "meta-numero",
+    "meta-titulo",
+    "meta-data-inicio",
+    "meta-prazo",
+    "meta-tema-multiplo",
+    "meta-temas",
+  ].forEach((id) => {
+    document.getElementById(id)?.addEventListener("input", markDirty);
+    document.getElementById(id)?.addEventListener("change", markDirty);
+  });
+
+  saveButton.addEventListener("click", saveBatch);
+  window.addEventListener("beforeunload", (event) => {
+    if (!isDirty) return;
+    event.preventDefault();
+    event.returnValue = dirtyPromptMessage;
+  });
+
+  refreshAllMedias();
+  setButtonState("idle");
 })();
 </script>
 {% endblock %}
