@@ -86,7 +86,7 @@ class EV2ComponentBatchSaveTests(unittest.TestCase):
         self.app_module.db.session.remove()
         self.app_ctx.pop()
 
-    def _seed_event(self):
+    def _seed_event(self, with_group=False):
         AnoLetivo = self.app_module.AnoLetivo
         Turma = self.app_module.Turma
         Disciplina = self.app_module.Disciplina
@@ -97,6 +97,8 @@ class EV2ComponentBatchSaveTests(unittest.TestCase):
         EV2SubjectConfig = self.app_module.EV2SubjectConfig
         EV2Event = self.app_module.EV2Event
         EV2EventStudent = self.app_module.EV2EventStudent
+        EV2EvaluationGroup = self.app_module.EV2EvaluationGroup
+        EV2EvaluationGroupMember = self.app_module.EV2EvaluationGroupMember
         db = self.app_module.db
 
         ano = AnoLetivo(
@@ -144,7 +146,7 @@ class EV2ComponentBatchSaveTests(unittest.TestCase):
             evaluation_type="observacao_direta",
             titulo="Observacao teste",
             data=date(2025, 10, 20),
-            group_mode="individual",
+            group_mode="grupo" if with_group else "individual",
             peso_evento=100,
             extra_component_weight=0,
             config_snapshot={},
@@ -158,23 +160,33 @@ class EV2ComponentBatchSaveTests(unittest.TestCase):
             pontualidade_manual=True,
             elegivel_avaliacao=True,
         )
+        group = None
+        group_member = None
+        if with_group:
+            group = EV2EvaluationGroup(event=event, nome="Grupo A", ordem=1)
+            group_member = EV2EvaluationGroupMember(group=group, aluno=aluno)
+            event_student.group_key = group.nome
 
-        db.session.add_all(
-            [
-                ano,
-                turma,
-                disciplina,
-                aluno,
-                dominio,
-                rubrica_componentes,
-                rubrica_simples,
-                comp_1,
-                comp_2,
-                subject_config,
-                event,
-                event_student,
-            ]
-        )
+        items_to_add = [
+            ano,
+            turma,
+            disciplina,
+            aluno,
+            dominio,
+            rubrica_componentes,
+            rubrica_simples,
+            comp_1,
+            comp_2,
+            subject_config,
+            event,
+            event_student,
+        ]
+        if group is not None:
+            items_to_add.append(group)
+        if group_member is not None:
+            items_to_add.append(group_member)
+
+        db.session.add_all(items_to_add)
         db.session.commit()
         return {
             "aluno_id": aluno.id,
@@ -183,6 +195,7 @@ class EV2ComponentBatchSaveTests(unittest.TestCase):
             "rubrica_componentes_id": rubrica_componentes.id,
             "rubrica_simples_id": rubrica_simples.id,
             "component_ids": [comp_1.id, comp_2.id],
+            "group_id": group.id if group else None,
         }
 
     def _post_save_batch(self, event_id, payload):
@@ -191,6 +204,18 @@ class EV2ComponentBatchSaveTests(unittest.TestCase):
             json=payload,
             headers={"Accept": "application/json"},
         )
+
+    def _duplicate_group_assignments(self, seed):
+        return [
+            {
+                "aluno_id": seed["aluno_id"],
+                "group_id": seed["group_id"],
+            },
+            {
+                "aluno_id": seed["aluno_id"],
+                "group_id": seed["group_id"],
+            },
+        ]
 
     def test_guarda_apenas_componentes_sem_rubrica_simples(self):
         seed = self._seed_event()
@@ -330,6 +355,105 @@ class EV2ComponentBatchSaveTests(unittest.TestCase):
                 (seed["component_ids"][1], 4),
             ],
         )
+
+    def test_guarda_componente_com_group_assignments_duplicados_sem_duplicar_membership(self):
+        seed = self._seed_event(with_group=True)
+
+        response = self._post_save_batch(
+            seed["event_id"],
+            {
+                "action": "save_batch",
+                "scores": [
+                    {
+                        "aluno_id": seed["aluno_id"],
+                        "rubrica_id": seed["rubrica_componentes_id"],
+                        "valor": 0,
+                        "component_scores": {
+                            str(seed["component_ids"][0]): 4,
+                        },
+                    }
+                ],
+                "group_assignments": self._duplicate_group_assignments(seed),
+            },
+        )
+        payload = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(payload["ok"])
+        memberships = self.app_module.EV2EvaluationGroupMember.query.filter_by(
+            group_id=seed["group_id"],
+            aluno_id=seed["aluno_id"],
+        ).all()
+        self.assertEqual(len(memberships), 1)
+
+    def test_repeated_saves_keep_single_group_membership(self):
+        seed = self._seed_event(with_group=True)
+
+        for value in (2, 5, 3):
+            response = self._post_save_batch(
+                seed["event_id"],
+                {
+                    "action": "save_batch",
+                    "scores": [
+                        {
+                            "aluno_id": seed["aluno_id"],
+                            "rubrica_id": seed["rubrica_componentes_id"],
+                            "valor": 0,
+                            "component_scores": {
+                                str(seed["component_ids"][0]): value,
+                            },
+                        }
+                    ],
+                    "group_assignments": self._duplicate_group_assignments(seed),
+                },
+            )
+            self.assertEqual(response.status_code, 200)
+
+        memberships = self.app_module.EV2EvaluationGroupMember.query.filter_by(
+            group_id=seed["group_id"],
+            aluno_id=seed["aluno_id"],
+        ).all()
+        assessment = self.app_module.EV2Assessment.query.filter_by(
+            event_student_id=seed["event_student_id"],
+            rubric_id=seed["rubrica_componentes_id"],
+        ).one()
+
+        self.assertEqual(len(memberships), 1)
+        self.assertEqual(float(assessment.score_numeric), 3.0)
+
+    def test_rubrica_simples_continua_a_funcionar_com_group_assignments_duplicados(self):
+        seed = self._seed_event(with_group=True)
+
+        response = self._post_save_batch(
+            seed["event_id"],
+            {
+                "action": "save_batch",
+                "scores": [
+                    {
+                        "aluno_id": seed["aluno_id"],
+                        "rubrica_id": seed["rubrica_simples_id"],
+                        "valor": 4.5,
+                        "component_scores": {},
+                    }
+                ],
+                "group_assignments": self._duplicate_group_assignments(seed),
+            },
+        )
+        payload = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(payload["ok"])
+        memberships = self.app_module.EV2EvaluationGroupMember.query.filter_by(
+            group_id=seed["group_id"],
+            aluno_id=seed["aluno_id"],
+        ).all()
+        assessment = self.app_module.EV2Assessment.query.filter_by(
+            event_student_id=seed["event_student_id"],
+            rubric_id=seed["rubrica_simples_id"],
+        ).one()
+
+        self.assertEqual(len(memberships), 1)
+        self.assertEqual(float(assessment.score_numeric), 4.5)
 
 
 if __name__ == "__main__":

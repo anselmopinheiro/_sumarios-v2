@@ -3709,28 +3709,51 @@ def create_app():
             grupos_evento = EV2EvaluationGroup.query.filter_by(event_id=event.id).all()
             grupos_por_id = {grupo.id: grupo for grupo in grupos_evento}
             grupos_ids_evento = list(grupos_por_id.keys())
+            desired_group_by_aluno = {}
             for assignment in group_assignments:
                 if not isinstance(assignment, dict):
                     continue
                 aluno_id = _optional_int(assignment.get("aluno_id"))
                 if aluno_id is None:
                     continue
+                desired_group_by_aluno[aluno_id] = _optional_int(assignment.get("group_id"))
+
+            memberships_by_aluno = {}
+            if grupos_ids_evento and desired_group_by_aluno:
+                memberships = EV2EvaluationGroupMember.query.filter(
+                    EV2EvaluationGroupMember.aluno_id.in_(list(desired_group_by_aluno.keys())),
+                    EV2EvaluationGroupMember.group_id.in_(grupos_ids_evento),
+                ).all()
+                for membership in memberships:
+                    memberships_by_aluno.setdefault(membership.aluno_id, []).append(membership)
+
+            for aluno_id, requested_group_id in desired_group_by_aluno.items():
                 event_student = _ensure_event_student(event.id, aluno_id)
-                if grupos_ids_evento:
-                    antigos = EV2EvaluationGroupMember.query.filter(
-                        EV2EvaluationGroupMember.aluno_id == aluno_id,
-                        EV2EvaluationGroupMember.group_id.in_(grupos_ids_evento),
-                    ).all()
-                    for antigo in antigos:
-                        db.session.delete(antigo)
-                group_id = _optional_int(assignment.get("group_id"))
-                if not group_id:
+                grupo = grupos_por_id.get(requested_group_id) if requested_group_id else None
+                desired_group_id = grupo.id if grupo else None
+                existing_memberships = memberships_by_aluno.get(aluno_id, [])
+                existing_group_ids = {membership.group_id for membership in existing_memberships}
+
+                if desired_group_id is None and not existing_memberships:
                     event_student.group_key = None
                     continue
-                grupo = grupos_por_id.get(group_id)
-                if not grupo:
+                if (
+                    desired_group_id is not None
+                    and len(existing_memberships) == 1
+                    and existing_group_ids == {desired_group_id}
+                ):
+                    event_student.group_key = grupo.nome
                     continue
-                db.session.add(EV2EvaluationGroupMember(group_id=grupo.id, aluno_id=aluno_id))
+
+                for antigo in existing_memberships:
+                    db.session.delete(antigo)
+                memberships_by_aluno[aluno_id] = []
+
+                if desired_group_id is None:
+                    event_student.group_key = None
+                    continue
+
+                db.session.add(EV2EvaluationGroupMember(group_id=desired_group_id, aluno_id=aluno_id))
                 event_student.group_key = grupo.nome
 
         if tipo in {"projeto", "trabalho"} and aula is not None:
