@@ -3523,7 +3523,9 @@ def create_app():
                             "components": [
                                 {
                                     "id": component_payload.get("id"),
+                                    "codigo": component_payload.get("codigo"),
                                     "nome": component_payload.get("nome"),
+                                    "ordem": component_payload.get("ordem"),
                                 }
                                 for component_payload in (rubric_payload.get("components") or [])
                             ],

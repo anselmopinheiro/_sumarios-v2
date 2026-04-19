@@ -375,7 +375,6 @@
                              data-group-id="{{ grp.group_id }}"
                              data-rubrica-id="{{ rubrica.id }}"
                              data-dominio-letra="{{ dominio.letra }}"
-                             readonly
                              value="{{ group_base_value if group_base_value is not none else '' }}">
                       <div class="component-block" data-rubrica-components="{{ rubrica.id }}">
                         {% for componente in (rubrica.components|sort(attribute='ordem')) %}
@@ -444,7 +443,6 @@
                                data-rubrica-id="{{ rubrica.id }}"
                                data-dominio-letra="{{ dominio.letra }}"
                                data-override-active="{{ 1 if override_flags.get(aluno.id, {}).get(rubrica.id, False) else 0 }}"
-                               readonly
                                {% if not avaliavel %}disabled title="{{ bloqueio_motivo }}" style="background-color:#f5f5f5"{% endif %}
                                value="{{ avaliacoes.get(aluno.id, {}).get(rubrica.id, '') }}">
                         <div class="component-block" data-rubrica-components="{{ rubrica.id }}">
@@ -530,7 +528,6 @@
                              data-rubrica-id="{{ rubrica.id }}"
                              data-dominio-letra="{{ dominio.letra }}"
                              data-override-active="{{ 1 if override_flags.get(aluno.id, {}).get(rubrica.id, False) else 0 }}"
-                             readonly
                              {% if not avaliavel %}disabled title="{{ bloqueio_motivo }}" style="background-color:#f5f5f5"{% endif %}
                              value="{{ avaliacoes.get(aluno.id, {}).get(rubrica.id, '') }}">
                       <div class="component-block" data-rubrica-components="{{ rubrica.id }}">
@@ -1211,6 +1208,12 @@
     return (Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 100) / 100).toFixed(2);
   }
 
+  function normalizeComponentShortcutLevel(rawValue) {
+    const value = coerceNumber(rawValue);
+    if (value == null) return null;
+    return Math.min(5, Math.max(1, Math.round(value)));
+  }
+
   function getCurrentGroupIdForStudent(alunoId) {
     return getGroupAssignmentSelect(alunoId)?.value || getStudentRow(alunoId)?.dataset.groupId || "";
   }
@@ -1300,6 +1303,52 @@
     });
   }
 
+  function fillEmptyComponentInputs(componentInputs, fillLevel) {
+    let changed = false;
+    componentInputs.forEach((input) => {
+      if (input.disabled || String(input.value || "").trim() !== "") return;
+      input.value = String(fillLevel);
+      changed = true;
+    });
+    return changed;
+  }
+
+  function applyGroupRubricShortcutToComponents(groupId, rubricaId, rawValue) {
+    const directInput = getGroupScoreInput(groupId, rubricaId);
+    const componentInputs = getGroupComponentInputs(groupId, rubricaId);
+    if (!directInput || !componentInputs.length) return false;
+    const fillLevel = normalizeComponentShortcutLevel(rawValue);
+    if (fillLevel == null) {
+      directInput.value = computeScoreFromComponents(getGroupComponentScores(groupId, rubricaId));
+      return false;
+    }
+    const changed = fillEmptyComponentInputs(componentInputs, fillLevel);
+    directInput.value = computeScoreFromComponents(getGroupComponentScores(groupId, rubricaId));
+    if (!changed) return false;
+    applyGroupValueToFollowers(groupId, rubricaId);
+    return true;
+  }
+
+  function applyStudentRubricShortcutToComponents(alunoId, rubricaId, rawValue) {
+    const directInput = getDirectScoreInput(alunoId, rubricaId);
+    const componentInputs = getComponentInputs(alunoId, rubricaId);
+    if (!directInput || !componentInputs.length) return false;
+    const fillLevel = normalizeComponentShortcutLevel(rawValue);
+    if (fillLevel == null) {
+      directInput.value = computeScoreFromComponents(getComponentScores(alunoId, rubricaId));
+      return false;
+    }
+    const changed = fillEmptyComponentInputs(componentInputs, fillLevel);
+    directInput.value = computeScoreFromComponents(getComponentScores(alunoId, rubricaId));
+    if (!changed) return false;
+    const groupId = getCurrentGroupIdForStudent(alunoId);
+    if (groupId) {
+      setStudentOverrideActive(alunoId, rubricaId, true);
+    }
+    refreshStudentMedias(alunoId);
+    return true;
+  }
+
   function buildUniqueKeyMap(items, keyResolver) {
     const counts = new Map();
     (items || []).forEach((item) => {
@@ -1329,6 +1378,8 @@
   }
 
   function getComponentMatchKey(componentMeta) {
+    const code = normalizeKey(componentMeta?.codigo);
+    if (code) return `code:${code}`;
     const name = normalizeKey(componentMeta?.nome);
     return name ? `name:${name}` : "";
   }
@@ -1337,10 +1388,10 @@
     const sourceComponents = Array.isArray(sourceRubric?.components) ? sourceRubric.components : [];
     const targetComponents = Array.isArray(targetRubric?.components) ? targetRubric.components : [];
     if (!sourceComponents.length && !targetComponents.length) {
-      return { compatible: true, mappings: [] };
+      return { compatible: true, mappings: [], reason: null };
     }
     if (!sourceComponents.length || !targetComponents.length) {
-      return { compatible: false, mappings: [] };
+      return { compatible: false, mappings: [], reason: "component_mismatch" };
     }
     const sourceMap = buildUniqueKeyMap(sourceComponents, getComponentMatchKey);
     const targetMap = buildUniqueKeyMap(targetComponents, getComponentMatchKey);
@@ -1354,7 +1405,11 @@
       });
     });
     const compatible = mappings.length === sourceComponents.length && mappings.length === targetComponents.length;
-    return { compatible, mappings: compatible ? mappings : [] };
+    return {
+      compatible,
+      mappings: compatible ? mappings : [],
+      reason: compatible ? null : "component_mismatch",
+    };
   }
 
   function getDomainCopyPlan(sourceDomainId, targetDomainId) {
@@ -1374,12 +1429,18 @@
     const sourceRubricMap = buildUniqueKeyMap(sourceRubrics, getRubricMatchKey);
     const targetRubricMap = buildUniqueKeyMap(targetRubrics, getRubricMatchKey);
     const mappings = [];
+    let skippedDueToComponentMismatch = 0;
 
     sourceRubricMap.forEach((sourceRubric, rubricKey) => {
       const targetRubric = targetRubricMap.get(rubricKey);
       if (!targetRubric) return;
       const componentPlan = buildComponentCopyPlan(sourceRubric, targetRubric);
-      if (!componentPlan.compatible) return;
+      if (!componentPlan.compatible) {
+        if (componentPlan.reason === "component_mismatch") {
+          skippedDueToComponentMismatch += 1;
+        }
+        return;
+      }
       mappings.push({
         sourceRubricId: String(sourceRubric.id),
         targetRubricId: String(targetRubric.id),
@@ -1394,6 +1455,7 @@
       matchedRubrics: mappings.length,
       totalSourceRubrics: sourceRubrics.length,
       skippedRubrics: Math.max(0, sourceRubrics.length - mappings.length),
+      skippedDueToComponentMismatch,
     };
     domainCopyPlanCache.set(cacheKey, plan);
     return plan;
@@ -1415,6 +1477,9 @@
     }
     if (!plan.skippedRubrics) {
       return `${plan.matchedRubrics} rubricas compativeis.`;
+    }
+    if (plan.skippedDueToComponentMismatch) {
+      return `${plan.matchedRubrics} rubricas compativeis; ${plan.skippedDueToComponentMismatch} ignoradas por incompatibilidade de componentes.`;
     }
     return `${plan.matchedRubrics} rubricas compativeis; ${plan.skippedRubrics} ignoradas.`;
   }
@@ -1552,7 +1617,7 @@
     refreshAllMedias();
     markDirty();
     setActionStatus(
-      `${scopeLabel}: ${copiedRubrics} rubricas copiadas de ${getDomainLabel(plan.sourceDomain)} para ${getDomainLabel(plan.targetDomain)} em ${copiedStudents} aluno(s).`,
+      `${scopeLabel}: ${copiedRubrics} rubricas copiadas de ${getDomainLabel(plan.sourceDomain)} para ${getDomainLabel(plan.targetDomain)} em ${copiedStudents} aluno(s).${plan.skippedDueToComponentMismatch ? ` ${plan.skippedDueToComponentMismatch} rubrica(s) ignorada(s) por incompatibilidade de componentes.` : ""}`,
       "success",
     );
     closeDomainCopyMenus();
@@ -1560,7 +1625,13 @@
 
   function fillEmptyStudentRubric(alunoId, rubricaId, fillValue) {
     const directInput = getDirectScoreInput(alunoId, rubricaId);
-    if (!directInput || directInput.disabled || directInput.readOnly || String(directInput.value || "").trim() !== "") {
+    if (
+      !directInput
+      || directInput.disabled
+      || directInput.readOnly
+      || getComponentInputs(alunoId, rubricaId).length
+      || String(directInput.value || "").trim() !== ""
+    ) {
       return false;
     }
     directInput.value = String(fillValue);
@@ -1613,7 +1684,12 @@
   function fillEmptyCellsWithBaseValue() {
     let changedCount = 0;
     table.querySelectorAll('.js-group-score[data-group-id][data-rubrica-id]').forEach((input) => {
-      if (input.readOnly || input.disabled || String(input.value || "").trim() !== "") return;
+      if (
+        input.readOnly
+        || input.disabled
+        || getGroupComponentInputs(String(input.dataset.groupId || ""), String(input.dataset.rubricaId || "")).length
+        || String(input.value || "").trim() !== ""
+      ) return;
       input.value = String(baseFillValue);
       applyGroupValueToFollowers(String(input.dataset.groupId || ""), String(input.dataset.rubricaId || ""));
       changedCount += 1;
@@ -1632,6 +1708,7 @@
     table.querySelectorAll('.js-student-score[data-rubrica-id][data-aluno-id]').forEach((input) => {
       const alunoId = String(input.dataset.alunoId || "");
       const rubricaId = String(input.dataset.rubricaId || "");
+      if (getComponentInputs(alunoId, rubricaId).length) return;
       const groupId = getCurrentGroupIdForStudent(alunoId);
       if (groupId && !isStudentOverrideActive(alunoId, rubricaId)) return;
       if (fillEmptyStudentRubric(alunoId, rubricaId, baseFillValue)) {
@@ -2034,9 +2111,19 @@
   };
 
   table.querySelectorAll('.js-group-score[data-group-id][data-rubrica-id]').forEach((input) => {
+    const groupId = String(input.dataset.groupId || "");
+    const rubricaId = String(input.dataset.rubricaId || "");
     if (input.readOnly) return;
+    if (getGroupComponentInputs(groupId, rubricaId).length) {
+      input.addEventListener("change", () => {
+        if (applyGroupRubricShortcutToComponents(groupId, rubricaId, input.value)) {
+          markDirty();
+        }
+      });
+      return;
+    }
     input.addEventListener("input", () => {
-      applyGroupValueToFollowers(String(input.dataset.groupId || ""), String(input.dataset.rubricaId || ""));
+      applyGroupValueToFollowers(groupId, rubricaId);
       markDirty();
     });
   });
@@ -2056,10 +2143,18 @@
   });
 
   table.querySelectorAll('.js-student-score[data-rubrica-id][data-aluno-id]').forEach((input) => {
+    const alunoId = String(input.dataset.alunoId || "");
+    const rubricaId = String(input.dataset.rubricaId || "");
     if (input.readOnly) return;
+    if (getComponentInputs(alunoId, rubricaId).length) {
+      input.addEventListener("change", () => {
+        if (applyStudentRubricShortcutToComponents(alunoId, rubricaId, input.value)) {
+          markDirty();
+        }
+      });
+      return;
+    }
     input.addEventListener("input", () => {
-      const alunoId = String(input.dataset.alunoId || "");
-      const rubricaId = String(input.dataset.rubricaId || "");
       const groupId = getCurrentGroupIdForStudent(alunoId);
       if (groupId && String(input.value || "").trim() === "") {
         setStudentOverrideActive(alunoId, rubricaId, false);

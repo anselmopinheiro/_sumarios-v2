@@ -57,7 +57,12 @@ function componentSelector(alunoId, rubricaId, componentId) {
 }
 
 function numericValuePattern(expectedValue) {
-  const escapedValue = String(expectedValue).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const numericValue = Number(expectedValue);
+  const normalizedValue = Number.isFinite(numericValue) ? String(numericValue) : String(expectedValue);
+  const escapedValue = normalizedValue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (escapedValue.includes('\\.')) {
+    return new RegExp(`^${escapedValue}0*$`);
+  }
   return new RegExp(`^${escapedValue}(?:\\.0+)?$`);
 }
 
@@ -101,6 +106,8 @@ async function resolveCopyScenario(frame, studentCount) {
     };
 
     const componentKey = (component) => {
+      const code = normalizeKey(component?.codigo);
+      if (code) return `code:${code}`;
       const name = normalizeKey(component?.nome);
       return name ? `name:${name}` : '';
     };
@@ -111,6 +118,7 @@ async function resolveCopyScenario(frame, studentCount) {
       const sourceMap = uniqueMap(sourceRubrics, rubricKey);
       const targetMap = uniqueMap(targetRubrics, rubricKey);
       const mappings = [];
+      let skippedDueToComponentMismatch = 0;
       sourceMap.forEach((sourceRubric, key) => {
         const targetRubric = targetMap.get(key);
         if (!targetRubric) return;
@@ -124,7 +132,10 @@ async function resolveCopyScenario(frame, studentCount) {
           });
           return;
         }
-        if (!sourceComponents.length || !targetComponents.length) return;
+        if (!sourceComponents.length || !targetComponents.length) {
+          skippedDueToComponentMismatch += 1;
+          return;
+        }
         const sourceComponentMap = uniqueMap(sourceComponents, componentKey);
         const targetComponentMap = uniqueMap(targetComponents, componentKey);
         const componentMappings = [];
@@ -137,6 +148,7 @@ async function resolveCopyScenario(frame, studentCount) {
           });
         });
         if (componentMappings.length !== sourceComponents.length || componentMappings.length !== targetComponents.length) {
+          skippedDueToComponentMismatch += 1;
           return;
         }
         mappings.push({
@@ -145,14 +157,17 @@ async function resolveCopyScenario(frame, studentCount) {
           componentMappings,
         });
       });
-      return mappings;
+      return {
+        mappings,
+        skippedDueToComponentMismatch,
+      };
     };
 
     for (const sourceDomain of payload) {
       for (const targetDomain of payload) {
         if (!sourceDomain?.client_id || !targetDomain?.client_id || sourceDomain.client_id === targetDomain.client_id) continue;
-        const mappings = buildPlan(sourceDomain, targetDomain);
-        const mapping = mappings.find((candidate) => {
+        const plan = buildPlan(sourceDomain, targetDomain);
+        const mapping = plan.mappings.find((candidate) => {
           const firstAlunoId = candidateRows[0]?.dataset.alunoId;
           if (!firstAlunoId) return false;
           if (candidate.componentMappings.length) {
@@ -170,6 +185,7 @@ async function resolveCopyScenario(frame, studentCount) {
           sourceDomainId: sourceDomain.client_id,
           targetDomainId: targetDomain.client_id,
           mapping,
+          skippedDueToComponentMismatch: plan.skippedDueToComponentMismatch,
           studentIds: candidateRows.slice(0, studentCount).map((row) => String(row.dataset.alunoId)),
         };
       }
@@ -178,11 +194,164 @@ async function resolveCopyScenario(frame, studentCount) {
   }, { studentCount });
 }
 
+async function resolveComponentMismatchScenario(frame) {
+  return frame.evaluate(() => {
+    const payload = JSON.parse(document.getElementById('avaliacao-domain-copy-config')?.textContent || '[]');
+    const row = Array.from(document.querySelectorAll('tr[data-aluno-id][data-presente="1"]'))
+      .find((candidate) => !(candidate.dataset.groupId || ''))
+      || document.querySelector('tr[data-aluno-id][data-presente="1"]');
+    if (!row?.dataset.alunoId) return null;
+    const alunoId = String(row.dataset.alunoId);
+
+    const normalizeKey = (rawValue) =>
+      String(rawValue || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
+
+    const uniqueMap = (items, resolver) => {
+      const counts = new Map();
+      (items || []).forEach((item) => {
+        const key = resolver(item);
+        if (!key) return;
+        counts.set(key, (counts.get(key) || 0) + 1);
+      });
+      const map = new Map();
+      (items || []).forEach((item) => {
+        const key = resolver(item);
+        if (!key || counts.get(key) !== 1) return;
+        map.set(key, item);
+      });
+      return map;
+    };
+
+    const rubricKey = (rubric) => {
+      const code = normalizeKey(rubric?.codigo);
+      if (code) return `code:${code}`;
+      const name = normalizeKey(rubric?.nome);
+      return name ? `name:${name}` : '';
+    };
+
+    const componentKey = (component) => {
+      const code = normalizeKey(component?.codigo);
+      if (code) return `code:${code}`;
+      const name = normalizeKey(component?.nome);
+      return name ? `name:${name}` : '';
+    };
+
+    const describeRubricInputs = (rubricId) => {
+      const componentInputs = Array.from(document.querySelectorAll(`.js-component-score[data-aluno-id="${alunoId}"][data-rubrica-id="${rubricId}"][data-component-id]`))
+        .filter((input) => !input.disabled);
+      if (componentInputs.length) {
+        return {
+          mode: 'components',
+          selectors: componentInputs.map((input) => `.js-component-score[data-aluno-id="${alunoId}"][data-rubrica-id="${rubricId}"][data-component-id="${input.dataset.componentId}"]`),
+        };
+      }
+      const directSelector = `.js-student-score[data-aluno-id="${alunoId}"][data-rubrica-id="${rubricId}"]`;
+      const directInput = document.querySelector(directSelector);
+      if (directInput && !directInput.readOnly && !directInput.disabled) {
+        return { mode: 'direct', selectors: [directSelector] };
+      }
+      if (!componentInputs.length) return null;
+      return {
+        mode: 'components',
+        selectors: componentInputs.map((input) => `.js-component-score[data-aluno-id="${alunoId}"][data-rubrica-id="${rubricId}"][data-component-id="${input.dataset.componentId}"]`),
+      };
+    };
+
+    for (const sourceDomain of payload) {
+      for (const targetDomain of payload) {
+        if (!sourceDomain?.client_id || !targetDomain?.client_id || sourceDomain.client_id === targetDomain.client_id) continue;
+        const sourceMap = uniqueMap(Array.isArray(sourceDomain?.rubricas) ? sourceDomain.rubricas : [], rubricKey);
+        const targetMap = uniqueMap(Array.isArray(targetDomain?.rubricas) ? targetDomain.rubricas : [], rubricKey);
+        let usableMapping = null;
+        let incompatibleRubric = null;
+
+        sourceMap.forEach((sourceRubric, key) => {
+          const targetRubric = targetMap.get(key);
+          if (!targetRubric) return;
+          const sourceComponents = Array.isArray(sourceRubric.components) ? sourceRubric.components : [];
+          const targetComponents = Array.isArray(targetRubric.components) ? targetRubric.components : [];
+          if (!sourceComponents.length && !targetComponents.length) {
+            if (!usableMapping) {
+              usableMapping = {
+                sourceRubricId: String(sourceRubric.id),
+                targetRubricId: String(targetRubric.id),
+                componentMappings: [],
+              };
+            }
+            return;
+          }
+          if (!sourceComponents.length || !targetComponents.length) {
+            const sourceInputs = describeRubricInputs(String(sourceRubric.id));
+            const targetInputs = describeRubricInputs(String(targetRubric.id));
+            if (!incompatibleRubric && sourceInputs && targetInputs) {
+              incompatibleRubric = {
+                sourceRubricId: String(sourceRubric.id),
+                targetRubricId: String(targetRubric.id),
+                sourceInputs,
+                targetInputs,
+              };
+            }
+            return;
+          }
+          const sourceComponentMap = uniqueMap(sourceComponents, componentKey);
+          const targetComponentMap = uniqueMap(targetComponents, componentKey);
+          const componentMappings = [];
+          sourceComponentMap.forEach((sourceComponent, componentMatchKey) => {
+            const targetComponent = targetComponentMap.get(componentMatchKey);
+            if (!targetComponent) return;
+            componentMappings.push({
+              sourceId: String(sourceComponent.id),
+              targetId: String(targetComponent.id),
+            });
+          });
+          if (componentMappings.length !== sourceComponents.length || componentMappings.length !== targetComponents.length) {
+            const sourceInputs = describeRubricInputs(String(sourceRubric.id));
+            const targetInputs = describeRubricInputs(String(targetRubric.id));
+            if (!incompatibleRubric && sourceInputs && targetInputs) {
+              incompatibleRubric = {
+                sourceRubricId: String(sourceRubric.id),
+                targetRubricId: String(targetRubric.id),
+                sourceInputs,
+                targetInputs,
+              };
+            }
+            return;
+          }
+          if (!usableMapping && componentMappings.length) {
+            usableMapping = {
+              sourceRubricId: String(sourceRubric.id),
+              targetRubricId: String(targetRubric.id),
+              componentMappings,
+            };
+          }
+        });
+
+        if (usableMapping && incompatibleRubric) {
+          return {
+            alunoId,
+            sourceDomainId: sourceDomain.client_id,
+            targetDomainId: targetDomain.client_id,
+            usableMapping,
+            incompatibleRubric,
+          };
+        }
+      }
+    }
+    return null;
+  });
+}
+
 async function resolveFillScenario(frame) {
   return frame.evaluate(() => {
     const table = document.getElementById('avaliacao-objeto-table');
     const baseFillValue = Number(table?.dataset.baseFillValue || 3) || 3;
-    const allSimpleInputs = Array.from(document.querySelectorAll('.js-student-score:not([readonly]):not(:disabled)'));
+    const allSimpleInputs = Array.from(document.querySelectorAll('.js-student-score:not(:disabled)'))
+      .filter((input) => !document.querySelector(`.js-component-score[data-aluno-id="${input.dataset.alunoId}"][data-rubrica-id="${input.dataset.rubricaId}"][data-component-id]`));
     const preferredInputs = allSimpleInputs.filter((input) => {
       const row = input.closest('tr[data-aluno-id]');
       return row && !(row.dataset.groupId || '');
@@ -195,6 +364,52 @@ async function resolveFillScenario(frame) {
       blankSelector: `.js-student-score[data-aluno-id="${blankInput.dataset.alunoId}"][data-rubrica-id="${blankInput.dataset.rubricaId}"]`,
       filledSelector: `.js-student-score[data-aluno-id="${filledInput.dataset.alunoId}"][data-rubrica-id="${filledInput.dataset.rubricaId}"]`,
     };
+  });
+}
+
+async function resolveRubricShortcutScenario(frame) {
+  return frame.evaluate(() => {
+    const allRows = Array.from(document.querySelectorAll('tr[data-aluno-id][data-presente="1"]'));
+    const preferredRows = allRows.filter((row) => !(row.dataset.groupId || ''));
+    const candidateRows = preferredRows.length ? preferredRows : allRows;
+
+    const findSimpleInput = () => {
+      const allDirectInputs = Array.from(document.querySelectorAll('.js-student-score[data-aluno-id][data-rubrica-id]'))
+        .filter((input) => !input.disabled);
+      const preferredInputs = allDirectInputs.filter((input) => {
+        const row = input.closest('tr[data-aluno-id]');
+        if (!row || (row.dataset.groupId || '')) return false;
+        return !document.querySelector(`.js-component-score[data-aluno-id="${input.dataset.alunoId}"][data-rubrica-id="${input.dataset.rubricaId}"][data-component-id]`);
+      });
+      const fallbackInputs = allDirectInputs.filter((input) => (
+        !document.querySelector(`.js-component-score[data-aluno-id="${input.dataset.alunoId}"][data-rubrica-id="${input.dataset.rubricaId}"][data-component-id]`)
+      ));
+      return preferredInputs[0] || fallbackInputs[0] || null;
+    };
+
+    const simpleInput = findSimpleInput();
+
+    for (const row of candidateRows) {
+      const alunoId = String(row.dataset.alunoId || '');
+      const rubricInputs = Array.from(row.querySelectorAll('.js-student-score[data-aluno-id][data-rubrica-id]'))
+        .filter((input) => !input.disabled);
+      for (const rubricInput of rubricInputs) {
+        const rubricaId = String(rubricInput.dataset.rubricaId || '');
+        const componentInputs = Array.from(document.querySelectorAll(`.js-component-score[data-aluno-id="${alunoId}"][data-rubrica-id="${rubricaId}"][data-component-id]`))
+          .filter((input) => !input.disabled);
+        if (componentInputs.length < 2) continue;
+        return {
+          alunoId,
+          rubricaId,
+          rubricSelector: `.js-student-score[data-aluno-id="${alunoId}"][data-rubrica-id="${rubricaId}"]`,
+          componentSelectors: componentInputs.map((input) => `.js-component-score[data-aluno-id="${alunoId}"][data-rubrica-id="${rubricaId}"][data-component-id="${input.dataset.componentId}"]`),
+          simpleRubricSelector: simpleInput
+            ? `.js-student-score[data-aluno-id="${simpleInput.dataset.alunoId}"][data-rubrica-id="${simpleInput.dataset.rubricaId}"]`
+            : null,
+        };
+      }
+    }
+    return null;
   });
 }
 
@@ -301,6 +516,53 @@ test('copia dominio compativel para o aluno atual sem autosave e guarda no fim',
   }
 });
 
+test('nao copia rubrica com componentes incompatíveis', async ({ page }) => {
+  const { frame, frameLocator } = await openAvaliacao(page);
+  const scenario = await resolveComponentMismatchScenario(frame);
+
+  expect(scenario).toBeTruthy();
+
+  const currentTargetValues = [];
+  for (const selector of scenario.incompatibleRubric.targetInputs.selectors) {
+    currentTargetValues.push(await frameLocator.locator(selector).inputValue());
+  }
+
+  if (scenario.incompatibleRubric.sourceInputs.mode === 'direct') {
+    await frameLocator.locator(scenario.incompatibleRubric.sourceInputs.selectors[0]).fill('4.5');
+  } else {
+    for (const [index, selector] of scenario.incompatibleRubric.sourceInputs.selectors.entries()) {
+      await frameLocator.locator(selector).fill(String((index % 2) + 4));
+    }
+  }
+
+  if (scenario.incompatibleRubric.targetInputs.mode === 'direct') {
+    await frameLocator.locator(scenario.incompatibleRubric.targetInputs.selectors[0]).fill('1.5');
+  } else {
+    for (const [index, selector] of scenario.incompatibleRubric.targetInputs.selectors.entries()) {
+      await frameLocator.locator(selector).fill(String((index % 2) + 1));
+    }
+  }
+
+  const expectedTargetValues = [];
+  for (const selector of scenario.incompatibleRubric.targetInputs.selectors) {
+    expectedTargetValues.push(await frameLocator.locator(selector).inputValue());
+  }
+
+  const focusSelector = scenario.usableMapping.componentMappings.length
+    ? componentSelector(scenario.alunoId, scenario.usableMapping.sourceRubricId, scenario.usableMapping.componentMappings[0].sourceId)
+    : studentRubricSelector(scenario.alunoId, scenario.usableMapping.sourceRubricId);
+
+  await frameLocator.locator(focusSelector).click();
+  await openCopyControls(frameLocator, scenario.sourceDomainId);
+  await frameLocator.locator(`.js-domain-copy-target[data-source-domain-id="${scenario.sourceDomainId}"]`).selectOption(scenario.targetDomainId);
+  await expect(frameLocator.locator(`.js-domain-copy-note[data-source-domain-id="${scenario.sourceDomainId}"]`)).toContainText('incompatibilidade de componentes');
+  await frameLocator.locator(`.js-domain-copy-current[data-source-domain-id="${scenario.sourceDomainId}"]`).click();
+
+  for (const [index, selector] of scenario.incompatibleRubric.targetInputs.selectors.entries()) {
+    await expect(frameLocator.locator(selector)).toHaveValue(expectedTargetValues[index] || currentTargetValues[index] || '');
+  }
+});
+
 test('copia dominio para todos e preenche vazias com valor base sem autosave', async ({ page }) => {
   const requests = attachPostCounter(page);
   const { frame, frameLocator } = await openAvaliacao(page);
@@ -346,4 +608,70 @@ test('copia dominio para todos e preenche vazias com valor base sem autosave', a
   const reopened = await openAvaliacao(page);
   await expect(reopened.frameLocator.locator(fillScenario.filledSelector)).toHaveValue('1.5');
   await expect(reopened.frameLocator.locator(fillScenario.blankSelector)).toHaveValue(numericValuePattern(fillScenario.baseFillValue));
+});
+
+test('usa a rubrica como atalho para preencher componentes vazios sem sobrescrever os existentes', async ({ page }) => {
+  const requests = attachPostCounter(page);
+  const { frame, frameLocator } = await openAvaliacao(page);
+  const scenario = await resolveRubricShortcutScenario(frame);
+
+  expect(scenario).toBeTruthy();
+
+  for (const selector of scenario.componentSelectors) {
+    await frameLocator.locator(selector).fill('');
+  }
+  await frameLocator.locator(scenario.rubricSelector).fill('3');
+  await frameLocator.locator(scenario.rubricSelector).press('Tab');
+
+  for (const selector of scenario.componentSelectors) {
+    await expect(frameLocator.locator(selector)).toHaveValue('3');
+  }
+  await expect(frameLocator.locator(scenario.rubricSelector)).toHaveValue('3.00');
+
+  await frameLocator.locator(scenario.componentSelectors[0]).fill('4');
+  for (const selector of scenario.componentSelectors.slice(1)) {
+    await frameLocator.locator(selector).fill('');
+  }
+  await frameLocator.locator(scenario.rubricSelector).fill('3');
+  await frameLocator.locator(scenario.rubricSelector).press('Tab');
+
+  await expect(frameLocator.locator(scenario.componentSelectors[0])).toHaveValue('4');
+  for (const selector of scenario.componentSelectors.slice(1)) {
+    await expect(frameLocator.locator(selector)).toHaveValue('3');
+  }
+
+  const afterShortcutAverage = ((4 + (3 * (scenario.componentSelectors.length - 1))) / scenario.componentSelectors.length).toFixed(2);
+  await expect(frameLocator.locator(scenario.rubricSelector)).toHaveValue(afterShortcutAverage);
+
+  const lastComponentSelector = scenario.componentSelectors[scenario.componentSelectors.length - 1];
+  await frameLocator.locator(lastComponentSelector).fill('5');
+  await expect(frameLocator.locator(lastComponentSelector)).toHaveValue('5');
+
+  const afterManualAverage = ((4 + (3 * Math.max(0, scenario.componentSelectors.length - 2)) + 5) / scenario.componentSelectors.length).toFixed(2);
+  await expect(frameLocator.locator(scenario.rubricSelector)).toHaveValue(afterManualAverage);
+
+  if (scenario.simpleRubricSelector) {
+    await frameLocator.locator(scenario.simpleRubricSelector).fill('2.5');
+    await frameLocator.locator(scenario.simpleRubricSelector).press('Tab');
+    await expect(frameLocator.locator(scenario.simpleRubricSelector)).toHaveValue('2.5');
+  }
+
+  await page.waitForTimeout(900);
+  expect(requests.count).toBe(0);
+  await expect(frameLocator.locator('#avaliacao-save-button')).toHaveText('Guardar *');
+
+  await frameLocator.locator('#avaliacao-save-button').click();
+  await expect(frameLocator.locator('#avaliacao-save-button')).toHaveText('Guardado', { timeout: 10_000 });
+  await expect.poll(() => requests.count).toBe(1);
+
+  const reopened = await openAvaliacao(page);
+  await expect(reopened.frameLocator.locator(scenario.componentSelectors[0])).toHaveValue('4');
+  for (const selector of scenario.componentSelectors.slice(1, -1)) {
+    await expect(reopened.frameLocator.locator(selector)).toHaveValue('3');
+  }
+  await expect(reopened.frameLocator.locator(lastComponentSelector)).toHaveValue('5');
+  await expect(reopened.frameLocator.locator(scenario.rubricSelector)).toHaveValue(numericValuePattern(afterManualAverage));
+  if (scenario.simpleRubricSelector) {
+    await expect(reopened.frameLocator.locator(scenario.simpleRubricSelector)).toHaveValue(numericValuePattern('2.5'));
+  }
 });

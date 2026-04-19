@@ -115,6 +115,7 @@ def _rubric_to_dict(rubric: EV2Rubric) -> dict:
         "components": [
             {
                 "id": c.id,
+                "codigo": getattr(c, "codigo", None),
                 "nome": c.nome,
                 "ordem": int(c.ordem or 0),
                 "peso": float(c.peso or 0),
