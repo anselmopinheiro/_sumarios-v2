@@ -1209,6 +1209,101 @@
     });
   }
 
+  function inputUsesComponentScale(input) {
+    if (!(input instanceof HTMLInputElement)) return false;
+    if (input.classList.contains("js-component-score") || input.classList.contains("js-group-component-score")) {
+      return true;
+    }
+    const rubricaId = String(input.dataset.rubricaId || "");
+    if (!rubricaId) return false;
+    if (input.classList.contains("js-student-score")) {
+      return getComponentInputs(String(input.dataset.alunoId || ""), rubricaId).length > 0;
+    }
+    if (input.classList.contains("js-group-score")) {
+      return getGroupComponentInputs(String(input.dataset.groupId || ""), rubricaId).length > 0;
+    }
+    return false;
+  }
+
+  function getGridInputBounds(input) {
+    const explicitMin = coerceNumber(input.min);
+    const explicitMax = coerceNumber(input.max);
+    if (explicitMin != null && explicitMax != null) {
+      return { min: explicitMin, max: explicitMax };
+    }
+    if (inputUsesComponentScale(input)) {
+      return { min: 1, max: 5 };
+    }
+    if (baseFillValue >= 10) {
+      return { min: 0, max: 20 };
+    }
+    return { min: 1, max: 5 };
+  }
+
+  function clampGridInputValue(input, value) {
+    if (!Number.isFinite(value)) return null;
+    const bounds = getGridInputBounds(input);
+    return Math.min(bounds.max, Math.max(bounds.min, value));
+  }
+
+  function formatGridInputValue(input, value) {
+    const normalized = clampGridInputValue(input, value);
+    if (normalized == null) return "";
+    if (inputUsesComponentScale(input)) {
+      return String(Math.round(normalized));
+    }
+    const rounded = Math.round(normalized * 100) / 100;
+    return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+  }
+
+  function getGridShortcutSeedValue(input, direction) {
+    const bounds = getGridInputBounds(input);
+    if (direction === "decrement") {
+      return bounds.min;
+    }
+    const preferredSeed = inputUsesComponentScale(input) ? 3 : baseFillValue;
+    return clampGridInputValue(input, preferredSeed);
+  }
+
+  function commitGridShortcutValue(input, nextValue) {
+    const nextRawValue = nextValue == null ? "" : formatGridInputValue(input, nextValue);
+    if (String(input.value || "") === String(nextRawValue)) {
+      return false;
+    }
+    input.value = nextRawValue;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    focusNavigableInput(input);
+    return true;
+  }
+
+  function isGridShortcutEditKey(key) {
+    return /^[0-9]$/.test(key) || key === "Delete" || key === "Backspace" || key === "+" || key === "-";
+  }
+
+  function handleGridShortcutEdit(input, key) {
+    if (!isNavigableGridInput(input)) return false;
+
+    if (/^[0-9]$/.test(key)) {
+      return commitGridShortcutValue(input, Number(key));
+    }
+
+    if (key === "Delete" || key === "Backspace") {
+      return commitGridShortcutValue(input, null);
+    }
+
+    if (key === "+" || key === "-") {
+      const currentValue = coerceNumber(input.value);
+      const delta = key === "+" ? 1 : -1;
+      const nextValue = currentValue == null
+        ? getGridShortcutSeedValue(input, delta > 0 ? "increment" : "decrement")
+        : clampGridInputValue(input, currentValue + delta);
+      return commitGridShortcutValue(input, nextValue);
+    }
+
+    return false;
+  }
+
   function moveGridFocus(targetInput, direction) {
     const location = locateNavigableInput(targetInput);
     if (!location) return false;
@@ -2272,6 +2367,12 @@
     if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
     const input = event.target;
     if (!isNavigableGridInput(input)) return;
+
+    if (isGridShortcutEditKey(event.key)) {
+      handleGridShortcutEdit(input, event.key);
+      event.preventDefault();
+      return;
+    }
 
     let direction = null;
     if (event.key === "ArrowLeft") direction = "left";

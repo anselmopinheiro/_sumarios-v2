@@ -148,6 +148,26 @@ Opções úteis:
   - **Calendário escolar**: importar/exportar JSON via "Calendário escolar" → "Importar calendário".
   - **Sumários e aulas especiais**: exportação JSON/CSV com cabeçalhos acentuados preservados; os ficheiros recebem data no nome.
 
+## Grelha de Avaliação — Navegação e Edição Rápida
+
+A grelha de avaliação suporta:
+
+### Navegação por teclado
+- Setas → mover entre células
+- Enter → descer
+- Tab / Shift+Tab → navegação padrão
+
+### Atalhos de edição
+- 0–9 → definir valor diretamente
+- Delete / Backspace → limpar célula
+- + → incrementar valor
+- - → decrementar valor
+
+### Persistência
+- As alterações NÃO são guardadas automaticamente
+- O utilizador deve usar o botão **Guardar**
+- O estado “Alterações por guardar” indica modificações pendentes
+
 ## Otimizações técnicas
 - Índices adicionados às tabelas de calendários, alunos e avaliações para acelerar listagens e mapas.
 - Criação automática de tabelas/colunas novas e sincronização do `alembic_version` em bases antigas, reduzindo erros de arranque.

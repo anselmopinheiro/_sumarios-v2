@@ -855,3 +855,56 @@ test('navega na grelha com teclado e ignora colunas colapsadas sem impactar o sa
   await expect(reopened.frameLocator.locator(scenario.simple.currentSelector)).toHaveValue(numericValuePattern('2.5'));
   await expect(reopened.frameLocator.locator(scenario.component.currentSelector)).toHaveValue('4');
 });
+
+test('aplica atalhos rapidos de edicao sem autosave e preserva o save por botao', async ({ page }) => {
+  const requests = attachPostCounter(page);
+  const consoleErrors = attachConsoleErrorTracker(page);
+  const { frame, frameLocator } = await openAvaliacao(page);
+  const scenario = await resolveKeyboardNavigationScenario(frame);
+
+  expect(scenario).toBeTruthy();
+
+  const simpleCurrent = frameLocator.locator(scenario.simple.currentSelector);
+  const componentCurrent = frameLocator.locator(scenario.component.currentSelector);
+
+  await simpleCurrent.click();
+  await simpleCurrent.press('2');
+  await expect(simpleCurrent).toHaveValue(numericValuePattern('2'));
+  await simpleCurrent.press('+');
+  await expect(simpleCurrent).toHaveValue(numericValuePattern('3'));
+  await simpleCurrent.press('-');
+  await expect(simpleCurrent).toHaveValue(numericValuePattern('2'));
+  await simpleCurrent.press('Delete');
+  await expect(simpleCurrent).toHaveValue('');
+  await simpleCurrent.press('4');
+  await expect(simpleCurrent).toHaveValue(numericValuePattern('4'));
+  await simpleCurrent.press('Backspace');
+  await expect(simpleCurrent).toHaveValue('');
+  await simpleCurrent.press('4');
+  await expect(simpleCurrent).toHaveValue(numericValuePattern('4'));
+
+  await componentCurrent.click();
+  await componentCurrent.press('9');
+  await expect(componentCurrent).toHaveValue('5');
+  await componentCurrent.press('-');
+  await expect(componentCurrent).toHaveValue('4');
+  await componentCurrent.press('+');
+  await expect(componentCurrent).toHaveValue('5');
+  await componentCurrent.press('Backspace');
+  await expect(componentCurrent).toHaveValue('');
+  await componentCurrent.press('4');
+  await expect(componentCurrent).toHaveValue('4');
+
+  await page.waitForTimeout(500);
+  expect(requests.count).toBe(0);
+  expect(consoleErrors.messages).toEqual([]);
+  await expect(frameLocator.locator('#avaliacao-save-button')).toHaveText('Guardar *');
+
+  await frameLocator.locator('#avaliacao-save-button').click();
+  await expect(frameLocator.locator('#avaliacao-save-button')).toHaveText('Guardado', { timeout: 10_000 });
+  await expect.poll(() => requests.count).toBe(1);
+
+  const reopened = await openAvaliacao(page);
+  await expect(reopened.frameLocator.locator(scenario.simple.currentSelector)).toHaveValue(numericValuePattern('4'));
+  await expect(reopened.frameLocator.locator(scenario.component.currentSelector)).toHaveValue('4');
+});
