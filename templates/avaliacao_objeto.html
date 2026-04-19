@@ -1160,6 +1160,82 @@
     setDomainExpanded(domainId, !dominiosState[domainId]);
   }
 
+  function isNavigableGridInput(input) {
+    if (!(input instanceof HTMLInputElement)) return false;
+    if (!input.classList.contains("avaliacao-input")) return false;
+    if (input.disabled) return false;
+    if (input.closest(".dominio-collapsed")) return false;
+    const style = window.getComputedStyle(input);
+    if (style.display === "none" || style.visibility === "hidden") return false;
+    return input.getClientRects().length > 0;
+  }
+
+  function getNavigableRowInputs(row) {
+    if (!(row instanceof HTMLTableRowElement)) return [];
+    return Array.from(row.querySelectorAll("input.avaliacao-input")).filter((input) => isNavigableGridInput(input));
+  }
+
+  function getNavigableGridRows() {
+    return Array.from(table.querySelectorAll("tbody tr"))
+      .map((row) => ({
+        row,
+        inputs: getNavigableRowInputs(row),
+      }))
+      .filter((entry) => entry.inputs.length > 0);
+  }
+
+  function locateNavigableInput(targetInput) {
+    const rows = getNavigableGridRows();
+    for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+      const columnIndex = rows[rowIndex].inputs.indexOf(targetInput);
+      if (columnIndex !== -1) {
+        return { rows, rowIndex, columnIndex };
+      }
+    }
+    return null;
+  }
+
+  function focusNavigableInput(input) {
+    if (!input || !isNavigableGridInput(input)) return;
+    input.scrollIntoView({ block: "nearest", inline: "nearest" });
+    input.focus();
+    window.requestAnimationFrame(() => {
+      if (document.activeElement !== input || typeof input.select !== "function") return;
+      try {
+        input.select();
+      } catch (error) {
+        // Number inputs may ignore select() in some browsers; focus alone is enough.
+      }
+    });
+  }
+
+  function moveGridFocus(targetInput, direction) {
+    const location = locateNavigableInput(targetInput);
+    if (!location) return false;
+    const { rows, rowIndex, columnIndex } = location;
+    let nextInput = null;
+
+    if (direction === "left") {
+      nextInput = rows[rowIndex].inputs[columnIndex - 1] || null;
+    } else if (direction === "right") {
+      nextInput = rows[rowIndex].inputs[columnIndex + 1] || null;
+    } else if (direction === "down") {
+      const nextRow = rows[rowIndex + 1];
+      if (nextRow) {
+        nextInput = nextRow.inputs[Math.min(columnIndex, nextRow.inputs.length - 1)] || null;
+      }
+    } else if (direction === "up") {
+      const prevRow = rows[rowIndex - 1];
+      if (prevRow) {
+        nextInput = prevRow.inputs[Math.min(columnIndex, prevRow.inputs.length - 1)] || null;
+      }
+    }
+
+    if (!nextInput) return false;
+    focusNavigableInput(nextInput);
+    return true;
+  }
+
   function computeStudentMedias(alunoId) {
     const medias = {};
     domainLetters.forEach((letra) => {
@@ -2191,6 +2267,21 @@
 
   table.querySelectorAll(".dominio-toggle[data-domain-id]").forEach((toggle) => {
     toggle.addEventListener("click", () => toggleDomain(toggle.dataset.domainId));
+  });
+  table.addEventListener("keydown", (event) => {
+    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
+    const input = event.target;
+    if (!isNavigableGridInput(input)) return;
+
+    let direction = null;
+    if (event.key === "ArrowLeft") direction = "left";
+    else if (event.key === "ArrowRight") direction = "right";
+    else if (event.key === "ArrowUp") direction = "up";
+    else if (event.key === "ArrowDown" || event.key === "Enter") direction = "down";
+
+    if (!direction) return;
+    if (!moveGridFocus(input, direction)) return;
+    event.preventDefault();
   });
   table.addEventListener("focusin", (event) => {
     const row = event.target.closest("tr[data-aluno-id]");

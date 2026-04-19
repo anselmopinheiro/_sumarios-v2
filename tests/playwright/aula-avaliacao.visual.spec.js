@@ -48,6 +48,23 @@ function attachPostCounter(page) {
   };
 }
 
+function attachConsoleErrorTracker(page) {
+  const messages = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') {
+      messages.push(message.text());
+    }
+  });
+  page.on('pageerror', (error) => {
+    messages.push(error.message || String(error));
+  });
+  return {
+    get messages() {
+      return [...messages];
+    },
+  };
+}
+
 function studentRubricSelector(alunoId, rubricaId) {
   return `.js-student-score[data-aluno-id="${alunoId}"][data-rubrica-id="${rubricaId}"]`;
 }
@@ -413,6 +430,107 @@ async function resolveRubricShortcutScenario(frame) {
   });
 }
 
+async function resolveKeyboardNavigationScenario(frame) {
+  return frame.evaluate(() => {
+    const isVisibleInput = (input) => (
+      !input.disabled
+      && !input.closest('.dominio-collapsed')
+      && input.getClientRects().length > 0
+    );
+
+    const selectorFor = (input) => {
+      if (!input) return null;
+      if (input.classList.contains('js-component-score')) {
+        return `.js-component-score[data-aluno-id="${input.dataset.alunoId}"][data-rubrica-id="${input.dataset.rubricaId}"][data-component-id="${input.dataset.componentId}"]`;
+      }
+      if (input.classList.contains('js-student-score')) {
+        return `.js-student-score[data-aluno-id="${input.dataset.alunoId}"][data-rubrica-id="${input.dataset.rubricaId}"]`;
+      }
+      return null;
+    };
+
+    const allRows = Array.from(document.querySelectorAll('tr[data-aluno-id][data-presente="1"]'))
+      .map((row) => ({
+        row,
+        inputs: Array.from(row.querySelectorAll('input.avaliacao-input')).filter(isVisibleInput),
+      }))
+      .filter((entry) => entry.inputs.length > 0);
+
+    const preferredRows = allRows.filter((entry) => !(entry.row.dataset.groupId || ''));
+    const candidateRows = preferredRows.length >= 2 ? preferredRows : allRows;
+    if (candidateRows.length < 2) return null;
+
+    const [firstRow, secondRow] = candidateRows;
+    const sharedColumnCount = Math.min(firstRow.inputs.length, secondRow.inputs.length);
+    if (sharedColumnCount < 2) return null;
+
+    const simpleIndex = firstRow.inputs.findIndex((input, index) => {
+      if (index + 1 >= sharedColumnCount) return false;
+      if (!input.classList.contains('js-student-score')) return false;
+      return !document.querySelector(`.js-component-score[data-aluno-id="${input.dataset.alunoId}"][data-rubrica-id="${input.dataset.rubricaId}"][data-component-id]`);
+    });
+    const componentIndex = firstRow.inputs.findIndex((input, index) => (
+      index < sharedColumnCount && input.classList.contains('js-component-score')
+    ));
+    if (simpleIndex === -1 || componentIndex === -1) return null;
+
+    const domainGroups = [];
+    firstRow.inputs.forEach((input, index) => {
+      const domainId = input.closest('td.dominio-rubrica-coluna[data-domain-id]')?.dataset.domainId || '';
+      if (!domainId) return;
+      const lastGroup = domainGroups[domainGroups.length - 1];
+      if (!lastGroup || lastGroup.domainId !== domainId) {
+        domainGroups.push({ domainId, startIndex: index, endIndex: index });
+        return;
+      }
+      lastGroup.endIndex = index;
+    });
+
+    let collapseScenario = null;
+    for (let index = 1; index < domainGroups.length - 1; index += 1) {
+      const previousGroup = domainGroups[index - 1];
+      const targetGroup = domainGroups[index];
+      const nextGroup = domainGroups[index + 1];
+      const beforeInput = firstRow.inputs[previousGroup.endIndex];
+      const hiddenInput = firstRow.inputs[targetGroup.startIndex];
+      const afterInput = firstRow.inputs[nextGroup.startIndex];
+      if (!beforeInput || !hiddenInput || !afterInput) continue;
+      collapseScenario = {
+        domainId: targetGroup.domainId,
+        toggleSelector: `.dominio-toggle[data-domain-id="${targetGroup.domainId}"]`,
+        beforeSelector: selectorFor(beforeInput),
+        hiddenSelector: selectorFor(hiddenInput),
+        afterSelector: selectorFor(afterInput),
+      };
+      break;
+    }
+    if (!collapseScenario) return null;
+
+    const simpleCurrent = firstRow.inputs[simpleIndex];
+    const simpleRight = firstRow.inputs[simpleIndex + 1];
+    const simpleDown = secondRow.inputs[Math.min(simpleIndex, secondRow.inputs.length - 1)];
+    const componentCurrent = firstRow.inputs[componentIndex];
+    const componentDown = secondRow.inputs[Math.min(componentIndex, secondRow.inputs.length - 1)];
+
+    if (!simpleCurrent || !simpleRight || !simpleDown || !componentCurrent || !componentDown) {
+      return null;
+    }
+
+    return {
+      simple: {
+        currentSelector: selectorFor(simpleCurrent),
+        rightSelector: selectorFor(simpleRight),
+        downSelector: selectorFor(simpleDown),
+      },
+      component: {
+        currentSelector: selectorFor(componentCurrent),
+        downSelector: selectorFor(componentDown),
+      },
+      collapseScenario,
+    };
+  });
+}
+
 async function seedCopyValues(frameLocator, scenario, studentIds) {
   if (scenario.mapping.componentMappings.length) {
     const sourceValues = ['4', '5'];
@@ -674,4 +792,66 @@ test('usa a rubrica como atalho para preencher componentes vazios sem sobrescrev
   if (scenario.simpleRubricSelector) {
     await expect(reopened.frameLocator.locator(scenario.simpleRubricSelector)).toHaveValue(numericValuePattern('2.5'));
   }
+});
+
+test('navega na grelha com teclado e ignora colunas colapsadas sem impactar o save', async ({ page }) => {
+  const requests = attachPostCounter(page);
+  const consoleErrors = attachConsoleErrorTracker(page);
+  const { frame, frameLocator } = await openAvaliacao(page);
+  const scenario = await resolveKeyboardNavigationScenario(frame);
+
+  expect(scenario).toBeTruthy();
+
+  const simpleCurrent = frameLocator.locator(scenario.simple.currentSelector);
+  const simpleRight = frameLocator.locator(scenario.simple.rightSelector);
+  const simpleDown = frameLocator.locator(scenario.simple.downSelector);
+  const componentCurrent = frameLocator.locator(scenario.component.currentSelector);
+  const componentDown = frameLocator.locator(scenario.component.downSelector);
+
+  await simpleCurrent.click();
+  await expect(simpleCurrent).toBeFocused();
+  await simpleCurrent.press('ArrowRight');
+  await expect(simpleRight).toBeFocused();
+  await simpleRight.press('ArrowLeft');
+  await expect(simpleCurrent).toBeFocused();
+
+  await simpleCurrent.press('Tab');
+  await expect(simpleRight).toBeFocused();
+  await simpleRight.press('Shift+Tab');
+  await expect(simpleCurrent).toBeFocused();
+
+  await simpleCurrent.press('Enter');
+  await expect(simpleDown).toBeFocused();
+
+  await componentCurrent.click();
+  await expect(componentCurrent).toBeFocused();
+  await componentCurrent.press('ArrowDown');
+  await expect(componentDown).toBeFocused();
+  await componentDown.press('ArrowUp');
+  await expect(componentCurrent).toBeFocused();
+
+  await simpleCurrent.fill('2.5');
+  await componentCurrent.fill('4');
+
+  await page.waitForTimeout(500);
+  expect(requests.count).toBe(0);
+  await expect(frameLocator.locator('#avaliacao-save-button')).toHaveText('Guardar *');
+
+  await frameLocator.locator(scenario.collapseScenario.toggleSelector).click();
+  await expect(frameLocator.locator(scenario.collapseScenario.hiddenSelector)).not.toBeVisible();
+  const beforeCollapsedDomain = frameLocator.locator(scenario.collapseScenario.beforeSelector);
+  const afterCollapsedDomain = frameLocator.locator(scenario.collapseScenario.afterSelector);
+  await beforeCollapsedDomain.click();
+  await beforeCollapsedDomain.press('ArrowRight');
+  await expect(afterCollapsedDomain).toBeFocused();
+
+  expect(consoleErrors.messages).toEqual([]);
+
+  await frameLocator.locator('#avaliacao-save-button').click();
+  await expect(frameLocator.locator('#avaliacao-save-button')).toHaveText('Guardado', { timeout: 10_000 });
+  await expect.poll(() => requests.count).toBe(1);
+
+  const reopened = await openAvaliacao(page);
+  await expect(reopened.frameLocator.locator(scenario.simple.currentSelector)).toHaveValue(numericValuePattern('2.5'));
+  await expect(reopened.frameLocator.locator(scenario.component.currentSelector)).toHaveValue('4');
 });
