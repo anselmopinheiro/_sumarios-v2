@@ -216,3 +216,17 @@ Se a tarefa alterar templates, CSS, JS, tabelas ou layout visual:
 
 Se o teste não existir:
 - criar ou adaptar um teste mínimo para a página alterada
+
+---
+
+## EV2 - Atalhos de preenchimento e cópia
+
+* Na avaliação, pode existir cópia de valores entre domínios compatíveis
+* A compatibilidade entre domínios deve ser validada por correspondência segura de rubricas, preferencialmente por código
+* A cópia é apenas um atalho de preenchimento; todas as células devem continuar editáveis manualmente
+* A app deve suportar preenchimento automático apenas de caixas vazias com valor base:
+  * `3` para básico
+  * `10` para secundário
+* Este preenchimento nunca deve sobrescrever valores existentes
+* Estas ações não devem disparar save automático
+* O fluxo de persistência continua a depender do botão `Guardar`

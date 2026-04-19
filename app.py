@@ -3494,6 +3494,47 @@ def create_app():
             return "secundario"
         return "basico"
 
+    def _detetar_ciclo_turma(turma):
+        turma_tipo = (getattr(turma, "tipo", None) or "").strip().lower()
+        if "secund" in turma_tipo:
+            return "secundario"
+        return "basico"
+
+    def _resolver_valor_base_avaliacao(aula=None, turma=None):
+        ciclo = _detetar_ciclo_aula(aula) if aula is not None else _detetar_ciclo_turma(turma)
+        return 10 if ciclo == "secundario" else 3
+
+    def _build_domain_copy_payload(dominios_view):
+        payload = []
+        for idx, dominio in enumerate(dominios_view or [], start=1):
+            domain_id = dominio.get("id") if isinstance(dominio, dict) else getattr(dominio, "id", None)
+            payload.append(
+                {
+                    "client_id": f"D{domain_id if domain_id is not None else idx}",
+                    "id": domain_id,
+                    "codigo": (dominio.get("codigo") if isinstance(dominio, dict) else getattr(dominio, "codigo", None)),
+                    "letra": (dominio.get("letra") if isinstance(dominio, dict) else getattr(dominio, "letra", None)),
+                    "nome": (dominio.get("nome") if isinstance(dominio, dict) else getattr(dominio, "nome", None)),
+                    "rubricas": [
+                        {
+                            "id": rubric_payload.get("id"),
+                            "codigo": rubric_payload.get("codigo"),
+                            "nome": rubric_payload.get("nome"),
+                            "components": [
+                                {
+                                    "id": component_payload.get("id"),
+                                    "nome": component_payload.get("nome"),
+                                }
+                                for component_payload in (rubric_payload.get("components") or [])
+                            ],
+                        }
+                        for rubric_payload in (dominio.get("rubricas_payload") or [])
+                        if isinstance(rubric_payload, dict)
+                    ],
+                }
+            )
+        return payload
+
     def _optional_int(raw_value):
         if raw_value in (None, ""):
             return None
@@ -3954,8 +3995,18 @@ def create_app():
                 event_student = _ensure_event_student(event.id, aluno_id)
                 grupo = grupos_por_id.get(requested_group_id) if requested_group_id else None
                 desired_group_id = grupo.id if grupo else None
-                existing_memberships = memberships_by_aluno.get(aluno_id, [])
+                existing_memberships = list(memberships_by_aluno.get(aluno_id, []))
                 existing_group_ids = {membership.group_id for membership in existing_memberships}
+                matching_memberships = (
+                    [membership for membership in existing_memberships if membership.group_id == desired_group_id]
+                    if desired_group_id is not None
+                    else []
+                )
+                stale_memberships = (
+                    [membership for membership in existing_memberships if membership.group_id != desired_group_id]
+                    if desired_group_id is not None
+                    else existing_memberships
+                )
 
                 if desired_group_id is None and not existing_memberships:
                     event_student.group_key = None
@@ -3968,15 +4019,21 @@ def create_app():
                     event_student.group_key = grupo.nome
                     continue
 
-                for antigo in existing_memberships:
+                for antigo in stale_memberships:
                     db.session.delete(antigo)
-                memberships_by_aluno[aluno_id] = []
+                memberships_by_aluno[aluno_id] = list(matching_memberships)
 
                 if desired_group_id is None:
                     event_student.group_key = None
                     continue
 
-                db.session.add(EV2EvaluationGroupMember(group_id=desired_group_id, aluno_id=aluno_id))
+                if matching_memberships:
+                    event_student.group_key = grupo.nome
+                    continue
+
+                novo_membership = EV2EvaluationGroupMember(group_id=desired_group_id, aluno_id=aluno_id)
+                db.session.add(novo_membership)
+                memberships_by_aluno[aluno_id] = [novo_membership]
                 event_student.group_key = grupo.nome
 
         if tipo in {"projeto", "trabalho"} and aula is not None:
@@ -5803,6 +5860,8 @@ def create_app():
             temas=temas,
             tema_multiplo=(ctx["event"].tema_multiplo if ctx.get("event") and tipo in {"projeto", "trabalho"} else False),
             groups_data=groups_data,
+            domain_copy_payload=_build_domain_copy_payload(ctx["dominios_view"]),
+            avaliacao_base_fill_value=_resolver_valor_base_avaliacao(aula=aula),
             embed_mode=True,
         )
 
@@ -6140,6 +6199,11 @@ def create_app():
             )
 
         rubricas_payload = {rubrica.id: _ev2_rubric_to_dict(rubrica) for rubrica in rubricas}
+        for dominio in dominios_view:
+            dominio["rubricas_payload"] = [
+                rubricas_payload.get(rubrica.id, {})
+                for rubrica in (dominio.get("rubricas") or [])
+            ]
         groups_data = []
         grupos_visiveis = [g for g in grupos if not (g.nome or "").startswith("__IND__")]
         if grupos_visiveis:
@@ -6213,6 +6277,11 @@ def create_app():
             evento_ativo_id=getattr(event, "id", None),
             grupos_origem=[],
             groups_data=groups_data,
+            domain_copy_payload=_build_domain_copy_payload(dominios_view),
+            avaliacao_base_fill_value=_resolver_valor_base_avaliacao(
+                aula=aula_evento if event.aula_id else None,
+                turma=event.subject_config.turma if getattr(event, "subject_config", None) else None,
+            ),
             embed_mode=(request.args.get("embed") == "1"),
         )
 

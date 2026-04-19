@@ -31,6 +31,27 @@
   {%- endif -%}
 {%- endmacro %}
 
+{% macro format_group_label(group_name) -%}
+  {%- set raw = (group_name or '').strip() -%}
+  {%- if not raw -%}
+    -
+  {%- else -%}
+    {%- set lower = raw|lower -%}
+    {%- if lower.startswith('grupo ') -%}
+      {%- set suffix = raw[6:].strip() -%}
+      {%- if suffix.isdigit() -%}
+        Grupo {{ '%02d'|format(suffix|int) }}
+      {%- else -%}
+        {{ raw }}
+      {%- endif -%}
+    {%- elif raw.isdigit() -%}
+      Grupo {{ '%02d'|format(raw|int) }}
+    {%- else -%}
+      {{ raw }}
+    {%- endif -%}
+  {%- endif -%}
+{%- endmacro %}
+
 <style>
   .avaliacao-container {
     overflow: auto;
@@ -38,13 +59,29 @@
     position: relative;
   }
 
-  #avaliacao-objeto-table { font-size: .82rem; }
+  #avaliacao-objeto-table { font-size: .82rem; --avaliacao-header-row-1-height: 52px; }
   #avaliacao-objeto-table th, #avaliacao-objeto-table td { padding: .25rem .3rem; vertical-align: middle; }
   #avaliacao-objeto-table .avaliacao-input { font-size: 12px; padding: 2px 4px; height: 24px; min-width: 48px; width: 48px; margin: 0 !important; text-align: center; }
   #avaliacao-objeto-table .compact-score { max-width: 48px; min-width: 48px; }
   #avaliacao-objeto-table .compact-actions .btn { padding: .08rem .28rem; font-size: .72rem; line-height: 1.1; }
-  #avaliacao-objeto-table .rubrica-short { font-weight: 600; white-space: nowrap; }
-  #avaliacao-objeto-table .rubrica-rotated { display: inline-block; transform: rotate(-90deg); transform-origin: center; line-height: 1; }
+  #avaliacao-objeto-table .rubrica-label-wrap {
+    display: block;
+    width: 100%;
+    min-height: 24px;
+    text-align: center;
+  }
+  #avaliacao-objeto-table .rubrica-short {
+    display: inline-block;
+    max-width: none;
+    margin: 0;
+    font-weight: 600;
+    font-size: 11px;
+    line-height: 1.1;
+    white-space: nowrap;
+    word-break: normal;
+    overflow-wrap: normal;
+    text-align: center;
+  }
   #avaliacao-objeto-table .domain-code { font-weight: 700; font-size: 12px; text-align: center; line-height: 1.1; }
   #avaliacao-objeto-table .domain-caption { font-size: 8px; line-height: 1.05; text-align: center; opacity: .9; }
   #avaliacao-objeto-table .domain-full { font-weight: 600; white-space: nowrap; }
@@ -53,14 +90,19 @@
   #avaliacao-objeto-table .component-item .label { font-size: 8px; line-height: 1.05; text-align: center; white-space: normal; }
   #avaliacao-objeto-table .component-block .form-control { max-width: 48px; min-width: 48px; text-align: center; margin: 0 !important; }
   #avaliacao-objeto-table thead th { position: sticky; top: 0; z-index: 10; background: #fff; box-shadow: inset 0 -1px 0 #dee2e6; }
-  #avaliacao-objeto-table thead tr:nth-child(2) th { top: 52px; z-index: 11; }
+  #avaliacao-objeto-table thead tr:nth-child(2) th { top: var(--avaliacao-header-row-1-height); z-index: 11; }
   #avaliacao-objeto-table thead tr:first-child th[rowspan="2"] { z-index: 12; }
-  #avaliacao-objeto-table .indice-coluna { position: sticky; left: 0; z-index: 6; background: #fff; min-width: 52px; width: 52px; max-width: 52px; text-align: center; box-shadow: inset -1px 0 0 #dee2e6; }
-  #avaliacao-objeto-table .nome-coluna { position: sticky; left: 52px; z-index: 5; background: #fff; min-width: 180px; box-shadow: inset -1px 0 0 #dee2e6; }
-  #avaliacao-objeto-table thead th.indice-coluna { z-index: 16; }
-  #avaliacao-objeto-table thead th.nome-coluna { z-index: 15; }
-  #avaliacao-objeto-table tbody td.indice-coluna { z-index: 7; }
-  #avaliacao-objeto-table tbody td.nome-coluna { z-index: 6; }
+  #avaliacao-objeto-table .dominio-header { vertical-align: top; }
+  #avaliacao-objeto-table .nome-coluna { position: sticky; left: 0; z-index: 6; background: #fff; min-width: 176px; width: 176px; max-width: 176px; box-shadow: inset -1px 0 0 #dee2e6; }
+  #avaliacao-objeto-table thead th.nome-coluna { z-index: 16; }
+  #avaliacao-objeto-table tbody td.nome-coluna { z-index: 7; }
+  #avaliacao-objeto-table .student-cell { display: flex; flex-direction: column; gap: .18rem; min-width: 0; }
+  #avaliacao-objeto-table .student-name-line { display: flex; align-items: baseline; gap: .28rem; min-width: 0; white-space: nowrap; overflow: hidden; }
+  #avaliacao-objeto-table .student-short-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+  #avaliacao-objeto-table .student-number { font-size: .72rem; color: #6c757d; flex: 0 0 auto; }
+  #avaliacao-objeto-table .student-group-select { max-width: 140px; width: 100%; min-height: 24px; padding-top: 1px; padding-bottom: 1px; font-size: 11px; }
+  #avaliacao-objeto-table .student-group-text { font-size: .72rem; color: #6c757d; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #avaliacao-objeto-table .group-summary-cell { font-weight: 600; }
   #avaliacao-objeto-table .dominio-toggle { display: flex; align-items: center; gap: .35rem; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 600; cursor: pointer; text-align: left; }
   #avaliacao-objeto-table .dominio-toggle-icon { flex: 0 0 auto; font-size: 11px; line-height: 1; }
   #avaliacao-objeto-table .dominio-header.is-collapsed { background: #f8f9fa; min-width: 72px; width: 72px; }
@@ -69,6 +111,19 @@
   #avaliacao-objeto-table .dominio-header .dominio-label-full { white-space: nowrap; }
   #avaliacao-objeto-table .dominio-header.is-collapsed .dominio-label-full { display: none; }
   #avaliacao-objeto-table .dominio-compact-cell { min-width: 72px; width: 72px; background: #fff; }
+  #avaliacao-objeto-table .dominio-header-stack { display: flex; flex-direction: column; gap: .3rem; align-items: stretch; }
+  #avaliacao-objeto-table .dominio-copy-menu { width: 100%; }
+  #avaliacao-objeto-table .dominio-copy-panel { display: flex; flex-direction: column; gap: .18rem; width: 100%; }
+  #avaliacao-objeto-table .dominio-copy-title { font-size: 10px; line-height: 1.1; color: #6c757d; text-align: center; }
+  #avaliacao-objeto-table .dominio-copy-select { min-height: 26px; font-size: 11px; }
+  #avaliacao-objeto-table .dominio-copy-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .2rem; }
+  #avaliacao-objeto-table .dominio-copy-actions .btn { flex: 1 1 auto; font-size: 10px; padding: .14rem .3rem; line-height: 1.2; }
+  #avaliacao-objeto-table .dominio-copy-note { min-height: 1rem; line-height: 1.15; text-align: left; }
+  #avaliacao-objeto-table .dominio-header.is-collapsed .dominio-copy-menu { display: none; }
+  .avaliacao-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .75rem; }
+  .avaliacao-toolbar .btn { white-space: nowrap; }
+  .avaliacao-toolbar-active { font-size: .8rem; color: #495057; }
+  .avaliacao-toolbar-status { font-size: .8rem; color: #6c757d; }
   .avaliacao-save-panel { position: fixed; right: 1rem; bottom: 1rem; z-index: 1080; }
   .avaliacao-save-panel .btn { min-width: 10rem; box-shadow: 0 .5rem 1rem rgba(0, 0, 0, .15); }
   button[onclick*="guardarMetaObjeto"], button[onclick*="guardarTemaGrupo"] { display: none; }
@@ -151,7 +206,7 @@
     <div class="row g-2">
       {% for cfg in grupo_item_config %}
         <div class="col-md-6">
-          <label class="form-label form-label-sm">{{ cfg.grupo_nome }}</label>
+          <label class="form-label form-label-sm">{{ format_group_label(cfg.grupo_nome) }}</label>
           <div class="input-group input-group-sm">
             <select class="form-select" id="grupo-tema-{{ cfg.grupo_id }}">
               <option value="">— Sem tema —</option>
@@ -196,7 +251,7 @@
     </div>
     <div class="mt-2 small text-muted">
       {% for grupo in grupos %}
-        <span class="badge text-bg-light border">{{ grupo.nome }}</span>
+        <span class="badge text-bg-light border">{{ format_group_label(grupo.nome) }}</span>
       {% else %}
         Sem grupos locais definidos.
       {% endfor %}
@@ -205,13 +260,23 @@
 {% endif %}
 
 <form method="post" id="avaliacao-objeto-form">
+  <div class="avaliacao-toolbar">
+    <button
+      type="button"
+      id="avaliacao-fill-empty-button"
+      class="btn btn-outline-secondary btn-sm"
+      title="Preenche apenas caixas vazias com {{ avaliacao_base_fill_value or 3 }}; nas componentes usa o valor base da escala 1-5."
+    >
+      Preencher vazias com valor base
+    </button>
+    <span id="avaliacao-active-student" class="avaliacao-toolbar-active">Aluno atual: clique numa linha</span>
+    <span id="avaliacao-action-status" class="avaliacao-toolbar-status" aria-live="polite"></span>
+  </div>
   <div class="table-responsive avaliacao-container">
-    <table class="table table-bordered table-sm align-middle" id="avaliacao-objeto-table">
+    <table class="table table-bordered table-sm align-middle" id="avaliacao-objeto-table" data-base-fill-value="{{ avaliacao_base_fill_value or 3 }}">
       <thead class="table-light">
         <tr>
-          <th rowspan="2" class="indice-coluna">No</th>
-          <th rowspan="2" class="nome-coluna">Nome</th>
-          <th rowspan="2">Grupo</th>
+          <th rowspan="2" class="nome-coluna"><span class="visually-hidden">Alunos</span></th>
           {% if tipo in ['projeto', 'trabalho'] %}
             <th rowspan="2">Tema</th>
             <th rowspan="2">Entregue</th>
@@ -222,6 +287,7 @@
             {% set domain_short_code = dominio.codigo or ('D' ~ loop.index) %}
             {% set domain_label = dominio.codigo or dominio.letra or ('D' ~ loop.index) %}
             <th colspan="{{ dominio.rubricas|length }}" class="dominio-header" data-domain-id="{{ domain_id }}" data-expanded-colspan="{{ dominio.rubricas|length }}" title="{{ dominio.nome }}">
+              <div class="dominio-header-stack">
               <button type="button" class="dominio-toggle" data-domain-id="{{ domain_id }}" aria-expanded="true">
                 <span class="dominio-toggle-icon">▼</span>
                 <span class="d-flex flex-column">
@@ -229,6 +295,23 @@
                   <span class="dominio-label-full">{{ dominio.nome }}</span>
                 </span>
               </button>
+                <div class="dominio-copy-menu js-domain-copy-menu" data-source-domain-id="{{ domain_id }}">
+                  <div class="dominio-copy-panel">
+                    <div class="dominio-copy-title">Copiar para</div>
+                    <label class="visually-hidden" for="dominio-copy-target-{{ domain_id }}">Destino</label>
+                    <select
+                      id="dominio-copy-target-{{ domain_id }}"
+                      class="form-select form-select-sm dominio-copy-select js-domain-copy-target"
+                      data-source-domain-id="{{ domain_id }}"
+                    ></select>
+                    <div class="dominio-copy-actions">
+                      <button type="button" class="btn btn-outline-primary btn-sm js-domain-copy-current" data-source-domain-id="{{ domain_id }}">Aluno atual</button>
+                      <button type="button" class="btn btn-outline-primary btn-sm js-domain-copy-all" data-source-domain-id="{{ domain_id }}">Todos</button>
+                    </div>
+                    <div class="small text-muted dominio-copy-note js-domain-copy-note" data-source-domain-id="{{ domain_id }}"></div>
+                  </div>
+                </div>
+              </div>
             </th>
           {% endfor %}
           {% for dominio in dominios %}
@@ -242,8 +325,8 @@
             {% set domain_id = 'D' ~ (dominio.id if dominio.id is not none else loop.index) %}
             {% for rubrica in dominio.rubricas %}
               <th class="dominio-rubrica-coluna" data-domain-id="{{ domain_id }}">
-                <div class="d-flex align-items-center justify-content-between gap-1">
-                  <span class="rubrica-short rubrica-rotated" title="{{ rubrica.nome }}">{{ short_rubric(rubrica) }}</span>
+                <div class="rubrica-label-wrap">
+                  <span class="rubrica-short" title="{{ rubrica.nome }}">{{ short_rubric(rubrica) }}</span>
                   {% set rubrica_json = rubricas_payload.get(rubrica.id, {}) %}
                 </div>
                 {% set rubrica_json = rubricas_payload.get(rubrica.id, {}) %}
@@ -260,8 +343,7 @@
         {% if groups_data %}
           {% for grp in groups_data %}
             <tr class="table-secondary" data-group-row="1" data-group-id="{{ grp.group_id if not grp.is_individual_group else '' }}">
-              <td colspan="2"><strong>{{ grp.group_name }}</strong></td>
-              <td>{{ grp.group_name }}</td>
+              <td class="nome-coluna group-summary-cell" title="{{ format_group_label(grp.group_name) }}"><strong>{{ format_group_label(grp.group_name) }}</strong></td>
               {% if tipo in ['projeto', 'trabalho'] %}
               <td>
                 <select class="form-select form-select-sm js-group-theme" data-group-id="{{ grp.group_id or '' }}" {% if not grp.group_id %}disabled{% endif %}>
@@ -331,15 +413,19 @@
               {% set avaliavel = avaliavel_por_aluno.get(aluno.id, True) %}
               {% set bloqueio_motivo = bloqueio_motivo_por_aluno.get(aluno.id, 'Não avaliado — ausente ou falta disciplinar') %}
               <tr data-aluno-id="{{ aluno.id }}" data-group-id="{{ group_id_por_aluno.get(aluno.id, '') }}" data-presente="{{ 1 if avaliavel else 0 }}">
-                <td class="indice-coluna">{{ aluno.numero or '-' }}</td>
-                <td class="nome-coluna" title="{{ aluno.nome }}">{{ short_student_name(aluno.nome) }}</td>
-                <td>
-                  <select class="form-select form-select-sm js-group-assignment" data-aluno-id="{{ aluno.id }}" onchange="atribuirGrupo({{ aluno.id }}, this.value)">
-                    <option value="">Individual</option>
-                    {% for grupo in grupos %}
-                      <option value="{{ grupo.id }}" {% if group_id_por_aluno.get(aluno.id) == grupo.id %}selected{% endif %}>{{ grupo.nome }}</option>
-                    {% endfor %}
-                  </select>
+                <td class="nome-coluna" title="{{ aluno.nome }}">
+                  <div class="student-cell">
+                    <div class="student-name-line">
+                      <span class="student-short-name">{{ short_student_name(aluno.nome) }}</span>
+                      <span class="student-number">({{ aluno.numero or '-' }})</span>
+                    </div>
+                    <select class="form-select form-select-sm js-group-assignment student-group-select" data-aluno-id="{{ aluno.id }}" onchange="atribuirGrupo({{ aluno.id }}, this.value)">
+                      <option value="">Individual</option>
+                      {% for grupo in grupos %}
+                        <option value="{{ grupo.id }}" {% if group_id_por_aluno.get(aluno.id) == grupo.id %}selected{% endif %}>{{ format_group_label(grupo.nome) }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
                 </td>
                 {% if tipo in ['projeto', 'trabalho'] %}
                   <td></td>
@@ -408,22 +494,30 @@
             {% set avaliavel = avaliavel_por_aluno.get(aluno.id, True) %}
             {% set bloqueio_motivo = bloqueio_motivo_por_aluno.get(aluno.id, 'Não avaliado — ausente ou falta disciplinar') %}
             <tr data-aluno-id="{{ aluno.id }}" data-group-id="{{ group_id_por_aluno.get(aluno.id, '') }}" data-presente="{{ 1 if avaliavel else 0 }}">
-              <td class="indice-coluna">{{ loop.index }}</td>
-              <td class="nome-coluna" title="{{ aluno.nome }}">{{ short_student_name(aluno.nome) }}</td>
-              <td>
-                {% set grupo_atual = grupo_por_aluno.get(aluno.id, linha.grupo or '') %}
-                {% if tipo in ['obser', 'portfolio'] %}
-                  <select class="form-select form-select-sm js-group-assignment" data-aluno-id="{{ aluno.id }}" onchange="atribuirGrupo({{ aluno.id }}, this.value)">
-                    <option value="">Individual</option>
-                    {% for grupo in grupos %}
-                      <option value="{{ grupo.id }}" {% if group_id_por_aluno.get(aluno.id) == grupo.id %}selected{% endif %}>{{ grupo.nome }}</option>
-                    {% endfor %}
-                  </select>
-                {% else %}
-                  {{ grupo_atual or '-' }}
-                {% endif %}
+              {% set grupo_atual = grupo_por_aluno.get(aluno.id, linha.grupo or '') %}
+              <td class="nome-coluna" title="{{ aluno.nome }}">
+                <div class="student-cell">
+                  <div class="student-name-line">
+                    <span class="student-short-name">{{ short_student_name(aluno.nome) }}</span>
+                    <span class="student-number">({{ aluno.numero or '-' }})</span>
+                  </div>
+                  {% if tipo in ['obser', 'portfolio'] %}
+                    <select class="form-select form-select-sm js-group-assignment student-group-select" data-aluno-id="{{ aluno.id }}" onchange="atribuirGrupo({{ aluno.id }}, this.value)">
+                      <option value="">Individual</option>
+                      {% for grupo in grupos %}
+                        <option value="{{ grupo.id }}" {% if group_id_por_aluno.get(aluno.id) == grupo.id %}selected{% endif %}>{{ format_group_label(grupo.nome) }}</option>
+                      {% endfor %}
+                    </select>
+                  {% elif grupo_atual %}
+                    <div class="student-group-text" title="{{ format_group_label(grupo_atual) }}">{{ format_group_label(grupo_atual) }}</div>
+                  {% endif %}
+                </div>
               </td>
-              {% if tipo in ['projeto', 'trabalho'] %}<td class="small"></td>{% endif %}
+              {% if tipo in ['projeto', 'trabalho'] %}
+                <td class="small"></td>
+                <td class="small"></td>
+                <td class="small"></td>
+              {% endif %}
               {% for dominio in dominios %}
                 {% set domain_id = 'D' ~ (dominio.id if dominio.id is not none else loop.index) %}
                 {% for rubrica in dominio.rubricas %}
@@ -494,6 +588,8 @@
 <div class="avaliacao-save-panel">
   <button type="button" id="avaliacao-save-button" class="btn btn-primary">Guardar</button>
 </div>
+
+<script id="avaliacao-domain-copy-config" type="application/json">{{ domain_copy_payload|default([], true)|tojson }}</script>
 
 <script>
 (() => {
@@ -859,9 +955,75 @@
   const domainIds = Array.from(table.querySelectorAll(".dominio-header[data-domain-id]"))
     .map((header) => header.dataset.domainId)
     .filter(Boolean);
+  const fillEmptyButton = document.getElementById("avaliacao-fill-empty-button");
+  const activeStudentLabel = document.getElementById("avaliacao-active-student");
+  const actionStatus = document.getElementById("avaliacao-action-status");
+  const domainCopyConfigNode = document.getElementById("avaliacao-domain-copy-config");
+  const baseFillValue = Number(table.dataset.baseFillValue || 3) || 3;
+  const componentFillValue = 3;
+  const domainCopyPayload = (() => {
+    try {
+      return JSON.parse(domainCopyConfigNode?.textContent || "[]");
+    } catch (err) {
+      console.warn("Nao foi possivel ler a configuracao de copia de dominios.", err);
+      return [];
+    }
+  })();
+  const domainMetaById = new Map(
+    domainCopyPayload
+      .filter((domain) => domain && domain.client_id)
+      .map((domain) => [String(domain.client_id), domain])
+  );
+  const domainCopyPlanCache = new Map();
   let dominiosState = Object.fromEntries(domainIds.map((domainId) => [domainId, true]));
   let isDirty = false;
   let isSaving = false;
+  let activeAlunoId = "";
+
+  function normalizeKey(rawValue) {
+    return String(rawValue || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ");
+  }
+
+  function setActionStatus(message, tone = "muted") {
+    if (!actionStatus) return;
+    actionStatus.className = "avaliacao-toolbar-status";
+    if (tone === "success") {
+      actionStatus.classList.add("text-success");
+    } else if (tone === "warning") {
+      actionStatus.classList.add("text-warning");
+    } else if (tone === "danger") {
+      actionStatus.classList.add("text-danger");
+    } else {
+      actionStatus.classList.add("text-muted");
+    }
+    actionStatus.textContent = message || "";
+  }
+
+  function getStudentDisplayName(alunoId) {
+    const row = getStudentRow(alunoId);
+    if (!row) return "";
+    const shortName = row.querySelector(".student-short-name")?.textContent?.trim() || "";
+    const studentNumber = row.querySelector(".student-number")?.textContent?.trim() || "";
+    return [shortName, studentNumber].filter(Boolean).join(" ");
+  }
+
+  function setActiveStudent(alunoId) {
+    activeAlunoId = String(alunoId || "");
+    if (!activeStudentLabel) return;
+    if (!activeAlunoId) {
+      activeStudentLabel.textContent = "Aluno atual: clique numa linha";
+      return;
+    }
+    const displayName = getStudentDisplayName(activeAlunoId);
+    activeStudentLabel.textContent = displayName
+      ? `Aluno atual: ${displayName}`
+      : `Aluno atual: ${activeAlunoId}`;
+  }
 
   function notifyParent(state) {
     if (window.parent === window) return;
@@ -899,6 +1061,13 @@
       saveButton.textContent = "Guardar";
     }
     notifyParent({ dirty: isDirty, saving: isSaving, status: state, buttonLabel: saveButton.textContent });
+  }
+
+  function syncStickyHeaderOffsets() {
+    const firstHeaderRow = table.querySelector("thead tr:first-child");
+    if (!firstHeaderRow) return;
+    const measuredHeight = Math.ceil(firstHeaderRow.getBoundingClientRect().height || 0);
+    table.style.setProperty("--avaliacao-header-row-1-height", `${Math.max(52, measuredHeight)}px`);
   }
 
   function markDirty() {
@@ -987,6 +1156,7 @@
       if (icon) icon.textContent = expanded ? "▼" : "▶";
     });
     updateGroupTrailingColspans();
+    syncStickyHeaderOffsets();
   }
 
   function toggleDomain(domainId) {
@@ -1128,6 +1298,371 @@
       if (!alunoId || isStudentOverrideActive(alunoId, rubricaId)) return;
       restoreStudentFromGroup(alunoId, rubricaId);
     });
+  }
+
+  function buildUniqueKeyMap(items, keyResolver) {
+    const counts = new Map();
+    (items || []).forEach((item) => {
+      const key = keyResolver(item);
+      if (!key) return;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    const uniqueItems = new Map();
+    (items || []).forEach((item) => {
+      const key = keyResolver(item);
+      if (!key || counts.get(key) !== 1) return;
+      uniqueItems.set(key, item);
+    });
+    return uniqueItems;
+  }
+
+  function getDomainLabel(domainMeta) {
+    if (!domainMeta) return "Dominio";
+    return domainMeta.codigo || domainMeta.letra || domainMeta.nome || domainMeta.client_id || "Dominio";
+  }
+
+  function getRubricMatchKey(rubricMeta) {
+    const code = normalizeKey(rubricMeta?.codigo);
+    if (code) return `code:${code}`;
+    const name = normalizeKey(rubricMeta?.nome);
+    return name ? `name:${name}` : "";
+  }
+
+  function getComponentMatchKey(componentMeta) {
+    const name = normalizeKey(componentMeta?.nome);
+    return name ? `name:${name}` : "";
+  }
+
+  function buildComponentCopyPlan(sourceRubric, targetRubric) {
+    const sourceComponents = Array.isArray(sourceRubric?.components) ? sourceRubric.components : [];
+    const targetComponents = Array.isArray(targetRubric?.components) ? targetRubric.components : [];
+    if (!sourceComponents.length && !targetComponents.length) {
+      return { compatible: true, mappings: [] };
+    }
+    if (!sourceComponents.length || !targetComponents.length) {
+      return { compatible: false, mappings: [] };
+    }
+    const sourceMap = buildUniqueKeyMap(sourceComponents, getComponentMatchKey);
+    const targetMap = buildUniqueKeyMap(targetComponents, getComponentMatchKey);
+    const mappings = [];
+    sourceMap.forEach((sourceComponent, key) => {
+      const targetComponent = targetMap.get(key);
+      if (!targetComponent) return;
+      mappings.push({
+        sourceId: String(sourceComponent.id),
+        targetId: String(targetComponent.id),
+      });
+    });
+    const compatible = mappings.length === sourceComponents.length && mappings.length === targetComponents.length;
+    return { compatible, mappings: compatible ? mappings : [] };
+  }
+
+  function getDomainCopyPlan(sourceDomainId, targetDomainId) {
+    const cacheKey = `${sourceDomainId}->${targetDomainId}`;
+    if (domainCopyPlanCache.has(cacheKey)) {
+      return domainCopyPlanCache.get(cacheKey);
+    }
+    const sourceDomain = domainMetaById.get(String(sourceDomainId));
+    const targetDomain = domainMetaById.get(String(targetDomainId));
+    if (!sourceDomain || !targetDomain || String(sourceDomainId) === String(targetDomainId)) {
+      domainCopyPlanCache.set(cacheKey, null);
+      return null;
+    }
+
+    const sourceRubrics = Array.isArray(sourceDomain.rubricas) ? sourceDomain.rubricas : [];
+    const targetRubrics = Array.isArray(targetDomain.rubricas) ? targetDomain.rubricas : [];
+    const sourceRubricMap = buildUniqueKeyMap(sourceRubrics, getRubricMatchKey);
+    const targetRubricMap = buildUniqueKeyMap(targetRubrics, getRubricMatchKey);
+    const mappings = [];
+
+    sourceRubricMap.forEach((sourceRubric, rubricKey) => {
+      const targetRubric = targetRubricMap.get(rubricKey);
+      if (!targetRubric) return;
+      const componentPlan = buildComponentCopyPlan(sourceRubric, targetRubric);
+      if (!componentPlan.compatible) return;
+      mappings.push({
+        sourceRubricId: String(sourceRubric.id),
+        targetRubricId: String(targetRubric.id),
+        componentMappings: componentPlan.mappings,
+      });
+    });
+
+    const plan = {
+      sourceDomain,
+      targetDomain,
+      mappings,
+      matchedRubrics: mappings.length,
+      totalSourceRubrics: sourceRubrics.length,
+      skippedRubrics: Math.max(0, sourceRubrics.length - mappings.length),
+    };
+    domainCopyPlanCache.set(cacheKey, plan);
+    return plan;
+  }
+
+  function getCompatibleTargetDomains(sourceDomainId) {
+    return domainCopyPayload
+      .filter((domainMeta) => String(domainMeta.client_id || "") !== String(sourceDomainId || ""))
+      .map((targetDomain) => ({
+        domain: targetDomain,
+        plan: getDomainCopyPlan(sourceDomainId, targetDomain.client_id),
+      }))
+      .filter((entry) => entry.plan && entry.plan.mappings.length > 0);
+  }
+
+  function describeCopyPlan(plan) {
+    if (!plan || !plan.mappings.length) {
+      return "Sem copia segura disponivel.";
+    }
+    if (!plan.skippedRubrics) {
+      return `${plan.matchedRubrics} rubricas compativeis.`;
+    }
+    return `${plan.matchedRubrics} rubricas compativeis; ${plan.skippedRubrics} ignoradas.`;
+  }
+
+  function readStudentRubricState(alunoId, rubricaId) {
+    const directInput = getDirectScoreInput(alunoId, rubricaId);
+    const componentInputs = getComponentInputs(alunoId, rubricaId);
+    if (componentInputs.length) {
+      const componentValues = {};
+      componentInputs.forEach((input) => {
+        const rawValue = String(input.value || "").trim();
+        if (!rawValue) return;
+        componentValues[String(input.dataset.componentId || "")] = rawValue;
+      });
+      return {
+        value: String(directInput?.value || "").trim(),
+        componentValues,
+        hasData: Object.keys(componentValues).length > 0,
+      };
+    }
+    const rawValue = String(directInput?.value || "").trim();
+    return {
+      value: rawValue,
+      componentValues: {},
+      hasData: rawValue !== "",
+    };
+  }
+
+  function applyCopiedRubricToStudent(alunoId, mapping, sourceState) {
+    if (!sourceState?.hasData) return false;
+    const targetDirectInput = getDirectScoreInput(alunoId, mapping.targetRubricId);
+    const targetComponentInputs = getComponentInputs(alunoId, mapping.targetRubricId);
+    if (mapping.componentMappings.length) {
+      const nextComponentScores = {};
+      mapping.componentMappings.forEach(({ sourceId, targetId }) => {
+        const rawValue = sourceState.componentValues?.[String(sourceId)];
+        if (!rawValue) return;
+        nextComponentScores[String(targetId)] = rawValue;
+      });
+      if (!Object.keys(nextComponentScores).length) return false;
+      targetComponentInputs.forEach((input) => {
+        if (input.disabled) return;
+        const nextValue = nextComponentScores[String(input.dataset.componentId || "")];
+        if (nextValue == null) return;
+        input.value = nextValue;
+      });
+      if (targetDirectInput && !targetDirectInput.disabled) {
+        const numericScores = {};
+        Object.entries(nextComponentScores).forEach(([componentId, rawValue]) => {
+          const numericValue = coerceNumber(rawValue);
+          if (numericValue == null) return;
+          numericScores[componentId] = numericValue;
+        });
+        targetDirectInput.value = computeScoreFromComponents(numericScores);
+      }
+    } else {
+      if (!targetDirectInput || targetDirectInput.disabled) return false;
+      if (!sourceState.value) return false;
+      targetDirectInput.value = sourceState.value;
+    }
+    setStudentOverrideActive(alunoId, mapping.targetRubricId, Boolean(getCurrentGroupIdForStudent(alunoId)));
+    refreshStudentMedias(alunoId);
+    return true;
+  }
+
+  function closeDomainCopyMenus() {
+    document.querySelectorAll(".js-domain-copy-menu[open]").forEach((menu) => {
+      menu.removeAttribute("open");
+    });
+  }
+
+  function updateCopyMenuNote(sourceDomainId) {
+    const select = document.querySelector(`.js-domain-copy-target[data-source-domain-id="${sourceDomainId}"]`);
+    const note = document.querySelector(`.js-domain-copy-note[data-source-domain-id="${sourceDomainId}"]`);
+    if (!select || !note) return;
+    const selectedTarget = select.value || "";
+    const plan = selectedTarget ? getDomainCopyPlan(sourceDomainId, selectedTarget) : null;
+    note.textContent = describeCopyPlan(plan);
+  }
+
+  function initialiseDomainCopyMenus() {
+    document.querySelectorAll(".js-domain-copy-target[data-source-domain-id]").forEach((select) => {
+      const sourceDomainId = String(select.dataset.sourceDomainId || "");
+      const compatibleTargets = getCompatibleTargetDomains(sourceDomainId);
+      select.innerHTML = "";
+      compatibleTargets.forEach(({ domain }) => {
+        const option = document.createElement("option");
+        const domainLabel = getDomainLabel(domain);
+        option.value = domain.client_id;
+        option.textContent = domain.nome && domain.nome !== domainLabel
+          ? `${domainLabel} - ${domain.nome}`
+          : domainLabel;
+        select.appendChild(option);
+      });
+      const actionButtons = document.querySelectorAll(
+        `.js-domain-copy-current[data-source-domain-id="${sourceDomainId}"], .js-domain-copy-all[data-source-domain-id="${sourceDomainId}"]`
+      );
+      if (!compatibleTargets.length) {
+        const option = document.createElement("option");
+        option.value = "";
+        option.textContent = "Sem destino compativel";
+        select.appendChild(option);
+        select.disabled = true;
+        actionButtons.forEach((button) => { button.disabled = true; });
+      } else {
+        select.disabled = false;
+        actionButtons.forEach((button) => { button.disabled = false; });
+      }
+      updateCopyMenuNote(sourceDomainId);
+    });
+  }
+
+  function copyDomainForStudents(sourceDomainId, targetDomainId, targetAlunoIds, scopeLabel) {
+    const plan = getDomainCopyPlan(sourceDomainId, targetDomainId);
+    if (!plan || !plan.mappings.length) {
+      setActionStatus("Nao existe copia segura entre os dominios selecionados.", "warning");
+      return;
+    }
+    let copiedStudents = 0;
+    let copiedRubrics = 0;
+    targetAlunoIds.forEach((alunoId) => {
+      let changedStudent = false;
+      plan.mappings.forEach((mapping) => {
+        const sourceState = readStudentRubricState(alunoId, mapping.sourceRubricId);
+        if (!applyCopiedRubricToStudent(alunoId, mapping, sourceState)) return;
+        changedStudent = true;
+        copiedRubrics += 1;
+      });
+      if (changedStudent) copiedStudents += 1;
+    });
+    if (!copiedRubrics) {
+      setActionStatus("Nao existiam valores compativeis para copiar.", "warning");
+      return;
+    }
+    refreshAllMedias();
+    markDirty();
+    setActionStatus(
+      `${scopeLabel}: ${copiedRubrics} rubricas copiadas de ${getDomainLabel(plan.sourceDomain)} para ${getDomainLabel(plan.targetDomain)} em ${copiedStudents} aluno(s).`,
+      "success",
+    );
+    closeDomainCopyMenus();
+  }
+
+  function fillEmptyStudentRubric(alunoId, rubricaId, fillValue) {
+    const directInput = getDirectScoreInput(alunoId, rubricaId);
+    if (!directInput || directInput.disabled || directInput.readOnly || String(directInput.value || "").trim() !== "") {
+      return false;
+    }
+    directInput.value = String(fillValue);
+    if (getCurrentGroupIdForStudent(alunoId)) {
+      setStudentOverrideActive(alunoId, rubricaId, true);
+    }
+    refreshStudentMedias(alunoId);
+    return true;
+  }
+
+  function fillEmptyStudentComponents(alunoId, rubricaId, fillValue) {
+    const componentInputs = getComponentInputs(alunoId, rubricaId);
+    if (!componentInputs.length) return false;
+    let changed = false;
+    componentInputs.forEach((input) => {
+      if (input.disabled || String(input.value || "").trim() !== "") return;
+      input.value = String(fillValue);
+      changed = true;
+    });
+    if (!changed) return false;
+    const directInput = getDirectScoreInput(alunoId, rubricaId);
+    if (directInput && !directInput.disabled) {
+      directInput.value = computeScoreFromComponents(getComponentScores(alunoId, rubricaId));
+    }
+    if (getCurrentGroupIdForStudent(alunoId)) {
+      setStudentOverrideActive(alunoId, rubricaId, true);
+    }
+    refreshStudentMedias(alunoId);
+    return true;
+  }
+
+  function fillEmptyGroupComponents(groupId, rubricaId, fillValue) {
+    const componentInputs = getGroupComponentInputs(groupId, rubricaId);
+    if (!componentInputs.length) return false;
+    let changed = false;
+    componentInputs.forEach((input) => {
+      if (input.disabled || String(input.value || "").trim() !== "") return;
+      input.value = String(fillValue);
+      changed = true;
+    });
+    if (!changed) return false;
+    const directInput = getGroupScoreInput(groupId, rubricaId);
+    if (directInput) {
+      directInput.value = computeScoreFromComponents(getGroupComponentScores(groupId, rubricaId));
+    }
+    applyGroupValueToFollowers(groupId, rubricaId);
+    return true;
+  }
+
+  function fillEmptyCellsWithBaseValue() {
+    let changedCount = 0;
+    table.querySelectorAll('.js-group-score[data-group-id][data-rubrica-id]').forEach((input) => {
+      if (input.readOnly || input.disabled || String(input.value || "").trim() !== "") return;
+      input.value = String(baseFillValue);
+      applyGroupValueToFollowers(String(input.dataset.groupId || ""), String(input.dataset.rubricaId || ""));
+      changedCount += 1;
+    });
+
+    const processedGroupComponentKeys = new Set();
+    table.querySelectorAll('.js-group-component-score[data-group-id][data-rubrica-id][data-component-id]').forEach((input) => {
+      const key = `${input.dataset.groupId || ""}:${input.dataset.rubricaId || ""}`;
+      if (processedGroupComponentKeys.has(key)) return;
+      processedGroupComponentKeys.add(key);
+      if (fillEmptyGroupComponents(String(input.dataset.groupId || ""), String(input.dataset.rubricaId || ""), componentFillValue)) {
+        changedCount += 1;
+      }
+    });
+
+    table.querySelectorAll('.js-student-score[data-rubrica-id][data-aluno-id]').forEach((input) => {
+      const alunoId = String(input.dataset.alunoId || "");
+      const rubricaId = String(input.dataset.rubricaId || "");
+      const groupId = getCurrentGroupIdForStudent(alunoId);
+      if (groupId && !isStudentOverrideActive(alunoId, rubricaId)) return;
+      if (fillEmptyStudentRubric(alunoId, rubricaId, baseFillValue)) {
+        changedCount += 1;
+      }
+    });
+
+    const processedStudentComponentKeys = new Set();
+    table.querySelectorAll('.js-component-score[data-rubrica-id][data-aluno-id][data-component-id]').forEach((input) => {
+      const alunoId = String(input.dataset.alunoId || "");
+      const rubricaId = String(input.dataset.rubricaId || "");
+      const groupId = getCurrentGroupIdForStudent(alunoId);
+      if (groupId && !isStudentOverrideActive(alunoId, rubricaId)) return;
+      const key = `${alunoId}:${rubricaId}`;
+      if (processedStudentComponentKeys.has(key)) return;
+      processedStudentComponentKeys.add(key);
+      if (fillEmptyStudentComponents(alunoId, rubricaId, componentFillValue)) {
+        changedCount += 1;
+      }
+    });
+
+    if (!changedCount) {
+      setActionStatus("Nao existiam caixas vazias para preencher.", "warning");
+      return;
+    }
+    refreshAllMedias();
+    markDirty();
+    setActionStatus(
+      `Preenchidas ${changedCount} zonas vazias com valor base ${baseFillValue}.`,
+      "success",
+    );
   }
 
   function getGroupIdFromControl(control) {
@@ -1322,10 +1857,12 @@
       isDirty = false;
       isSaving = false;
       setButtonState("saved");
+      setActionStatus("Alteracoes guardadas.", "success");
     } catch (err) {
       isSaving = false;
       console.error(err);
       setButtonState("error");
+      setActionStatus("Erro ao guardar.", "danger");
     }
   }
 
@@ -1560,6 +2097,58 @@
   table.querySelectorAll(".dominio-toggle[data-domain-id]").forEach((toggle) => {
     toggle.addEventListener("click", () => toggleDomain(toggle.dataset.domainId));
   });
+  table.addEventListener("focusin", (event) => {
+    const row = event.target.closest("tr[data-aluno-id]");
+    if (!row) return;
+    setActiveStudent(row.dataset.alunoId);
+  });
+  table.querySelectorAll("tr[data-aluno-id]").forEach((row) => {
+    row.addEventListener("mousedown", () => setActiveStudent(row.dataset.alunoId));
+  });
+  document.querySelectorAll(".js-domain-copy-menu").forEach((menu) => {
+    menu.addEventListener("toggle", () => {
+      if (!menu.open) return;
+      document.querySelectorAll(".js-domain-copy-menu[open]").forEach((openMenu) => {
+        if (openMenu !== menu) openMenu.removeAttribute("open");
+      });
+      updateCopyMenuNote(String(menu.dataset.sourceDomainId || ""));
+    });
+  });
+  document.addEventListener("click", (event) => {
+    if (event.target.closest(".js-domain-copy-menu")) return;
+    closeDomainCopyMenus();
+  });
+  window.addEventListener("resize", syncStickyHeaderOffsets);
+  document.querySelectorAll(".js-domain-copy-target[data-source-domain-id]").forEach((select) => {
+    select.addEventListener("change", () => updateCopyMenuNote(String(select.dataset.sourceDomainId || "")));
+  });
+  document.querySelectorAll(".js-domain-copy-current[data-source-domain-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (!activeAlunoId) {
+        setActionStatus("Selecione primeiro um aluno para usar 'Aluno atual'.", "warning");
+        return;
+      }
+      const sourceDomainId = String(button.dataset.sourceDomainId || "");
+      const targetDomainId = document.querySelector(`.js-domain-copy-target[data-source-domain-id="${sourceDomainId}"]`)?.value || "";
+      if (!targetDomainId) {
+        setActionStatus("Escolha um dominio de destino compativel.", "warning");
+        return;
+      }
+      copyDomainForStudents(sourceDomainId, targetDomainId, [activeAlunoId], getStudentDisplayName(activeAlunoId) || "Aluno atual");
+    });
+  });
+  document.querySelectorAll(".js-domain-copy-all[data-source-domain-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const sourceDomainId = String(button.dataset.sourceDomainId || "");
+      const targetDomainId = document.querySelector(`.js-domain-copy-target[data-source-domain-id="${sourceDomainId}"]`)?.value || "";
+      if (!targetDomainId) {
+        setActionStatus("Escolha um dominio de destino compativel.", "warning");
+        return;
+      }
+      copyDomainForStudents(sourceDomainId, targetDomainId, alunoIds, "Todos os alunos");
+    });
+  });
+  fillEmptyButton?.addEventListener("click", fillEmptyCellsWithBaseValue);
 
   document.getElementById("obser-descritivo")?.addEventListener("input", markDirty);
   table.querySelectorAll(".js-portfolio-observacoes").forEach((input) => input.addEventListener("input", markDirty));
@@ -1590,7 +2179,10 @@
   });
 
   refreshAllMedias();
+  initialiseDomainCopyMenus();
+  setActiveStudent("");
   domainIds.forEach((domainId) => setDomainExpanded(domainId, dominiosState[domainId]));
+  syncStickyHeaderOffsets();
   setButtonState("idle");
 })();
 </script>
