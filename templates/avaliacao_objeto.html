@@ -115,12 +115,9 @@
   #avaliacao-objeto-table .dominio-header.is-collapsed .dominio-label-full { display: none; }
   #avaliacao-objeto-table .dominio-compact-cell { min-width: 72px; width: 72px; background: #fff; }
   #avaliacao-objeto-table .dominio-header-stack { display: flex; flex-direction: column; gap: .16rem; align-items: stretch; }
-  #avaliacao-objeto-table .dominio-copy-menu { width: 100%; }
-  #avaliacao-objeto-table .dominio-copy-panel { display: flex; flex-wrap: wrap; align-items: center; gap: .18rem; width: 100%; }
-  #avaliacao-objeto-table .dominio-copy-select { flex: 1 1 180px; min-width: 0; min-height: 24px; padding-top: 1px; padding-bottom: 1px; font-size: 10px; }
-  #avaliacao-objeto-table .dominio-copy-actions { display: flex; flex-wrap: nowrap; gap: .18rem; flex: 0 0 auto; }
-  #avaliacao-objeto-table .dominio-copy-actions .btn { flex: 0 0 auto; font-size: 10px; padding: .08rem .28rem; line-height: 1.15; white-space: nowrap; }
-  #avaliacao-objeto-table .dominio-header.is-collapsed .dominio-copy-menu { display: none; }
+  .avaliacao-domain-context { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; margin-bottom: .5rem; padding: .35rem .5rem; border: 1px solid #dee2e6; border-radius: .35rem; background: #f8f9fa; }
+  .avaliacao-domain-context-label { font-size: .82rem; font-weight: 600; color: #343a40; }
+  .avaliacao-domain-copy-select { min-width: 220px; max-width: 360px; }
   .avaliacao-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .75rem; }
   .avaliacao-rubric-context { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .5rem; padding: .35rem .5rem; border: 1px solid #dee2e6; border-radius: .35rem; background: #f8f9fa; }
   .avaliacao-rubric-context .rubrica-label { font-size: .85rem; font-weight: 600; color: #343a40; }
@@ -296,9 +293,15 @@
     <button type="button" id="group-apply-cell-button" class="btn btn-outline-primary btn-sm">Aplicar valor da célula ao grupo</button>
     <button type="button" id="group-apply-rubric-button" class="btn btn-outline-primary btn-sm">Aplicar rubrica ao grupo</button>
     <button type="button" id="group-apply-domain-button" class="btn btn-outline-primary btn-sm">Aplicar domínio ao grupo</button>
-    <button type="button" id="domain-copy-group-button" class="btn btn-outline-secondary btn-sm">Copiar grupo para domínio compatível</button>
     <span id="avaliacao-active-student" class="avaliacao-toolbar-active">Aluno atual: clique numa linha</span>
     <span id="avaliacao-action-status" class="avaliacao-toolbar-status" aria-live="polite"></span>
+  </div>
+  <div class="avaliacao-domain-context">
+    <span class="avaliacao-domain-context-label" id="avaliacao-domain-context-label">Domínio ativo: —</span>
+    <select id="domain-copy-target-global" class="form-select form-select-sm avaliacao-domain-copy-select js-domain-copy-target"></select>
+    <button type="button" class="btn btn-outline-primary btn-sm js-domain-copy-current" id="domain-copy-current-global">Aluno atual</button>
+    <button type="button" class="btn btn-outline-primary btn-sm js-domain-copy-all" id="domain-copy-all-global">Todos</button>
+    <button type="button" id="domain-copy-group-button" class="btn btn-outline-secondary btn-sm">Grupo atual</button>
   </div>
   <div class="avaliacao-rubric-context">
     <span class="rubrica-label" id="avaliacao-rubric-context-label">Rubrica selecionada: —</span>
@@ -324,25 +327,8 @@
               <div class="dominio-header-stack">
               <button type="button" class="dominio-toggle" data-domain-id="{{ domain_id }}" aria-expanded="true">
                 <span class="dominio-toggle-icon">▼</span>
-                <span class="d-flex flex-column">
-                  <span class="dominio-label-short">{{ domain_label }}</span>
-                  <span class="dominio-label-full">{{ dominio.nome }}</span>
-                </span>
+                <span class="dominio-label-short">{{ domain_label }}</span>
               </button>
-                <div class="dominio-copy-menu js-domain-copy-menu" data-source-domain-id="{{ domain_id }}">
-                  <div class="dominio-copy-panel">
-                    <label class="visually-hidden" for="dominio-copy-target-{{ domain_id }}">Destino</label>
-                    <select
-                      id="dominio-copy-target-{{ domain_id }}"
-                      class="form-select form-select-sm dominio-copy-select js-domain-copy-target"
-                      data-source-domain-id="{{ domain_id }}"
-                    ></select>
-                    <div class="dominio-copy-actions">
-                      <button type="button" class="btn btn-outline-primary btn-sm js-domain-copy-current" data-source-domain-id="{{ domain_id }}">Aluno atual</button>
-                      <button type="button" class="btn btn-outline-primary btn-sm js-domain-copy-all" data-source-domain-id="{{ domain_id }}">Todos</button>
-                    </div>
-                  </div>
-                </div>
               </div>
             </th>
           {% endfor %}
@@ -927,6 +913,10 @@
   const activeStudentLabel = document.getElementById("avaliacao-active-student");
   const actionStatus = document.getElementById("avaliacao-action-status");
   const domainCopyConfigNode = document.getElementById("avaliacao-domain-copy-config");
+  const domainContextLabel = document.getElementById("avaliacao-domain-context-label");
+  const domainCopyTargetGlobal = document.getElementById("domain-copy-target-global");
+  const domainCopyCurrentGlobal = document.getElementById("domain-copy-current-global");
+  const domainCopyAllGlobal = document.getElementById("domain-copy-all-global");
   const rubricContextLabel = document.getElementById("avaliacao-rubric-context-label");
   const rubricContextAutoButton = document.getElementById("rubric-context-auto-button");
   const rubricContextClearButton = document.getElementById("rubric-context-clear-button");
@@ -1681,7 +1671,10 @@
   }
 
   function getSelectedDomainCopyTarget(sourceDomainId) {
-    return document.querySelector(`.js-domain-copy-target[data-source-domain-id="${sourceDomainId}"]`)?.value || "";
+    if (String(domainCopyTargetGlobal?.dataset.sourceDomainId || "") !== String(sourceDomainId || "")) {
+      return "";
+    }
+    return domainCopyTargetGlobal?.value || "";
   }
 
   function copyFilledStateToStudentIfAllowed(sourceAlunoId, targetAlunoId, rubricaId) {
@@ -1819,38 +1812,33 @@
     return { status: "copied" };
   }
 
-  function closeDomainCopyMenus() {
-    document.querySelectorAll(".js-domain-copy-menu[open]").forEach((menu) => {
-      menu.removeAttribute("open");
-    });
-  }
-
   function initialiseDomainCopyMenus() {
-    document.querySelectorAll(".js-domain-copy-target[data-source-domain-id]").forEach((select) => {
-      const sourceDomainId = String(select.dataset.sourceDomainId || "");
-      const compatibleTargets = getCompatibleTargetDomains(sourceDomainId);
-      select.innerHTML = "";
-      compatibleTargets.forEach(({ domain, plan }) => {
-        const option = document.createElement("option");
-        option.value = domain.client_id;
-        option.textContent = buildCopyTargetLabel(domain, plan);
-        select.appendChild(option);
-      });
-      const actionButtons = document.querySelectorAll(
-        `.js-domain-copy-current[data-source-domain-id="${sourceDomainId}"], .js-domain-copy-all[data-source-domain-id="${sourceDomainId}"]`
-      );
-      if (!compatibleTargets.length) {
-        const option = document.createElement("option");
-        option.value = "";
-        option.textContent = "Sem destino compativel";
-        select.appendChild(option);
-        select.disabled = true;
-        actionButtons.forEach((button) => { button.disabled = true; });
-      } else {
-        select.disabled = false;
-        actionButtons.forEach((button) => { button.disabled = false; });
-      }
+    const sourceDomainId = String(activeDomainId || "");
+    if (!domainCopyTargetGlobal) return;
+    domainCopyTargetGlobal.dataset.sourceDomainId = sourceDomainId;
+    if (domainCopyCurrentGlobal) domainCopyCurrentGlobal.dataset.sourceDomainId = sourceDomainId;
+    if (domainCopyAllGlobal) domainCopyAllGlobal.dataset.sourceDomainId = sourceDomainId;
+    const compatibleTargets = getCompatibleTargetDomains(sourceDomainId);
+    domainCopyTargetGlobal.innerHTML = "";
+    compatibleTargets.forEach(({ domain, plan }) => {
+      const option = document.createElement("option");
+      option.value = domain.client_id;
+      option.textContent = buildCopyTargetLabel(domain, plan);
+      domainCopyTargetGlobal.appendChild(option);
     });
+    if (!compatibleTargets.length) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = "Sem destino compativel";
+      domainCopyTargetGlobal.appendChild(option);
+      domainCopyTargetGlobal.disabled = true;
+      if (domainCopyCurrentGlobal) domainCopyCurrentGlobal.disabled = true;
+      if (domainCopyAllGlobal) domainCopyAllGlobal.disabled = true;
+    } else {
+      domainCopyTargetGlobal.disabled = false;
+      if (domainCopyCurrentGlobal) domainCopyCurrentGlobal.disabled = false;
+      if (domainCopyAllGlobal) domainCopyAllGlobal.disabled = false;
+    }
   }
 
   function copyDomainForStudents(sourceDomainId, targetDomainId, targetAlunoIds, scopeLabel) {
@@ -1894,7 +1882,6 @@
       `${scopeLabel}: copiado para ${copiedStudents} aluno(s); ${preservedOverrides} valor(es) individuais mantido(s).${plan.skippedDueToComponentMismatch ? ` ${plan.skippedDueToComponentMismatch} rubrica(s) ignorada(s) por incompatibilidade de componentes.` : ""}`,
       "success",
     );
-    closeDomainCopyMenus();
   }
 
   function setActiveDomain(domainId, options = {}) {
@@ -1909,6 +1896,13 @@
     if (!options.silent) {
       setActionStatus(`Domínio ativo: ${activeDomainId}.`, "muted");
     }
+    const meta = domainMetaById.get(activeDomainId);
+    if (domainContextLabel) {
+      const shortLabel = meta?.codigo || meta?.letra || activeDomainId;
+      const fullLabel = meta?.nome || "—";
+      domainContextLabel.textContent = `Domínio ativo: ${shortLabel} — ${fullLabel}`;
+    }
+    initialiseDomainCopyMenus();
   }
 
   function initDomainTabs() {
@@ -2634,48 +2628,29 @@
   table.querySelectorAll("tr[data-aluno-id]").forEach((row) => {
     row.addEventListener("mousedown", () => setActiveStudent(row.dataset.alunoId));
   });
-  document.querySelectorAll(".js-domain-copy-menu").forEach((menu) => {
-    menu.addEventListener("toggle", () => {
-      if (!menu.open) return;
-      document.querySelectorAll(".js-domain-copy-menu[open]").forEach((openMenu) => {
-        if (openMenu !== menu) openMenu.removeAttribute("open");
-      });
-      updateCopyMenuNote(String(menu.dataset.sourceDomainId || ""));
-    });
-  });
-  document.addEventListener("click", (event) => {
-    if (event.target.closest(".js-domain-copy-menu")) return;
-    closeDomainCopyMenus();
-  });
   window.addEventListener("resize", syncStickyHeaderOffsets);
-  document.querySelectorAll(".js-domain-copy-target[data-source-domain-id]").forEach((select) => {
-    select.addEventListener("change", () => updateCopyMenuNote(String(select.dataset.sourceDomainId || "")));
+  domainCopyTargetGlobal?.addEventListener("change", () => setActionStatus("", "muted"));
+  domainCopyCurrentGlobal?.addEventListener("click", () => {
+    if (!activeAlunoId) {
+      setActionStatus("Selecione primeiro um aluno para usar 'Aluno atual'.", "warning");
+      return;
+    }
+    const sourceDomainId = String(activeDomainId || "");
+    const targetDomainId = getSelectedDomainCopyTarget(sourceDomainId);
+    if (!targetDomainId) {
+      setActionStatus("Escolha um dominio de destino compativel.", "warning");
+      return;
+    }
+    copyDomainForStudents(sourceDomainId, targetDomainId, [activeAlunoId], getStudentDisplayName(activeAlunoId) || "Aluno atual");
   });
-  document.querySelectorAll(".js-domain-copy-current[data-source-domain-id]").forEach((button) => {
-    button.addEventListener("click", () => {
-      if (!activeAlunoId) {
-        setActionStatus("Selecione primeiro um aluno para usar 'Aluno atual'.", "warning");
-        return;
-      }
-      const sourceDomainId = String(button.dataset.sourceDomainId || "");
-      const targetDomainId = document.querySelector(`.js-domain-copy-target[data-source-domain-id="${sourceDomainId}"]`)?.value || "";
-      if (!targetDomainId) {
-        setActionStatus("Escolha um dominio de destino compativel.", "warning");
-        return;
-      }
-      copyDomainForStudents(sourceDomainId, targetDomainId, [activeAlunoId], getStudentDisplayName(activeAlunoId) || "Aluno atual");
-    });
-  });
-  document.querySelectorAll(".js-domain-copy-all[data-source-domain-id]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const sourceDomainId = String(button.dataset.sourceDomainId || "");
-      const targetDomainId = document.querySelector(`.js-domain-copy-target[data-source-domain-id="${sourceDomainId}"]`)?.value || "";
-      if (!targetDomainId) {
-        setActionStatus("Escolha um dominio de destino compativel.", "warning");
-        return;
-      }
-      copyDomainForStudents(sourceDomainId, targetDomainId, alunoIds, "Todos os alunos");
-    });
+  domainCopyAllGlobal?.addEventListener("click", () => {
+    const sourceDomainId = String(activeDomainId || "");
+    const targetDomainId = getSelectedDomainCopyTarget(sourceDomainId);
+    if (!targetDomainId) {
+      setActionStatus("Escolha um dominio de destino compativel.", "warning");
+      return;
+    }
+    copyDomainForStudents(sourceDomainId, targetDomainId, alunoIds, "Todos os alunos");
   });
   groupApplyCellButton?.addEventListener("click", () => applyGroupFromBaseStudent("cell"));
   groupApplyRubricButton?.addEventListener("click", () => applyGroupFromBaseStudent("rubric"));
