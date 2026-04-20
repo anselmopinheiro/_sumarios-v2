@@ -3625,6 +3625,8 @@ def create_app():
             for score in (assessment.component_scores or [])
         }
         if assessment.score_numeric is None and not component_scores:
+            if getattr(assessment, "state", None) == "nao_observado":
+                return {"value": None, "component_scores": {}, "is_intentional_empty": True}
             return None
         value = float(assessment.score_numeric) if assessment.score_numeric is not None else None
         if value is None and component_scores:
@@ -3636,6 +3638,7 @@ def create_app():
         return {
             "value": value,
             "component_scores": component_scores,
+            "is_intentional_empty": False,
         }
 
     def _score_payloads_match(left_payload, right_payload):
@@ -4142,6 +4145,20 @@ def create_app():
                 persisted_group_scores.setdefault(group_key, {})[rubric_key] = serialized_entry
         _set_event_group_score_snapshot(event, persisted_group_scores)
 
+        override_state_map = {}
+        override_states = payload.get("override_states") or []
+        if isinstance(override_states, list):
+            for entry in override_states:
+                if not isinstance(entry, dict):
+                    continue
+                aluno_id = _optional_int(entry.get("aluno_id"))
+                rubrica_id = _optional_int(entry.get("rubrica_id"))
+                if aluno_id is None or rubrica_id is None:
+                    continue
+                override_state_map[(aluno_id, rubrica_id)] = (
+                    str(entry.get("is_override") or "").strip().lower() in {"1", "true", "yes", "on"}
+                )
+
         scores = payload.get("scores") or []
         if isinstance(scores, list):
             for entry in scores:
@@ -4168,7 +4185,24 @@ def create_app():
                 assessment_created = False
                 valor = _optional_float(entry.get("valor"))
                 if valor is None and not has_component_scores:
-                    if assessment is not None:
+                    keep_intentional_empty = (
+                        group_id_por_aluno.get(aluno_id) is not None
+                        and override_state_map.get((aluno_id, rubrica_id), False)
+                    )
+                    if keep_intentional_empty:
+                        if not assessment:
+                            assessment = EV2Assessment(
+                                event_student_id=event_student.id,
+                                tipo="rubrica",
+                                rubric_id=rubrica_id,
+                                weight=0,
+                            )
+                            db.session.add(assessment)
+                        assessment.state = "nao_observado"
+                        assessment.score_numeric = None
+                        assessment.component_scores.clear()
+                        assessment.observacoes = None
+                    elif assessment is not None:
                         db.session.delete(assessment)
                     continue
                 if not assessment:
@@ -4197,7 +4231,6 @@ def create_app():
                     assessment.state = "avaliado"
                     assessment.score_numeric = valor_final
 
-        override_states = payload.get("override_states") or []
         if isinstance(override_states, list):
             for entry in override_states:
                 if not isinstance(entry, dict):

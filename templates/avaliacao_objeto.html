@@ -2432,8 +2432,9 @@
     input.addEventListener("input", () => {
       const groupId = getCurrentGroupIdForStudent(alunoId);
       if (groupId && String(input.value || "").trim() === "") {
-        setStudentOverrideActive(alunoId, rubricaId, false);
-        restoreStudentFromGroup(alunoId, rubricaId);
+        setStudentOverrideActive(alunoId, rubricaId, true);
+        getComponentInputs(alunoId, rubricaId).forEach((componentInput) => { componentInput.value = ""; });
+        refreshStudentMedias(alunoId);
       } else {
         setStudentOverrideActive(alunoId, rubricaId, Boolean(groupId) || String(input.value || "").trim() !== "");
         refreshStudentMedias(alunoId);
@@ -2454,8 +2455,8 @@
       }
       const groupId = getCurrentGroupIdForStudent(alunoId);
       if (groupId && Object.keys(componentScores).length === 0) {
-        setStudentOverrideActive(alunoId, rubricaId, false);
-        restoreStudentFromGroup(alunoId, rubricaId);
+        setStudentOverrideActive(alunoId, rubricaId, true);
+        refreshStudentMedias(alunoId);
       } else {
         setStudentOverrideActive(alunoId, rubricaId, Boolean(groupId) || Object.keys(componentScores).length > 0);
         refreshStudentMedias(alunoId);

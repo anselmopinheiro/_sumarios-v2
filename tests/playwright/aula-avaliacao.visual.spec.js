@@ -356,6 +356,41 @@ async function resolveGroupedOverrideCopyScenario(frame) {
   });
 }
 
+async function resolveGroupedIndividualClearScenario(frame) {
+  return frame.evaluate(() => {
+    const groupedRows = Array.from(document.querySelectorAll('tr[data-aluno-id][data-presente="1"]'))
+      .filter((row) => Boolean(row.dataset.groupId || ''));
+    const groups = new Map();
+    groupedRows.forEach((row) => {
+      const groupId = String(row.dataset.groupId || '');
+      if (!groupId) return;
+      if (!groups.has(groupId)) groups.set(groupId, []);
+      groups.get(groupId).push(row);
+    });
+
+    for (const [, rows] of groups.entries()) {
+      if (rows.length < 2) continue;
+      const firstAlunoId = String(rows[0].dataset.alunoId || '');
+      const secondAlunoId = String(rows[1].dataset.alunoId || '');
+      const firstInput = rows[0].querySelector('.js-student-score:not([disabled]):not([readonly])');
+      if (!firstInput) continue;
+      const rubricaId = String(firstInput.dataset.rubricaId || '');
+      const secondInput = rows[1].querySelector(`.js-student-score[data-rubrica-id="${rubricaId}"]:not([disabled]):not([readonly])`);
+      if (!rubricaId || !secondInput) continue;
+      const secondHasComponents = rows[1].querySelectorAll(`.js-component-score[data-rubrica-id="${rubricaId}"]`).length > 0;
+      if (secondHasComponents) continue;
+      return {
+        firstAlunoId,
+        secondAlunoId,
+        rubricaId,
+        firstSelector: `.js-student-score[data-aluno-id="${firstAlunoId}"][data-rubrica-id="${rubricaId}"]`,
+        secondSelector: `.js-student-score[data-aluno-id="${secondAlunoId}"][data-rubrica-id="${rubricaId}"]`,
+      };
+    }
+    return null;
+  });
+}
+
 async function resolveComponentMismatchScenario(frame) {
   return frame.evaluate(() => {
     const payload = JSON.parse(document.getElementById('avaliacao-domain-copy-config')?.textContent || '[]');
@@ -1192,4 +1227,39 @@ test('preserva overrides individuais na copia de dominio para aluno atual e todo
   } else {
     await expect(reopened.frameLocator.locator(studentRubricSelector(copiedAlunoId, scenario.mapping.targetRubricId))).toHaveValue('4.5');
   }
+});
+
+test('permite limpeza individual no segundo aluno do grupo sem limpar o aluno-base', async ({ page }) => {
+  const requests = attachPostCounter(page);
+  const { frame, frameLocator } = await openAvaliacao(page);
+  const scenario = await resolveGroupedIndividualClearScenario(frame);
+
+  expect(scenario).toBeTruthy();
+
+  const firstInput = frameLocator.locator(scenario.firstSelector);
+  const secondInput = frameLocator.locator(scenario.secondSelector);
+
+  await firstInput.click();
+  await firstInput.fill('4');
+  await frameLocator.locator('#group-apply-rubric-button').click();
+
+  await expect(firstInput).toHaveValue(numericValuePattern('4'));
+  await expect(secondInput).toHaveValue(numericValuePattern('4'));
+
+  await secondInput.click();
+  await secondInput.press('Backspace');
+  await expect(secondInput).toHaveValue('');
+  await expect(firstInput).toHaveValue(numericValuePattern('4'));
+
+  await page.waitForTimeout(500);
+  expect(requests.count).toBe(0);
+  await expect(frameLocator.locator('#avaliacao-save-button')).toHaveText('Guardar *');
+
+  await frameLocator.locator('#avaliacao-save-button').click();
+  await expect(frameLocator.locator('#avaliacao-save-button')).toHaveText('Guardado', { timeout: 10_000 });
+  await expect.poll(() => requests.count).toBe(1);
+
+  const reopened = await openAvaliacao(page);
+  await expect(reopened.frameLocator.locator(scenario.secondSelector)).toHaveValue('');
+  await expect(reopened.frameLocator.locator(scenario.firstSelector)).toHaveValue(numericValuePattern('4'));
 });
