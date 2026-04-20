@@ -152,6 +152,21 @@ Opções úteis:
 
 A grelha de avaliação suporta:
 
+### EV2 (avaliação da aula) — fluxo compacto por aluno
+- A grelha está centrada no aluno (uma linha por aluno).
+- O grupo passa a ser um organizador leve (coluna **Grupo** + separadores compactos), sem linha pesada de avaliação própria.
+- Apenas um domínio fica visível de cada vez, selecionado por tabs no topo.
+- Ações rápidas disponíveis na barra:
+  - aplicar **valor da célula** ao grupo do aluno-base;
+  - aplicar **rubrica** ao grupo;
+  - aplicar **domínio** ao grupo;
+  - copiar domínio para aluno atual, grupo atual ou todos, apenas para destinos compatíveis.
+- Regras de segurança mantidas:
+  - copiar apenas valores preenchidos;
+  - nunca copiar vazios para apagar;
+  - nunca sobrescrever overrides individuais;
+  - sem autosave (continua obrigatório clicar em **Guardar**).
+
 ### Navegação por teclado
 - Setas → mover entre células
 - Enter → descer
