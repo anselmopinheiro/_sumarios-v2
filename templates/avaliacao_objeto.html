@@ -117,14 +117,16 @@
   #avaliacao-objeto-table thead tr:first-child th[rowspan="2"] { z-index: 17; }
   #avaliacao-objeto-table .dominio-header { vertical-align: middle; padding-top: 2px; padding-bottom: 2px; }
   #avaliacao-objeto-table .nome-coluna { position: sticky; left: 0; z-index: 6; background: #fff; min-width: 160px; width: 160px; max-width: 160px; box-shadow: inset -1px 0 0 #dee2e6; }
-  #avaliacao-objeto-table .grupo-coluna { min-width: 220px; width: 220px; max-width: 220px; }
+  #avaliacao-objeto-table .grupo-coluna { min-width: 172px; width: 172px; max-width: 172px; }
   #avaliacao-objeto-table thead th.nome-coluna { z-index: 16; }
   #avaliacao-objeto-table tbody td.nome-coluna { z-index: 7; }
   #avaliacao-objeto-table .student-cell { display: flex; flex-direction: column; gap: .18rem; min-width: 0; }
   #avaliacao-objeto-table .student-name-line { display: flex; align-items: baseline; gap: .28rem; min-width: 0; white-space: nowrap; overflow: hidden; }
   #avaliacao-objeto-table .student-short-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
   #avaliacao-objeto-table .student-number { font-size: .72rem; color: #6c757d; flex: 0 0 auto; }
-  #avaliacao-objeto-table .student-group-select { width: 100%; min-width: 200px; min-height: 24px; padding-top: 1px; padding-bottom: 1px; font-size: 11px; }
+  #avaliacao-objeto-table .student-group-select { width: 100%; min-width: 0; min-height: 24px; padding-top: 1px; padding-bottom: 1px; font-size: 11px; }
+  #avaliacao-objeto-table .observacoes-coluna { min-width: 300px; width: 300px; }
+  #avaliacao-objeto-table .observacoes-coluna textarea { min-width: 100%; resize: vertical; }
   #avaliacao-objeto-table .student-group-text { font-size: .72rem; color: #6c757d; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #avaliacao-objeto-table .group-summary-cell { font-weight: 600; }
   #avaliacao-objeto-table .group-separator-row td { background: #f8f9fa; }
@@ -359,7 +361,7 @@
             {% set domain_id = 'D' ~ (dominio.id if dominio.id is not none else loop.index) %}
             <th rowspan="2" class="dominio-media-coluna" data-domain-id="{{ domain_id }}" data-domain-media="1" data-media-dominio="{{ dominio.letra }}">{{ dominio.letra }}</th>
           {% endfor %}
-          <th rowspan="2">{% if tipo == 'portfolio' %}Projeto / Observações{% else %}Observações{% endif %}</th>
+          <th rowspan="2" class="observacoes-coluna">{% if tipo == 'portfolio' %}Projeto / Observações{% else %}Observações{% endif %}</th>
         </tr>
         <tr>
           {% for dominio in dominios %}
@@ -460,7 +462,7 @@
                     {% if not avaliavel %}-{% elif medias.get(dominio.letra) is not none %}{{ medias.get(dominio.letra) }}{% else %}-{% endif %}
                   </td>
                 {% endfor %}
-                <td><textarea class="form-control form-control-sm" rows="2" readonly>{{ linha.observacoes }}</textarea></td>
+                <td class="observacoes-coluna"><textarea class="form-control form-control-sm" rows="2" readonly>{{ linha.observacoes }}</textarea></td>
               </tr>
             {% endfor %}
           {% endfor %}
@@ -542,7 +544,7 @@
                   {% if not avaliavel %}-{% elif medias.get(dominio.letra) is not none %}{{ medias.get(dominio.letra) }}{% else %}-{% endif %}
                 </td>
               {% endfor %}
-              <td>
+              <td class="observacoes-coluna">
                 {% if tipo == 'portfolio' %}
                   <textarea class="form-control form-control-sm js-portfolio-observacoes" data-aluno-id="{{ aluno.id }}" rows="2" placeholder="Designação do projeto/tema e observações...">{{ linha.observacoes }}</textarea>
                 {% else %}
