@@ -391,6 +391,32 @@ async function resolveGroupedIndividualClearScenario(frame) {
   });
 }
 
+async function resolveAutoFillPreserveOverrideScenario(frame) {
+  return frame.evaluate(() => {
+    const rows = Array.from(document.querySelectorAll('tr[data-aluno-id][data-presente="1"]'));
+    for (const row of rows) {
+      const alunoId = String(row.dataset.alunoId || '');
+      const candidateInput = row.querySelector('.js-student-score:not([disabled]):not([readonly])');
+      if (!candidateInput) continue;
+      const rubricaId = String(candidateInput.dataset.rubricaId || '');
+      if (!rubricaId) continue;
+      const hasComponents = row.querySelectorAll(`.js-component-score[data-rubrica-id="${rubricaId}"]`).length > 0;
+      if (hasComponents) continue;
+      const emptyTarget = rows
+        .filter((other) => String(other.dataset.alunoId || '') !== alunoId)
+        .map((other) => other.querySelector(`.js-student-score[data-rubrica-id="${rubricaId}"]:not([disabled]):not([readonly])`))
+        .find((input) => input && String(input.value || '').trim() === '' && String(input.dataset.overrideActive || '0') !== '1');
+      if (!emptyTarget) continue;
+      return {
+        rubricaId,
+        manualSelector: `.js-student-score[data-aluno-id="${alunoId}"][data-rubrica-id="${rubricaId}"]`,
+        emptySelector: `.js-student-score[data-aluno-id="${emptyTarget.dataset.alunoId}"][data-rubrica-id="${rubricaId}"]`,
+      };
+    }
+    return null;
+  });
+}
+
 async function resolveComponentMismatchScenario(frame) {
   return frame.evaluate(() => {
     const payload = JSON.parse(document.getElementById('avaliacao-domain-copy-config')?.textContent || '[]');
@@ -1266,4 +1292,29 @@ test('permite limpeza individual no segundo aluno do grupo sem limpar o aluno-ba
   const reopened = await openAvaliacao(page);
   await expect(reopened.frameLocator.locator(scenario.secondSelector)).toHaveValue('');
   await expect(reopened.frameLocator.locator(scenario.firstSelector)).toHaveValue(numericValuePattern('4'));
+});
+
+test('aplicar automático preserva override manual e preenche vazios elegíveis', async ({ page }) => {
+  const requests = attachPostCounter(page);
+  const { frame, frameLocator } = await openAvaliacao(page);
+  const scenario = await resolveAutoFillPreserveOverrideScenario(frame);
+  expect(scenario).toBeTruthy();
+
+  const manualInput = frameLocator.locator(scenario.manualSelector);
+  const emptyInput = frameLocator.locator(scenario.emptySelector);
+
+  await manualInput.click();
+  await manualInput.fill('4.5');
+  await expect(manualInput).toHaveAttribute('data-override-active', '1');
+  await emptyInput.fill('');
+  await expect(emptyInput).toHaveValue('');
+
+  await frameLocator.locator('#rubric-context-auto-button').click();
+
+  await expect(manualInput).toHaveValue(numericValuePattern('4.5'));
+  await expect(emptyInput).toHaveValue(numericValuePattern('3'));
+
+  await page.waitForTimeout(500);
+  expect(requests.count).toBe(0);
+  await expect(frameLocator.locator('#avaliacao-save-button')).toHaveText('Guardar *');
 });

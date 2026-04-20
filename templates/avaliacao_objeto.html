@@ -2304,36 +2304,74 @@
 
   window.aplicarValorAutomatico = function aplicarValorAutomatico(rubricaId) {
     if (!window.confirm("Deseja aplicar o valor automatico a todos os alunos desta rubrica?")) return;
+    let preenchidas = 0;
+    let preservadas = 0;
     const groupScoreInputs = Array.from(table.querySelectorAll(`.js-group-score[data-rubrica-id="${rubricaId}"]`));
     if (groupScoreInputs.length) {
       groupScoreInputs.forEach((input) => {
         const groupId = String(input.dataset.groupId || "");
         if (!groupId) return;
+        if (String(input.value || "").trim() !== "") {
+          preservadas += 1;
+          return;
+        }
         const groupComponentInputs = getGroupComponentInputs(groupId, rubricaId);
         if (groupComponentInputs.length) {
-          groupComponentInputs.forEach((componentInput) => { componentInput.value = "3"; });
+          let hasComponentChange = false;
+          groupComponentInputs.forEach((componentInput) => {
+            if (String(componentInput.value || "").trim() !== "") return;
+            componentInput.value = "3";
+            hasComponentChange = true;
+          });
+          if (!hasComponentChange) {
+            preservadas += 1;
+            return;
+          }
           input.value = "3.00";
         } else if (!input.readOnly) {
           input.value = "3";
         }
+        preenchidas += 1;
         applyGroupValueToFollowers(groupId, rubricaId);
       });
     }
     table.querySelectorAll(`.js-student-score[data-rubrica-id="${rubricaId}"]`).forEach((input) => {
       const alunoId = String(input.dataset.alunoId || "");
-      const groupId = getCurrentGroupIdForStudent(alunoId);
-      if (groupId) return;
+      if (isStudentOverrideActive(alunoId, rubricaId)) {
+        preservadas += 1;
+        return;
+      }
+      if (String(input.value || "").trim() !== "") {
+        preservadas += 1;
+        return;
+      }
       const componentInputs = getComponentInputs(alunoId, rubricaId);
       if (componentInputs.length) {
-        componentInputs.forEach((componentInput) => { componentInput.value = "3"; });
+        let hasComponentChange = false;
+        componentInputs.forEach((componentInput) => {
+          if (String(componentInput.value || "").trim() !== "") return;
+          componentInput.value = "3";
+          hasComponentChange = true;
+        });
+        if (!hasComponentChange) {
+          preservadas += 1;
+          return;
+        }
         input.value = "3.00";
       } else if (!input.readOnly) {
         input.value = "3";
       }
-      setStudentOverrideActive(alunoId, rubricaId, true);
+      const groupId = getCurrentGroupIdForStudent(alunoId);
+      setStudentOverrideActive(alunoId, rubricaId, Boolean(groupId));
       refreshStudentMedias(alunoId);
+      preenchidas += 1;
     });
     refreshAllMedias();
+    if (!preenchidas) {
+      setActionStatus(`Aplicação automática sem alterações (${preservadas} célula(s) preservada(s)).`, "warning");
+      return;
+    }
+    setActionStatus(`Aplicação automática preencheu ${preenchidas} célula(s); ${preservadas} preservada(s).`, "success");
     markDirty();
   };
 
