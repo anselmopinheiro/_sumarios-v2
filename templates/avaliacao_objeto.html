@@ -52,6 +52,20 @@
   {%- endif -%}
 {%- endmacro %}
 
+{% macro format_group_dropdown_label(group_name) -%}
+  {%- set raw = (group_name or '').strip() -%}
+  {%- if not raw -%}
+    -
+  {%- else -%}
+    {%- set lower = raw|lower -%}
+    {%- if lower.startswith('grupo ') -%}
+      {{ raw[6:].strip() or raw }}
+    {%- else -%}
+      {{ raw }}
+    {%- endif -%}
+  {%- endif -%}
+{%- endmacro %}
+
 <style>
   .avaliacao-container {
     overflow: auto;
@@ -103,14 +117,14 @@
   #avaliacao-objeto-table thead tr:first-child th[rowspan="2"] { z-index: 17; }
   #avaliacao-objeto-table .dominio-header { vertical-align: middle; padding-top: 2px; padding-bottom: 2px; }
   #avaliacao-objeto-table .nome-coluna { position: sticky; left: 0; z-index: 6; background: #fff; min-width: 160px; width: 160px; max-width: 160px; box-shadow: inset -1px 0 0 #dee2e6; }
-  #avaliacao-objeto-table .grupo-coluna { min-width: 96px; width: 96px; max-width: 96px; }
+  #avaliacao-objeto-table .grupo-coluna { min-width: 220px; width: 220px; max-width: 220px; }
   #avaliacao-objeto-table thead th.nome-coluna { z-index: 16; }
   #avaliacao-objeto-table tbody td.nome-coluna { z-index: 7; }
   #avaliacao-objeto-table .student-cell { display: flex; flex-direction: column; gap: .18rem; min-width: 0; }
   #avaliacao-objeto-table .student-name-line { display: flex; align-items: baseline; gap: .28rem; min-width: 0; white-space: nowrap; overflow: hidden; }
   #avaliacao-objeto-table .student-short-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
   #avaliacao-objeto-table .student-number { font-size: .72rem; color: #6c757d; flex: 0 0 auto; }
-  #avaliacao-objeto-table .student-group-select { max-width: 140px; width: 100%; min-height: 24px; padding-top: 1px; padding-bottom: 1px; font-size: 11px; }
+  #avaliacao-objeto-table .student-group-select { width: 100%; min-width: 200px; min-height: 24px; padding-top: 1px; padding-bottom: 1px; font-size: 11px; }
   #avaliacao-objeto-table .student-group-text { font-size: .72rem; color: #6c757d; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #avaliacao-objeto-table .group-summary-cell { font-weight: 600; }
   #avaliacao-objeto-table .group-separator-row td { background: #f8f9fa; }
@@ -386,7 +400,7 @@
                   <select class="form-select form-select-sm js-group-assignment student-group-select" data-aluno-id="{{ aluno.id }}" onchange="atribuirGrupo({{ aluno.id }}, this.value)">
                     <option value="">Individual</option>
                     {% for grupo in grupos %}
-                      <option value="{{ grupo.id }}" {% if group_id_por_aluno.get(aluno.id) == grupo.id %}selected{% endif %}>{{ format_group_label(grupo.nome) }}</option>
+                      <option value="{{ grupo.id }}" {% if group_id_por_aluno.get(aluno.id) == grupo.id %}selected{% endif %}>{{ format_group_dropdown_label(grupo.nome) }}</option>
                     {% endfor %}
                   </select>
                 </td>
@@ -468,7 +482,7 @@
                 <select class="form-select form-select-sm js-group-assignment student-group-select" data-aluno-id="{{ aluno.id }}" onchange="atribuirGrupo({{ aluno.id }}, this.value)">
                   <option value="">Individual</option>
                   {% for grupo in grupos %}
-                    <option value="{{ grupo.id }}" {% if group_id_por_aluno.get(aluno.id) == grupo.id %}selected{% endif %}>{{ format_group_label(grupo.nome) }}</option>
+                    <option value="{{ grupo.id }}" {% if group_id_por_aluno.get(aluno.id) == grupo.id %}selected{% endif %}>{{ format_group_dropdown_label(grupo.nome) }}</option>
                   {% endfor %}
                 </select>
               </td>
