@@ -164,6 +164,7 @@ A grelha de avaliação suporta:
 - Ações da rubrica ativa (**Aplicar automático** e **Limpar avaliações**) ficam numa barra contextual acima da grelha:
   - selecionar a rubrica pelo cabeçalho ou por uma célula da coluna;
   - a barra mostra `Nome completo (Nome curto)` e aplica as ações à rubrica selecionada.
+- Os blocos **Descritivo** e **Grupos desta avaliação** aparecem em acordeões independentes, fechados por defeito, com resumo no cabeçalho para poupar espaço vertical da grelha.
 - Regras de segurança mantidas:
   - copiar apenas valores preenchidos;
   - nunca copiar vazios para apagar;

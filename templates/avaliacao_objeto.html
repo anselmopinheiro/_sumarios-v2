@@ -124,6 +124,10 @@
   .avaliacao-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .75rem; }
   .avaliacao-rubric-context { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .5rem; padding: .35rem .5rem; border: 1px solid #dee2e6; border-radius: .35rem; background: #f8f9fa; }
   .avaliacao-rubric-context .rubrica-label { font-size: .85rem; font-weight: 600; color: #343a40; }
+  details.js-context-accordion > summary { cursor: pointer; list-style: none; }
+  details.js-context-accordion > summary::-webkit-details-marker { display: none; }
+  details.js-context-accordion > summary::before { content: "▸"; margin-right: .35rem; color: #495057; }
+  details.js-context-accordion[open] > summary::before { content: "▾"; }
   .avaliacao-domain-tabs { display: flex; flex-wrap: wrap; gap: .35rem; }
   .avaliacao-domain-tabs .btn.active { pointer-events: none; }
   .avaliacao-toolbar .btn { white-space: nowrap; }
@@ -235,33 +239,47 @@
 {% endif %}
 
 {% if tipo == 'obser' %}
-  <div class="card card-body mb-3">
-    <label for="obser-descritivo" class="form-label form-label-sm mb-1">Descritivo</label>
-    <textarea id="obser-descritivo" class="form-control form-control-sm" rows="3" placeholder="Observações qualitativas da observação direta...">{{ meta_observacoes or '' }}</textarea>
-  </div>
+  {% set descritivo_txt = (meta_observacoes or '')|trim %}
+  {% set descritivo_preview = (descritivo_txt[:90] ~ ('…' if descritivo_txt|length > 90 else '')) if descritivo_txt else 'Sem descritivo' %}
+  <details class="card mb-2 js-context-accordion" id="descritivo-accordion" data-open-on-error="descritivo">
+    <summary class="card-header py-2 px-3 small fw-semibold">
+      Descritivo · {{ descritivo_preview }}
+    </summary>
+    <div class="card-body">
+      <label for="obser-descritivo" class="form-label form-label-sm mb-1">Descritivo</label>
+      <textarea id="obser-descritivo" class="form-control form-control-sm" rows="3" placeholder="Observações qualitativas da observação direta...">{{ meta_observacoes or '' }}</textarea>
+    </div>
+  </details>
 {% endif %}
 
 {% if tipo in ['obser', 'projeto', 'trabalho', 'portfolio'] %}
-  <div class="card card-body mb-3">
-    <div class="d-flex justify-content-between align-items-center mb-2">
-      <div class="small text-muted">Grupos desta avaliação (baseados nos grupos da turma).</div>
-      <button type="button" class="btn btn-outline-secondary btn-sm" onclick="reporGruposTurma()">Repor grupos da turma</button>
-    </div>
-    <div class="d-flex gap-2">
-      <input id="novo-grupo-nome" class="form-control form-control-sm" placeholder="Novo grupo local">
-      <button type="button" class="btn btn-outline-primary btn-sm" onclick="criarGrupo()">Criar grupo</button>
-      {% if aula and aula.turma_id %}
-        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('turma_grupos_catalogo', turma_id=aula.turma_id) }}" target="_blank" rel="noopener">Gerir grupos da turma</a>
-      {% endif %}
-    </div>
-    <div class="mt-2 small text-muted">
-      {% for grupo in grupos %}
-        <span class="badge text-bg-light border">{{ format_group_label(grupo.nome) }}</span>
-      {% else %}
-        Sem grupos locais definidos.
-      {% endfor %}
-    </div>
+  {% set grupos_count = (grupos|length) %}
+  {% set grupos_summary = 'Sem grupos locais' if grupos_count == 0 else ('1 grupo local' if grupos_count == 1 else (grupos_count ~ ' grupos locais')) %}
+  <details class="card mb-3 js-context-accordion" id="grupos-accordion" data-open-on-error="grupo">
+    <summary class="card-header py-2 px-3 small fw-semibold">
+      Grupos desta avaliação · {{ grupos_summary }}
+    </summary>
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <div class="small text-muted">Grupos desta avaliação (baseados nos grupos da turma).</div>
+        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="reporGruposTurma()">Repor grupos da turma</button>
       </div>
+      <div class="d-flex gap-2">
+        <input id="novo-grupo-nome" class="form-control form-control-sm" placeholder="Novo grupo local">
+        <button type="button" class="btn btn-outline-primary btn-sm" onclick="criarGrupo()">Criar grupo</button>
+        {% if aula and aula.turma_id %}
+          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('turma_grupos_catalogo', turma_id=aula.turma_id) }}" target="_blank" rel="noopener">Gerir grupos da turma</a>
+        {% endif %}
+      </div>
+      <div class="mt-2 small text-muted">
+        {% for grupo in grupos %}
+          <span class="badge text-bg-light border">{{ format_group_label(grupo.nome) }}</span>
+        {% else %}
+          Sem grupos locais definidos.
+        {% endfor %}
+      </div>
+    </div>
+  </details>
 {% endif %}
 
 <form method="post" id="avaliacao-objeto-form">
@@ -1023,6 +1041,22 @@
     if (!firstHeaderRow) return;
     const measuredHeight = Math.ceil(firstHeaderRow.getBoundingClientRect().height || 0);
     table.style.setProperty("--avaliacao-header-row-1-height", `${Math.max(52, measuredHeight)}px`);
+  }
+
+  function maybeOpenContextAccordionsForErrors() {
+    const params = new URLSearchParams(window.location.search || "");
+    const forceDescritivo = params.get("open_descritivo") === "1";
+    const forceGrupos = params.get("open_grupos") === "1";
+    const firstErrorNode = document.querySelector(".alert-danger, .invalid-feedback, [data-context-error]");
+    const errorText = (firstErrorNode?.textContent || "").toLowerCase();
+    const descritivoAccordion = document.getElementById("descritivo-accordion");
+    const gruposAccordion = document.getElementById("grupos-accordion");
+    if (descritivoAccordion && (forceDescritivo || errorText.includes("descritivo"))) {
+      descritivoAccordion.open = true;
+    }
+    if (gruposAccordion && (forceGrupos || errorText.includes("grupo"))) {
+      gruposAccordion.open = true;
+    }
   }
 
   function markDirty() {
@@ -2672,6 +2706,7 @@
   setActiveRubrica("", { silent: true });
   domainIds.forEach((domainId) => setDomainExpanded(domainId, false));
   setActiveDomain(activeDomainId || domainIds[0], { silent: true });
+  maybeOpenContextAccordionsForErrors();
   syncStickyHeaderOffsets();
   setButtonState("idle");
 })();
