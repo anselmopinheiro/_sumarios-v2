@@ -1621,18 +1621,18 @@
   }
 
   function copyFilledStateToStudentIfAllowed(sourceAlunoId, targetAlunoId, rubricaId) {
-    if (!sourceAlunoId || !targetAlunoId || sourceAlunoId === targetAlunoId) return false;
+    if (!sourceAlunoId || !targetAlunoId || sourceAlunoId === targetAlunoId) return "skipped_same_student";
     const sourceState = readStudentRubricState(sourceAlunoId, rubricaId);
-    if (!sourceState.hasData) return false;
-    if (hasProtectedCopyOverride(targetAlunoId, rubricaId)) return false;
+    if (!sourceState.hasData) return "skipped_source_empty";
+    if (hasProtectedCopyOverride(targetAlunoId, rubricaId)) return "skipped_protected_override";
     const targetState = readStudentRubricState(targetAlunoId, rubricaId);
-    if (targetState.hasData) return false;
+    if (targetState.hasData) return "skipped_target_has_value";
     const mapping = {
       targetRubricId: String(rubricaId),
       componentMappings: Object.keys(sourceState.componentValues || {}).map((componentId) => ({ sourceId: componentId, targetId: componentId })),
     };
     const outcome = applyCopiedRubricToStudent(targetAlunoId, mapping, sourceState);
-    return outcome.status === "copied";
+    return outcome.status === "copied" ? "copied" : "skipped_source_empty";
   }
 
   function describeCopyPlan(plan) {
@@ -1729,7 +1729,11 @@
   }
 
   function hasProtectedCopyOverride(alunoId, rubricaId) {
-    return Boolean(getCurrentGroupIdForStudent(alunoId)) && isStudentOverrideActive(alunoId, rubricaId);
+    if (!Boolean(getCurrentGroupIdForStudent(alunoId)) || !isStudentOverrideActive(alunoId, rubricaId)) {
+      return false;
+    }
+    const state = readStudentRubricState(alunoId, rubricaId);
+    return Boolean(state?.hasData);
   }
 
   function applyCopiedRubricToStudent(alunoId, mapping, sourceState) {
@@ -1882,20 +1886,36 @@
         ? [String(activeRubricaId || "")]
         : getRubricIdsForDomain(activeDomainId));
     let changed = 0;
+    let skippedExisting = 0;
+    let skippedOverrides = 0;
+    let skippedEmptySource = 0;
     rubricIds.filter(Boolean).forEach((rubricaId) => {
       members.forEach((targetAlunoId) => {
-        if (copyFilledStateToStudentIfAllowed(sourceAlunoId, targetAlunoId, rubricaId)) {
+        const outcome = copyFilledStateToStudentIfAllowed(sourceAlunoId, targetAlunoId, rubricaId);
+        if (outcome === "copied") {
           changed += 1;
+        } else if (outcome === "skipped_target_has_value") {
+          skippedExisting += 1;
+        } else if (outcome === "skipped_protected_override") {
+          skippedOverrides += 1;
+        } else if (outcome === "skipped_source_empty") {
+          skippedEmptySource += 1;
         }
       });
     });
     if (!changed) {
-      setActionStatus("Nada para aplicar (vazios, existentes ou overrides preservados).", "warning");
+      setActionStatus(
+        `Nada para aplicar. Ignorados: ${skippedExisting} com valor, ${skippedOverrides} override(s) preenchido(s), ${skippedEmptySource} origem(ns) vazia(s).`,
+        "warning",
+      );
       return;
     }
     refreshAllMedias();
     markDirty();
-    setActionStatus(`Aplicado ao grupo em ${changed} célula(s), sem sobrescrever dados existentes.`, "success");
+    setActionStatus(
+      `Preenchidas ${changed} célula(s). Ignoradas: ${skippedExisting} com valor, ${skippedOverrides} override(s) preenchido(s), ${skippedEmptySource} origem(ns) vazia(s).`,
+      "success",
+    );
   }
 
   function fillEmptyStudentRubric(alunoId, rubricaId, fillValue) {

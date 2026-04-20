@@ -1250,6 +1250,10 @@ test('permite limpeza individual no segundo aluno do grupo sem limpar o aluno-ba
   await secondInput.press('Backspace');
   await expect(secondInput).toHaveValue('');
   await expect(firstInput).toHaveValue(numericValuePattern('4'));
+  await frameLocator.locator('#group-apply-rubric-button').click();
+  await expect(secondInput).toHaveValue(numericValuePattern('4'));
+  await secondInput.press('Backspace');
+  await expect(secondInput).toHaveValue('');
 
   await page.waitForTimeout(500);
   expect(requests.count).toBe(0);
