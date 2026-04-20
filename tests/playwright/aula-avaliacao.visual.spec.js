@@ -211,6 +211,151 @@ async function resolveCopyScenario(frame, studentCount) {
   }, { studentCount });
 }
 
+async function resolveGroupedOverrideCopyScenario(frame) {
+  return frame.evaluate(() => {
+    const payload = JSON.parse(document.getElementById('avaliacao-domain-copy-config')?.textContent || '[]');
+    const groupedRows = Array.from(document.querySelectorAll('tr[data-aluno-id][data-presente="1"]'))
+      .filter((row) => Boolean(row.dataset.groupId || ''));
+    if (groupedRows.length < 2) return null;
+
+    const normalizeKey = (rawValue) =>
+      String(rawValue || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
+
+    const uniqueMap = (items, resolver) => {
+      const counts = new Map();
+      (items || []).forEach((item) => {
+        const key = resolver(item);
+        if (!key) return;
+        counts.set(key, (counts.get(key) || 0) + 1);
+      });
+      const map = new Map();
+      (items || []).forEach((item) => {
+        const key = resolver(item);
+        if (!key || counts.get(key) !== 1) return;
+        map.set(key, item);
+      });
+      return map;
+    };
+
+    const rubricKey = (rubric) => {
+      const code = normalizeKey(rubric?.codigo);
+      if (code) return `code:${code}`;
+      const name = normalizeKey(rubric?.nome);
+      return name ? `name:${name}` : '';
+    };
+
+    const componentKey = (component) => {
+      const code = normalizeKey(component?.codigo);
+      if (code) return `code:${code}`;
+      const name = normalizeKey(component?.nome);
+      return name ? `name:${name}` : '';
+    };
+
+    const buildPlan = (sourceDomain, targetDomain) => {
+      const sourceRubrics = Array.isArray(sourceDomain?.rubricas) ? sourceDomain.rubricas : [];
+      const targetRubrics = Array.isArray(targetDomain?.rubricas) ? targetDomain.rubricas : [];
+      const sourceMap = uniqueMap(sourceRubrics, rubricKey);
+      const targetMap = uniqueMap(targetRubrics, rubricKey);
+      const mappings = [];
+      let skippedDueToComponentMismatch = 0;
+      sourceMap.forEach((sourceRubric, key) => {
+        const targetRubric = targetMap.get(key);
+        if (!targetRubric) return;
+        const sourceComponents = Array.isArray(sourceRubric.components) ? sourceRubric.components : [];
+        const targetComponents = Array.isArray(targetRubric.components) ? targetRubric.components : [];
+        if (!sourceComponents.length && !targetComponents.length) {
+          mappings.push({
+            sourceRubricId: String(sourceRubric.id),
+            targetRubricId: String(targetRubric.id),
+            componentMappings: [],
+          });
+          return;
+        }
+        if (!sourceComponents.length || !targetComponents.length) {
+          skippedDueToComponentMismatch += 1;
+          return;
+        }
+        const sourceComponentMap = uniqueMap(sourceComponents, componentKey);
+        const targetComponentMap = uniqueMap(targetComponents, componentKey);
+        const componentMappings = [];
+        sourceComponentMap.forEach((sourceComponent, componentMatchKey) => {
+          const targetComponent = targetComponentMap.get(componentMatchKey);
+          if (!targetComponent) return;
+          componentMappings.push({
+            sourceId: String(sourceComponent.id),
+            targetId: String(targetComponent.id),
+          });
+        });
+        if (componentMappings.length !== sourceComponents.length || componentMappings.length !== targetComponents.length) {
+          skippedDueToComponentMismatch += 1;
+          return;
+        }
+        mappings.push({
+          sourceRubricId: String(sourceRubric.id),
+          targetRubricId: String(targetRubric.id),
+          componentMappings,
+        });
+      });
+      return {
+        mappings,
+        skippedDueToComponentMismatch,
+      };
+    };
+
+    const rowSupportsMappingWithoutOverride = (row, mapping) => {
+      const alunoId = String(row.dataset.alunoId || '');
+      if (!alunoId) return false;
+      if (mapping.componentMappings.length) {
+        const sourceInputs = mapping.componentMappings.map(({ sourceId }) => (
+          document.querySelector(`.js-component-score[data-aluno-id="${alunoId}"][data-rubrica-id="${mapping.sourceRubricId}"][data-component-id="${sourceId}"]`)
+        ));
+        const targetInputs = mapping.componentMappings.map(({ targetId }) => (
+          document.querySelector(`.js-component-score[data-aluno-id="${alunoId}"][data-rubrica-id="${mapping.targetRubricId}"][data-component-id="${targetId}"]`)
+        ));
+        if (sourceInputs.some((input) => !input || input.disabled) || targetInputs.some((input) => !input || input.disabled)) {
+          return false;
+        }
+        return targetInputs[0]?.dataset.overrideActive !== '1';
+      }
+      const sourceInput = document.querySelector(`.js-student-score[data-aluno-id="${alunoId}"][data-rubrica-id="${mapping.sourceRubricId}"]`);
+      const targetInput = document.querySelector(`.js-student-score[data-aluno-id="${alunoId}"][data-rubrica-id="${mapping.targetRubricId}"]`);
+      return Boolean(
+        sourceInput
+        && targetInput
+        && !sourceInput.readOnly
+        && !targetInput.readOnly
+        && !sourceInput.disabled
+        && !targetInput.disabled
+        && targetInput.dataset.overrideActive !== '1'
+      );
+    };
+
+    for (const sourceDomain of payload) {
+      for (const targetDomain of payload) {
+        if (!sourceDomain?.client_id || !targetDomain?.client_id || sourceDomain.client_id === targetDomain.client_id) continue;
+        const plan = buildPlan(sourceDomain, targetDomain);
+        for (const mapping of plan.mappings) {
+          const supportedRows = groupedRows.filter((row) => rowSupportsMappingWithoutOverride(row, mapping));
+          if (supportedRows.length < 2) continue;
+          return {
+            sourceDomainId: sourceDomain.client_id,
+            targetDomainId: targetDomain.client_id,
+            mapping,
+            skippedDueToComponentMismatch: plan.skippedDueToComponentMismatch,
+            studentIds: supportedRows.slice(0, 2).map((row) => String(row.dataset.alunoId)),
+          };
+        }
+      }
+    }
+    return null;
+  });
+}
+
 async function resolveComponentMismatchScenario(frame) {
   return frame.evaluate(() => {
     const payload = JSON.parse(document.getElementById('avaliacao-domain-copy-config')?.textContent || '[]');
@@ -556,6 +701,61 @@ async function seedCopyValues(frameLocator, scenario, studentIds) {
   return { expectedValuesByTargetId: { direct: '4.5' } };
 }
 
+async function seedCopySourceValues(frameLocator, scenario, studentIds) {
+  if (scenario.mapping.componentMappings.length) {
+    const sourceValues = ['4', '5'];
+    const expectedValuesByTargetId = {};
+    for (const alunoId of studentIds) {
+      for (let index = 0; index < scenario.mapping.componentMappings.length; index += 1) {
+        const componentMapping = scenario.mapping.componentMappings[index];
+        const sourceValue = sourceValues[index] || '4';
+        await frameLocator.locator(componentSelector(alunoId, scenario.mapping.sourceRubricId, componentMapping.sourceId)).fill(sourceValue);
+        expectedValuesByTargetId[componentMapping.targetId] = sourceValue;
+      }
+    }
+    return { expectedValuesByTargetId };
+  }
+
+  for (const alunoId of studentIds) {
+    await frameLocator.locator(studentRubricSelector(alunoId, scenario.mapping.sourceRubricId)).fill('4.5');
+  }
+  return { expectedValuesByTargetId: { direct: '4.5' } };
+}
+
+async function getSelectedCopyTargetLabel(frameLocator, sourceDomainId) {
+  return frameLocator
+    .locator(`.js-domain-copy-target[data-source-domain-id="${sourceDomainId}"]`)
+    .evaluate((select) => select.options[select.selectedIndex]?.textContent || '');
+}
+
+async function readTargetRubricValues(frameLocator, alunoId, mapping) {
+  if (mapping.componentMappings.length) {
+    const values = {};
+    for (const componentMapping of mapping.componentMappings) {
+      values[componentMapping.targetId] = await frameLocator
+        .locator(componentSelector(alunoId, mapping.targetRubricId, componentMapping.targetId))
+        .inputValue();
+    }
+    return { mode: 'components', values };
+  }
+  return {
+    mode: 'direct',
+    value: await frameLocator.locator(studentRubricSelector(alunoId, mapping.targetRubricId)).inputValue(),
+  };
+}
+
+async function expectTargetRubricValues(frameLocator, alunoId, mapping, expected) {
+  if (expected.mode === 'components') {
+    for (const componentMapping of mapping.componentMappings) {
+      await expect(
+        frameLocator.locator(componentSelector(alunoId, mapping.targetRubricId, componentMapping.targetId))
+      ).toHaveValue(expected.values[componentMapping.targetId] || '');
+    }
+    return;
+  }
+  await expect(frameLocator.locator(studentRubricSelector(alunoId, mapping.targetRubricId))).toHaveValue(expected.value || '');
+}
+
 async function openCopyControls(frameLocator, sourceDomainId) {
   const summary = frameLocator.locator(`.js-domain-copy-menu[data-source-domain-id="${sourceDomainId}"] summary`);
   if (await summary.count()) {
@@ -599,6 +799,8 @@ test('copia dominio compativel para o aluno atual sem autosave e guarda no fim',
   await frameLocator.locator(focusSelector).click();
   await openCopyControls(frameLocator, scenario.sourceDomainId);
   await frameLocator.locator(`.js-domain-copy-target[data-source-domain-id="${scenario.sourceDomainId}"]`).selectOption(scenario.targetDomainId);
+  expect(await getSelectedCopyTargetLabel(frameLocator, scenario.sourceDomainId)).toMatch(/compat/i);
+  await expect(frameLocator.locator(`.js-domain-copy-menu[data-source-domain-id="${scenario.sourceDomainId}"] .js-domain-copy-note`)).toHaveCount(0);
   await frameLocator.locator(`.js-domain-copy-current[data-source-domain-id="${scenario.sourceDomainId}"]`).click();
 
   if (scenario.mapping.componentMappings.length) {
@@ -673,7 +875,9 @@ test('nao copia rubrica com componentes incompatíveis', async ({ page }) => {
   await frameLocator.locator(focusSelector).click();
   await openCopyControls(frameLocator, scenario.sourceDomainId);
   await frameLocator.locator(`.js-domain-copy-target[data-source-domain-id="${scenario.sourceDomainId}"]`).selectOption(scenario.targetDomainId);
-  await expect(frameLocator.locator(`.js-domain-copy-note[data-source-domain-id="${scenario.sourceDomainId}"]`)).toContainText('incompatibilidade de componentes');
+  expect(await getSelectedCopyTargetLabel(frameLocator, scenario.sourceDomainId)).toMatch(/compat/i);
+  expect(await getSelectedCopyTargetLabel(frameLocator, scenario.sourceDomainId)).toMatch(/incompat/i);
+  await expect(frameLocator.locator(`.js-domain-copy-menu[data-source-domain-id="${scenario.sourceDomainId}"] .js-domain-copy-note`)).toHaveCount(0);
   await frameLocator.locator(`.js-domain-copy-current[data-source-domain-id="${scenario.sourceDomainId}"]`).click();
 
   for (const [index, selector] of scenario.incompatibleRubric.targetInputs.selectors.entries()) {
@@ -907,4 +1111,85 @@ test('aplica atalhos rapidos de edicao sem autosave e preserva o save por botao'
   const reopened = await openAvaliacao(page);
   await expect(reopened.frameLocator.locator(scenario.simple.currentSelector)).toHaveValue(numericValuePattern('4'));
   await expect(reopened.frameLocator.locator(scenario.component.currentSelector)).toHaveValue('4');
+});
+
+test('preserva overrides individuais na copia de dominio para aluno atual e todos', async ({ page }) => {
+  const requests = attachPostCounter(page);
+  const { frame, frameLocator } = await openAvaliacao(page);
+  const scenario = await resolveGroupedOverrideCopyScenario(frame);
+
+  expect(scenario).toBeTruthy();
+
+  const [overrideAlunoId, copiedAlunoId] = scenario.studentIds;
+  const seededSourceValues = await seedCopySourceValues(frameLocator, scenario, scenario.studentIds);
+  const selectLocator = frameLocator.locator(`.js-domain-copy-target[data-source-domain-id="${scenario.sourceDomainId}"]`);
+
+  await openCopyControls(frameLocator, scenario.sourceDomainId);
+  await selectLocator.selectOption(scenario.targetDomainId);
+  expect(await getSelectedCopyTargetLabel(frameLocator, scenario.sourceDomainId)).toMatch(/compat/i);
+  await expect(frameLocator.locator(`.js-domain-copy-menu[data-source-domain-id="${scenario.sourceDomainId}"] .js-domain-copy-note`)).toHaveCount(0);
+
+  if (scenario.mapping.componentMappings.length) {
+    const protectedComponentId = scenario.mapping.componentMappings[0].targetId;
+    await frameLocator.locator(componentSelector(overrideAlunoId, scenario.mapping.targetRubricId, protectedComponentId)).fill('2');
+    await expect(
+      frameLocator.locator(componentSelector(overrideAlunoId, scenario.mapping.targetRubricId, protectedComponentId))
+    ).toHaveAttribute('data-override-active', '1');
+  } else {
+    await frameLocator.locator(studentRubricSelector(overrideAlunoId, scenario.mapping.targetRubricId)).fill('2.25');
+    await expect(
+      frameLocator.locator(studentRubricSelector(overrideAlunoId, scenario.mapping.targetRubricId))
+    ).toHaveAttribute('data-override-active', '1');
+  }
+
+  const preservedBeforeCurrentCopy = await readTargetRubricValues(frameLocator, overrideAlunoId, scenario.mapping);
+  const untouchedBeforeCurrentCopy = await readTargetRubricValues(frameLocator, copiedAlunoId, scenario.mapping);
+  const focusSelector = scenario.mapping.componentMappings.length
+    ? componentSelector(overrideAlunoId, scenario.mapping.sourceRubricId, scenario.mapping.componentMappings[0].sourceId)
+    : studentRubricSelector(overrideAlunoId, scenario.mapping.sourceRubricId);
+
+  await frameLocator.locator(focusSelector).click();
+  await frameLocator.locator(`.js-domain-copy-current[data-source-domain-id="${scenario.sourceDomainId}"]`).click();
+
+  await expect(frameLocator.locator('#avaliacao-action-status')).toContainText('mantido');
+  await expectTargetRubricValues(frameLocator, overrideAlunoId, scenario.mapping, preservedBeforeCurrentCopy);
+  await expectTargetRubricValues(frameLocator, copiedAlunoId, scenario.mapping, untouchedBeforeCurrentCopy);
+
+  await openCopyControls(frameLocator, scenario.sourceDomainId);
+  await selectLocator.selectOption(scenario.targetDomainId);
+  await frameLocator.locator(`.js-domain-copy-all[data-source-domain-id="${scenario.sourceDomainId}"]`).click();
+
+  await expect(frameLocator.locator('#avaliacao-action-status')).toContainText('copiado para');
+  await expect(frameLocator.locator('#avaliacao-action-status')).toContainText('mantido');
+  await expectTargetRubricValues(frameLocator, overrideAlunoId, scenario.mapping, preservedBeforeCurrentCopy);
+
+  if (scenario.mapping.componentMappings.length) {
+    for (const componentMapping of scenario.mapping.componentMappings) {
+      await expect(
+        frameLocator.locator(componentSelector(copiedAlunoId, scenario.mapping.targetRubricId, componentMapping.targetId))
+      ).toHaveValue(seededSourceValues.expectedValuesByTargetId[componentMapping.targetId]);
+    }
+  } else {
+    await expect(frameLocator.locator(studentRubricSelector(copiedAlunoId, scenario.mapping.targetRubricId))).toHaveValue('4.5');
+  }
+
+  await page.waitForTimeout(900);
+  expect(requests.count).toBe(0);
+  await expect(frameLocator.locator('#avaliacao-save-button')).toHaveText('Guardar *');
+
+  await frameLocator.locator('#avaliacao-save-button').click();
+  await expect(frameLocator.locator('#avaliacao-save-button')).toHaveText('Guardado', { timeout: 10_000 });
+  await expect.poll(() => requests.count).toBe(1);
+
+  const reopened = await openAvaliacao(page);
+  await expectTargetRubricValues(reopened.frameLocator, overrideAlunoId, scenario.mapping, preservedBeforeCurrentCopy);
+  if (scenario.mapping.componentMappings.length) {
+    for (const componentMapping of scenario.mapping.componentMappings) {
+      await expect(
+        reopened.frameLocator.locator(componentSelector(copiedAlunoId, scenario.mapping.targetRubricId, componentMapping.targetId))
+      ).toHaveValue(seededSourceValues.expectedValuesByTargetId[componentMapping.targetId]);
+    }
+  } else {
+    await expect(reopened.frameLocator.locator(studentRubricSelector(copiedAlunoId, scenario.mapping.targetRubricId))).toHaveValue('4.5');
+  }
 });

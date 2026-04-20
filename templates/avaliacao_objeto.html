@@ -111,14 +111,12 @@
   #avaliacao-objeto-table .dominio-header .dominio-label-full { white-space: nowrap; }
   #avaliacao-objeto-table .dominio-header.is-collapsed .dominio-label-full { display: none; }
   #avaliacao-objeto-table .dominio-compact-cell { min-width: 72px; width: 72px; background: #fff; }
-  #avaliacao-objeto-table .dominio-header-stack { display: flex; flex-direction: column; gap: .3rem; align-items: stretch; }
+  #avaliacao-objeto-table .dominio-header-stack { display: flex; flex-direction: column; gap: .16rem; align-items: stretch; }
   #avaliacao-objeto-table .dominio-copy-menu { width: 100%; }
-  #avaliacao-objeto-table .dominio-copy-panel { display: flex; flex-direction: column; gap: .18rem; width: 100%; }
-  #avaliacao-objeto-table .dominio-copy-title { font-size: 10px; line-height: 1.1; color: #6c757d; text-align: center; }
-  #avaliacao-objeto-table .dominio-copy-select { min-height: 26px; font-size: 11px; }
-  #avaliacao-objeto-table .dominio-copy-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .2rem; }
-  #avaliacao-objeto-table .dominio-copy-actions .btn { flex: 1 1 auto; font-size: 10px; padding: .14rem .3rem; line-height: 1.2; }
-  #avaliacao-objeto-table .dominio-copy-note { min-height: 1rem; line-height: 1.15; text-align: left; }
+  #avaliacao-objeto-table .dominio-copy-panel { display: flex; flex-wrap: wrap; align-items: center; gap: .18rem; width: 100%; }
+  #avaliacao-objeto-table .dominio-copy-select { flex: 1 1 180px; min-width: 0; min-height: 24px; padding-top: 1px; padding-bottom: 1px; font-size: 10px; }
+  #avaliacao-objeto-table .dominio-copy-actions { display: flex; flex-wrap: nowrap; gap: .18rem; flex: 0 0 auto; }
+  #avaliacao-objeto-table .dominio-copy-actions .btn { flex: 0 0 auto; font-size: 10px; padding: .08rem .28rem; line-height: 1.15; white-space: nowrap; }
   #avaliacao-objeto-table .dominio-header.is-collapsed .dominio-copy-menu { display: none; }
   .avaliacao-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .75rem; }
   .avaliacao-toolbar .btn { white-space: nowrap; }
@@ -297,7 +295,6 @@
               </button>
                 <div class="dominio-copy-menu js-domain-copy-menu" data-source-domain-id="{{ domain_id }}">
                   <div class="dominio-copy-panel">
-                    <div class="dominio-copy-title">Copiar para</div>
                     <label class="visually-hidden" for="dominio-copy-target-{{ domain_id }}">Destino</label>
                     <select
                       id="dominio-copy-target-{{ domain_id }}"
@@ -308,7 +305,6 @@
                       <button type="button" class="btn btn-outline-primary btn-sm js-domain-copy-current" data-source-domain-id="{{ domain_id }}">Aluno atual</button>
                       <button type="button" class="btn btn-outline-primary btn-sm js-domain-copy-all" data-source-domain-id="{{ domain_id }}">Todos</button>
                     </div>
-                    <div class="small text-muted dominio-copy-note js-domain-copy-note" data-source-domain-id="{{ domain_id }}"></div>
                   </div>
                 </div>
               </div>
@@ -1644,15 +1640,20 @@
 
   function describeCopyPlan(plan) {
     if (!plan || !plan.mappings.length) {
-      return "Sem copia segura disponivel.";
-    }
-    if (!plan.skippedRubrics) {
-      return `${plan.matchedRubrics} rubricas compativeis.`;
+      return "sem copia segura";
     }
     if (plan.skippedDueToComponentMismatch) {
-      return `${plan.matchedRubrics} rubricas compativeis; ${plan.skippedDueToComponentMismatch} ignoradas por incompatibilidade de componentes.`;
+      return `${plan.matchedRubrics} compativeis, ${plan.skippedDueToComponentMismatch} incompatíveis`;
     }
-    return `${plan.matchedRubrics} rubricas compativeis; ${plan.skippedRubrics} ignoradas.`;
+    return `${plan.matchedRubrics} compativeis`;
+  }
+
+  function buildCopyTargetLabel(domainMeta, plan) {
+    const domainLabel = getDomainLabel(domainMeta);
+    const fullLabel = domainMeta?.nome && domainMeta.nome !== domainLabel
+      ? `${domainLabel} - ${domainMeta.nome}`
+      : domainLabel;
+    return `${fullLabel} (${describeCopyPlan(plan)})`;
   }
 
   function readStudentRubricState(alunoId, rubricaId) {
@@ -1679,8 +1680,28 @@
     };
   }
 
-  function applyCopiedRubricToStudent(alunoId, mapping, sourceState) {
-    if (!sourceState?.hasData) return false;
+  function normalizeRubricPayload(payload) {
+    return {
+      value: coerceNumber(payload?.value),
+      component_scores: Object.fromEntries(
+        Object.entries(payload?.component_scores || {})
+          .map(([componentId, rawValue]) => [String(componentId), coerceNumber(rawValue)])
+          .filter(([, value]) => value != null)
+      ),
+    };
+  }
+
+  function rubricPayloadsMatch(leftPayload, rightPayload) {
+    const left = normalizeRubricPayload(leftPayload);
+    const right = normalizeRubricPayload(rightPayload);
+    if (left.value !== right.value) return false;
+    const leftEntries = Object.entries(left.component_scores);
+    const rightEntries = Object.entries(right.component_scores);
+    if (leftEntries.length !== rightEntries.length) return false;
+    return leftEntries.every(([componentId, value]) => right.component_scores[componentId] === value);
+  }
+
+  function buildCopiedTargetPayload(alunoId, mapping, sourceState) {
     const targetDirectInput = getDirectScoreInput(alunoId, mapping.targetRubricId);
     const targetComponentInputs = getComponentInputs(alunoId, mapping.targetRubricId);
     if (mapping.componentMappings.length) {
@@ -1690,30 +1711,47 @@
         if (!rawValue) return;
         nextComponentScores[String(targetId)] = rawValue;
       });
-      if (!Object.keys(nextComponentScores).length) return false;
-      targetComponentInputs.forEach((input) => {
-        if (input.disabled) return;
-        const nextValue = nextComponentScores[String(input.dataset.componentId || "")];
-        if (nextValue == null) return;
-        input.value = nextValue;
+      if (!targetComponentInputs.length || !Object.keys(nextComponentScores).length) return null;
+      const numericScores = {};
+      Object.entries(nextComponentScores).forEach(([componentId, rawValue]) => {
+        const numericValue = coerceNumber(rawValue);
+        if (numericValue == null) return;
+        numericScores[componentId] = numericValue;
       });
-      if (targetDirectInput && !targetDirectInput.disabled) {
-        const numericScores = {};
-        Object.entries(nextComponentScores).forEach(([componentId, rawValue]) => {
-          const numericValue = coerceNumber(rawValue);
-          if (numericValue == null) return;
-          numericScores[componentId] = numericValue;
-        });
-        targetDirectInput.value = computeScoreFromComponents(numericScores);
-      }
-    } else {
-      if (!targetDirectInput || targetDirectInput.disabled) return false;
-      if (!sourceState.value) return false;
-      targetDirectInput.value = sourceState.value;
+      return {
+        value: Object.keys(numericScores).length ? computeScoreFromComponents(numericScores) : "",
+        component_scores: nextComponentScores,
+      };
     }
-    setStudentOverrideActive(alunoId, mapping.targetRubricId, Boolean(getCurrentGroupIdForStudent(alunoId)));
+    if (!targetDirectInput || targetDirectInput.disabled) return null;
+    if (sourceState.value === "") return null;
+    return {
+      value: sourceState.value,
+      component_scores: {},
+    };
+  }
+
+  function hasProtectedCopyOverride(alunoId, rubricaId) {
+    return Boolean(getCurrentGroupIdForStudent(alunoId)) && isStudentOverrideActive(alunoId, rubricaId);
+  }
+
+  function applyCopiedRubricToStudent(alunoId, mapping, sourceState) {
+    if (!sourceState?.hasData) return { status: "empty_source" };
+    if (hasProtectedCopyOverride(alunoId, mapping.targetRubricId)) {
+      return { status: "preserved_override" };
+    }
+    const nextPayload = buildCopiedTargetPayload(alunoId, mapping, sourceState);
+    if (!nextPayload) return { status: "empty_source" };
+    applyPayloadToStudent(alunoId, mapping.targetRubricId, nextPayload);
+    const groupId = getCurrentGroupIdForStudent(alunoId);
+    if (groupId) {
+      const groupState = getGroupBaseState(groupId, mapping.targetRubricId);
+      setStudentOverrideActive(alunoId, mapping.targetRubricId, !rubricPayloadsMatch(nextPayload, groupState));
+    } else {
+      setStudentOverrideActive(alunoId, mapping.targetRubricId, false);
+    }
     refreshStudentMedias(alunoId);
-    return true;
+    return { status: "copied" };
   }
 
   function closeDomainCopyMenus() {
@@ -1722,27 +1760,15 @@
     });
   }
 
-  function updateCopyMenuNote(sourceDomainId) {
-    const select = document.querySelector(`.js-domain-copy-target[data-source-domain-id="${sourceDomainId}"]`);
-    const note = document.querySelector(`.js-domain-copy-note[data-source-domain-id="${sourceDomainId}"]`);
-    if (!select || !note) return;
-    const selectedTarget = select.value || "";
-    const plan = selectedTarget ? getDomainCopyPlan(sourceDomainId, selectedTarget) : null;
-    note.textContent = describeCopyPlan(plan);
-  }
-
   function initialiseDomainCopyMenus() {
     document.querySelectorAll(".js-domain-copy-target[data-source-domain-id]").forEach((select) => {
       const sourceDomainId = String(select.dataset.sourceDomainId || "");
       const compatibleTargets = getCompatibleTargetDomains(sourceDomainId);
       select.innerHTML = "";
-      compatibleTargets.forEach(({ domain }) => {
+      compatibleTargets.forEach(({ domain, plan }) => {
         const option = document.createElement("option");
-        const domainLabel = getDomainLabel(domain);
         option.value = domain.client_id;
-        option.textContent = domain.nome && domain.nome !== domainLabel
-          ? `${domainLabel} - ${domain.nome}`
-          : domainLabel;
+        option.textContent = buildCopyTargetLabel(domain, plan);
         select.appendChild(option);
       });
       const actionButtons = document.querySelectorAll(
@@ -1759,7 +1785,6 @@
         select.disabled = false;
         actionButtons.forEach((button) => { button.disabled = false; });
       }
-      updateCopyMenuNote(sourceDomainId);
     });
   }
 
@@ -1771,24 +1796,37 @@
     }
     let copiedStudents = 0;
     let copiedRubrics = 0;
+    let preservedOverrides = 0;
     targetAlunoIds.forEach((alunoId) => {
       let changedStudent = false;
       plan.mappings.forEach((mapping) => {
         const sourceState = readStudentRubricState(alunoId, mapping.sourceRubricId);
-        if (!applyCopiedRubricToStudent(alunoId, mapping, sourceState)) return;
+        const outcome = applyCopiedRubricToStudent(alunoId, mapping, sourceState);
+        if (outcome.status === "preserved_override") {
+          preservedOverrides += 1;
+          return;
+        }
+        if (outcome.status !== "copied") return;
         changedStudent = true;
         copiedRubrics += 1;
       });
       if (changedStudent) copiedStudents += 1;
     });
     if (!copiedRubrics) {
-      setActionStatus("Nao existiam valores compativeis para copiar.", "warning");
+      if (preservedOverrides) {
+        setActionStatus(
+          `${scopeLabel}: nenhum valor copiado; ${preservedOverrides} valor(es) individuais mantido(s).`,
+          "warning",
+        );
+      } else {
+        setActionStatus("Nao existiam valores compativeis para copiar.", "warning");
+      }
       return;
     }
     refreshAllMedias();
     markDirty();
     setActionStatus(
-      `${scopeLabel}: ${copiedRubrics} rubricas copiadas de ${getDomainLabel(plan.sourceDomain)} para ${getDomainLabel(plan.targetDomain)} em ${copiedStudents} aluno(s).${plan.skippedDueToComponentMismatch ? ` ${plan.skippedDueToComponentMismatch} rubrica(s) ignorada(s) por incompatibilidade de componentes.` : ""}`,
+      `${scopeLabel}: copiado para ${copiedStudents} aluno(s); ${preservedOverrides} valor(es) individuais mantido(s).${plan.skippedDueToComponentMismatch ? ` ${plan.skippedDueToComponentMismatch} rubrica(s) ignorada(s) por incompatibilidade de componentes.` : ""}`,
       "success",
     );
     closeDomainCopyMenus();
