@@ -1,12 +1,54 @@
+# =========================
+# PYTHON
+# =========================
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# =========================
+# DATABASE / FLASK
+# =========================
 instance/
-instance/gestor_lectivo.db
-instance/backups/
 *.db
+*.sqlite3
+
+# =========================
+# MIGRATIONS (ignorar cache apenas)
+# =========================
 migrations/__pycache__/
 migrations/versions/__pycache__/
-gestor_lectivo.db
+
+# =========================
+# ENV
+# =========================
+.env
+.env.*
+.env.development
+.env.production
+
+# =========================
+# LOGS
+# =========================
+logs/
+*.log
+
+# =========================
+# PLAYWRIGHT
+# =========================
+node_modules/
+playwright-report/
+test-results/
+tests/.runtime/
+.playwright/
+
+# =========================
+# BUILD / BINÁRIOS
+# =========================
 *.bin
 *.exe
 *.dll
@@ -15,9 +57,29 @@ gestor_lectivo.db
 *.class
 *.o
 *.a
-.env
-logs/
-.env.development
-.env.production
-playwright-report/
-test-results/
+
+# =========================
+# EDITORES
+# =========================
+.vscode/
+.idea/
+
+# =========================
+# TESTES / CACHE
+# =========================
+.pytest_cache/
+.coverage
+htmlcov/
+
+# =========================
+# SISTEMA
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# TEMP
+# =========================
+*.tmp
+*.bak
+*.swp
