@@ -230,3 +230,59 @@ Se o teste não existir:
 * Este preenchimento nunca deve sobrescrever valores existentes
 * Estas ações não devem disparar save automático
 * O fluxo de persistência continua a depender do botão `Guardar`
+
+## Persistência
+
+- Nunca implementar autosave
+- Todas as alterações ficam em estado "por guardar"
+- Apenas o botão "Guardar" persiste dados
+
+- Não alterar:
+  - payload de save
+  - estrutura de dados existente
+
+## Avaliação EV2
+
+- Componentes são a fonte de verdade
+- A rubrica é apenas agregação ou atalho
+
+- Se uma rubrica tiver componentes:
+  - NÃO deve ter descritores próprios
+
+- Cópia entre domínios:
+  - Só copiar rubricas compatíveis
+  - Só copiar componentes se estrutura 100% equivalente
+  - Nunca copiar parcialmente
+
+- Overrides:
+  - Nunca sobrescrever valores alterados manualmente
+  - Preservar sempre overrides
+
+## Grelha de avaliação (UX)
+
+- Navegação tipo Excel:
+  - setas, enter, tab
+
+- Atalhos:
+  - 0–9 → definir valor
+  - delete → limpar
+  - + / - → ajustar valor
+
+- Estas ações:
+  - NÃO fazem save automático
+  - apenas alteram o estado local
+
+## Git rules
+
+- Nunca versionar ficheiros temporários ou gerados automaticamente:
+  - tests/.runtime/
+  - playwright-report/
+  - test-results/
+  - __pycache__/
+  - node_modules/
+
+- Respeitar .gitignore existente
+- Nunca adicionar ficheiros ignorados ao commit
+
+- Antes de terminar uma tarefa:
+  - git status deve estar limpo
