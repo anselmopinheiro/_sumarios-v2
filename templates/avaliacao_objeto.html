@@ -63,7 +63,8 @@
   #avaliacao-objeto-table th, #avaliacao-objeto-table td { padding: .16rem .24rem; vertical-align: middle; }
   #avaliacao-objeto-table .avaliacao-input { font-size: 11px; padding: 1px 3px; height: 22px; min-width: 44px; width: 44px; margin: 0 !important; text-align: center; }
   #avaliacao-objeto-table .compact-score { max-width: 48px; min-width: 48px; }
-  #avaliacao-objeto-table .compact-actions .btn { padding: .08rem .28rem; font-size: .72rem; line-height: 1.1; }
+  #avaliacao-objeto-table .is-active-rubric-col { background: #eef6ff !important; }
+  #avaliacao-objeto-table thead .is-active-rubric-col { box-shadow: inset 0 -2px 0 #0d6efd; }
   #avaliacao-objeto-table .rubrica-label-wrap {
     display: block;
     width: 100%;
@@ -121,6 +122,8 @@
   #avaliacao-objeto-table .dominio-copy-actions .btn { flex: 0 0 auto; font-size: 10px; padding: .08rem .28rem; line-height: 1.15; white-space: nowrap; }
   #avaliacao-objeto-table .dominio-header.is-collapsed .dominio-copy-menu { display: none; }
   .avaliacao-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .75rem; }
+  .avaliacao-rubric-context { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .5rem; padding: .35rem .5rem; border: 1px solid #dee2e6; border-radius: .35rem; background: #f8f9fa; }
+  .avaliacao-rubric-context .rubrica-label { font-size: .85rem; font-weight: 600; color: #343a40; }
   .avaliacao-domain-tabs { display: flex; flex-wrap: wrap; gap: .35rem; }
   .avaliacao-domain-tabs .btn.active { pointer-events: none; }
   .avaliacao-toolbar .btn { white-space: nowrap; }
@@ -279,6 +282,11 @@
     <span id="avaliacao-active-student" class="avaliacao-toolbar-active">Aluno atual: clique numa linha</span>
     <span id="avaliacao-action-status" class="avaliacao-toolbar-status" aria-live="polite"></span>
   </div>
+  <div class="avaliacao-rubric-context">
+    <span class="rubrica-label" id="avaliacao-rubric-context-label">Rubrica selecionada: —</span>
+    <button type="button" id="rubric-context-auto-button" class="btn btn-outline-primary btn-sm" disabled>Aplicar automático</button>
+    <button type="button" id="rubric-context-clear-button" class="btn btn-outline-secondary btn-sm" disabled>Limpar avaliações</button>
+  </div>
   <div class="table-responsive avaliacao-container">
     <table class="table table-bordered table-sm align-middle" id="avaliacao-objeto-table" data-base-fill-value="{{ avaliacao_base_fill_value or 3 }}">
       <thead class="table-light">
@@ -330,15 +338,9 @@
           {% for dominio in dominios %}
             {% set domain_id = 'D' ~ (dominio.id if dominio.id is not none else loop.index) %}
             {% for rubrica in dominio.rubricas %}
-              <th class="dominio-rubrica-coluna" data-domain-id="{{ domain_id }}">
+              <th class="dominio-rubrica-coluna" data-domain-id="{{ domain_id }}" data-rubrica-id="{{ rubrica.id }}" data-rubrica-full="{{ rubrica.nome or ('Rubrica ' ~ rubrica.id) }}" data-rubrica-short="{{ short_rubric(rubrica)|trim }}">
                 <div class="rubrica-label-wrap">
                   <span class="rubrica-short" title="{{ rubrica.nome }}">{{ short_rubric(rubrica) }}</span>
-                  {% set rubrica_json = rubricas_payload.get(rubrica.id, {}) %}
-                </div>
-                {% set rubrica_json = rubricas_payload.get(rubrica.id, {}) %}
-                <div class="d-flex gap-1 mt-1 compact-actions justify-content-center">
-                  <button type="button" class="btn btn-outline-primary btn-sm" onclick="aplicarValorAutomatico({{ rubrica.id }})" data-rubrica-id="{{ rubrica.id }}" title="Aplicar automático">⚡</button>
-                  <button type="button" class="btn btn-outline-secondary btn-sm" onclick="confirmarLimpar({{ rubrica.id }})" title="Limpar avaliações">🧹</button>
                 </div>
               </th>
             {% endfor %}
@@ -383,7 +385,7 @@
                 {% for dominio in dominios %}
                   {% set domain_id = 'D' ~ (dominio.id if dominio.id is not none else loop.index) %}
                   {% for rubrica in dominio.rubricas %}
-                    <td class="dominio-rubrica-coluna" data-domain-id="{{ domain_id }}">
+                    <td class="dominio-rubrica-coluna" data-domain-id="{{ domain_id }}" data-rubrica-id="{{ rubrica.id }}">
                       {% set has_components = (rubrica.components|length) > 0 %}
                       {% if has_components %}
                         <input type="number" step="0.01" class="form-control form-control-sm compact-score avaliacao-input js-student-score"
@@ -465,7 +467,7 @@
               {% for dominio in dominios %}
                 {% set domain_id = 'D' ~ (dominio.id if dominio.id is not none else loop.index) %}
                 {% for rubrica in dominio.rubricas %}
-                  <td class="dominio-rubrica-coluna" data-domain-id="{{ domain_id }}">
+                  <td class="dominio-rubrica-coluna" data-domain-id="{{ domain_id }}" data-rubrica-id="{{ rubrica.id }}">
                     {% set has_components = (rubrica.components|length) > 0 %}
                     {% if has_components %}
                       <input type="number" step="0.01" class="form-control form-control-sm compact-score avaliacao-input js-student-score"
@@ -907,6 +909,9 @@
   const activeStudentLabel = document.getElementById("avaliacao-active-student");
   const actionStatus = document.getElementById("avaliacao-action-status");
   const domainCopyConfigNode = document.getElementById("avaliacao-domain-copy-config");
+  const rubricContextLabel = document.getElementById("avaliacao-rubric-context-label");
+  const rubricContextAutoButton = document.getElementById("rubric-context-auto-button");
+  const rubricContextClearButton = document.getElementById("rubric-context-clear-button");
   const baseFillValue = Number(table.dataset.baseFillValue || 3) || 3;
   const componentFillValue = 3;
   const domainCopyPayload = (() => {
@@ -1605,10 +1610,35 @@
   }
 
   function getRubricIdsForDomain(domainId) {
-    return Array.from(table.querySelectorAll(`th.dominio-rubrica-coluna[data-domain-id="${domainId}"] .compact-actions [data-rubrica-id]`))
-      .map((button) => String(button.dataset.rubricaId || ""))
+    return Array.from(table.querySelectorAll(`th.dominio-rubrica-coluna[data-domain-id="${domainId}"][data-rubrica-id]`))
+      .map((header) => String(header.dataset.rubricaId || ""))
       .filter(Boolean)
       .filter((value, index, array) => array.indexOf(value) === index);
+  }
+
+  function setActiveRubrica(rubricaId, options = {}) {
+    activeRubricaId = String(rubricaId || "");
+    table.querySelectorAll(".is-active-rubric-col").forEach((node) => node.classList.remove("is-active-rubric-col"));
+    if (!activeRubricaId) {
+      if (rubricContextLabel) rubricContextLabel.textContent = "Rubrica selecionada: —";
+      if (rubricContextAutoButton) rubricContextAutoButton.disabled = true;
+      if (rubricContextClearButton) rubricContextClearButton.disabled = true;
+      return;
+    }
+    table.querySelectorAll(`[data-rubrica-id="${activeRubricaId}"]`).forEach((node) => node.classList.add("is-active-rubric-col"));
+    const header = table.querySelector(`th.dominio-rubrica-coluna[data-rubrica-id="${activeRubricaId}"]`);
+    const fullName = header?.dataset.rubricaFull || `Rubrica ${activeRubricaId}`;
+    const shortName = header?.dataset.rubricaShort || "";
+    if (rubricContextLabel) {
+      rubricContextLabel.textContent = shortName
+        ? `Rubrica selecionada: ${fullName} (${shortName})`
+        : `Rubrica selecionada: ${fullName}`;
+    }
+    if (rubricContextAutoButton) rubricContextAutoButton.disabled = false;
+    if (rubricContextClearButton) rubricContextClearButton.disabled = false;
+    if (!options.silent) {
+      setActionStatus(`Rubrica ativa: ${fullName}${shortName ? ` (${shortName})` : ""}.`, "muted");
+    }
   }
 
   function getStudentsInGroup(groupId) {
@@ -2515,10 +2545,19 @@
     setActiveStudent(row.dataset.alunoId);
     const input = event.target.closest("input[data-rubrica-id][data-dominio-letra]");
     if (input) {
-      activeRubricaId = String(input.dataset.rubricaId || "");
+      setActiveRubrica(String(input.dataset.rubricaId || ""), { silent: true });
       const cell = input.closest("td[data-domain-id]");
       if (cell?.dataset.domainId) setActiveDomain(cell.dataset.domainId, { silent: true });
     }
+  });
+  table.querySelectorAll("th.dominio-rubrica-coluna[data-rubrica-id]").forEach((header) => {
+    header.addEventListener("click", () => {
+      setActiveRubrica(String(header.dataset.rubricaId || ""));
+      setActiveDomain(String(header.dataset.domainId || ""), { silent: true });
+    });
+  });
+  table.querySelectorAll("td.dominio-rubrica-coluna[data-rubrica-id]").forEach((cell) => {
+    cell.addEventListener("mousedown", () => setActiveRubrica(String(cell.dataset.rubricaId || ""), { silent: true }));
   });
   table.querySelectorAll("tr[data-aluno-id]").forEach((row) => {
     row.addEventListener("mousedown", () => setActiveStudent(row.dataset.alunoId));
@@ -2588,6 +2627,14 @@
     }
     copyDomainForStudents(sourceDomainId, targetDomainId, members, "Grupo atual");
   });
+  rubricContextAutoButton?.addEventListener("click", () => {
+    if (!activeRubricaId) return;
+    window.aplicarValorAutomatico(activeRubricaId);
+  });
+  rubricContextClearButton?.addEventListener("click", () => {
+    if (!activeRubricaId) return;
+    window.confirmarLimpar(activeRubricaId);
+  });
   fillEmptyButton?.addEventListener("click", fillEmptyCellsWithBaseValue);
 
   document.getElementById("obser-descritivo")?.addEventListener("input", markDirty);
@@ -2622,6 +2669,7 @@
   initialiseDomainCopyMenus();
   initDomainTabs();
   setActiveStudent("");
+  setActiveRubrica("", { silent: true });
   domainIds.forEach((domainId) => setDomainExpanded(domainId, false));
   setActiveDomain(activeDomainId || domainIds[0], { silent: true });
   syncStickyHeaderOffsets();

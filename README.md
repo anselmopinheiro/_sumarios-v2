@@ -161,6 +161,9 @@ A grelha de avaliação suporta:
   - aplicar **rubrica** ao grupo;
   - aplicar **domínio** ao grupo;
   - copiar domínio para aluno atual, grupo atual ou todos, apenas para destinos compatíveis.
+- Ações da rubrica ativa (**Aplicar automático** e **Limpar avaliações**) ficam numa barra contextual acima da grelha:
+  - selecionar a rubrica pelo cabeçalho ou por uma célula da coluna;
+  - a barra mostra `Nome completo (Nome curto)` e aplica as ações à rubrica selecionada.
 - Regras de segurança mantidas:
   - copiar apenas valores preenchidos;
   - nunca copiar vazios para apagar;
