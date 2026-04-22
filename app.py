@@ -9726,7 +9726,7 @@ def create_app():
             filename = f"sumarios_{data_ref.isoformat()}.json"
             return Response(
                 json_str,
-                mimetype="application/json; charset=utf-8",
+                content_type="application/json; charset=utf-8",
                 headers={"Content-Disposition": f'attachment; filename="{filename}"'},
             )
         except Exception:

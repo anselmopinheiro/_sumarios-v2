@@ -4,7 +4,18 @@ import unittest
 from datetime import date
 
 from app import create_app
-from models import Aluno, AnoLetivo, AulaAluno, CalendarioAula, Modulo, Periodo, Turma, db
+from models import (
+    Aluno,
+    AnoLetivo,
+    AulaAluno,
+    CalendarioAula,
+    Disciplina,
+    Modulo,
+    Periodo,
+    Turma,
+    TurmaDisciplina,
+    db,
+)
 
 
 class ApiExportGiaeJsonTests(unittest.TestCase):
@@ -56,7 +67,14 @@ class ApiExportGiaeJsonTests(unittest.TestCase):
         db.session.add(periodo)
         db.session.flush()
 
-        modulo = Modulo(turma_id=turma.id, nome="TIC", total_aulas=100)
+        disciplina = Disciplina(nome="TIC", sigla="TIC", ano_letivo_id=ano.id)
+        db.session.add(disciplina)
+        db.session.flush()
+
+        turma_disciplina = TurmaDisciplina(turma_id=turma.id, disciplina_id=disciplina.id)
+        db.session.add(turma_disciplina)
+
+        modulo = Modulo(turma_id=turma.id, nome="Modulo A", total_aulas=100)
         db.session.add(modulo)
         db.session.flush()
 

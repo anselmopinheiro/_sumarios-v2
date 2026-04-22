@@ -7,7 +7,7 @@ from typing import Any
 
 from sqlalchemy.orm import joinedload
 
-from models import AulaAluno, CalendarioAula
+from models import AulaAluno, CalendarioAula, TurmaDisciplina
 
 
 def _clean_text(value: Any) -> str:
@@ -46,9 +46,24 @@ def _format_hhmm(value: Any) -> str:
 def _resolve_disciplina(aula: CalendarioAula) -> str:
     if hasattr(aula, "disciplina") and getattr(aula, "disciplina"):
         return (getattr(aula.disciplina, "nome", "") or "").strip()
-    modulo = getattr(aula, "modulo", None)
-    if modulo and getattr(modulo, "nome", None):
-        return (modulo.nome or "").strip()
+
+    disciplina_id = getattr(aula, "disciplina_id", None)
+    if disciplina_id and hasattr(aula, "turma") and aula.turma:
+        for link in TurmaDisciplina.query.filter_by(turma_id=aula.turma.id, disciplina_id=disciplina_id).all():
+            if link.disciplina and link.disciplina.nome:
+                return (link.disciplina.nome or "").strip()
+
+    if hasattr(aula, "turma") and aula.turma:
+        links = TurmaDisciplina.query.filter_by(turma_id=aula.turma.id).all()
+        nomes = [
+            (link.disciplina.nome or "").strip()
+            for link in links
+            if link.disciplina and (link.disciplina.nome or "").strip()
+        ]
+        nomes_unicos = list(dict.fromkeys(nomes))
+        if len(nomes_unicos) == 1:
+            return nomes_unicos[0]
+
     return ""
 
 
