@@ -9,11 +9,9 @@ from models import (
     AnoLetivo,
     AulaAluno,
     CalendarioAula,
-    Disciplina,
     Modulo,
     Periodo,
     Turma,
-    TurmaDisciplina,
     db,
 )
 
@@ -53,7 +51,15 @@ class ApiExportGiaeJsonTests(unittest.TestCase):
         db.session.add(ano)
         db.session.flush()
 
-        turma = Turma(nome="9.ºD", tipo="regular", periodo_tipo="anual", ano_letivo_id=ano.id, letiva=True)
+        turma = Turma(
+            nome="9.ºD",
+            tipo="regular",
+            periodo_tipo="anual",
+            ano_letivo_id=ano.id,
+            letiva=True,
+            tempo_quarta=3,
+            carga_quarta=2.0,
+        )
         db.session.add(turma)
         db.session.flush()
 
@@ -67,12 +73,6 @@ class ApiExportGiaeJsonTests(unittest.TestCase):
         db.session.add(periodo)
         db.session.flush()
 
-        disciplina = Disciplina(nome="TIC", sigla="TIC", ano_letivo_id=ano.id)
-        db.session.add(disciplina)
-        db.session.flush()
-
-        turma_disciplina = TurmaDisciplina(turma_id=turma.id, disciplina_id=disciplina.id)
-        db.session.add(turma_disciplina)
 
         modulo = Modulo(turma_id=turma.id, nome="Modulo A", total_aulas=100)
         db.session.add(modulo)
@@ -97,7 +97,7 @@ class ApiExportGiaeJsonTests(unittest.TestCase):
         res = self.client.get("/api/export/giae.json?data=2026-04-22")
         self.assertEqual(res.status_code, 200)
         payload = res.get_json()
-        self.assertEqual(payload["schema_version"], "1.0")
+        self.assertEqual(payload["schema_version"], "1.2")
         self.assertEqual(payload["data"], "2026-04-22")
         self.assertEqual(payload["origem"], "sumarios-v1")
         self.assertEqual(payload["aulas"], [])
@@ -136,7 +136,7 @@ class ApiExportGiaeJsonTests(unittest.TestCase):
         self.assertIn("sumarios_2026-04-22.json", content_disposition)
 
         payload = res.get_json()
-        self.assertEqual(payload["schema_version"], "1.0")
+        self.assertEqual(payload["schema_version"], "1.2")
         self.assertEqual(payload["data"], "2026-04-22")
         self.assertEqual(payload["origem"], "sumarios-v1")
 
@@ -144,7 +144,9 @@ class ApiExportGiaeJsonTests(unittest.TestCase):
         aula_payload = payload["aulas"][0]
         self.assertEqual(aula_payload["aula_id"], aula.id)
         self.assertEqual(aula_payload["turma"], "9.ºD")
-        self.assertEqual(aula_payload["disciplina"], "TIC")
+        self.assertEqual(aula_payload["disciplina"], "")
+        self.assertEqual(aula_payload["tempo_inicio"], 3)
+        self.assertEqual(aula_payload["blocos_previstos"], 2)
         self.assertEqual(aula_payload["hora_inicio"], "")
         self.assertEqual(aula_payload["hora_fim"], "")
         self.assertEqual(aula_payload["sumario"], "Texto do sumário")
@@ -157,6 +159,32 @@ class ApiExportGiaeJsonTests(unittest.TestCase):
         self.assertEqual(faltas[1]["tipo"], "falta")
         self.assertEqual(faltas[1]["tempos"], 1)
         self.assertEqual(faltas[1]["observacoes"], "")
+
+    def test_fallback_tempo_inicio_e_blocos_previstos(self):
+        turma, periodo, modulo = self._seed_base()
+        turma.tempo_quarta = None
+        turma.carga_quarta = None
+        db.session.flush()
+
+        aula = CalendarioAula(
+            turma_id=turma.id,
+            periodo_id=periodo.id,
+            data=date(2026, 4, 22),
+            weekday=2,
+            modulo_id=modulo.id,
+            tipo="normal",
+            apagado=False,
+            sumario="Aula de fallback",
+        )
+        db.session.add(aula)
+        db.session.commit()
+
+        res = self.client.get("/api/export/giae.json?data=2026-04-22")
+        self.assertEqual(res.status_code, 200)
+        payload = res.get_json()
+        aula_payload = payload["aulas"][0]
+        self.assertEqual(aula_payload["tempo_inicio"], 1)
+        self.assertEqual(aula_payload["blocos_previstos"], 1)
 
 
 if __name__ == "__main__":

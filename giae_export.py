@@ -7,7 +7,7 @@ from typing import Any
 
 from sqlalchemy.orm import joinedload
 
-from models import AulaAluno, CalendarioAula, TurmaDisciplina
+from models import AulaAluno, CalendarioAula
 
 
 def _clean_text(value: Any) -> str:
@@ -44,27 +44,49 @@ def _format_hhmm(value: Any) -> str:
 
 
 def _resolve_disciplina(aula: CalendarioAula) -> str:
-    if hasattr(aula, "disciplina") and getattr(aula, "disciplina"):
-        return (getattr(aula.disciplina, "nome", "") or "").strip()
-
-    disciplina_id = getattr(aula, "disciplina_id", None)
-    if disciplina_id and hasattr(aula, "turma") and aula.turma:
-        for link in TurmaDisciplina.query.filter_by(turma_id=aula.turma.id, disciplina_id=disciplina_id).all():
-            if link.disciplina and link.disciplina.nome:
-                return (link.disciplina.nome or "").strip()
-
-    if hasattr(aula, "turma") and aula.turma:
-        links = TurmaDisciplina.query.filter_by(turma_id=aula.turma.id).all()
-        nomes = [
-            (link.disciplina.nome or "").strip()
-            for link in links
-            if link.disciplina and (link.disciplina.nome or "").strip()
-        ]
-        nomes_unicos = list(dict.fromkeys(nomes))
-        if len(nomes_unicos) == 1:
-            return nomes_unicos[0]
-
     return ""
+
+
+def _calcular_blocos(carga: Any) -> int:
+    if carga in (None, ""):
+        return 1
+    try:
+        blocos = int(carga)
+    except (TypeError, ValueError):
+        return 1
+    return blocos if blocos >= 1 else 1
+
+
+def _obter_tempo_inicio(turma: Any, weekday: int | None) -> int:
+    mapa = {
+        0: "tempo_segunda",
+        1: "tempo_terca",
+        2: "tempo_quarta",
+        3: "tempo_quinta",
+        4: "tempo_sexta",
+    }
+    campo = mapa.get(weekday)
+    if not campo:
+        return 1
+    valor = getattr(turma, campo, None) if turma is not None else None
+    try:
+        tempo = int(valor)
+    except (TypeError, ValueError):
+        return 1
+    return tempo if tempo >= 1 else 1
+
+
+def _obter_blocos_previstos(turma: Any, weekday: int | None) -> int:
+    mapa = {
+        0: "carga_segunda",
+        1: "carga_terca",
+        2: "carga_quarta",
+        3: "carga_quinta",
+        4: "carga_sexta",
+    }
+    campo = mapa.get(weekday)
+    carga = getattr(turma, campo, None) if (campo and turma is not None) else None
+    return _calcular_blocos(carga)
 
 
 def _build_falta_item(registo: AulaAluno, tipo: str, tempos: int) -> dict[str, Any]:
@@ -131,6 +153,8 @@ def build_giae_export_for_date(data_ref: date) -> dict[str, Any]:
                 "aula_id": aula.id,
                 "turma": (getattr(aula.turma, "nome", "") or "").strip(),
                 "disciplina": _resolve_disciplina(aula),
+                "tempo_inicio": _obter_tempo_inicio(getattr(aula, "turma", None), getattr(aula, "weekday", None)),
+                "blocos_previstos": _obter_blocos_previstos(getattr(aula, "turma", None), getattr(aula, "weekday", None)),
                 "hora_inicio": _format_hhmm(getattr(aula, "hora_inicio", None)),
                 "hora_fim": _format_hhmm(getattr(aula, "hora_fim", None)),
                 "sumario": _clean_text(getattr(aula, "sumario", None)),
@@ -139,7 +163,7 @@ def build_giae_export_for_date(data_ref: date) -> dict[str, Any]:
         )
 
     return {
-        "schema_version": "1.0",
+        "schema_version": "1.2",
         "data": data_ref.isoformat(),
         "gerado_em": datetime.now().isoformat(timespec="seconds"),
         "origem": "sumarios-v1",
