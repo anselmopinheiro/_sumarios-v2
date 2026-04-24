@@ -1,7 +1,7 @@
 import os
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, datetime, timedelta
 
 from app import create_app
 from models import (
@@ -97,7 +97,7 @@ class ApiExportGiaeJsonTests(unittest.TestCase):
         res = self.client.get("/api/export/giae.json?data=2026-04-22")
         self.assertEqual(res.status_code, 200)
         payload = res.get_json()
-        self.assertEqual(payload["schema_version"], "1.2")
+        self.assertEqual(payload["schema_version"], "1.3")
         self.assertEqual(payload["data"], "2026-04-22")
         self.assertEqual(payload["origem"], "sumarios-v1")
         self.assertEqual(payload["aulas"], [])
@@ -133,10 +133,12 @@ class ApiExportGiaeJsonTests(unittest.TestCase):
         self.assertIn("application/json", res.headers.get("Content-Type", ""))
         content_disposition = res.headers.get("Content-Disposition", "")
         self.assertIn("attachment", content_disposition)
-        self.assertIn("sumarios_2026-04-22.json", content_disposition)
+        self.assertEqual(content_disposition, "attachment; filename=\"sumarios_2026-04-22.json\"")
 
         payload = res.get_json()
-        self.assertEqual(payload["schema_version"], "1.2")
+        gerado_em = datetime.fromisoformat(payload["gerado_em"])
+        self.assertLess(abs(datetime.now() - gerado_em), timedelta(minutes=1))
+        self.assertEqual(payload["schema_version"], "1.3")
         self.assertEqual(payload["data"], "2026-04-22")
         self.assertEqual(payload["origem"], "sumarios-v1")
 
@@ -145,6 +147,7 @@ class ApiExportGiaeJsonTests(unittest.TestCase):
         self.assertEqual(aula_payload["aula_id"], aula.id)
         self.assertEqual(aula_payload["turma"], "9.ºD")
         self.assertEqual(aula_payload["disciplina"], "")
+        self.assertEqual(aula_payload["modulo"], "Modulo A")
         self.assertEqual(aula_payload["tempo_inicio"], 3)
         self.assertEqual(aula_payload["blocos_previstos"], 2)
         self.assertEqual(aula_payload["hora_inicio"], "")
@@ -185,6 +188,30 @@ class ApiExportGiaeJsonTests(unittest.TestCase):
         aula_payload = payload["aulas"][0]
         self.assertEqual(aula_payload["tempo_inicio"], 1)
         self.assertEqual(aula_payload["blocos_previstos"], 1)
+        self.assertEqual(aula_payload["modulo"], "Modulo A")
+
+    def test_modulo_vazio_quando_aula_sem_modulo(self):
+        turma, periodo, _ = self._seed_base()
+
+        aula = CalendarioAula(
+            turma_id=turma.id,
+            periodo_id=periodo.id,
+            data=date(2026, 4, 22),
+            weekday=2,
+            modulo_id=None,
+            tipo="normal",
+            apagado=False,
+            sumario="Sem módulo",
+        )
+        db.session.add(aula)
+        db.session.commit()
+
+        res = self.client.get("/api/export/giae.json?data=2026-04-22")
+        self.assertEqual(res.status_code, 200)
+        payload = res.get_json()
+        aula_payload = payload["aulas"][0]
+        self.assertIn("modulo", aula_payload)
+        self.assertEqual(aula_payload["modulo"], "")
 
 
 if __name__ == "__main__":

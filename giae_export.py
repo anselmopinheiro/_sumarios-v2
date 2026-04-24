@@ -153,6 +153,7 @@ def build_giae_export_for_date(data_ref: date) -> dict[str, Any]:
                 "aula_id": aula.id,
                 "turma": (getattr(aula.turma, "nome", "") or "").strip(),
                 "disciplina": _resolve_disciplina(aula),
+                "modulo": (getattr(getattr(aula, "modulo", None), "nome", "") or "").strip(),
                 "tempo_inicio": _obter_tempo_inicio(getattr(aula, "turma", None), getattr(aula, "weekday", None)),
                 "blocos_previstos": _obter_blocos_previstos(getattr(aula, "turma", None), getattr(aula, "weekday", None)),
                 "hora_inicio": _format_hhmm(getattr(aula, "hora_inicio", None)),
@@ -163,7 +164,7 @@ def build_giae_export_for_date(data_ref: date) -> dict[str, Any]:
         )
 
     return {
-        "schema_version": "1.2",
+        "schema_version": "1.3",
         "data": data_ref.isoformat(),
         "gerado_em": datetime.now().isoformat(timespec="seconds"),
         "origem": "sumarios-v1",
