@@ -164,6 +164,7 @@ from calendario_service import (
     calcular_mapa_avaliacao_diaria,
     listar_sumarios_pendentes,
 )
+from giae_export import build_giae_export_for_date
 
 
 BACKUP_LOCK = threading.Lock()
@@ -3689,6 +3690,14 @@ def create_app():
             search_q=q,
             search_min_len=search_min_len,
             search_results=search_results,
+        )
+
+    @app.get("/giae")
+    def giae_export_page():
+        return render_template(
+            "giae.html",
+            title="JSON para GIAE",
+            data_atual=date.today().isoformat(),
         )
 
     @app.route("/backups")
@@ -9706,6 +9715,31 @@ def create_app():
             flash(f"Foram adicionados {len(novos)} feriados nacionais.", "success")
 
         return redirect(url_for("calendario_escolar_gestao", ano_id=ano.id))
+
+
+    @app.get("/api/export/giae.json")
+    def api_export_giae_json():
+        data_str = (request.args.get("data") or "").strip()
+        if not data_str:
+            return jsonify({"error": "Parâmetro 'data' em falta."}), 400
+
+        try:
+            data_ref = date.fromisoformat(data_str)
+        except ValueError:
+            return jsonify({"error": "Data inválida. Use o formato YYYY-MM-DD."}), 400
+
+        try:
+            payload = build_giae_export_for_date(data_ref)
+            json_str = json.dumps(payload, ensure_ascii=False, indent=2)
+            filename = f"sumarios_{data_ref.isoformat()}.json"
+            return Response(
+                json_str,
+                content_type="application/json; charset=utf-8",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+        except Exception:
+            current_app.logger.exception("Falha inesperada na exportação GIAE JSON")
+            return jsonify({"error": "Erro interno ao gerar exportação."}), 500
 
     # ----------------------------------------
     # EXPORTAR CALENDÁRIO ESCOLAR EM JSON
