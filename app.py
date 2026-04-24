@@ -3692,6 +3692,14 @@ def create_app():
             search_results=search_results,
         )
 
+    @app.get("/giae")
+    def giae_export_page():
+        return render_template(
+            "giae.html",
+            title="JSON para GIAE",
+            data_atual=date.today().isoformat(),
+        )
+
     @app.route("/backups")
     def backups_list():
         backups = _list_backups()

@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-6 col-lg-5">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h1 class="h4 mb-3">JSON para GIAE</h1>
+        <form method="get" action="/api/export/giae.json">
+          <div class="mb-3">
+            <label for="data" class="form-label">Data de exportação</label>
+            <input
+              type="date"
+              id="data"
+              name="data"
+              class="form-control"
+              value="{{ data_atual }}"
+              required
+            >
+          </div>
+          <button type="submit" class="btn btn-primary">Exportar</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

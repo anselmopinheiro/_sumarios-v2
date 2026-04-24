@@ -80,6 +80,23 @@ class ApiExportGiaeJsonTests(unittest.TestCase):
 
         return turma, periodo, modulo
 
+    def test_giae_page_renderiza_formulario_simples(self):
+        res = self.client.get("/giae")
+        self.assertEqual(res.status_code, 200)
+        html = res.get_data(as_text=True)
+        self.assertIn("JSON para GIAE", html)
+        self.assertIn('form method="get" action="/api/export/giae.json"', html)
+        self.assertIn('type="date"', html)
+        self.assertIn('name="data"', html)
+        self.assertIn('required', html)
+        self.assertIn("Exportar", html)
+
+    def test_giae_page_preenche_data_atual_por_defeito(self):
+        res = self.client.get("/giae")
+        self.assertEqual(res.status_code, 200)
+        html = res.get_data(as_text=True)
+        self.assertIn(f'value="{date.today().isoformat()}"', html)
+
     def test_missing_data_returns_400(self):
         res = self.client.get("/api/export/giae.json")
         self.assertEqual(res.status_code, 400)

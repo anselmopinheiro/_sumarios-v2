@@ -9,3 +9,11 @@
 - Cada aula deve incluir, quando disponível, `tempo_inicio` e `blocos_previstos`, usados pela automação Playwright para localizar o bloco inicial no GIAE.
 - A estrutura de `faltas` não deve ser alterada: `tempos: 2` significa falta aos dois tempos; `tempos: 1` significa falta apenas a um tempo.
 - Não introduzir dependências EV2 neste endpoint.
+
+## Interface de exportação GIAE
+
+- A página `/giae` deve ser uma interface simples para aceder ao endpoint `/api/export/giae.json?data=YYYY-MM-DD`.
+- A rota `/giae` não deve duplicar lógica de exportação; deve apenas apresentar o formulário.
+- O formulário deve usar a data escolhida pelo utilizador e enviar o pedido para o endpoint JSON existente.
+- Evitar URLs com dupla barra, como `//api/export/...`.
+- O endpoint de exportação continua responsável pelo download, nome do ficheiro e conteúdo JSON.
